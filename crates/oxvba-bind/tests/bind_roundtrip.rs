@@ -804,18 +804,54 @@ fn extern_filesystem_assign_count(program: &CoreProgram, member: &str) -> usize 
 #[test]
 fn print_hash_binds_every_field_with_a_separator_spec() {
     // `Print #` previously dropped all but the first field. The dedicated binder must now
-    // emit `[handle, sep-spec, field0, field1, field2]` — a `,`/`;`-aware separator spec
-    // plus EVERY field. `Print #1, a; b, c`: a→`;`, b→`,`, c→none(`n`) ⇒ spec ";,n".
+    // emit `[handle, sep-spec, kind-spec, field0, field1, field2]` — a `,`/`;`-aware
+    // separator spec plus EVERY field. `Print #1, a; b, c`: a→`;`, b→`,`, c→none(`n`)
+    // ⇒ spec ";,n"; all are ordinary value fields (`vvv`).
     let program = bind(
         "Sub Main()\n    Dim a, b, c\n    Open \"x.txt\" For Output As #1\n    Print #1, a; b, c\nEnd Sub\n",
     );
     let args = extern_filesystem_call_args(&program, "Print").expect("a FileSystem.Print call");
-    assert_eq!(args.len(), 5, "handle + sep-spec + 3 fields: {args:?}");
+    assert_eq!(
+        args.len(),
+        6,
+        "handle + sep-spec + kind-spec + 3 fields: {args:?}"
+    );
     match &args[1] {
         CoreArg::ByVal(CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(spec))) => {
             assert_eq!(spec, ";,n", "per-field separator spec");
         }
         other => panic!("args[1] should be the separator-spec string const, got {other:?}"),
+    }
+    match &args[2] {
+        CoreArg::ByVal(CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(spec))) => {
+            assert_eq!(spec, "vvv", "per-item value/control spec");
+        }
+        other => panic!("args[2] should be the item-kind spec string const, got {other:?}"),
+    }
+}
+
+#[test]
+fn print_hash_binds_spc_and_tab_as_print_clause_controls() {
+    let program = bind(
+        "Sub Main()\n    Open \"x.txt\" For Output As #1\n    Print #1, \"a\"; Spc(3); \"b\"; Tab(10); \"c\"; Tab; \"d\"\nEnd Sub\n",
+    );
+    let args = extern_filesystem_call_args(&program, "Print").expect("a FileSystem.Print call");
+    assert_eq!(
+        args.len(),
+        10,
+        "handle + sep-spec + kind-spec + 7 item values: {args:?}"
+    );
+    match &args[1] {
+        CoreArg::ByVal(CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(spec))) => {
+            assert_eq!(spec, ";;;;;;n", "separator spec should track every item");
+        }
+        other => panic!("args[1] should be the separator-spec string const, got {other:?}"),
+    }
+    match &args[2] {
+        CoreArg::ByVal(CoreValue::Const(oxvba_bundle::coreir::CoreConst::Str(spec))) => {
+            assert_eq!(spec, "vsvtvzv", "value/control spec");
+        }
+        other => panic!("args[2] should be the item-kind spec string const, got {other:?}"),
     }
 }
 

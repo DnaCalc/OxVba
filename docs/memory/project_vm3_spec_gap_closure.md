@@ -1510,3 +1510,43 @@
   slicing now uses saturating/checked index arithmetic for huge counts, and
   `StrConv(..., vbUnicode)` preserves string-input behavior while adding Byte
   array decoding. No remaining scoped numeric/string residual is open.
+
+## 2026-07-01 - Print # Layout Residuals (`bd-4ktq.39.5`)
+
+- Closed the scoped `print-separators-zones` residuals left after the file-I/O
+  data-loss fix: cross-statement print-column continuation after a suppressed
+  newline, numeric field sign/trailing padding, and `Spc(n)`/`Tab(n)`/bare
+  `Tab` print-clause positioning.
+- `Print #` binding now emits both the separator spec and a per-item kind spec,
+  so ordinary values and print controls reach the file host without making
+  `Spc`/`Tab` general callable intrinsics.
+- The standard filesystem adapter now tracks the zero-based formatted-output
+  column per handle. `Print #` assembly starts from that persisted column, while
+  the verbatim file sink advances or resets it as text and line terminators are
+  written.
+- Full `oxvba-bind` coverage exposed one stale expectation from the preceding
+  Null-coercion closure: `fixed_length_string_store_rejects_null` still expected
+  error 13 even though the canonical vm3 row now preserves error 94 for string
+  store coercion from `Null`. The test expectation was updated to match that
+  closed truth and rerun exactly.
+- Verification completed:
+  - `cargo test -p oxvba-lib print_record`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind print_hash_binds -- --nocapture`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-bind fixed_length_string_store_rejects_null -- --exact`
+  - `cargo test -p oxvba-host --test filesystem_statements print_hash_layout_residuals_match_vba_shape -- --exact`
+  - `cargo test -p oxvba-host --test filesystem_statements`
+  - `cargo test -p oxvba-hal native_mode_print_line_roundtrips_through_host_file`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `rustfmt --edition 2024 --check` on touched source files
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Fresh-eyes review re-read the binder control-token lowering, `oxvba-lib`
+  column math, standard HAL column bookkeeping, host/regression tests, inventory
+  row, and bead graph. The review caught and fixed two issues before closure:
+  bare `Tab` now uses its own internal item kind so explicit `Tab(0)` remains an
+  invalid-call path, and `Seek #` in Append mode recomputes the formatted-output
+  column from EOF rather than the reported seek cursor. No remaining scoped
+  `Print #` layout residual is open.

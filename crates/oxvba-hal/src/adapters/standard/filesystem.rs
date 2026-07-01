@@ -220,6 +220,8 @@ pub(super) struct FileHandleState {
     pub(super) data: Vec<u8>,
     /// Output line width set by `Width #n` (informational; affects `Print`).
     pub(super) width: i32,
+    /// Zero-based print column for sequential formatted output.
+    pub(super) print_column: i32,
     /// Locked 1-based byte/record ranges (inclusive) for `Lock`/`Unlock`. A `Lock`
     /// overlapping an already-locked range raises VBA error 70.
     pub(super) locks: Vec<(i32, i32)>,
@@ -264,6 +266,41 @@ fn seq_write_offset(entry: &FileHandleState) -> usize {
     } else {
         entry.position.max(0) as usize
     }
+}
+
+fn print_column_after_text(start_column: i32, text: &str) -> i32 {
+    let mut col = start_column.max(0) as usize;
+    for ch in text.chars() {
+        match ch {
+            '\r' | '\n' => col = 0,
+            _ => col = col.saturating_add(1),
+        }
+    }
+    col.min(i32::MAX as usize) as i32
+}
+
+fn line_column_at(data: &[u8], cursor: usize) -> i32 {
+    let upto = cursor.min(data.len());
+    let mut col = 0usize;
+    for ch in String::from_utf8_lossy(&data[..upto]).chars() {
+        match ch {
+            '\r' | '\n' => col = 0,
+            _ => col = col.saturating_add(1),
+        }
+    }
+    if cursor > data.len() {
+        col = col.saturating_add(cursor - data.len());
+    }
+    col.min(i32::MAX as usize) as i32
+}
+
+fn initial_print_column(mode: i32, data: &[u8], position: i32, len: i32) -> i32 {
+    let cursor = if mode == MODE_APPEND {
+        len.max(0) as usize
+    } else {
+        position.max(0) as usize
+    };
+    line_column_at(data, cursor)
 }
 
 pub(super) fn pseudo_file_len_from_path_token(path: i32) -> i32 {
@@ -576,6 +613,8 @@ impl FileSystemHal for StandardHostServices {
             } else {
                 (Vec::new(), 0, 0)
             };
+            let print_column =
+                initial_print_column(mode, &initial_data, initial_position, initial_len);
             state.handles.insert(
                 handle,
                 FileHandleState {
@@ -585,6 +624,7 @@ impl FileSystemHal for StandardHostServices {
                     host_path,
                     data: initial_data,
                     width: 0,
+                    print_column,
                     locks: Vec::new(),
                     record_len: 0,
                 },
@@ -702,6 +742,7 @@ impl FileSystemHal for StandardHostServices {
         } else {
             (Vec::new(), 0, 0)
         };
+        let print_column = initial_print_column(mode, &initial_data, initial_position, initial_len);
         state.handles.insert(
             handle,
             FileHandleState {
@@ -711,6 +752,7 @@ impl FileSystemHal for StandardHostServices {
                 host_path,
                 data: initial_data,
                 width: 0,
+                print_column,
                 locks: Vec::new(),
                 record_len: 0,
             },
@@ -976,6 +1018,12 @@ impl FileSystemHal for StandardHostServices {
             } else {
                 position - 1
             };
+            let print_cursor = if entry.mode == MODE_APPEND {
+                entry.len.max(0) as usize
+            } else {
+                entry.position.max(0) as usize
+            };
+            entry.print_column = line_column_at(&entry.data, print_cursor);
         }
         self.assert_fs_invariants(&state, "seek-post");
         // The Seek STATEMENT yields no value; the discarded result is `Empty`.
@@ -1069,7 +1117,8 @@ impl FileSystemHal for StandardHostServices {
             return Err(self.denied(capability, "write_bytes"));
         }
         let handle_id = self.variant_to_i32(&handle, capability, "write_bytes", "handle")?;
-        let bytes = format!("{}\r\n", oxvba_runtime::write_display_text(&data)).into_bytes();
+        let text = format!("{}\r\n", oxvba_runtime::write_display_text(&data));
+        let bytes = text.as_bytes();
         let mut state = self.fs_lock(capability, "write_bytes")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "write_bytes")?;
         let pos = seq_write_offset(entry);
@@ -1077,9 +1126,10 @@ impl FileSystemHal for StandardHostServices {
         if end > entry.data.len() {
             entry.data.resize(end, 0);
         }
-        entry.data[pos..end].copy_from_slice(&bytes);
+        entry.data[pos..end].copy_from_slice(bytes);
         entry.position = end as i32;
         entry.len = entry.data.len() as i32;
+        entry.print_column = print_column_after_text(entry.print_column, &text);
         Ok(Variant::from_i32(bytes.len() as i32))
     }
 
@@ -1111,7 +1161,19 @@ impl FileSystemHal for StandardHostServices {
         entry.data[pos..end].copy_from_slice(bytes);
         entry.position = end as i32;
         entry.len = entry.data.len() as i32;
+        entry.print_column = print_column_after_text(entry.print_column, &text);
         Ok(Variant::from_i32(0))
+    }
+
+    fn print_column_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "print_column"));
+        }
+        let handle_id = self.variant_to_i32(&handle, capability, "print_column", "handle")?;
+        let mut state = self.fs_lock(capability, "print_column")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "print_column")?;
+        Ok(Variant::from_i32(entry.print_column))
     }
 
     fn input_fields_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {

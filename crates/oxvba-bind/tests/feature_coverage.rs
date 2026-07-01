@@ -1244,8 +1244,8 @@ fn fixed_length_string_store_rejects_null() {
     let err = run_result("Sub Main()\nDim sample As String * 3\nsample = Null\nEnd Sub")
         .expect_err("fixed-length String assignment from Null should be a runtime error");
     assert!(
-        err.contains("runtime error: 13"),
-        "expected type mismatch error 13, got: {err}"
+        err.contains("runtime error: 94"),
+        "expected invalid use of Null error 94, got: {err}"
     );
 }
 

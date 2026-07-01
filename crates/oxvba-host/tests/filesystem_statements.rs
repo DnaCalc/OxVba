@@ -388,6 +388,38 @@ fn write_input_roundtrips_date_and_null_fields() {
     );
 }
 
+#[test]
+fn print_hash_layout_residuals_match_vba_shape() {
+    let dir = unique_temp_dir("printlayout");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("layout.txt");
+    let source = format!(
+        "Sub Main()\n\
+         \u{20}   Dim f As Integer\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   Print #f, \"abcd\";\n\
+         \u{20}   Print #f, \"e\", \"z\"\n\
+         \u{20}   Print #f, 1; -2; 0\n\
+         \u{20}   Print #f, \"A\"; Spc(3); \"B\"; Tab(10); \"C\"; Tab; \"D\"\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    run_clean(&source).expect("Print # layout residuals should execute");
+    let text = std::fs::read_to_string(&file).expect("read printed file");
+    let _ = std::fs::remove_dir_all(&dir);
+    let expected = format!(
+        "abcde{}z\r\n 1 -2  0 \r\nA{}B{}C{}D\r\n",
+        " ".repeat(9),
+        " ".repeat(3),
+        " ".repeat(4),
+        " ".repeat(4)
+    );
+    assert_eq!(text, expected);
+}
+
 /// For sequential output `Loc(f)` is `byte position \ 128`. Writing 200 bytes
 /// gives Loc=1, 400 bytes gives Loc=3 and Seek=401. (Live-Excel verified:
 /// w200_loc=1 w400_loc=3 w400_seek=401.)

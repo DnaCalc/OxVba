@@ -162,7 +162,9 @@ impl<'a> ProcLower<'a> {
             return Ok(None);
         }
         if intent == AssignmentIntent::Set {
-            return Err(BindError::Unsupported("Set assignment to Err property".into()));
+            return Err(BindError::Unsupported(
+                "Set assignment to Err property".into(),
+            ));
         }
         let member = target
             .member_name_token()
@@ -172,7 +174,9 @@ impl<'a> ProcLower<'a> {
             return Ok(None);
         };
         if matches!(field, oxvba_bundle::coreir::ErrField::LastDllError) {
-            return Err(BindError::Unsupported("Err.LastDllError is read-only".into()));
+            return Err(BindError::Unsupported(
+                "Err.LastDllError is read-only".into(),
+            ));
         }
         val = self.bind_default_member_value_context(val, value_label)?;
         Ok(Some(vec![CoreStmt::Error(ErrorOp::SetErrField {
@@ -641,15 +645,10 @@ impl<'a> ProcLower<'a> {
                 self.bind_required(node.for_start(), "For start")?,
                 &counter_ty,
             );
-            let end = types::coerce_store(
-                self.bind_required(node.for_end(), "For end")?,
-                &counter_ty,
-            );
+            let end =
+                types::coerce_store(self.bind_required(node.for_end(), "For end")?, &counter_ty);
             let step = match node.for_step() {
-                Some(s) => Some(types::coerce_store(
-                    self.bind_expr(s)?.value,
-                    &counter_ty,
-                )),
+                Some(s) => Some(types::coerce_store(self.bind_expr(s)?.value, &counter_ty)),
                 None => None,
             };
             Ok(vec![CoreStmt::ForRange {
@@ -1410,13 +1409,81 @@ impl<'a> ProcLower<'a> {
         Ok(vec![CoreStmt::Eval(self.vba_library_call(id, args))])
     }
 
+    fn bind_print_clause_arg(
+        &mut self,
+        name: &str,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<CoreValue, BindError> {
+        let mut items = arglist.map(|a| a.arg_items()).unwrap_or_default();
+        if items.len() != 1 {
+            return Err(BindError::Malformed(format!(
+                "{name} requires one argument"
+            )));
+        }
+        match items.remove(0) {
+            ArgItem::Positional(expr, _) | ArgItem::Named { value: expr, .. } => {
+                Ok(self.bind_expr(expr)?.value)
+            }
+            ArgItem::Omitted => Err(BindError::Malformed(format!("{name} argument omitted"))),
+        }
+    }
+
+    fn bind_print_clause_control(
+        &mut self,
+        expr: SyntaxNode<'_>,
+    ) -> Result<Option<(char, CoreValue)>, BindError> {
+        if expr.kind() == SyntaxKind::IdentExpr
+            && let Some(name) = expr
+                .ident_name_token()
+                .map(|token| fold_identifier(token.text))
+            && name == "tab"
+        {
+            return Ok(Some(('z', CoreValue::Const(CoreConst::I32(0)))));
+        }
+        if expr.kind() != SyntaxKind::IndexExpr {
+            return Ok(None);
+        }
+        let Some(base) = expr.index_base() else {
+            return Ok(None);
+        };
+        if base.kind() != SyntaxKind::IdentExpr {
+            return Ok(None);
+        }
+        let Some(name) = base
+            .ident_name_token()
+            .map(|token| fold_identifier(token.text))
+        else {
+            return Ok(None);
+        };
+        match name.as_str() {
+            "spc" => Ok(Some((
+                's',
+                self.bind_print_clause_arg("Spc", expr.index_arg_list())?,
+            ))),
+            "tab" => {
+                let items = expr
+                    .index_arg_list()
+                    .map(|arglist| arglist.arg_items())
+                    .unwrap_or_default();
+                if items.is_empty() {
+                    return Ok(Some(('z', CoreValue::Const(CoreConst::I32(0)))));
+                }
+                Ok(Some((
+                    't',
+                    self.bind_print_clause_arg("Tab", expr.index_arg_list())?,
+                )))
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// `Print #n, items…` / `Write #n, items…`. The item list's `,`/`;` separators
     /// are significant (zones vs. adjacency for `Print`; trailing-separator newline
     /// suppression for both), so we walk the `PrintItemList` in source order and pack
-    /// a per-field separator spec into `args[1]`: one char per field — the separator
-    /// that *follows* it (`,`, `;`, or `n` for none). `args[0]` is the handle and
-    /// `args[2..]` are the field values. Emitting every field (not just the first)
-    /// closes the `Print #`/`Write #` data-loss gap.
+    /// a per-item separator spec into `args[1]`: one char per item — the separator
+    /// that *follows* it (`,`, `;`, or `n` for none). `Print #` additionally carries
+    /// `args[2]` as a per-item kind spec (`v` value, `s` Spc, `t` Tab), followed by
+    /// item values; `Write #` keeps `args[2..]` as field values.
     fn bind_print_write(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let id = match node.kind() {
             SyntaxKind::PrintStmt => NativeImplId::FilePrint,
@@ -1425,18 +1492,32 @@ impl<'a> ProcLower<'a> {
         };
         let handle = match node.file_number().and_then(|f| f.first_expr_child()) {
             Some(ch) => self.bind_expr(ch)?.value,
-            None => return Err(BindError::Malformed("Print/Write without a file number".into())),
+            None => {
+                return Err(BindError::Malformed(
+                    "Print/Write without a file number".into(),
+                ));
+            }
         };
         // Default each field's following separator to 'n' (none → terminate the line);
         // a `,`/`;` token in the list overwrites the preceding field's slot.
         let mut fields: Vec<CoreValue> = Vec::new();
         let mut seps: Vec<char> = Vec::new();
+        let mut kinds: Vec<char> = Vec::new();
         if let Some(list) = node.child_node(SyntaxKind::PrintItemList) {
             for element in list.children() {
                 match element {
                     SyntaxElement::Node(item) if item.kind() == SyntaxKind::PrintItem => {
                         if let Some(e) = item.first_expr_child() {
+                            if id == NativeImplId::FilePrint
+                                && let Some((kind, value)) = self.bind_print_clause_control(e)?
+                            {
+                                fields.push(value);
+                                kinds.push(kind);
+                                seps.push('n');
+                                continue;
+                            }
                             fields.push(self.bind_expr(e)?.value);
+                            kinds.push('v');
                             seps.push('n');
                         }
                     }
@@ -1458,6 +1539,11 @@ impl<'a> ProcLower<'a> {
             CoreArg::ByVal(handle),
             CoreArg::ByVal(CoreValue::Const(CoreConst::Str(seps.into_iter().collect()))),
         ];
+        if id == NativeImplId::FilePrint {
+            args.push(CoreArg::ByVal(CoreValue::Const(CoreConst::Str(
+                kinds.into_iter().collect(),
+            ))));
+        }
         args.extend(fields.into_iter().map(CoreArg::ByVal));
         Ok(vec![CoreStmt::Eval(self.vba_library_call(id, args))])
     }
@@ -1502,7 +1588,11 @@ impl<'a> ProcLower<'a> {
     fn bind_line_input(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let handle = match node.file_number().and_then(|f| f.first_expr_child()) {
             Some(ch) => self.bind_expr(ch)?.value,
-            None => return Err(BindError::Malformed("Line Input # without a file number".into())),
+            None => {
+                return Err(BindError::Malformed(
+                    "Line Input # without a file number".into(),
+                ));
+            }
         };
         let target_node = node
             .expr_children()
@@ -1510,10 +1600,7 @@ impl<'a> ProcLower<'a> {
             .next()
             .ok_or_else(|| BindError::Malformed("Line Input # without a target".into()))?;
         let (place, target_ty) = self.bind_place(target_node)?;
-        let read = self.vba_library_call(
-            NativeImplId::FileLineInput,
-            vec![CoreArg::ByVal(handle)],
-        );
+        let read = self.vba_library_call(NativeImplId::FileLineInput, vec![CoreArg::ByVal(handle)]);
         let value = types::coerce(read, &VarTypeRef::Variant, &target_ty);
         Ok(vec![CoreStmt::Assign {
             place,
@@ -1723,9 +1810,7 @@ fn default_value_for_type(
     String,
 )> {
     let value = match ty {
-        VarTypeRef::Builtin(BuiltinType::String) => {
-            CoreValue::Const(CoreConst::Str(String::new()))
-        }
+        VarTypeRef::Builtin(BuiltinType::String) => CoreValue::Const(CoreConst::Str(String::new())),
         VarTypeRef::FixedString(_) => {
             types::coerce_store(CoreValue::Const(CoreConst::Str(String::new())), ty)
         }
@@ -1891,7 +1976,8 @@ impl<'a> ProcLower<'a> {
                 }
             }
         }
-        let number_node = slots[0].ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
+        let number_node =
+            slots[0].ok_or_else(|| BindError::Malformed("Err.Raise number".into()))?;
         let number_val = self.bind_expr(number_node)?.value;
         // Fold a static number into a constant so vm2's linearizer keeps its immediate
         // `RaiseError` path; a dynamic number stays an operand.
@@ -1918,8 +2004,7 @@ impl<'a> ProcLower<'a> {
     /// `Error <n>` does NOT inherit an un-cleared `Err` (oracle-confirmed), so omitted
     /// Source/Description always take their defaults.
     fn bind_error_stmt(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
-        let value = self
-            .bind_required(node.first_expr_child(), "Error statement number")?;
+        let value = self.bind_required(node.first_expr_child(), "Error statement number")?;
         let number = match self.fold_const_i32(&value) {
             Some(code) => CoreValue::Const(CoreConst::I32(code)),
             None => value,

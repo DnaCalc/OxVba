@@ -6,7 +6,7 @@
 //! Variants to the `oxvba-com` token types and calls the `com()` facet, ported
 //! from the legacy VM's `semantics::variant_to_com_*` helpers.
 
-use crate::{LibError, LibResult, as_f64, as_str, need, opt, vunit};
+use crate::{LibError, LibResult, as_f64, as_i32, as_str, need, opt, vunit};
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 use oxvba_hal::HostServices;
 use oxvba_runtime::Variant;
@@ -107,7 +107,13 @@ pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant
 /// field is dropped) and write it verbatim through the file sink.
 pub fn file_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     let handle = req(args, 0)?;
-    let record = assemble_print_record(&separator_spec(args), args.get(2..).unwrap_or(&[]));
+    let start_col = as_i32(&host.fs().print_column_variant(handle.clone())?)?.max(0) as usize;
+    let record = assemble_print_record_with_column(
+        &separator_spec(args),
+        &print_item_spec(args),
+        args.get(3..).unwrap_or(&[]),
+        start_col,
+    )?;
     Ok(host
         .fs()
         .print_line_variant(handle, Variant::from_string(record))?)
@@ -138,39 +144,134 @@ fn separator_spec(args: &[Variant]) -> String {
         .unwrap_or_default()
 }
 
+fn print_item_spec(args: &[Variant]) -> String {
+    opt(args, 2)
+        .and_then(|value| value.as_bstr())
+        .map(|spec| spec.as_str().to_string())
+        .unwrap_or_default()
+}
+
 /// Whether a trailing `,`/`;` after the last item suppresses the record's `\r\n`
 /// terminator (so the next `Print`/`Write` continues the same line).
 fn trailing_separator_suppresses_newline(seps: &str) -> bool {
     matches!(seps.chars().last(), Some(',') | Some(';'))
 }
 
+fn is_print_numeric(value: &Variant) -> bool {
+    matches!(
+        value.vtype(),
+        VarType::Integer
+            | VarType::Long
+            | VarType::LongLong
+            | VarType::SignedByte
+            | VarType::Byte
+            | VarType::UnsignedInteger
+            | VarType::UnsignedLong
+            | VarType::UnsignedInt
+            | VarType::UnsignedLongLong
+            | VarType::Single
+            | VarType::Double
+            | VarType::Decimal
+            | VarType::Currency
+    )
+}
+
+fn print_field_text(value: &Variant) -> String {
+    let text = oxvba_runtime::print_display_text(value);
+    if !is_print_numeric(value) {
+        return text;
+    }
+    if text.starts_with('-') {
+        format!("{text} ")
+    } else {
+        format!(" {text} ")
+    }
+}
+
+fn non_negative_count(value: &Variant, name: &str) -> LibResult<usize> {
+    let count = as_i32(value)?;
+    if count < 0 {
+        return Err(LibError::invalid_call(format!(
+            "{name} requires a non-negative count"
+        )));
+    }
+    Ok(count as usize)
+}
+
+fn append_spaces(out: &mut String, col: &mut usize, count: usize) {
+    for _ in 0..count {
+        out.push(' ');
+        *col = col.saturating_add(1);
+    }
+}
+
+fn append_tab(out: &mut String, col: &mut usize, value: &Variant) -> LibResult<()> {
+    let target = as_i32(value)?;
+    if target < 1 {
+        return Err(LibError::invalid_call("Tab requires a positive column"));
+    }
+    let target_col = (target - 1) as usize;
+    if *col > target_col {
+        out.push_str("\r\n");
+        *col = 0;
+    }
+    append_spaces(out, col, target_col.saturating_sub(*col));
+    Ok(())
+}
+
+fn append_next_print_zone(out: &mut String, col: &mut usize) {
+    let next_zone = ((*col / PRINT_ZONE_WIDTH) + 1) * PRINT_ZONE_WIDTH;
+    append_spaces(out, col, next_zone.saturating_sub(*col));
+}
+
+#[cfg(test)]
+fn default_print_item_spec(field_count: usize) -> String {
+    std::iter::repeat('v').take(field_count).collect()
+}
+
 /// Assemble a `Print #` record: each field rendered with VBA display semantics,
-/// `;` placing the next field adjacently and `,` padding to the next print zone.
-///
-/// FIDELITY: the print column resets to 0 per statement, so cross-statement zone
-/// continuation after a newline-suppressing trailing separator, the leading sign
-/// space on numbers, and `Tab(n)`/`Spc(n)` positioning are the remaining
-/// `print-separators-zones` refinements.
+/// `;` placing the next field adjacently, `,` padding to the next print zone, and
+/// `Spc`/`Tab` print-clause controls moving the current output column.
+#[cfg(test)]
 fn assemble_print_record(seps: &str, fields: &[Variant]) -> String {
+    let kinds = default_print_item_spec(fields.len());
+    assemble_print_record_with_column(seps, &kinds, fields, 0).unwrap_or_default()
+}
+
+fn assemble_print_record_with_column(
+    seps: &str,
+    kinds: &str,
+    fields: &[Variant],
+    start_col: usize,
+) -> LibResult<String> {
     let seps: Vec<char> = seps.chars().collect();
+    let kinds: Vec<char> = kinds.chars().collect();
     let mut out = String::new();
-    let mut col = 0usize;
+    let mut col = start_col;
     for (index, field) in fields.iter().enumerate() {
-        let text = oxvba_runtime::print_display_text(field);
-        col += text.chars().count();
-        out.push_str(&text);
+        match kinds.get(index).copied().unwrap_or('v') {
+            's' => {
+                let count = non_negative_count(field, "Spc")?;
+                append_spaces(&mut out, &mut col, count);
+            }
+            't' => append_tab(&mut out, &mut col, field)?,
+            'z' => append_next_print_zone(&mut out, &mut col),
+            _ => {
+                let text = print_field_text(field);
+                col = col.saturating_add(text.chars().count());
+                out.push_str(&text);
+            }
+        }
         if let Some(',') = seps.get(index).copied() {
             let target = ((col / PRINT_ZONE_WIDTH) + 1) * PRINT_ZONE_WIDTH;
-            while col < target {
-                out.push(' ');
-                col += 1;
-            }
+            let count = target.saturating_sub(col);
+            append_spaces(&mut out, &mut col, count);
         }
     }
     if !matches!(seps.last().copied(), Some(',') | Some(';')) {
         out.push_str("\r\n");
     }
-    out
+    Ok(out)
 }
 
 /// Assemble a `Write #` record: comma-delimited machine-readable fields.
@@ -413,7 +514,7 @@ fn print_joined(args: &[Variant]) -> Variant {
 
 #[cfg(test)]
 mod tests {
-    use super::{assemble_print_record, assemble_write_record};
+    use super::{assemble_print_record, assemble_print_record_with_column, assemble_write_record};
     use oxvba_runtime::Variant;
 
     #[test]
@@ -445,6 +546,53 @@ mod tests {
     #[test]
     fn print_record_with_no_fields_is_a_blank_line() {
         assert_eq!(assemble_print_record("", &[]), "\r\n");
+    }
+
+    #[test]
+    fn print_record_pads_numeric_fields_with_sign_and_trailing_space() {
+        let fields = [
+            Variant::from_i32(1),
+            Variant::from_i32(-2),
+            Variant::from_i32(0),
+        ];
+        assert_eq!(assemble_print_record(";;n", &fields), " 1 -2  0 \r\n");
+    }
+
+    #[test]
+    fn print_record_honors_spc_tab_and_bare_tab_controls() {
+        let fields = [
+            Variant::from_string("A"),
+            Variant::from_i32(3),
+            Variant::from_string("B"),
+            Variant::from_i32(10),
+            Variant::from_string("C"),
+            Variant::from_i32(0),
+            Variant::from_string("D"),
+        ];
+        let record =
+            assemble_print_record_with_column(";;;;;;n", "vsvtvzv", &fields, 0).expect("record");
+        assert_eq!(
+            record,
+            format!(
+                "A{}B{}C{}D\r\n",
+                " ".repeat(3),
+                " ".repeat(4),
+                " ".repeat(4)
+            )
+        );
+    }
+
+    #[test]
+    fn print_record_starts_comma_zones_from_existing_column() {
+        let fields = [Variant::from_string("e"), Variant::from_string("z")];
+        let record = assemble_print_record_with_column(",n", "vv", &fields, 4).expect("record");
+        assert_eq!(record, format!("e{}z\r\n", " ".repeat(9)));
+    }
+
+    #[test]
+    fn print_record_rejects_nonpositive_tab_column() {
+        let fields = [Variant::from_i32(0)];
+        assert!(assemble_print_record_with_column("n", "t", &fields, 0).is_err());
     }
 
     #[test]
