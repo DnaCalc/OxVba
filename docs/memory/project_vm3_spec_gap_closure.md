@@ -449,3 +449,19 @@
   - `cargo test -p oxvba-differential --test null_coercion_vm3`
   - `cargo test -p oxvba-eval`
   - `cargo test -p oxvba-lib`
+
+## 2026-07-01 - String Numeric Character Modulo (`bd-4ktq.12`)
+
+- Closed `string-charcode-mod256` for vm3.
+- Changed `String(number, numericCharacter)` so a numeric character argument
+  greater than 255 is folded with `Mod 256` before repetition, matching the
+  documented VBA rule.
+- Kept string character arguments on the existing first-character path, so
+  `String(4, "321")` still returns `"3333"` rather than parsing the string as a
+  numeric code.
+- Added `crates/oxvba-differential/tests/string_repeat_charcode_vm3.rs` to pin
+  both the numeric-wrap behavior and the string-argument behavior.
+- Verification target:
+  - `cargo test -p oxvba-differential --test string_repeat_charcode_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind string_functions_left_mid_ucase`

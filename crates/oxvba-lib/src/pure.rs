@@ -590,6 +590,7 @@ pub fn string_repeat(args: &[Variant]) -> LibResult<Variant> {
     let count = alloc_count(need(args, 0)?)?;
     let arg = need(args, 1)?;
     let ch = if let Ok(code) = as_i32(arg) {
+        let code = if code > 255 { code % 256 } else { code };
         char::from_u32(code as u32).unwrap_or(' ')
     } else {
         as_str(arg)?.chars().next().unwrap_or(' ')
