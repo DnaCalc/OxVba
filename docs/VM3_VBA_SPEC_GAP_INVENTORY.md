@@ -148,6 +148,14 @@ and historical CCT-038 oracle evidence for the host-direct invocation
 distinction. Rows stay `partial` where their scope extends into broader host
 catalog and host/HAL project-public-entity behavior.
 
+**WithEvents PMR reconciliation (bd-4ktq.38.5):** `MODPROJ-022` and
+`PMR-CLS-001` now cite live symbol/vm3 anchors for procedural-module
+`WithEvents` rejection, and `MODPROJ-023` moved from `planned` to `partial` for
+the active-project and referenced-project source-visibility/handler-prefix
+subset. Full event lifecycle, reassignment ordering, cleanup, and broader
+COM event parity remain outside this scoping batch under `DIV-0004` and event
+work.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

@@ -156,8 +156,9 @@ Current executable subset (A2):
 - project-aware legality and coverage diagnostics:
   - canonical list is generated from `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`:
     - `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md`
-  - covered by compiler tests such as:
-    - `compile_project_rejects_withevents_in_procedural_module`
+  - covered by current symbol/vm3/compiler tests such as:
+    - `scanner_rejects_withevents_in_standard_modules`
+    - `withevents_in_procedural_module_should_be_rejected`
     - `compile_project_rejects_implements_missing_member_coverage`
     - `compile_project_rejects_raiseevent_undeclared_event`
 - vm3 scoping/event-source checks:
@@ -243,7 +244,8 @@ Initial PMR lane command placeholders:
 ```powershell
 cargo test -p oxvba-compiler pmr_
 cargo test -p oxvba-host pmr_
-cargo test -p oxvba-compiler compile_project_rejects_withevents_in_procedural_module
+cargo test -p oxvba-symbol scanner_rejects_withevents_in_standard_modules
+cargo test -p oxvba-differential --test scoping_visibility_vm3 withevents_in_procedural_module_should_be_rejected
 cargo test -p oxvba-compiler compile_project_rejects_implements_in_non_class_module
 cargo test -p oxvba-compiler compile_project_rejects_raiseevent_undeclared_event
 ```

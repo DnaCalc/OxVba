@@ -1338,3 +1338,31 @@
   - `scripts/check-governance.ps1`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-01 - WithEvents PMR Reconciliation (`bd-4ktq.38.5`)
+
+- Reconciled the PMR `WithEvents` source-visibility and handler-prefix rows
+  against the closed vm3 scoping evidence from `bd-4ktq.36.6`.
+- Updated `MODPROJ-022` and `PMR-CLS-001` to point at live symbol/vm3 fixtures
+  for procedural-module `WithEvents` rejection:
+  `scanner_rejects_withevents_in_standard_modules` and
+  `withevents_in_procedural_module_should_be_rejected`.
+- Moved `MODPROJ-023` from `planned` to `partial` for the active-project and
+  referenced-project source-visibility/handler-prefix subset covered by
+  `active_project_withevents_source_routes_to_handler`,
+  `referenced_project_withevents_source_routes_to_active_project_handler`,
+  `withevents_handler_prefix_mismatch_does_not_route`, and private/non-exposed
+  referenced source rejection fixtures.
+- Kept full event lifecycle, reassignment ordering, cleanup, and broader COM
+  event parity outside this scoping batch under `DIV-0004` and event/COM work.
+- Fresh-eyes review checked the new anchors against live test functions,
+  verified stale WithEvents compiler-era anchors are gone from the touched PMR
+  truth rows, and confirmed `MODPROJ-023` stays subset-safe as `partial`.
+- Verification completed:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
