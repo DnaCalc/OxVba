@@ -209,8 +209,23 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         IIf => e(IIf, &[], sig(3, 3), SpecialForm),
         Choose => e(Choose, &[], variadic(1), SpecialForm),
         Switch => e(Switch, &[], variadic(2), SpecialForm),
-        Rgb => e_params(Rgb, &["RGB"], sig(3, 3), &["Red", "Green", "Blue"], Ordinary),
+        Rgb => e_params(
+            Rgb,
+            &["RGB"],
+            sig(3, 3),
+            &["Red", "Green", "Blue"],
+            Ordinary,
+        ),
         QbColor => e(QbColor, &["QBColor"], sig(1, 1), Ordinary),
+
+        // ── Interaction ──
+        Partition => e_params(
+            Partition,
+            &["Partition"],
+            sig(4, 4),
+            &["Number", "Start", "Stop", "Interval"],
+            Ordinary,
+        ),
 
         // ── File / Console I/O ──
         FreeFile => e(FreeFile, &["FreeFile"], sig(0, 1), Ordinary),

@@ -374,6 +374,9 @@ pub fn invoke(
         Rgb => pure::rgb(args),
         QbColor => pure::qb_color(args),
 
+        // ── Interaction (pure) ──
+        Partition => pure::partition(args),
+
         // ── File / Console I/O ──
         FreeFile => host::free_file(args, host),
         FileOpen => host::file_open(args, host),

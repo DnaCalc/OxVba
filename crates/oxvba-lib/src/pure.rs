@@ -231,7 +231,6 @@ fn instr_rev(args: &[Variant]) -> LibResult<Variant> {
     }))
 }
 
-
 /// Byte offset of the char at a given UTF-16 code-unit index (VBA string index).
 fn utf16_index_to_byte(s: &str, utf16_index: usize) -> usize {
     let mut units = 0;
@@ -1091,7 +1090,6 @@ pub enum DatePart {
     Second,
 }
 
-
 pub fn date_part(args: &[Variant], part: DatePart) -> LibResult<Variant> {
     let serial = as_f64(need(args, 0)?)?;
     Ok(vi32(match part {
@@ -1879,7 +1877,11 @@ pub fn ipmt(args: &[Variant]) -> LibResult<Variant> {
     let nper = as_f64(need(args, 2)?)?;
     let pv = as_f64(need(args, 3)?)?;
     let fv = opt_f64(args, 4, 0.0)?;
-    let t = if opt_f64(args, 5, 0.0)? != 0.0 { 1.0 } else { 0.0 };
+    let t = if opt_f64(args, 5, 0.0)? != 0.0 {
+        1.0
+    } else {
+        0.0
+    };
     Ok(vf64(ipmt_value(rate, per, nper, pv, fv, t)))
 }
 
@@ -1891,7 +1893,11 @@ pub fn ppmt(args: &[Variant]) -> LibResult<Variant> {
     let nper = as_f64(need(args, 2)?)?;
     let pv = as_f64(need(args, 3)?)?;
     let fv = opt_f64(args, 4, 0.0)?;
-    let t = if opt_f64(args, 5, 0.0)? != 0.0 { 1.0 } else { 0.0 };
+    let t = if opt_f64(args, 5, 0.0)? != 0.0 {
+        1.0
+    } else {
+        0.0
+    };
     let payment = pmt_value(rate, nper, pv, fv, t);
     Ok(vf64(payment - ipmt_value(rate, per, nper, pv, fv, t)))
 }
@@ -2107,9 +2113,8 @@ pub fn rate(args: &[Variant]) -> LibResult<Variant> {
 /// `RGB(256, 300, 1000) = 16777215`), then packed as `red + green*256 + blue*65536`
 /// (the maximum, `RGB(255,255,255)`, is `16_777_215`, well within `Long`).
 pub fn rgb(args: &[Variant]) -> LibResult<Variant> {
-    let component = |index: usize| -> LibResult<i32> {
-        Ok(as_i32(need(args, index)?)?.clamp(0, 255))
-    };
+    let component =
+        |index: usize| -> LibResult<i32> { Ok(as_i32(need(args, index)?)?.clamp(0, 255)) };
     let (red, green, blue) = (component(0)?, component(1)?, component(2)?);
     Ok(vi32(red + green * 256 + blue * 65_536))
 }
@@ -2121,14 +2126,87 @@ pub fn qb_color(args: &[Variant]) -> LibResult<Variant> {
     // colour-index → packed RGB `Long`, exactly as VBA's `QBColor` returns
     // (live-probed: 0..15 → these values).
     const PALETTE: [i32; 16] = [
-        0, 8_388_608, 32_768, 8_421_376, 128, 8_388_736, 32_896, 12_632_256, 8_421_504,
-        16_711_680, 65_280, 16_776_960, 255, 16_711_935, 65_535, 16_777_215,
+        0, 8_388_608, 32_768, 8_421_376, 128, 8_388_736, 32_896, 12_632_256, 8_421_504, 16_711_680,
+        65_280, 16_776_960, 255, 16_711_935, 65_535, 16_777_215,
     ];
     let index = as_i32(need(args, 0)?)?;
     if !(0..=15).contains(&index) {
         return Err(LibError::invalid_call("QBColor index must be 0 to 15"));
     }
     Ok(vi32(PALETTE[index as usize]))
+}
+
+// ── Interaction ──────────────────────────────────────────────────────────────
+
+/// `Partition(number, start, stop, interval)` identifies the range containing
+/// `number`. Integer arguments use VBA banker's rounding; a `Null` argument
+/// propagates to a `Null` result.
+pub fn partition(args: &[Variant]) -> LibResult<Variant> {
+    let number_arg = need(args, 0)?;
+    let start_arg = need(args, 1)?;
+    let stop_arg = need(args, 2)?;
+    let interval_arg = need(args, 3)?;
+
+    if [number_arg, start_arg, stop_arg, interval_arg]
+        .iter()
+        .any(|value| value.vtype() == VarType::Null)
+    {
+        return Ok(Variant::null());
+    }
+    let number = as_i64(number_arg)?;
+    let start = as_i64(start_arg)?;
+    let stop = as_i64(stop_arg)?;
+    let interval = as_i64(interval_arg)?;
+
+    if start < 0 {
+        return Err(LibError::invalid_call(
+            "Partition start must be greater than or equal to 0",
+        ));
+    }
+    if stop <= start {
+        return Err(LibError::invalid_call(
+            "Partition stop must be greater than start",
+        ));
+    }
+    if interval < 1 {
+        return Err(LibError::invalid_call(
+            "Partition interval must be greater than or equal to 1",
+        ));
+    }
+
+    let after_stop = stop
+        .checked_add(1)
+        .ok_or_else(|| LibError::overflow("Partition stop overflow"))?;
+    let width = after_stop.to_string().len();
+
+    let (lower, upper) = if interval == 1 {
+        (Some(number), Some(number))
+    } else if number < start {
+        (None, Some(start - 1))
+    } else if number > stop {
+        (Some(after_stop), None)
+    } else {
+        let offset = number - start;
+        let lower = start + (offset / interval) * interval;
+        let upper = lower
+            .checked_add(interval - 1)
+            .unwrap_or(i64::MAX)
+            .min(stop);
+        (Some(lower), Some(upper))
+    };
+
+    Ok(vstr(format!(
+        "{}:{}",
+        partition_bound(lower, width),
+        partition_bound(upper, width)
+    )))
+}
+
+fn partition_bound(value: Option<i64>, width: usize) -> String {
+    match value {
+        Some(value) => format!("{value:>width$}"),
+        None => " ".repeat(width),
+    }
 }
 
 // ── Information ──────────────────────────────────────────────────────────────────
@@ -2164,7 +2242,13 @@ pub fn type_name(args: &[Variant]) -> LibResult<Variant> {
         VarType::Currency => "Currency",
         VarType::Date => "Date",
         VarType::String => "String",
-        VarType::Object if value.as_object_ref().map(|object| object.raw()).unwrap_or(0) == 0 => {
+        VarType::Object
+            if value
+                .as_object_ref()
+                .map(|object| object.raw())
+                .unwrap_or(0)
+                == 0 =>
+        {
             "Nothing"
         }
         VarType::Object => "Object",
@@ -2280,10 +2364,7 @@ fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
 
 // `Val` reads a leading token and ignores spaces/tabs/newlines inside it; the
 // conversion functions and `IsNumeric` require the whole string to be numeric.
-fn parse_vba_prefixed_integer_token(
-    t: &str,
-    skip_embedded_space: bool,
-) -> Option<(i64, &str)> {
+fn parse_vba_prefixed_integer_token(t: &str, skip_embedded_space: bool) -> Option<(i64, &str)> {
     let bytes = t.as_bytes();
     let mut pos = 0;
     let (sign, rest) = if let Some(rest) = t.strip_prefix('-') {
@@ -2363,7 +2444,9 @@ pub fn is_date(args: &[Variant]) -> LibResult<Variant> {
     // object is NOT a date to `IsDate` (even though `CDate` would convert a number).
     let ok = match v.vtype() {
         VarType::Date => true,
-        VarType::String => as_str(v).ok().is_some_and(|s| cdate_from_string(&s).is_ok()),
+        VarType::String => as_str(v)
+            .ok()
+            .is_some_and(|s| cdate_from_string(&s).is_ok()),
         _ => false,
     };
     Ok(vbool(ok))
@@ -2439,6 +2522,9 @@ mod tests {
     }
     fn val_(s: &str) -> f64 {
         val(&[vs(s)]).unwrap().as_f64().unwrap()
+    }
+    fn partition_(args: &[Variant]) -> String {
+        partition(args).unwrap().as_bstr().unwrap().as_str()
     }
 
     #[test]
@@ -2631,6 +2717,143 @@ mod tests {
         assert!(!isnum(Variant::from_bool(false)));
         assert!(!isnum(Variant::from_date_f64(45000.0))); // a Date-typed Variant
         assert!(!isnum(Variant::null()));
+    }
+
+    #[test]
+    fn partition_formats_documented_ranges() {
+        assert_eq!(
+            partition_(&[
+                Variant::from_i32(-1),
+                Variant::from_i32(0),
+                Variant::from_i32(99),
+                Variant::from_i32(5),
+            ]),
+            "   : -1"
+        );
+        assert_eq!(
+            partition_(&[
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+                Variant::from_i32(99),
+                Variant::from_i32(5),
+            ]),
+            "  0:  4"
+        );
+        assert_eq!(
+            partition_(&[
+                Variant::from_i32(99),
+                Variant::from_i32(0),
+                Variant::from_i32(99),
+                Variant::from_i32(5),
+            ]),
+            " 95: 99"
+        );
+        assert_eq!(
+            partition_(&[
+                Variant::from_i32(100),
+                Variant::from_i32(0),
+                Variant::from_i32(99),
+                Variant::from_i32(5),
+            ]),
+            "100:   "
+        );
+        assert_eq!(
+            partition_(&[
+                Variant::from_i32(1000),
+                Variant::from_i32(100),
+                Variant::from_i32(1010),
+                Variant::from_i32(20),
+            ]),
+            "1000:1010"
+        );
+        assert_eq!(
+            partition_(&[
+                Variant::from_i32(100),
+                Variant::from_i32(0),
+                Variant::from_i32(1000),
+                Variant::from_i32(1),
+            ]),
+            " 100: 100"
+        );
+    }
+
+    #[test]
+    fn partition_rounds_nulls_and_rejects_invalid_ranges() {
+        assert_eq!(
+            partition(&[
+                Variant::from_f64(2.5),
+                Variant::from_i32(0),
+                Variant::from_i32(10),
+                Variant::from_i32(2),
+            ])
+            .unwrap()
+            .as_bstr()
+            .unwrap()
+            .as_str(),
+            " 2: 3"
+        );
+        assert_eq!(
+            partition(&[
+                Variant::from_f64(3.5),
+                Variant::from_i32(0),
+                Variant::from_i32(10),
+                Variant::from_i32(2),
+            ])
+            .unwrap()
+            .as_bstr()
+            .unwrap()
+            .as_str(),
+            " 4: 5"
+        );
+        assert_eq!(
+            partition(&[
+                Variant::null(),
+                Variant::from_i32(0),
+                Variant::from_i32(10),
+                Variant::from_i32(2),
+            ])
+            .unwrap()
+            .vtype(),
+            VarType::Null
+        );
+        assert_eq!(
+            partition(&[
+                Variant::from_i32(1),
+                Variant::from_i32(-1),
+                Variant::from_i32(10),
+                Variant::from_i32(2),
+            ])
+            .unwrap_err()
+            .code,
+            5
+        );
+        assert_eq!(
+            partition(&[
+                Variant::from_i32(1),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+                Variant::from_i32(2),
+            ])
+            .unwrap_err()
+            .code,
+            5
+        );
+        assert_eq!(
+            partition(&[
+                Variant::from_i32(1),
+                Variant::from_i32(0),
+                Variant::from_i32(10),
+                Variant::from_i32(0),
+            ])
+            .unwrap_err()
+            .code,
+            5
+        );
+        assert_eq!(
+            partition(&[Variant::null()]).unwrap_err().code,
+            5,
+            "missing arguments are not masked by an earlier Null"
+        );
     }
 
     fn chr_(id_args: &[Variant], wide: bool) -> String {

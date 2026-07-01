@@ -1099,3 +1099,27 @@
   - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms`
   - `cargo test -p oxvba-differential --test library_constants_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - `Partition` Function (`bd-4ktq.37.2`)
+
+- Closed `partition-absent` for vm3.
+- Used Microsoft VBA/.NET documentation plus a direct
+  `Microsoft.VisualBasic.Interaction.Partition` probe to pin the range-label
+  truth table: bounds are right-justified to the width of `Stop + 1`, out-of-
+  range labels blank the missing side, decimal inputs use banker's rounding,
+  any `Null` input returns `Null`, and invalid `Start`/`Stop`/`Interval`
+  raises runtime error 5.
+- Added `Partition` to the native library `Interaction` surface, catalog
+  metadata, bundle member export, and oxvba-lib dispatch. `Partition` remains a
+  deterministic pure computation even though it lives in the same VBA typelib
+  module as host-sensitive Interaction functions.
+- Added `pure::partition` plus vm3 differential coverage for in-range,
+  below-start, above-stop, `Null`, and invalid-interval behavior.
+- Verification target:
+  - `rustfmt --edition 2024 --check crates/oxvba-bundle/src/native.rs crates/oxvba-bundle/src/vba_library.rs crates/oxvba-symbol/src/catalog.rs crates/oxvba-lib/src/lib.rs crates/oxvba-lib/src/pure.rs crates/oxvba-differential/tests/partition_vm3.rs`
+  - `cargo test -p oxvba-bundle vba_library`
+  - `cargo test -p oxvba-symbol catalog`
+  - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms`
+  - `cargo test -p oxvba-lib partition`
+  - `cargo test -p oxvba-differential --test partition_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

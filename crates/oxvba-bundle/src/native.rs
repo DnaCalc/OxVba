@@ -203,7 +203,8 @@ native_impl_ids! {
     FileLock,    // `Lock #n [, range]`
     FileUnlock,  // `Unlock #n [, range]`
 
-    // ── Interaction / host ───────────────────────────────────
+    // ── Interaction ──────────────────────────────────────────
+    Partition, // `Partition(number, start, stop, interval)` → range label
     MsgBox,
     InputBox,
     Beep,
@@ -224,8 +225,7 @@ native_impl_ids! {
 }
 
 /// The `VBA`-typelib-style module a library function belongs to. Provenance for
-/// the descriptor; also drives host-sensitivity (Interaction / File I/O are
-/// host-sensitive, the rest deterministic).
+/// the descriptor; host-sensitivity is tracked per module/id below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LibraryModule {
     Strings,
@@ -269,6 +269,7 @@ impl NativeImplId {
                 M::FileIo
             }
             MsgBox
+            | Partition
             | InputBox
             | Beep
             | DoEvents
@@ -309,10 +310,10 @@ impl NativeImplId {
     ///   `Choose`, `Switch` are **special forms** (eager but with dedicated binder
     ///   lowering, resolved by `special_form`, not `name_to_intrinsic`) and stay
     ///   `None`;
-    /// - the `Interaction` **host** functions (`MsgBox`/`InputBox`/`Beep`/`DoEvents`/
-    ///   `Shell`/`Environ`/`Dir`) — ordinary by-name functions that reach host
-    ///   services (the native body already receives the host via `invoke_native_lib`,
-    ///   so rerouting changes only the dispatch route, not behaviour). Their
+    /// - the `Interaction` by-name functions (`Partition` plus the host functions
+    ///   `MsgBox`/`InputBox`/`Beep`/`DoEvents`/`Shell`/`Environ`/`Dir`). The host
+    ///   functions still reach host services through `invoke_native_lib`; `Partition`
+    ///   is deterministic but shares the same VBA typelib module. Their
     ///   `Interaction`-module siblings `CreateObject` (object activation / `New`
     ///   lowering target) and the `Com*` event-machinery ids (not user-callable by
     ///   name) stay `None`;
@@ -342,7 +343,7 @@ impl NativeImplId {
         use NativeImplId::*;
         // The owning module name for the migrated id; `None` for any module/id that
         // does not route through the bundle. `Information`, `Interaction`, and `FileIo`
-        // are partially migrated (predicates / host functions / by-name file functions
+        // are partially migrated (predicates / Interaction by-name functions / by-name file functions
         // only), so the per-id `match` below — not the module alone — decides their
         // membership; the excluded ids of those modules fall through to the final
         // `_ => return None`.
@@ -462,7 +463,8 @@ impl NativeImplId {
             // `IIf`/`Choose`/`Switch` special forms).
             Rgb => "RGB",
             QbColor => "QBColor",
-            // ── Interaction (host functions only) ──
+            // ── Interaction (by-name functions) ──
+            Partition => "Partition",
             MsgBox => "MsgBox",
             InputBox => "InputBox",
             Beep => "Beep",
@@ -635,8 +637,9 @@ impl NativeImplId {
             // ── Information colour functions ──
             QbColor => 1,
             Rgb => 3,
-            // ── Interaction host functions ──
+            // ── Interaction by-name functions ──
             Beep | DoEvents => 0,
+            Partition => 4,
             Environ => 1,
             Shell | Dir => 2,
             MsgBox => 5,
@@ -721,10 +724,27 @@ impl NativeImplId {
     pub fn is_host_sensitive(self) -> bool {
         matches!(
             self.module(),
-            LibraryModule::FileIo | LibraryModule::Interaction | LibraryModule::Diagnostics
+            LibraryModule::FileIo | LibraryModule::Diagnostics
         ) || matches!(
             self,
-            NativeImplId::DateNow | NativeImplId::TimeNow | NativeImplId::Now | NativeImplId::Timer
+            NativeImplId::DateNow
+                | NativeImplId::TimeNow
+                | NativeImplId::Now
+                | NativeImplId::Timer
+                | NativeImplId::MsgBox
+                | NativeImplId::InputBox
+                | NativeImplId::Beep
+                | NativeImplId::DoEvents
+                | NativeImplId::Shell
+                | NativeImplId::Environ
+                | NativeImplId::Dir
+                | NativeImplId::CreateObject
+                | NativeImplId::GetObject
+                | NativeImplId::ComSubscribeEvent
+                | NativeImplId::ComUnsubscribeEvent
+                | NativeImplId::ComEventCallbackSubscription
+                | NativeImplId::ComEventCallbackArg
+                | NativeImplId::ComReleaseEventCallback
         )
     }
 }
