@@ -99,3 +99,19 @@ ProjectGraph parser+binder integration master workset (`P0..P10`) is now complet
 
 Evidence rollup:
 - `docs/evidence/language/PMR_PROJECTGRAPH_P0_P10_ROLLUP_2026-03-03.md`
+
+## vm3 Scoping Residual Map (2026-07-01)
+
+The vm3 gap-closure scoping batches `bd-4ktq.9` and `bd-4ktq.36`
+substantially expanded the executable multi-module and referenced-project
+subset after this original PMR checklist was written. The row-by-row residual
+map is:
+
+- `docs/evidence/language/PMR_SCOPING_VISIBILITY_RESIDUAL_MAP_2026-07-01.md`
+
+Use that map when interpreting `partial` or `planned` statuses around
+references, qualifiers, public-name collisions, `Option Private Module`, and
+`WithEvents` handler binding. It records which subsets are already proved by
+vm3 differential plus Excel oracle evidence, which PMR rows remain broader than
+the vm3 scoping batch, and which `bd-4ktq.38` child bead owns each remaining
+truth-surface reconciliation.
