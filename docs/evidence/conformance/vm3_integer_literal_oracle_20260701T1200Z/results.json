@@ -1,0 +1,380 @@
+﻿[
+    {
+        "id":  "INTLIT-DEC-SMALL",
+        "purpose":  "Unsuffixed decimal literal within Integer range.",
+        "expression":  "7",
+        "ownedExcelPid":  41524,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "2:Integer:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-DEC-INT-MAX",
+        "purpose":  "Unsuffixed decimal literal at Integer max.",
+        "expression":  "32767",
+        "ownedExcelPid":  43248,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "2:Integer:32767",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-DEC-LONG-MIN",
+        "purpose":  "Unsuffixed decimal literal just above Integer max.",
+        "expression":  "32768",
+        "ownedExcelPid":  41936,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:Long:32768",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-DEC-LONG-MAX",
+        "purpose":  "Unsuffixed decimal literal at Long max.",
+        "expression":  "2147483647",
+        "ownedExcelPid":  38636,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:Long:2147483647",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-DEC-LONGLONG-MIN",
+        "purpose":  "Unsuffixed decimal literal just above Long max.",
+        "expression":  "2147483648",
+        "ownedExcelPid":  37940,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:Double:2147483648",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-DEC-PERCENT",
+        "purpose":  "Percent type character forces Integer.",
+        "expression":  "7%",
+        "ownedExcelPid":  43840,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "2:Integer:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-DEC-AMPERSAND",
+        "purpose":  "Ampersand type character forces Long.",
+        "expression":  "7\u0026",
+        "ownedExcelPid":  35596,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:Long:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-DEC-CARET",
+        "purpose":  "Caret type character, if accepted, forces LongLong.",
+        "expression":  "7^",
+        "ownedExcelPid":  20388,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "20:LongLong:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-HEX-INT-WIDTH",
+        "purpose":  "Hex literal with Integer-width magnitude/sign.",
+        "expression":  "\u0026HFFFF",
+        "ownedExcelPid":  38256,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "2:Integer:-1",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-HEX-LONG-WIDTH",
+        "purpose":  "Hex literal just above Integer-width magnitude.",
+        "expression":  "\u0026H10000",
+        "ownedExcelPid":  36648,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:Long:65536",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-HEX-AMPERSAND",
+        "purpose":  "Hex literal forced to Long width.",
+        "expression":  "\u0026HFFFF\u0026",
+        "ownedExcelPid":  38108,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:Long:65535",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-HEX-LONGLONG-WIDTH",
+        "purpose":  "Hex literal just above Long-width magnitude.",
+        "expression":  "\u0026H100000000",
+        "ownedExcelPid":  43688,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nSyntax error",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "RunProbe = CStr(VarType(\u0026H100000000)) \u0026 \":\" \u0026 TypeName(\u0026H100000000) \u0026 \":\" \u0026 CStr(\u0026H100000000)",
+        "selectedLine":  "RunProbe = CStr(VarType(\u0026H100000000)) \u0026 \":\" \u0026 TypeName(\u0026H100000000) \u0026 \":\" \u0026 CStr(\u0026H100000000)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  "Main.RunProbe",
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-HEX-CARET",
+        "purpose":  "Hex literal forced to LongLong width.",
+        "expression":  "\u0026HFFFFFFFFFFFFFFFF^",
+        "ownedExcelPid":  31708,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "20:LongLong:-1",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-OCT-INT-WIDTH",
+        "purpose":  "Octal literal with Integer-width magnitude/sign.",
+        "expression":  "\u0026O177777",
+        "ownedExcelPid":  35916,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "2:Integer:-1",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-OCT-LONG-WIDTH",
+        "purpose":  "Octal literal just above Integer-width magnitude.",
+        "expression":  "\u0026O200000",
+        "ownedExcelPid":  29004,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:Long:65536",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-OCT-AMPERSAND",
+        "purpose":  "Octal literal forced to Long width.",
+        "expression":  "\u0026O177777\u0026",
+        "ownedExcelPid":  35516,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "3:Long:65535",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "INTLIT-OCT-LONGLONG-WIDTH",
+        "purpose":  "Octal literal just above Long-width magnitude.",
+        "expression":  "\u0026O40000000000",
+        "ownedExcelPid":  42980,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nSyntax error",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "RunProbe = CStr(VarType(\u0026O40000000000)) \u0026 \":\" \u0026 TypeName(\u0026O40000000000) \u0026 \":\" \u0026 CStr(\u0026O40000000000)",
+        "selectedLine":  "RunProbe = CStr(VarType(\u0026O40000000000)) \u0026 \":\" \u0026 TypeName(\u0026O40000000000) \u0026 \":\" \u0026 CStr(\u0026O40000000000)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  "Main.RunProbe",
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]
