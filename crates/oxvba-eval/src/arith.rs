@@ -743,7 +743,7 @@ pub fn imp(l: &Variant, r: &Variant) -> R {
 
 pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
     if is_null(v) {
-        return Ok(Variant::null());
+        return Err(ArithError::null_use());
     }
     match target {
         // `CBool`: any non-zero numeric is `True`, zero is `False`. A `Boolean` source

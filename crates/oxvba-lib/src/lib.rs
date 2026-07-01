@@ -50,6 +50,10 @@ impl LibError {
     pub fn invalid_call(message: impl Into<String>) -> Self {
         Self::new(5, message)
     }
+    /// Run-time error 94 — Invalid use of Null.
+    pub fn invalid_use_of_null() -> Self {
+        Self::new(94, "invalid use of Null")
+    }
 }
 
 impl From<String> for LibError {
@@ -106,6 +110,9 @@ pub(crate) fn opt(args: &[Variant], index: usize) -> Option<&Variant> {
 /// directly (the `coerce_to` table has no path for them) and routes the rest
 /// (`Integer`/`Long`/`Byte`/`Boolean`/`Date`/`Empty`) through `Double`.
 pub(crate) fn as_f64(value: &Variant) -> LibResult<f64> {
+    if value.vtype() == VarType::Null {
+        return Err(LibError::invalid_use_of_null());
+    }
     if let Some(v) = value.as_f64() {
         return Ok(v); // Double
     }

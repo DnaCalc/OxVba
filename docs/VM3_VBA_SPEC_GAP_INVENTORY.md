@@ -131,7 +131,7 @@ Current-green vm3 baselines and ignored follow-on assertions live in
 
 collection-keynotfound-error-9-not-5(S) · foreach-com-failure-swallowed(M) ·
 foreach-scalar-non-object-empty(S) · lbound-ubound-unallocated-error-13(S) ·
-coerce-null-numeric-no-94(S) · hex-oct-negative-width(M) · trim-strips-all-whitespace(S) ·
+~~coerce-null-numeric-no-94(S)~~ *(DONE: bead `bd-yd6d`; vm3 scalar numeric/date coercion now raises error 94 for `Null` through `arith::coerce_numeric`, and native explicit conversion helpers preserve 94 via `LibError::invalid_use_of_null`; covered by `null_coercion_vm3` for `C*` conversions plus implicit scalar assignment)* · hex-oct-negative-width(M) · trim-strips-all-whitespace(S) ·
 string-charcode-mod256(S) · val-incomplete-parse(M; radix-prefix path done in `bd-4ktq.7`) · sqr-log-exp-nan-no-error(M) ·
 round-negative-digits-clamped(S) · vartype-typename-array-element(S) ·
 nothing-represented-as-empty(M) · weekday-ignores-firstdayofweek(S) ·

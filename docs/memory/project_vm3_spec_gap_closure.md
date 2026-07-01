@@ -431,3 +431,21 @@
   - `cargo test -p oxvba-bundle vba_library`
   - `cargo test -p oxvba-symbol unrelated_class_property_does_not_shadow_vba_left_intrinsic`
   - `cargo test -p oxvba-bind string_functions_left_mid_ucase`
+
+## 2026-07-01 - Numeric Null Coercion Error 94 (`bd-yd6d`)
+
+- Closed `coerce-null-numeric-no-94` for vm3 scalar numeric/date coercions.
+- Changed `arith::coerce_numeric` so `Null` raises run-time error 94
+  (`Invalid use of Null`) instead of returning a `Null` carrier when a
+  declared scalar assignment or explicit OxIR coercion asks for a concrete
+  numeric/date target.
+- Added `LibError::invalid_use_of_null` and taught `oxvba-lib::as_f64` to
+  preserve error 94 for native explicit conversions that route through the
+  shared numeric helper (`CBool`, `CByte`, `CInt`, `CLng`, `CLngLng`,
+  `CLngPtr`, `CSng`, `CDbl`, `CCur`, `CDate`).
+- Left the separate fixed-length-string `Null` behavior/gap untouched; this
+  bead is limited to numeric/date scalar coercion.
+- Verification target:
+  - `cargo test -p oxvba-differential --test null_coercion_vm3`
+  - `cargo test -p oxvba-eval`
+  - `cargo test -p oxvba-lib`
