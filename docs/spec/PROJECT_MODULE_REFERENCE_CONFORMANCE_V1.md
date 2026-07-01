@@ -11,11 +11,11 @@ Define executable verification lanes for Project/Module/Reference semantics and 
 
 ## 2. Suite Layers
 
-1. Parser and header layer (`oxvba-syntax` + compiler front-end)
+1. Parser and header layer (`oxvba-syntax` + symbol front-end)
 - module header attribute parsing and validation.
 - module kind grammar checks.
 
-2. Project graph and binder layer (`oxvba-compiler`)
+2. Project graph and binder layer (`oxvba-symbol` + `oxvba-bind`)
 - cross-module/project name resolution.
 - visibility and qualification diagnostics.
 - reference precedence behavior.
@@ -156,11 +156,13 @@ Current executable subset (A2):
 - project-aware legality and coverage diagnostics:
   - canonical list is generated from `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`:
     - `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md`
-  - covered by current symbol/vm3/compiler tests such as:
+  - covered by current symbol/vm3/binder tests such as:
     - `scanner_rejects_withevents_in_standard_modules`
     - `withevents_in_procedural_module_should_be_rejected`
-    - `compile_project_rejects_implements_missing_member_coverage`
-    - `compile_project_rejects_raiseevent_undeclared_event`
+    - `scanner_rejects_implements_in_standard_modules`
+    - `implements_missing_member_is_bind_error`
+    - `raise_event_outside_class_module_is_bind_error`
+    - `raise_event_undeclared_event_is_bind_error`
 - vm3 scoping/event-source checks:
   - `active_project_withevents_source_routes_to_handler`
   - `referenced_project_withevents_source_routes_to_active_project_handler`
@@ -242,12 +244,14 @@ Execution stance:
 Initial PMR lane command placeholders:
 
 ```powershell
-cargo test -p oxvba-compiler pmr_
+cargo test -p oxvba-symbol pmr_
+cargo test -p oxvba-bind pmr_
 cargo test -p oxvba-host pmr_
 cargo test -p oxvba-symbol scanner_rejects_withevents_in_standard_modules
 cargo test -p oxvba-differential --test scoping_visibility_vm3 withevents_in_procedural_module_should_be_rejected
-cargo test -p oxvba-compiler compile_project_rejects_implements_in_non_class_module
-cargo test -p oxvba-compiler compile_project_rejects_raiseevent_undeclared_event
+cargo test -p oxvba-symbol scanner_rejects_implements_in_standard_modules
+cargo test -p oxvba-bind implements_missing_member_is_bind_error
+cargo test -p oxvba-bind raise_event_
 ```
 
 And evidence collation via existing profile gate scaffolding once PMR tests land.

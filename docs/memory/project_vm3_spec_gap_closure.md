@@ -1366,3 +1366,32 @@
   - `scripts/check-governance.ps1`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-01 - Scoping PMR Terminal Reconciliation (`bd-4ktq.38.6`)
+
+- Ran the terminal reconciliation for the residual PMR scoping/visibility batch
+  after child beads `bd-4ktq.38.2` through `bd-4ktq.38.5` closed.
+- Added focused current-stack diagnostic coverage for class/event anchors that
+  still pointed at the removed `oxvba-compiler` crate:
+  `scanner_rejects_implements_in_standard_modules`,
+  `raise_event_outside_class_module_is_bind_error`, and
+  `raise_event_undeclared_event_is_bind_error`.
+- Refreshed active PMR rows and clauses for Implements/RaiseEvent adjacency:
+  `MODPROJ-024`, `MODPROJ-025`, `MODPROJ-038`, `PMR-GEN-002`,
+  `PMR-CLS-003`, `PMR-CLS-005`, `PMR-CLS-006`, and `PMR-CLS-007`.
+- Updated the fixture matrix, conformance command skeleton, class/COM evidence
+  note, divergence reproduction commands, residual map, and inventory so they
+  agree on the scoped closure and on residual owners (`DIV-0004`, `ODG-041`,
+  host/HAL, storage, startup, and broader event/COM work).
+- Verification completed:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-project load_basproj_uses_vb_name_as_semantic_identity_while_preserving_include_path`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Fresh-eyes review rechecked the active PMR/spec/evidence anchors for stale
+  compiler-era references and found no remaining accepted scoping delivery work
+  outside the closed child beads.

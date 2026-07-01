@@ -156,6 +156,14 @@ subset. Full event lifecycle, reassignment ordering, cleanup, and broader
 COM event parity remain outside this scoping batch under `DIV-0004` and event
 work.
 
+**Terminal PMR reconciliation (bd-4ktq.38.6):** the residual batch truth
+surfaces now agree: `bd-4ktq.38.2` through `bd-4ktq.38.5` are closed, the
+fixture matrix and PMR rows point to live vm3/symbol/binder anchors, and the
+remaining non-scoping residuals stay with their existing owners (`ODG-041`,
+`DIV-0004`, host/HAL, storage, startup, and broader event/COM work). The pass
+also refreshed adjacent Implements/RaiseEvent PMR anchors that still referenced
+the removed `oxvba-compiler` crate.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |
