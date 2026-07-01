@@ -986,7 +986,8 @@ impl<'a> ProcLower<'a> {
         // Bind the index arguments against the accessor's signature (its trailing
         // value parameter is supplied by the RHS, not the index list).
         let signature = self.project_property_accessor_signature(sym, kind, name)?;
-        let mut args = self.bind_proc_args(target.index_arg_list(), &signature, sym)?;
+        let mut args =
+            self.bind_property_put_proc_args(target.index_arg_list(), &signature, sym)?;
         match args.last_mut() {
             Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
             None => args.push(CoreArg::ByVal(rhs.clone())),
@@ -1028,7 +1029,7 @@ impl<'a> ProcLower<'a> {
                 ..
             }) => {
                 let signature = self.project_property_accessor_signature(sym, kind, member)?;
-                let mut args = self.bind_proc_args(arglist, &signature, sym)?;
+                let mut args = self.bind_property_put_proc_args(arglist, &signature, sym)?;
                 match args.last_mut() {
                     Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
                     None => args.push(CoreArg::ByVal(rhs.clone())),
@@ -1110,7 +1111,7 @@ impl<'a> ProcLower<'a> {
                     .symbol_display_name(sym)
                     .unwrap_or_else(|| receiver_name.to_string());
                 let signature = self.project_property_accessor_signature(sym, kind, &member)?;
-                let mut args = self.bind_proc_args(arglist, &signature, sym)?;
+                let mut args = self.bind_property_put_proc_args(arglist, &signature, sym)?;
                 match args.last_mut() {
                     Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
                     None => args.push(CoreArg::ByVal(rhs.clone())),
@@ -1278,7 +1279,7 @@ impl<'a> ProcLower<'a> {
                     ProjectMemberKind::PropertyLet,
                     &member,
                 )?;
-                let mut args = self.bind_proc_args(None, &signature, sym)?;
+                let mut args = self.bind_property_put_proc_args(None, &signature, sym)?;
                 match args.last_mut() {
                     Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
                     None => args.push(CoreArg::ByVal(rhs.clone())),
@@ -1355,6 +1356,29 @@ impl<'a> ProcLower<'a> {
         signature: &Signature,
         proc_sym: SymbolId,
     ) -> Result<Vec<CoreArg>, BindError> {
+        self.bind_proc_args_inner(arglist, signature, proc_sym, None)
+    }
+
+    pub(crate) fn bind_property_put_proc_args(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        signature: &Signature,
+        proc_sym: SymbolId,
+    ) -> Result<Vec<CoreArg>, BindError> {
+        let n = signature.params.len();
+        if n == 0 {
+            return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+        }
+        self.bind_proc_args_inner(arglist, signature, proc_sym, Some(n - 1))
+    }
+
+    fn bind_proc_args_inner(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        signature: &Signature,
+        proc_sym: SymbolId,
+        reserved_trailing_value_index: Option<usize>,
+    ) -> Result<Vec<CoreArg>, BindError> {
         let items = match arglist {
             Some(a) => a.arg_items(),
             None => Vec::new(),
@@ -1366,6 +1390,9 @@ impl<'a> ProcLower<'a> {
         // not emitted (so `args` is `fixed… ++ tail`).
         let variadic_index = signature.params.iter().position(|p| p.param_array);
         let fixed_count = variadic_index.unwrap_or(n);
+        let bindable_fixed_count = reserved_trailing_value_index
+            .filter(|&i| i < fixed_count)
+            .unwrap_or(fixed_count);
         let mut slots: Vec<Option<CoreArg>> = (0..fixed_count).map(|_| None).collect();
         let mut tail: Vec<CoreArg> = Vec::new();
         let mut pos = 0usize;
@@ -1378,13 +1405,15 @@ impl<'a> ProcLower<'a> {
                             "positional argument cannot follow named argument".into(),
                         ));
                     }
-                    if pos < fixed_count {
+                    if pos < bindable_fixed_count {
                         slots[pos] =
                             Some(self.bind_one_arg(expr, signature.params.get(pos), passing)?);
-                    } else {
-                        // Variadic-tail (ParamArray) element, or an extra positional
-                        // when there is no ParamArray — bound ByVal, no signature param.
+                    } else if variadic_index.is_some() {
+                        // Variadic-tail (ParamArray) element — bound ByVal, no
+                        // fixed signature param.
                         tail.push(self.bind_one_arg(expr, None, passing)?);
+                    } else {
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
                     pos += 1;
                 }
@@ -1394,10 +1423,12 @@ impl<'a> ProcLower<'a> {
                             "positional argument cannot follow named argument".into(),
                         ));
                     }
-                    if pos < fixed_count {
+                    if pos < bindable_fixed_count {
                         slots[pos] = Some(CoreArg::Omitted);
-                    } else {
+                    } else if variadic_index.is_some() {
                         tail.push(CoreArg::Omitted);
+                    } else {
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
                     pos += 1;
                 }
@@ -1414,7 +1445,12 @@ impl<'a> ProcLower<'a> {
                                 "named argument to a ParamArray parameter".into(),
                             ));
                         }
-                        Some(i) if i < fixed_count => {
+                        Some(i) if Some(i) == reserved_trailing_value_index => {
+                            return Err(
+                                BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment,
+                            );
+                        }
+                        Some(i) if i < bindable_fixed_count => {
                             if slots[i].is_some() {
                                 return Err(BindError::Unsupported(format!(
                                     "duplicate argument for parameter {}",
@@ -1441,16 +1477,28 @@ impl<'a> ProcLower<'a> {
         // An omitted optional slot (trailing, or an explicit `,`) binds the parameter's
         // default — its folded default expression, else the declared-type zero, else
         // `Missing` (a Variant optional with no default).
-        let mut args: Vec<CoreArg> = slots
-            .into_iter()
-            .enumerate()
-            .map(|(i, s)| match s {
-                Some(CoreArg::Omitted) | None => {
-                    self.omitted_optional_arg(proc_sym, i, &signature.params[i])
+        let mut args: Vec<CoreArg> = Vec::with_capacity(fixed_count);
+        for (i, slot) in slots.into_iter().enumerate() {
+            let param = &signature.params[i];
+            if Some(i) == reserved_trailing_value_index {
+                if slot.is_some() {
+                    return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                 }
-                Some(arg) => arg,
-            })
-            .collect();
+                args.push(CoreArg::Omitted);
+                continue;
+            }
+            match slot {
+                Some(CoreArg::Omitted) | None if !param.optional => {
+                    return Err(BindError::ArgumentNotOptional {
+                        parameter: param.name.clone(),
+                    });
+                }
+                Some(CoreArg::Omitted) | None => {
+                    args.push(self.omitted_optional_arg(proc_sym, i, param));
+                }
+                Some(arg) => args.push(arg),
+            }
+        }
         match variadic_index {
             // Box the variadic tail into one fresh 0-based array for the ParamArray
             // slot (empty tail → an empty array, UBound -1). Doing this in the binder

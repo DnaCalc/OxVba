@@ -264,7 +264,12 @@ impl<'a> ProcLower<'a> {
                 let Some(sym) = binding.symbol else {
                     return Ok(None);
                 };
-                self.project_property_accessor_signature(sym, kind, name)?;
+                let signature = self.project_property_accessor_signature(sym, kind, name)?;
+                let mut args = self.bind_property_put_proc_args(None, &signature, sym)?;
+                match args.last_mut() {
+                    Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                    None => args.push(CoreArg::ByVal(rhs.clone())),
+                }
                 let Some(proc_id) = self.g.ids.prop_accessor_of.get(&(sym, kind)).copied() else {
                     return Ok(None);
                 };
@@ -278,15 +283,14 @@ impl<'a> ProcLower<'a> {
                 {
                     return Ok(Some(vec![CoreStmt::Eval(CoreValue::Call {
                         callee: CoreCallee::VbaProc { proc: proc_id },
-                        args: vec![CoreArg::ByVal(rhs.clone())],
+                        args,
                     })]));
                 }
                 // A bare class property name is an implicit `Me.Prop`.
                 let Some(recv) = self.me_value() else {
                     return Ok(None);
                 };
-                let call =
-                    self.late_member_call(name, kind, recv, vec![CoreArg::ByVal(rhs.clone())]);
+                let call = self.late_member_call(name, kind, recv, args);
                 Ok(Some(vec![CoreStmt::Eval(call)]))
             }
             SyntaxKind::MemberExpr => {
@@ -300,14 +304,19 @@ impl<'a> ProcLower<'a> {
                     let Some(sym) = binding.symbol else {
                         return Ok(None);
                     };
-                    self.project_property_accessor_signature(sym, kind, member)?;
+                    let signature = self.project_property_accessor_signature(sym, kind, member)?;
+                    let mut args = self.bind_property_put_proc_args(None, &signature, sym)?;
+                    match args.last_mut() {
+                        Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                        None => args.push(CoreArg::ByVal(rhs.clone())),
+                    }
                     let Some(proc_id) = self.g.ids.prop_accessor_of.get(&(sym, kind)).copied()
                     else {
                         return Ok(None);
                     };
                     return Ok(Some(vec![CoreStmt::Eval(CoreValue::Call {
                         callee: CoreCallee::VbaProc { proc: proc_id },
-                        args: vec![CoreArg::ByVal(rhs.clone())],
+                        args,
                     })]));
                 }
                 let recv = self.member_receiver_bound(target)?;
@@ -332,8 +341,15 @@ impl<'a> ProcLower<'a> {
                         symbol: Some(sym),
                         ..
                     }) => {
-                        self.project_property_accessor_signature(sym, kind, member)?;
-                        setter(self, recv.value)
+                        let signature =
+                            self.project_property_accessor_signature(sym, kind, member)?;
+                        let mut args = self.bind_property_put_proc_args(None, &signature, sym)?;
+                        match args.last_mut() {
+                            Some(slot) => *slot = CoreArg::ByVal(rhs.clone()),
+                            None => args.push(CoreArg::ByVal(rhs.clone())),
+                        }
+                        let call = self.late_member_call(&dispatch, kind, recv.value, args);
+                        Ok(Some(vec![CoreStmt::Eval(call)]))
                     }
                     // A typed COM receiver's property put/set: dispatch by dispid
                     // (the same early-bound call shape as a COM method, with the RHS

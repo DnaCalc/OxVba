@@ -261,3 +261,34 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Procedure Arity Validation (`bd-4ktq.10.4`)
+
+- Closed `no-call-arity-validation`.
+- Project-procedure `bind_proc_args` now rejects extra positional arguments
+  when the callee has no `ParamArray`, instead of binding and later dropping
+  the tail.
+- Missing required fixed parameters now bind-error immediately as
+  `ArgumentNotOptional { parameter: "<name>" }`.
+- New stable diagnostics:
+  `BIND-E-WRONG-NUMBER-OF-ARGUMENTS` for the VBA-compatible
+  `Wrong number of arguments or invalid property assignment` shape, and
+  `BIND-E-ARGUMENT-NOT-OPTIONAL` for omitted required parameters.
+- Optional/default parameters and `ParamArray` calls remain accepted and
+  covered by regression tests.
+- Project property put/set calls now use a property-specific argument binder
+  that reserves the trailing RHS value parameter, for indexed and unindexed
+  assignment routes. That rejects `Prop(index, extra) = value` instead of
+  silently overwriting the extra supplied argument with the RHS, and prevents
+  `Prop = value` from satisfying an earlier required index parameter with the
+  RHS.
+- Activated the oracle-backed vm3 arity rejection tests; the call-argument
+  fixture now has 9 active tests and 0 ignored tests.
+- Golden snapshot audit: `vmr04_diag_missing_required.bas` moved from wrong
+  `ok[]` to `err(bind: ArgumentNotOptional { parameter: "target" })`, and
+  `vmr04_diag_too_many_args.bas` moved from wrong `ok[2]` to
+  `err(bind: WrongNumberOfArgumentsOrInvalidPropertyAssignment)`.
+- Verification target:
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

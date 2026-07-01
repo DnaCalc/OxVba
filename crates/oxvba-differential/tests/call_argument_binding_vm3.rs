@@ -162,7 +162,6 @@ fn byref_type_mismatch_should_be_rejected() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.10.4: extra args are still accepted/dropped today"]
 fn extra_argument_should_be_rejected() {
     assert_compile_rejected(run_call_case(
         "Public result As Variant\n\
@@ -176,7 +175,6 @@ fn extra_argument_should_be_rejected() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.10.4: missing required args still fail late today"]
 fn missing_required_argument_should_be_rejected() {
     assert_compile_rejected(run_call_case(
         "Public result As Variant\n\

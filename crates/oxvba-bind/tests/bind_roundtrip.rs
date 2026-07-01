@@ -952,6 +952,58 @@ fn positional_after_named_argument_is_bind_error() {
 }
 
 #[test]
+fn extra_argument_is_bind_error() {
+    let src = "Sub Main()\n    TakeOne 1, 2\nEnd Sub\n\nSub TakeOne(ByVal n As Long)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("WrongNumberOfArgumentsOrInvalidPropertyAssignment"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn missing_required_argument_is_bind_error() {
+    let src = "Sub Main()\n    TakeTwo 1\nEnd Sub\n\nSub TakeTwo(ByVal a As Long, ByVal b As Long)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ArgumentNotOptional") && err.contains("b"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn indexed_property_extra_argument_is_bind_error() {
+    let src = "Private mV As Long\n\nSub Main()\n    Item(1, 2) = 3\nEnd Sub\n\nProperty Let Item(ByVal i As Long, ByVal v As Long)\n    mV = v\nEnd Property\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("WrongNumberOfArgumentsOrInvalidPropertyAssignment"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn indexed_property_missing_required_index_is_bind_error() {
+    let src = "Private mV As Long\n\nSub Main()\n    Item = 3\nEnd Sub\n\nProperty Let Item(ByVal i As Long, ByVal v As Long)\n    mV = v\nEnd Property\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ArgumentNotOptional") && err.contains("i"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn omitted_optional_argument_still_uses_default() {
+    let src = "Sub Main()\n    Dim r As Long\n    r = AddOpt(5)\nEnd Sub\n\nFunction AddOpt(ByVal n As Long, Optional ByVal bonus As Long = 7) As Long\n    AddOpt = n + bonus\nEnd Function\n";
+    assert_eq!(run_main_local0(src), Some(12.0));
+}
+
+#[test]
+fn paramarray_still_accepts_extra_arguments() {
+    let src = "Sub Main()\n    Dim r As Long\n    r = SumAll(1, 2, 3)\nEnd Sub\n\nFunction SumAll(ParamArray xs() As Variant) As Long\n    Dim i As Long\n    For i = LBound(xs) To UBound(xs)\n        SumAll = SumAll + CLng(xs(i))\n    Next i\nEnd Function\n";
+    assert_eq!(run_main_local0(src), Some(6.0));
+}
+
+#[test]
 fn duplicate_label_in_one_procedure_is_bind_error() {
     // Two `done:` labels in one `Sub` — a VBA compile error ("Duplicate declaration
     // in current scope"). The binder must reject it (vm2 used to run it leniently).

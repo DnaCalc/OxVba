@@ -27,6 +27,12 @@ pub enum BindError {
     /// A ByRef argument l-value has a different declared type than its parameter.
     #[error("ByRef argument type mismatch: expected {expected}, got {actual}")]
     ByRefTypeMismatch { expected: String, actual: String },
+    /// Too many arguments were supplied for a procedure/property call.
+    #[error("Wrong number of arguments or invalid property assignment")]
+    WrongNumberOfArgumentsOrInvalidPropertyAssignment,
+    /// A required argument was omitted.
+    #[error("Argument not optional: {parameter}")]
+    ArgumentNotOptional { parameter: String },
     /// A line label is defined more than once within a single procedure — a VBA
     /// compile error ("Duplicate declaration in current scope"). Label scope is
     /// per-procedure, so the same name in a different procedure is fine.
@@ -86,6 +92,18 @@ impl BindError {
             .with_help(
                 "Pass a variable with the exact declared type, or parenthesize the argument to pass a coerced temporary.",
             ),
+            BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment => Diagnostic::error(
+                "BIND-E-WRONG-NUMBER-OF-ARGUMENTS",
+                DiagnosticPhase::Bind,
+                "Wrong number of arguments or invalid property assignment",
+            )
+            .with_help("Check the procedure signature and supplied argument list."),
+            BindError::ArgumentNotOptional { parameter } => Diagnostic::error(
+                "BIND-E-ARGUMENT-NOT-OPTIONAL",
+                DiagnosticPhase::Bind,
+                format!("Argument not optional: {parameter}"),
+            )
+            .with_help("Supply the required argument, or mark the parameter Optional."),
             BindError::DuplicateLabel { name } => Diagnostic::error(
                 "BIND-E-DUPLICATE-LABEL",
                 DiagnosticPhase::Bind,
@@ -161,5 +179,27 @@ mod tests {
                 .message
                 .contains("ByRef argument type mismatch: expected Long, got Integer")
         );
+    }
+
+    #[test]
+    fn wrong_number_of_arguments_has_stable_code() {
+        let diagnostic =
+            BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment.to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "BIND-E-WRONG-NUMBER-OF-ARGUMENTS");
+        assert!(
+            diagnostic
+                .message
+                .contains("Wrong number of arguments or invalid property assignment")
+        );
+    }
+
+    #[test]
+    fn argument_not_optional_has_stable_code() {
+        let diagnostic = BindError::ArgumentNotOptional {
+            parameter: "b".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "BIND-E-ARGUMENT-NOT-OPTIONAL");
+        assert!(diagnostic.message.contains("Argument not optional: b"));
     }
 }
