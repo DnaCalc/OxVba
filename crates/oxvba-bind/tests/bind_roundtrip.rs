@@ -1927,6 +1927,38 @@ fn withevents_raise_event_routes_to_handler() {
 }
 
 #[test]
+fn raise_event_outside_class_module_is_bind_error() {
+    let err = bind_error("Sub Main()\n    RaiseEvent Tick\nEnd Sub\n");
+    assert!(
+        err.contains("RaiseEvent outside a class module"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn raise_event_undeclared_event_is_bind_error() {
+    let err = format!(
+        "{:?}",
+        bind_program(
+            &multi_manifest(&[
+                ("Main", ModuleKind::Procedural, "Sub Main()\nEnd Sub\n"),
+                (
+                    "Emitter",
+                    ModuleKind::Class,
+                    "Public Sub Fire()\n    RaiseEvent Tick\nEnd Sub\n",
+                ),
+            ]),
+            &NullTypeLibs,
+        )
+        .expect_err("undeclared RaiseEvent target should fail binding")
+    );
+    assert!(
+        err.to_ascii_lowercase().contains("tick"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn two_sink_classes_same_source_event_route_independently() {
     // Two DISTINCT sink classes each `WithEvents Watched As Source` with their own
     // `Watched_Fired` handler. A single `RaiseEvent Fired` on the shared source must

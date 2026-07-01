@@ -300,6 +300,11 @@ impl ScanCtx<'_> {
                 if let Some(type_ref) = node.child_node(SyntaxKind::TypeRef) {
                     let name = type_ref.text().trim().to_string();
                     if !name.is_empty() {
+                        if self.module_kind == ModuleKind::Procedural {
+                            return Err(SymbolModelError::ImplementsNotValidInStandardModule {
+                                name,
+                            });
+                        }
                         self.scan.implements.push(name);
                     }
                 }
@@ -1565,6 +1570,22 @@ mod tests {
         assert_eq!(
             err.to_diagnostic().code.as_str(),
             "SYM-E-WITHEVENTS-ONLY-VALID-IN-OBJECT-MODULE"
+        );
+    }
+
+    #[test]
+    fn scanner_rejects_implements_in_standard_modules() {
+        let err = scan_members_for_kind(ModuleKind::Procedural, "Implements IFoo\n")
+            .expect_err("standard module Implements should be rejected");
+        assert_eq!(
+            err,
+            SymbolModelError::ImplementsNotValidInStandardModule {
+                name: "IFoo".to_string()
+            }
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-IMPLEMENTS-ONLY-VALID-IN-OBJECT-MODULE"
         );
     }
 
