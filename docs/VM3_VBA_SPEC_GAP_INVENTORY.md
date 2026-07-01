@@ -48,9 +48,13 @@ dep); (3) the 7 DONE items (redim-fixed-array-reject, redim-preserve-{multidim-c
 no-dimension-guard}, redim-multidim-count-overflow, erase-fixed-array-in-variant-element-type,
 isdate-always-false, datevalue-cdate-of-date-raises-13) are struck from the actionable head, so
 the remaining user-named work (AddressOf, GetObject) + the 3 Critical file-I/O bugs lead.
-**Residual risk:** no multi-module/multi-project differential fixtures were built, so other
-cross-module resolution edges (WithEvents source visibility, Public Const cross-module collision)
-may remain unexamined.
+**Former residual risk:** the original critique noted that no multi-module or
+multi-project differential fixtures existed yet. That follow-up surface is now
+closed by `bd-4ktq.36.1` through `bd-4ktq.36.7`: active vm3 coverage includes
+Public Const/variable ambiguity, Public UDT/Enum ambiguity, referenced
+`Option Private Module` hiding, reference precedence and qualifiers, duplicate
+referenced globals, and `WithEvents` source visibility/handler-prefix binding.
+Broader PMR rows still marked partial remain broader than this scoping batch.
 
 **Scoping fixture baseline (bd-4ktq.9.1):** live Excel/VBA oracle evidence for the
 multi-module visibility batch is captured in
@@ -108,6 +112,12 @@ referenced event source classes remain inaccessible across project boundaries
 both at declaration time and at construction/member-use sites. Broader event
 graph ordering and reassignment semantics remain tracked outside this scoping
 batch.
+
+**Scoping follow-up terminal reconciliation (bd-4ktq.36.7):** the follow-up
+batch truth surfaces agree: `scoping_visibility_vm3` has 34 active fixtures and
+no ignored follow-on rows for the scoped batch, all delivery beads
+`bd-4ktq.36.1` through `bd-4ktq.36.6` are closed, and PMR partial statuses are
+kept only where the PMR row is intentionally broader than this batch.
 
 ### Critic-added gaps (15)
 

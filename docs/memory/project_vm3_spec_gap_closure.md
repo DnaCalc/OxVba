@@ -206,9 +206,9 @@
   reference calls, Public Const/variable ambiguity, referenced Option Private
   hiding, reference precedence/project qualifier behavior, and a synthetic
   referenced-project WithEvents source route.
-- The Public UDT/Public Enum collision fixture remains the follow-on target for
-  `bd-4ktq.36.3`: live Excel rejects it as `Ambiguous name detected: Payload`,
-  while vm3 currently accepts the row at this evidence point.
+- At this evidence point the Public UDT/Public Enum collision fixture remained
+  the follow-on target for `bd-4ktq.36.3`; that subset is now closed by the
+  later `bd-4ktq.36.3` entry below.
 - Verification target:
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
@@ -352,6 +352,26 @@
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
+
+## 2026-07-01 - Scoping Follow-up Terminal Reconciliation (`bd-4ktq.36.7`)
+
+- Reconciled the follow-up scoping/visibility batch after delivery beads
+  `bd-4ktq.36.1` through `bd-4ktq.36.6` closed.
+- `crates/oxvba-differential/tests/scoping_visibility_vm3.rs` now has 34 active
+  fixtures and no ignored follow-on rows for the scoped batch.
+- Updated the inventory critique addendum so the old "no multi-module /
+  multi-project fixtures" residual risk is explicitly superseded by the closed
+  follow-up batch.
+- Confirmed PMR partial statuses remain intentionally broader than the scoped
+  batch where they still cover unclosed project/module/library, reference, or
+  event-graph semantics.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `git diff --check`
+  - `br dep cycles --json`
 
 ## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
 
