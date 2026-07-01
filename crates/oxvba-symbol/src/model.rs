@@ -67,12 +67,12 @@ pub enum SymbolKind {
     ComEvent,
 }
 
-/// The declared visibility of a module-level member, governing **cross-project**
-/// (COM export-surface) exposure. Within its own project a member is always
-/// resolvable; only `Public` crosses the project boundary — `Private`/`Friend`
-/// (and any member of an `Option Private Module` module) do not. VBA's default
-/// differs by declaration kind, so it is computed at scan time (see
-/// `scanner::decl_visibility`), not assumed here.
+/// The declared visibility of a module-level member. `Public` participates in
+/// project-level unqualified and module-qualified lookup; `Private` stays in the
+/// declaring module's source scope; `Friend` is class/internal visibility and is
+/// not exported across a project boundary. VBA's default differs by declaration
+/// kind, so it is computed at scan time (see `scanner::decl_visibility`), not
+/// assumed here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Visibility {
     Public,

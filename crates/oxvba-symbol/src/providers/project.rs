@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use oxvba_bundle::ProjectMemberKind;
 
 use crate::binding::{Binding, DispatchRoute};
-use crate::model::{SymbolId, SymbolKind, fold_identifier};
+use crate::model::{fold_identifier, SymbolId, SymbolKind, Visibility};
 use crate::provider::Provider;
 use crate::scanner::ModuleScan;
 use crate::signature::VarTypeRef;
@@ -17,6 +17,7 @@ use crate::signature::VarTypeRef;
 struct MemberEntry {
     symbol: SymbolId,
     kind: SymbolKind,
+    visibility: Visibility,
 }
 
 #[derive(Default)]
@@ -45,12 +46,13 @@ impl ProjectProvider {
                 let entry = MemberEntry {
                     symbol: member.symbol,
                     kind: member.kind,
+                    visibility: member.visibility,
                 };
                 module_entry
                     .entry(member.name_folded.clone())
                     .or_default()
                     .push(entry);
-                if scan.exposes_unqualified_members && is_public_member(member.kind) {
+                if scan.exposes_unqualified_members && is_project_public_member(entry) {
                     provider
                         .public
                         .entry(member.name_folded.clone())
@@ -81,8 +83,8 @@ impl ProjectProvider {
     pub fn resolve_qualified(&self, parts: &[&str]) -> Option<Binding> {
         match parts {
             [member] => self.resolve(member),
-            [owner, member] => self.resolve_owner_member(owner, member),
-            [_project, owner, member] => self.resolve_owner_member(owner, member),
+            [owner, member] => self.resolve_public_owner_member(owner, member),
+            [_project, owner, member] => self.resolve_public_owner_member(owner, member),
             _ => None,
         }
     }
@@ -96,6 +98,21 @@ impl ProjectProvider {
             .and_then(|module| module.get(&member))
             .or_else(|| self.enums.get(&owner).and_then(|enum_| enum_.get(&member)))?;
         candidates.first().map(|entry| binding_for(*entry))
+    }
+
+    fn resolve_public_owner_member(&self, owner: &str, member: &str) -> Option<Binding> {
+        let owner = fold_identifier(owner);
+        let member = fold_identifier(member);
+        let candidates = self
+            .modules
+            .get(&owner)
+            .and_then(|module| module.get(&member))
+            .or_else(|| self.enums.get(&owner).and_then(|enum_| enum_.get(&member)))?;
+        candidates
+            .iter()
+            .copied()
+            .find(|entry| is_project_public_member(*entry))
+            .map(binding_for)
     }
 }
 
@@ -133,7 +150,11 @@ impl Provider for ProjectProvider {
     }
 }
 
-fn is_public_member(kind: SymbolKind) -> bool {
+fn is_project_public_member(entry: MemberEntry) -> bool {
+    entry.visibility == Visibility::Public && is_public_member_kind(entry.kind)
+}
+
+fn is_public_member_kind(kind: SymbolKind) -> bool {
     matches!(
         kind,
         SymbolKind::Procedure

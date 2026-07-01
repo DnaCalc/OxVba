@@ -57,3 +57,24 @@
 - Verification passed:
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Private Module Visibility (`bd-4ktq.9.2`)
+
+- Closed `intra-project-private-not-enforced` for same-project standard-module
+  leakage.
+- `ProjectProvider::MemberEntry` now carries scanner-owned `Visibility`.
+  Project-level unqualified lookup only publishes `Public` members, and
+  `Module.Member` / `Project.Module.Member` qualified lookup uses a public-only
+  owner-member resolver. The existing all-member owner resolver remains for
+  typed member paths so class/internal member mechanics are not broadly
+  rewritten in this bead.
+- Same-module `Private` access remains valid through the source scope chain,
+  which is consulted before provider lookup.
+- Flipped on the oracle-backed scoping fixture assertions for:
+  - cross-module unqualified `Private` -> rejected,
+  - cross-module `Module.PrivateMember` -> rejected.
+- Verification passed:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

@@ -6,7 +6,7 @@
 //! oracle-backed gaps that the follow-on scoping beads are expected to unignore
 //! and satisfy as each resolver diagnostic is implemented.
 
-use oxvba_differential::{Canon, Executor, RunOutcome, canon, run_modules};
+use oxvba_differential::{canon, run_modules, Canon, Executor, RunOutcome};
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
 
@@ -126,7 +126,6 @@ fn class_friend_member_matches_oracle() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.9.2: Private cross-module unqualified lookup still resolves today"]
 fn private_cross_module_unqualified_should_be_rejected() {
     assert_compile_rejected(run_scoping_case(&[
         (
@@ -143,7 +142,6 @@ fn private_cross_module_unqualified_should_be_rejected() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.9.2: Private Module.Member lookup still resolves today"]
 fn private_cross_module_qualified_should_be_rejected() {
     assert_compile_rejected(run_scoping_case(&[
         (
