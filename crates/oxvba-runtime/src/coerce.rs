@@ -19,6 +19,79 @@ pub fn parse_bool_text(text: &str) -> Option<bool> {
     }
 }
 
+/// Parse the full VBA numeric-string grammar used by explicit conversions and
+/// implicit arithmetic coercion. This intentionally differs from Rust's
+/// `f64::parse`: VBA accepts Automation radix strings (`&HFF`, `&O17`) and rejects
+/// Rust-only spellings such as `NaN`/`inf`.
+pub fn parse_vba_numeric_string(s: &str) -> Option<f64> {
+    let t = s.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(value) = parse_vba_prefixed_integer(t) {
+        return Some(value as f64);
+    }
+    if matches!(t.as_bytes()[0], b'+' | b'-' | b'.' | b'0'..=b'9') {
+        return t.parse::<f64>().ok().filter(|value| value.is_finite());
+    }
+    None
+}
+
+fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
+    let (value, rest) = parse_vba_prefixed_integer_token(t)?;
+    if rest.trim().is_empty() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn parse_vba_prefixed_integer_token(t: &str) -> Option<(i64, &str)> {
+    let bytes = t.as_bytes();
+    let mut pos = 0;
+    let (sign, rest) = if let Some(rest) = t.strip_prefix('-') {
+        pos = 1;
+        (-1_i64, rest)
+    } else if let Some(rest) = t.strip_prefix('+') {
+        pos = 1;
+        (1_i64, rest)
+    } else {
+        (1_i64, t)
+    };
+
+    rest.strip_prefix('&')?;
+    pos += 1;
+    let (radix, digit_start) = match bytes.get(pos) {
+        Some(b'H' | b'h') => (16, pos + 1),
+        Some(b'O' | b'o') => (8, pos + 1),
+        _ => (8, pos),
+    };
+    pos = digit_start;
+
+    let start = pos;
+    while let Some(&byte) = bytes.get(pos) {
+        let is_digit = match radix {
+            16 => byte.is_ascii_hexdigit(),
+            8 => (b'0'..=b'7').contains(&byte),
+            _ => false,
+        };
+        if !is_digit {
+            break;
+        }
+        pos += 1;
+    }
+    if start == pos {
+        return None;
+    }
+    let digits = &t[start..pos];
+    if matches!(bytes.get(pos), Some(b'&')) {
+        pos += 1;
+    }
+
+    let parsed = i64::from_str_radix(digits, radix).ok()?;
+    Some((parsed.saturating_mul(sign), &t[pos..]))
+}
+
 pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
     if value.vtype() == target {
         return Ok(value.clone());

@@ -1466,3 +1466,47 @@
   graph, and memory entry. No unsupported completion language or untracked
   accepted date/time residual remained; the only out-of-scope issue found is
   tracked as `bd-1a2x`.
+
+## 2026-07-01 - Numeric/String Coercion Residuals (`bd-4ktq.39.4`)
+
+- Closed the scoped numeric/string residual rows:
+  `cstar-null-error-13-not-94`, `empty-plus-numeric-promotes-double`,
+  `empty-plus-string-type-mismatch`, `pow-negative-base-fractional-nan`,
+  `numeric-string-parse-rust-f64`, `left-right-mid-index-by-char`,
+  `sgn-nan-double`, and `strconv-byte-modes-passthrough`.
+- Runtime now owns a shared full VBA numeric-string parser used by both
+  explicit conversions and implicit arithmetic string coercion. This rejects
+  Rust-only `NaN`/`inf` spellings while preserving VBA numeric/radix strings.
+- Variant-regime `Empty + numeric` now returns a Double carrier, while
+  `Empty + String` raises Type mismatch 13. Ordinary non-empty numeric-string
+  arithmetic remains allowed.
+- Exponentiation now raises error 5 when `powf` would produce NaN, closing the
+  negative-base/fractional-exponent leak. `Sgn` now also rejects a host-supplied
+  NaN Double with error 5 instead of returning zero.
+- `CStr(Null)` and string store coercion now preserve error 94. Existing
+  unsuffixed string-function Null propagation and `$` alias error behavior
+  remain covered by the older null-string vm3 tests.
+- `Left`/`Right`/`Mid` and statement-form `Mid` now slice/splice UTF-16 code
+  units instead of Rust scalar chars, preserving lone surrogate halves.
+- `StrConv(..., vbFromUnicode)` returns a typed Byte SAFEARRAY through the shared
+  ANSI codec, and `StrConv(byteArray, vbUnicode)` decodes Byte arrays back to
+  strings. This follows the documented VBA byte-array conversion shape while
+  keeping East Asian width/kana modes as the existing locale boundary.
+- Verification completed:
+  - `cargo test -p oxvba-differential --test numeric_string_coercion_residuals_vm3`
+  - `cargo test -p oxvba-lib sgn_rejects_nan_double`
+  - `cargo test -p oxvba-eval`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-differential --test null_coercion_vm3 --test null_string_fns_vm3 --test abs_int_fix_sgn_vm3 --test mid_start_vm3 --test val_incomplete_parse_vm3 --test math_domain_errors_vm3 --test array_introspection_vm3`
+  - `cargo test -p oxvba-runtime coerce`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `rustfmt --edition 2024 --check` on touched runtime/eval/lib/vm3 test files
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Fresh-eyes review re-read the runtime parser move, eval operator changes,
+  library string/StrConv changes, vm3 tests, inventory wording, memory evidence,
+  and bead graph. The review caught and fixed two issues before closure: `Mid`
+  slicing now uses saturating/checked index arithmetic for huge counts, and
+  `StrConv(..., vbUnicode)` preserves string-input behavior while adding Byte
+  array decoding. No remaining scoped numeric/string residual is open.

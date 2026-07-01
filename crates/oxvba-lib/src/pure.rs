@@ -11,7 +11,7 @@ use crate::{
 };
 use oxvba_runtime::{
     Decimal96, Variant,
-    safe_array::{SafeArray, VT_VARIANT_VALUE},
+    safe_array::{SafeArray, VT_UI1_VALUE, VT_VARIANT_VALUE},
     variant::VarType,
 };
 // The VBA serial ↔ civil calendar math is canonical in `oxvba_runtime::vba_date`; re-export it
@@ -35,10 +35,6 @@ pub fn len(args: &[Variant]) -> LibResult<Variant> {
         None => as_str(value)?.encode_utf16().count(),
     };
     Ok(vi32(units as i32))
-}
-
-fn chars(s: &str) -> Vec<char> {
-    s.chars().collect()
 }
 
 /// Optional trailing compare-mode argument: 0 = binary (default), 1 = text. The
@@ -86,6 +82,13 @@ fn compare_units(value: &Variant) -> LibResult<Vec<u16>> {
     }
 }
 
+fn string_units(value: &Variant) -> LibResult<Vec<u16>> {
+    match value.string_units() {
+        Some(units) => Ok(units),
+        None => Ok(as_str(value)?.encode_utf16().collect()),
+    }
+}
+
 /// Case-fold UTF-16 code units the same way [`norm_compare`] folds a `String` — ASCII A–Z
 /// only — but at the code-unit level so surrogate halves survive. Binary mode is verbatim.
 fn norm_compare_units(units: Vec<u16>, text: bool) -> Vec<u16> {
@@ -106,49 +109,52 @@ fn norm_compare_units(units: Vec<u16>, text: bool) -> Vec<u16> {
 }
 
 pub fn left(args: &[Variant]) -> LibResult<Variant> {
-    let s = as_str(need(args, 0)?)?;
+    let units = string_units(need(args, 0)?)?;
     let n = as_usize(need(args, 1)?)?;
-    Ok(vstr(chars(&s).into_iter().take(n).collect::<String>()))
+    Ok(Variant::from_utf16_units(&units[..n.min(units.len())]))
 }
 
 pub fn right(args: &[Variant]) -> LibResult<Variant> {
-    let s = as_str(need(args, 0)?)?;
-    let c = chars(&s);
-    let n = as_usize(need(args, 1)?)?.min(c.len());
-    Ok(vstr(c[c.len() - n..].iter().collect::<String>()))
+    let units = string_units(need(args, 0)?)?;
+    let n = as_usize(need(args, 1)?)?.min(units.len());
+    Ok(Variant::from_utf16_units(&units[units.len() - n..]))
 }
 
 pub fn mid(args: &[Variant]) -> LibResult<Variant> {
-    let s = as_str(need(args, 0)?)?;
+    let units = string_units(need(args, 0)?)?;
     let start = one_based_mid_start(need(args, 1)?)?;
-    let c = chars(&s);
-    let from = (start - 1).min(c.len());
+    let from = (start - 1).min(units.len());
     let take = match opt(args, 2) {
         Some(v) => as_usize(v)?,
-        None => c.len() - from,
+        None => units.len() - from,
     };
-    Ok(vstr(c[from..].iter().take(take).collect::<String>()))
+    let to = from.saturating_add(take).min(units.len());
+    Ok(Variant::from_utf16_units(&units[from..to]))
 }
 
 /// `Mid(s, start, [count]) = value` — returns the spliced string (the VM stores
 /// it back into the target slot).
 pub fn mid_stmt(args: &[Variant]) -> LibResult<Variant> {
-    let mut c = chars(&as_str(need(args, 0)?)?);
+    let mut units = string_units(need(args, 0)?)?;
     let start = one_based_mid_start(need(args, 1)?)? - 1;
     // args = [target, start, value] or [target, start, count, value]
     let (count, value) = if args.len() >= 4 {
-        (Some(as_usize(need(args, 2)?)?), as_str(need(args, 3)?)?)
+        (
+            Some(as_usize(need(args, 2)?)?),
+            string_units(need(args, 3)?)?,
+        )
     } else {
-        (None, as_str(need(args, 2)?)?)
+        (None, string_units(need(args, 2)?)?)
     };
-    let repl: Vec<char> = value.chars().collect();
-    let limit = count.unwrap_or(repl.len()).min(repl.len());
-    for (i, ch) in repl.into_iter().take(limit).enumerate() {
-        if start + i < c.len() {
-            c[start + i] = ch;
+    let limit = count.unwrap_or(value.len()).min(value.len());
+    for (i, unit) in value.into_iter().take(limit).enumerate() {
+        if let Some(index) = start.checked_add(i)
+            && index < units.len()
+        {
+            units[index] = unit;
         }
     }
-    Ok(vstr(c.into_iter().collect::<String>()))
+    Ok(Variant::from_utf16_units(&units))
 }
 
 fn one_based_mid_start(value: &Variant) -> LibResult<usize> {
@@ -620,16 +626,54 @@ pub fn str_reverse(args: &[Variant]) -> LibResult<Variant> {
     ))
 }
 
-/// FIDELITY: handles vbUpperCase/vbLowerCase/vbProperCase; other modes pass through.
+/// FIDELITY: handles case modes plus the deterministic ANSI byte conversion modes
+/// through the shared runtime ANSI codec. East Asian width/kana modes still pass
+/// through outside relevant locales.
 pub fn str_conv(args: &[Variant]) -> LibResult<Variant> {
-    let s = as_str(need(args, 0)?)?;
     let mode = as_i32(need(args, 1)?)?;
-    Ok(vstr(match mode {
-        1 => s.to_uppercase(),
-        2 => s.to_lowercase(),
-        3 => proper_case(&s),
+    const VB_UPPER_CASE: i32 = 1;
+    const VB_LOWER_CASE: i32 = 2;
+    const VB_PROPER_CASE: i32 = 3;
+    const VB_UNICODE: i32 = 64;
+    const VB_FROM_UNICODE: i32 = 128;
+
+    if mode & VB_UNICODE != 0 && mode & VB_FROM_UNICODE != 0 {
+        return Err(LibError::invalid_call(
+            "vbUnicode and vbFromUnicode are mutually exclusive",
+        ));
+    }
+
+    let mut s = if mode & VB_UNICODE != 0 {
+        let input = need(args, 0)?;
+        if let Some(array) = input.as_safearray() {
+            let bytes = array_bytes(&array)?;
+            oxvba_runtime::ansi::ansi_decode(&bytes)
+        } else {
+            let text = as_str(input)?;
+            oxvba_runtime::ansi::ansi_decode(&oxvba_runtime::ansi::ansi_encode(&text))
+        }
+    } else {
+        as_str(need(args, 0)?)?
+    };
+
+    s = match mode & VB_PROPER_CASE {
+        VB_UPPER_CASE => s.to_uppercase(),
+        VB_LOWER_CASE => s.to_lowercase(),
+        VB_PROPER_CASE => proper_case(&s),
         _ => s,
-    }))
+    };
+
+    if mode & VB_FROM_UNICODE != 0 {
+        let bytes = oxvba_runtime::ansi::ansi_encode(&s)
+            .into_iter()
+            .map(Variant::from_u8)
+            .collect();
+        let array =
+            SafeArray::from_typed_variants(VT_UI1_VALUE, bytes).map_err(LibError::type_mismatch)?;
+        return Ok(Variant::from_safearray(array));
+    }
+
+    Ok(vstr(s))
 }
 
 fn proper_case(s: &str) -> String {
@@ -643,6 +687,19 @@ fn proper_case(s: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn array_bytes(array: &SafeArray) -> LibResult<Vec<u8>> {
+    array
+        .variant_elements()
+        .ok_or_else(|| LibError::type_mismatch("expected Byte array"))?
+        .into_iter()
+        .map(|value| {
+            value
+                .as_u8()
+                .ok_or_else(|| LibError::type_mismatch("expected Byte array"))
+        })
+        .collect()
 }
 
 /// `Format(expr, [mask])` — delegates to the [`crate::format`] engine (named
@@ -815,6 +872,9 @@ pub fn sgn(args: &[Variant]) -> LibResult<Variant> {
         return Err(LibError::new(94, "invalid use of Null"));
     }
     let x = conv_f64(v)?;
+    if x.is_nan() {
+        return Err(LibError::invalid_call("Sgn argument must not be NaN"));
+    }
     let s: i16 = if x > 0.0 {
         1
     } else if x < 0.0 {
@@ -2576,21 +2636,7 @@ fn is_numeric_string(s: &str) -> bool {
 }
 
 fn parse_vba_numeric_string(s: &str) -> Option<f64> {
-    let t = s.trim();
-    if t.is_empty() {
-        return None;
-    }
-    if let Some(value) = parse_vba_prefixed_integer(t) {
-        return Some(value as f64);
-    }
-    // Decimal / sign / exponent. Require the first significant byte to be a
-    // sign/dot/digit so we reject Rust's "inf"/"nan"/"infinity" (which start with a
-    // letter) that VBA does not treat as numeric, while still accepting "42", "+1.5",
-    // ".5", "-3", "1.5e3", "1E3".
-    if matches!(t.as_bytes()[0], b'+' | b'-' | b'.' | b'0'..=b'9') {
-        return t.parse::<f64>().ok().filter(|value| value.is_finite());
-    }
-    None
+    oxvba_runtime::coerce::parse_vba_numeric_string(s)
 }
 
 fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
@@ -2794,6 +2840,11 @@ mod tests {
         assert_eq!(val_("1 2"), 12.0);
         assert_eq!(val_("- .5"), -0.5);
         assert_eq!(val_("$1"), 0.0);
+    }
+
+    #[test]
+    fn sgn_rejects_nan_double() {
+        assert_eq!(sgn(&[Variant::from_f64(f64::NAN)]).unwrap_err().code, 5);
     }
 
     #[test]

@@ -12,7 +12,11 @@
 
 use oxvba_bundle::{NumericCoerceTarget, NumericMode, StringCompareMode};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{arithmetic as rt, coerce::coerce_to, variant_to_vba_string, Variant};
+use oxvba_runtime::{
+    Variant, arithmetic as rt,
+    coerce::{coerce_to, parse_vba_numeric_string},
+    variant_to_vba_string,
+};
 
 const CURRENCY_SCALE: i128 = 10_000;
 const CURRENCY_MIN: i128 = i64::MIN as i128;
@@ -42,6 +46,12 @@ impl ArithError {
         Self {
             code: 13,
             message: "Type mismatch".into(),
+        }
+    }
+    pub fn invalid_call() -> Self {
+        Self {
+            code: 5,
+            message: "Invalid procedure call or argument".into(),
         }
     }
     pub fn null_use() -> Self {
@@ -145,10 +155,9 @@ pub fn num(v: &Variant) -> Result<f64, ArithError> {
         } else {
             0.0
         }),
-        VarType::String => as_string(v)
-            .trim()
-            .parse::<f64>()
-            .map_err(|_| ArithError::type_mismatch()),
+        VarType::String => {
+            parse_vba_numeric_string(&as_string(v)).ok_or_else(ArithError::type_mismatch)
+        }
         _ => read_f64(v),
     }
 }
@@ -424,11 +433,7 @@ fn div_round_ties_even(numerator: i128, denominator: i128) -> i128 {
         } else {
             quotient
         };
-    if negative {
-        -rounded
-    } else {
-        rounded
-    }
+    if negative { -rounded } else { rounded }
 }
 
 fn currency_mul(l: &Variant, r: &Variant) -> R {
@@ -472,6 +477,17 @@ fn widening_add(l: &Variant, r: &Variant) -> R {
         let mut units = concat_units(l);
         units.extend(concat_units(r));
         return Ok(Variant::from_utf16_units(&units));
+    }
+    if l.vtype() == VarType::Empty || r.vtype() == VarType::Empty {
+        if l.vtype() == VarType::String || r.vtype() == VarType::String {
+            return Err(ArithError::type_mismatch());
+        }
+        let raw = Variant::from_f64(num(l)? + num(r)?);
+        return Ok(if is_date(l) || is_date(r) {
+            as_date(raw)
+        } else {
+            raw
+        });
     }
     let raw = if l.vtype() == VarType::String || r.vtype() == VarType::String {
         Variant::from_f64(num(l)? + num(r)?)
@@ -541,7 +557,14 @@ pub fn div(l: &Variant, r: &Variant) -> R {
     })
 }
 pub fn pow(l: &Variant, r: &Variant) -> R {
-    numeric(l, r, |a, b| Ok(Variant::from_f64(a.powf(b))))
+    numeric(l, r, |a, b| {
+        let value = a.powf(b);
+        if value.is_nan() {
+            Err(ArithError::invalid_call())
+        } else {
+            Ok(Variant::from_f64(value))
+        }
+    })
 }
 
 /// The operand's UTF-16 code units for concatenation: a String Variant's units are
@@ -856,6 +879,9 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
 }
 
 pub fn coerce_string(v: &Variant) -> R {
+    if is_null(v) {
+        return Err(ArithError::null_use());
+    }
     coerce_to(v, VarType::String).map_err(ArithError::from)
 }
 

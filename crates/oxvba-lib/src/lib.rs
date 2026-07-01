@@ -178,6 +178,9 @@ pub(crate) fn alloc_count(value: &Variant) -> LibResult<usize> {
 }
 
 pub(crate) fn as_str(value: &Variant) -> LibResult<String> {
+    if value.vtype() == VarType::Null {
+        return Err(LibError::invalid_use_of_null());
+    }
     Ok(variant_to_vba_string(value)?.as_str())
 }
 
