@@ -309,3 +309,35 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Integer Literal Carrier Truth Surface (`bd-4ktq.11.1`)
+
+- Created the truth surface for `integer-literal-surfaces-as-long`.
+- Added the modal-safe Excel/VBA oracle runner
+  `scripts/run-vm3-integer-literal-oracle.ps1`.
+- Captured live Excel/VBA 7.1 evidence in
+  `docs/evidence/conformance/vm3_integer_literal_oracle_20260701T1200Z/`.
+  The runner makes VBE visible, invokes Debug -> Compile VBAProject using
+  command ID 578, captures compile dialogs and selected code lines with
+  PID-scoped UI Automation, dismisses only owned dialogs, and cleans up only
+  the owned Excel PID.
+- Oracle observations:
+  - unsuffixed decimal `7` and `32767` are `2:Integer`;
+  - `32768`, `2147483647`, and `7&` are `3:Long`;
+  - unsuffixed decimal `2147483648` is `5:Double`;
+  - `7%` is `2:Integer`, and `7^` is `20:LongLong`;
+  - `&HFFFF` and `&O177777` are `2:Integer:-1`;
+  - `&H10000`, `&HFFFF&`, `&O200000`, and `&O177777&` are Long-width rows;
+  - `&HFFFFFFFFFFFFFFFF^` is `20:LongLong:-1`;
+  - unsuffixed `&H100000000` and `&O40000000000` produce compile-time syntax
+    errors.
+- Added `crates/oxvba-differential/tests/integer_literal_carrier_vm3.rs` with
+  active current-green Long-width baselines and ignored oracle-backed
+  follow-on assertions for `bd-4ktq.11.2`.
+- Next implementation bead needs to thread typed literal carrier information
+  through `CoreConst`/`OxConst`/elaboration/vm3 constant loading, and also
+  decide the parser/radix diagnostic shape for unsuffixed radix literals beyond
+  Long width.
+- Verification target:
+  - `cargo test -p oxvba-differential --test integer_literal_carrier_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
