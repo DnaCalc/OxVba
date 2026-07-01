@@ -335,6 +335,7 @@ pub fn invoke(
         CByte => pure::cbyte(args),
         CBool => pure::cbool(args),
         CCur => pure::ccur(args),
+        CDec => pure::cdec(args),
         CVar => pure::cvar(args),
 
         // ── Random ──

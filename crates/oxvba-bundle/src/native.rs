@@ -120,7 +120,7 @@ native_impl_ids! {
     CDate,
     CVErr,
     // Numeric / type conversions (`CDbl`/`CLng`/… — coerce the argument to the named
-    // type with VBA banker's rounding + overflow). `CDec` is not yet supported.
+    // type with VBA banker's rounding + overflow).
     CBool,
     CByte,
     CInt,
@@ -130,6 +130,7 @@ native_impl_ids! {
     CSng,
     CDbl,
     CCur,
+    CDec,
     CVar,
 
     // ── Random ───────────────────────────────────────────────
@@ -253,7 +254,7 @@ impl NativeImplId {
             | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DatePart
             | DateNow | TimeNow | Now | Timer => M::DateTime,
             Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng
-            | CLngLng | CLngPtr | CSng | CDbl | CCur | CVar => M::Conversion,
+            | CLngLng | CLngPtr | CSng | CDbl | CCur | CDec | CVar => M::Conversion,
             Rnd | Randomize => M::Random,
             Fv | Pv | Pmt | Npv | Irr | Mirr | Rate | NPer | IPmt | PPmt | Sln | Syd | Ddb => {
                 M::Financial
@@ -427,6 +428,7 @@ impl NativeImplId {
             CSng => "CSng",
             CDbl => "CDbl",
             CCur => "CCur",
+            CDec => "CDec",
             CVar => "CVar",
             // ── Random ──
             Rnd => "Rnd",
@@ -617,7 +619,7 @@ impl NativeImplId {
             DateNow | TimeNow | Now | Timer => 0,
             // ── Conversion ── (all single-argument)
             Hex | Oct | CStr | Str | Val | CDate | CVErr | CBool | CByte | CInt | CLng
-            | CLngLng | CLngPtr | CSng | CDbl | CCur | CVar => 1,
+            | CLngLng | CLngPtr | CSng | CDbl | CCur | CDec | CVar => 1,
             // ── Random ──
             Rnd | Randomize => 1,
             // ── Financial ──

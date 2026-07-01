@@ -10,7 +10,7 @@ use crate::{
     opt, vbool, vf64, vi32, vstr, vunit,
 };
 use oxvba_runtime::{
-    Variant,
+    Decimal96, Variant,
     safe_array::{SafeArray, VT_VARIANT_VALUE},
     variant::VarType,
 };
@@ -1385,6 +1385,221 @@ fn conv_i64(value: &Variant) -> LibResult<i64> {
     as_i64(value)
 }
 
+const DECIMAL96_MAX_MAGNITUDE: u128 = (1u128 << 96) - 1;
+
+fn decimal96_from_magnitude(magnitude: u128, scale: u8, negative: bool) -> Decimal96 {
+    Decimal96::from_parts(
+        magnitude as u32,
+        (magnitude >> 32) as u32,
+        (magnitude >> 64) as u32,
+        scale,
+        negative && magnitude != 0,
+    )
+}
+
+fn decimal96_zero() -> Decimal96 {
+    Decimal96::from_parts(0, 0, 0, 0, false)
+}
+
+fn decimal96_from_i64(value: i64) -> Decimal96 {
+    decimal96_from_magnitude(u128::from(value.unsigned_abs()), 0, value < 0)
+}
+
+fn decimal96_from_currency_scaled(scaled: i64) -> Decimal96 {
+    decimal96_from_magnitude(u128::from(scaled.unsigned_abs()), 4, scaled < 0)
+}
+
+fn round_decimal_digits(digits: &mut Vec<u8>, discard: usize) {
+    if discard == 0 {
+        return;
+    }
+    let keep_len = digits.len().saturating_sub(discard);
+    let first_dropped = digits.get(keep_len).copied().unwrap_or(0);
+    let rest_nonzero = digits.iter().skip(keep_len + 1).any(|d| *d != 0);
+    digits.truncate(keep_len);
+
+    let kept_last_odd = digits.last().is_some_and(|d| d % 2 == 1);
+    let round_up = first_dropped > 5 || (first_dropped == 5 && (rest_nonzero || kept_last_odd));
+    if !round_up {
+        return;
+    }
+
+    if digits.is_empty() {
+        digits.push(1);
+        return;
+    }
+    for digit in digits.iter_mut().rev() {
+        if *digit < 9 {
+            *digit += 1;
+            return;
+        }
+        *digit = 0;
+    }
+    digits.insert(0, 1);
+}
+
+fn decimal96_from_digits(
+    mut digits: Vec<u8>,
+    mut scale: usize,
+    negative: bool,
+) -> Option<Decimal96> {
+    while digits.first() == Some(&0) {
+        digits.remove(0);
+    }
+    if digits.is_empty() {
+        return Some(decimal96_zero());
+    }
+
+    if scale > 28 {
+        round_decimal_digits(&mut digits, scale - 28);
+        scale = 28;
+        while digits.first() == Some(&0) {
+            digits.remove(0);
+        }
+        if digits.is_empty() {
+            return Some(decimal96_zero());
+        }
+    }
+
+    while scale > 0 && digits.last() == Some(&0) {
+        digits.pop();
+        scale -= 1;
+    }
+
+    let mut magnitude = 0u128;
+    for digit in digits {
+        magnitude = magnitude.checked_mul(10)?.checked_add(u128::from(digit))?;
+        if magnitude > DECIMAL96_MAX_MAGNITUDE {
+            return None;
+        }
+    }
+    Some(decimal96_from_magnitude(magnitude, scale as u8, negative))
+}
+
+fn parse_decimal96_text(text: &str) -> Option<Decimal96> {
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(value) = parse_vba_prefixed_integer(t) {
+        return Some(decimal96_from_i64(value));
+    }
+
+    let bytes = t.as_bytes();
+    let mut pos = 0;
+    let negative = match bytes.get(pos).copied() {
+        Some(b'-') => {
+            pos += 1;
+            true
+        }
+        Some(b'+') => {
+            pos += 1;
+            false
+        }
+        _ => false,
+    };
+
+    let mut digits = Vec::new();
+    let mut fractional_digits = 0usize;
+    let mut saw_digit = false;
+    let mut saw_dot = false;
+    while let Some(byte) = bytes.get(pos).copied() {
+        match byte {
+            b'0'..=b'9' => {
+                saw_digit = true;
+                digits.push(byte - b'0');
+                if saw_dot {
+                    fractional_digits += 1;
+                }
+                pos += 1;
+            }
+            b'.' if !saw_dot => {
+                saw_dot = true;
+                pos += 1;
+            }
+            _ => break,
+        }
+    }
+    if !saw_digit {
+        return None;
+    }
+
+    let mut exponent = 0i32;
+    if matches!(bytes.get(pos), Some(b'e' | b'E')) {
+        pos += 1;
+        let exp_negative = match bytes.get(pos).copied() {
+            Some(b'-') => {
+                pos += 1;
+                true
+            }
+            Some(b'+') => {
+                pos += 1;
+                false
+            }
+            _ => false,
+        };
+        let exp_start = pos;
+        let mut value = 0i32;
+        while let Some(byte @ b'0'..=b'9') = bytes.get(pos).copied() {
+            value = value.checked_mul(10)?.checked_add(i32::from(byte - b'0'))?;
+            pos += 1;
+        }
+        if pos == exp_start {
+            return None;
+        }
+        exponent = if exp_negative { -value } else { value };
+    }
+    if pos != bytes.len() {
+        return None;
+    }
+
+    let scale = i64::try_from(fractional_digits).ok()? - i64::from(exponent);
+    if scale < 0 {
+        let zero_count = usize::try_from(-scale).ok()?;
+        if zero_count > 60 {
+            return None;
+        }
+        digits.extend(std::iter::repeat(0).take(zero_count));
+        decimal96_from_digits(digits, 0, negative)
+    } else {
+        decimal96_from_digits(digits, usize::try_from(scale).ok()?, negative)
+    }
+}
+
+fn decimal96_from_f64(value: f64) -> LibResult<Decimal96> {
+    if !value.is_finite() {
+        return Err(LibError::overflow("value does not fit in Decimal"));
+    }
+    if value == 0.0 {
+        return Ok(decimal96_zero());
+    }
+    let text = format!("{value:.15}");
+    parse_decimal96_text(&text).ok_or_else(|| LibError::overflow("value does not fit in Decimal"))
+}
+
+fn decimal96_from_variant(value: &Variant) -> LibResult<Decimal96> {
+    match value.vtype() {
+        VarType::Decimal => value
+            .as_decimal96()
+            .ok_or_else(|| LibError::type_mismatch("invalid Decimal variant payload")),
+        VarType::String => {
+            let text = as_str(value)?;
+            match parse_decimal96_text(&text) {
+                Some(value) => Ok(value),
+                None if parse_vba_numeric_string(&text).is_some() => {
+                    Err(LibError::overflow("value does not fit in Decimal"))
+                }
+                None => Err(LibError::type_mismatch("expected a numeric value")),
+            }
+        }
+        VarType::Currency => Ok(decimal96_from_currency_scaled(
+            value.as_currency_scaled_i64().unwrap_or(0),
+        )),
+        VarType::LongLong => Ok(decimal96_from_i64(value.as_i64().unwrap_or(0))),
+        _ => decimal96_from_f64(as_f64(value)?),
+    }
+}
+
 /// `CDbl` — to `Double` (no overflow; the full f64 range).
 pub fn cdbl(args: &[Variant]) -> LibResult<Variant> {
     Ok(vf64(conv_f64(need(args, 0)?)?))
@@ -1443,6 +1658,11 @@ pub fn ccur(args: &[Variant]) -> LibResult<Variant> {
         return Err(LibError::overflow("value does not fit in Currency"));
     }
     Ok(Variant::from_currency_scaled_i64(scaled as i64))
+}
+/// `CDec` — to a Variant carrying the Decimal subtype.
+pub fn cdec(args: &[Variant]) -> LibResult<Variant> {
+    let value = decimal96_from_variant(need(args, 0)?)?;
+    Ok(Variant::from_decimal96(value))
 }
 /// `CVar` — to `Variant`: the value unchanged (everything is already a Variant).
 pub fn cvar(args: &[Variant]) -> LibResult<Variant> {

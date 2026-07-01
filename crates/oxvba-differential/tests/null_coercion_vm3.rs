@@ -31,6 +31,7 @@ fn explicit_numeric_conversions_of_null_raise_94() {
         "CSng(n)",
         "CDbl(n)",
         "CCur(n)",
+        "CDec(n)",
         "CDate(n)",
     ] {
         assert_eq!(

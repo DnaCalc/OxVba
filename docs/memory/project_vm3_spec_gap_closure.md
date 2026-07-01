@@ -692,3 +692,26 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - `CDec` Conversion (`bd-4ktq.27`)
+
+- Closed `cdec-absent` for vm3.
+- Added `NativeImplId::CDec` to the VBA Conversion module export surface, symbol
+  catalog, and oxvba-lib dispatch.
+- Implemented `CDec` as a Variant Decimal subtype using the existing `Decimal96`
+  carrier, including exact common numeric-string parsing, exponent text, Currency
+  scaling, finite numeric conversion, Null error 94, type mismatch 13, and Decimal
+  overflow 6.
+- Added `crates/oxvba-differential/tests/cdec_conversion_vm3.rs` for
+  VarType/TypeName/CStr/CDbl observability, high-precision string input, exponent
+  input, raw Decimal payload for `CDec(10)`, and error numbers.
+- Extended `null_coercion_vm3` and re-blessed the intended golden drift in
+  `conformance/tests/conversion_extended_scalar_subset.bas` from unresolved
+  `CDec` to successful Decimal subtype output.
+- Verification target:
+  - `cargo test -p oxvba-differential --test cdec_conversion_vm3`
+  - `cargo test -p oxvba-differential --test null_coercion_vm3`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

@@ -170,6 +170,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         CSng => e(CSng, &["CSng"], sig(1, 1), Ordinary),
         CDbl => e(CDbl, &["CDbl"], sig(1, 1), Ordinary),
         CCur => e(CCur, &["CCur"], sig(1, 1), Ordinary),
+        CDec => e(CDec, &["CDec"], sig(1, 1), Ordinary),
         CVar => e(CVar, &["CVar"], sig(1, 1), Ordinary),
 
         // ── Random ──
