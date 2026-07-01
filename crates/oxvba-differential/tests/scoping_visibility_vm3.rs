@@ -39,6 +39,10 @@ fn class_module(name: &str, src: &str) -> ModuleUnit {
     module
 }
 
+fn private_class_module(name: &str, src: &str) -> ModuleUnit {
+    module(name, Class, src)
+}
+
 fn option_private_proc_module(name: &str, src: &str) -> ModuleUnit {
     let mut module = proc_module(name, src);
     module.attributes.option_private_module = true;
@@ -102,6 +106,22 @@ fn assert_compile_rejected(outcome: RunOutcome) {
         outcome.unsupported.is_some() || outcome.result.is_err() || outcome.raised,
         "expected compile/bind rejection or failure, got {outcome:?}"
     );
+}
+
+fn assert_compile_rejected_with(outcome: RunOutcome, fragments: &[&str]) {
+    assert!(
+        outcome.unsupported.is_none(),
+        "expected compile/bind diagnostic, got unsupported: {:?}",
+        outcome.unsupported
+    );
+    let err = outcome.result.expect_err("expected compile/bind rejection");
+    let err_lower = err.to_ascii_lowercase();
+    for fragment in fragments {
+        assert!(
+            err_lower.contains(&fragment.to_ascii_lowercase()),
+            "expected diagnostic to contain `{fragment}`, got {err:?}"
+        );
+    }
 }
 
 fn assert_ambiguous_compile_rejected(outcome: RunOutcome, name: &str) {
@@ -812,4 +832,168 @@ fn referenced_project_withevents_source_routes_to_active_project_handler() {
         vec![referenced("LibProj", source_events())],
     );
     assert_project_closure_contains(&[lib, app], canon(&Variant::from_i32(23)));
+}
+
+#[test]
+fn active_project_withevents_source_routes_to_handler() {
+    assert_project_closure_contains(
+        &[project(
+            "AppProj",
+            vec![
+                proc_module(
+                    "Main",
+                    "Public result As Variant\n\
+                     Sub Main()\n\
+                     \x20   Dim listener As Listener\n\
+                     \x20   Set listener = New Listener\n\
+                     \x20   listener.Hook\n\
+                     \x20   listener.Fire\n\
+                     \x20   result = listener.Fired\n\
+                     End Sub\n",
+                ),
+                class_module(
+                    "Clock",
+                    "Public Event Tick(ByVal n As Long)\n\
+                     Public Sub Fire()\n    RaiseEvent Tick(23)\nEnd Sub\n",
+                ),
+                class_module(
+                    "Listener",
+                    "Private WithEvents src As Clock\n\
+                     Public Fired As Long\n\
+                     Public Sub Hook()\n    Set src = New Clock\nEnd Sub\n\
+                     Public Sub Fire()\n    src.Fire\nEnd Sub\n\
+                     Private Sub src_Tick(ByVal n As Long)\n    Fired = n\nEnd Sub\n",
+                ),
+            ],
+            vec![],
+        )],
+        canon(&Variant::from_i32(23)),
+    );
+}
+
+#[test]
+fn withevents_handler_prefix_mismatch_does_not_route() {
+    assert_project_closure_contains(
+        &[project(
+            "AppProj",
+            vec![
+                proc_module(
+                    "Main",
+                    "Public result As Variant\n\
+                     Sub Main()\n\
+                     \x20   Dim listener As Listener\n\
+                     \x20   Set listener = New Listener\n\
+                     \x20   listener.Hook\n\
+                     \x20   listener.Fire\n\
+                     \x20   result = listener.Fired\n\
+                     End Sub\n",
+                ),
+                class_module(
+                    "Clock",
+                    "Public Event Tick(ByVal n As Long)\n\
+                     Public Sub Fire()\n    RaiseEvent Tick(23)\nEnd Sub\n",
+                ),
+                class_module(
+                    "Listener",
+                    "Private WithEvents src As Clock\n\
+                     Public Fired As Long\n\
+                     Public Sub Hook()\n    Fired = 9\n    Set src = New Clock\nEnd Sub\n\
+                     Public Sub Fire()\n    src.Fire\nEnd Sub\n\
+                     Private Sub wrong_Tick(ByVal n As Long)\n    Fired = n\nEnd Sub\n",
+                ),
+            ],
+            vec![],
+        )],
+        canon(&Variant::from_i32(9)),
+    );
+}
+
+#[test]
+fn withevents_in_procedural_module_should_be_rejected() {
+    assert_compile_rejected_with(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Private WithEvents src As Clock\n\
+                 Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   result = 0\n\
+                 End Sub\n",
+            ),
+            (
+                "Clock",
+                Class,
+                "Public Event Tick(ByVal n As Long)\n\
+                 Public Sub Fire()\n    RaiseEvent Tick(23)\nEnd Sub\n",
+            ),
+        ]),
+        &["withevents"],
+    );
+}
+
+#[test]
+fn private_referenced_project_withevents_source_should_be_rejected() {
+    let lib_modules = || {
+        vec![private_class_module(
+            "Clock",
+            "Public Event Tick(ByVal n As Long)\n\
+             Public Sub Fire()\n    RaiseEvent Tick(23)\nEnd Sub\n",
+        )]
+    };
+    let lib = project("LibProj", lib_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   Dim listener As Listener\n\
+                 \x20   Set listener = New Listener\n\
+                 \x20   listener.Hook\n\
+                 \x20   listener.Fire\n\
+                 \x20   result = listener.Fired\n\
+                 End Sub\n",
+            ),
+            class_module(
+                "Listener",
+                "Private WithEvents src As LibProj.Clock\n\
+                 Public Fired As Long\n\
+                 Public Sub Hook()\n    Set src = New LibProj.Clock\nEnd Sub\n\
+                 Public Sub Fire()\n    src.Fire\nEnd Sub\n\
+                 Private Sub src_Tick(ByVal n As Long)\n    Fired = n\nEnd Sub\n",
+            ),
+        ],
+        vec![referenced("LibProj", lib_modules())],
+    );
+    assert_compile_rejected_with(run_scoping_closure(&[lib, app]), &["libproj", "clock"]);
+}
+
+#[test]
+fn private_referenced_project_withevents_declaration_should_be_rejected() {
+    let lib_modules = || {
+        vec![private_class_module(
+            "Clock",
+            "Public Event Tick(ByVal n As Long)\n",
+        )]
+    };
+    let lib = project("LibProj", lib_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   Dim listener As Listener\n\
+                 \x20   Set listener = New Listener\n\
+                 \x20   result = 1\n\
+                 End Sub\n",
+            ),
+            class_module("Listener", "Private WithEvents src As LibProj.Clock\n"),
+        ],
+        vec![referenced("LibProj", lib_modules())],
+    );
+    assert_compile_rejected_with(run_scoping_closure(&[lib, app]), &["libproj", "clock"]);
 }

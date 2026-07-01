@@ -152,6 +152,13 @@ Current executable subset (A2):
     - `compile_project_rejects_withevents_in_procedural_module`
     - `compile_project_rejects_implements_missing_member_coverage`
     - `compile_project_rejects_raiseevent_undeclared_event`
+- vm3 scoping/event-source checks:
+  - `active_project_withevents_source_routes_to_handler`
+  - `referenced_project_withevents_source_routes_to_active_project_handler`
+  - `withevents_handler_prefix_mismatch_does_not_route`
+  - `withevents_in_procedural_module_should_be_rejected`
+  - `private_referenced_project_withevents_declaration_should_be_rejected`
+  - `private_referenced_project_withevents_source_should_be_rejected`
 - non-interop class runtime checks via host tests:
   - `formal_v44_property_let_routes_assignment_byref`
   - `formal_v44_property_set_routes_assignment_byref`
@@ -159,7 +166,9 @@ Current executable subset (A2):
   - `formal_v54_class_terminate_runs_after_main`
 
 Remaining deferred portion:
-- runtime class-event dispatch ordering and subscription graph semantics (`WithEvents` reassignment ordering and `RaiseEvent` subscriber dispatch).
+- runtime class-event dispatch ordering and subscription graph semantics beyond
+  the handler-prefix/source-visibility subset (`WithEvents` reassignment
+  ordering and broader `RaiseEvent` subscriber dispatch).
 
 ## Lane E: Storage and roundtrip
 

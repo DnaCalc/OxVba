@@ -99,6 +99,16 @@ active vm3 coverage. `SurfaceProvider` now reports ambiguous unqualified names
 inside a referenced project so the first ambiguous reference blocks fallback to
 later references or the VBA library.
 
+**WithEvents source visibility subset (bd-4ktq.36.6):** active-project and
+referenced-project event source classes now have active vm3 coverage for
+`WithEvents` handler-prefix routing. The fixture also proves a mismatched
+handler prefix does not route, procedural-module `WithEvents` declarations are
+rejected with a deterministic symbol diagnostic, and private/non-exposed
+referenced event source classes remain inaccessible across project boundaries
+both at declaration time and at construction/member-use sites. Broader event
+graph ordering and reassignment semantics remain tracked outside this scoping
+batch.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

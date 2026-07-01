@@ -179,7 +179,7 @@ fn bind_one(
         globals: ids.globals.clone(),
         procs,
         classes: ids.classes.clone(),
-        event_routes: build_event_routes(env, &ids),
+        event_routes: build_event_routes(env, &ids)?,
         external_calls: build_external_calls(env),
         com_class_exports: build_com_class_exports(manifest),
         entry: ids.entry(),
@@ -266,12 +266,19 @@ fn collect_proc_decls<'a>(env: &'a ResolutionEnvironment) -> Vec<SyntaxNode<'a>>
 /// `C`, a handler proc named `<field>_<event>` in the sink class produces an
 /// `EventRoute{ binding: T, event: index(E), handler }`. This is the table vm2
 /// consults when a `RaiseEvent` fires (`event_routes[(binding, event)]`).
-fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<EventRoute> {
+fn build_event_routes(
+    env: &ResolutionEnvironment,
+    ids: &IdAllocator,
+) -> Result<Vec<EventRoute>, BindError> {
     let symbols = &env.symbols;
     let module_scope_by_name: HashMap<String, ScopeId> = env
         .modules()
         .map(|m| (fold_identifier(m.module_name), m.module_scope))
         .collect();
+    let active_project_name = env
+        .export_surfaces()
+        .first()
+        .map(|surface| fold_identifier(&surface.project_name));
     let mut routes = Vec::new();
     for (&field_sym, &binding) in &ids.withevents_binding_of {
         let Some(field) = symbols.symbol(field_sym) else {
@@ -286,7 +293,19 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
         let SymbolImpl::DeclaredType(VarTypeRef::Object(source_name)) = &field.imp else {
             continue;
         };
-        for (ev_name_folded, event) in source_events(env, ids, &module_scope_by_name, source_name) {
+        let Some(events) = source_events(
+            env,
+            ids,
+            &module_scope_by_name,
+            active_project_name.as_deref(),
+            source_name,
+        ) else {
+            return Err(BindError::Unresolved {
+                name: source_name.clone(),
+                context: "WithEvents source type".to_string(),
+            });
+        };
+        for (ev_name_folded, event) in events {
             let handler_name = format!("{field_name}_{ev_name_folded}");
             if let Ok(Some(handler_sym)) =
                 symbols.find_in_scope(sink_scope, SymbolNamespace::Procedure, &handler_name)
@@ -315,7 +334,7 @@ fn build_event_routes(env: &ResolutionEnvironment, ids: &IdAllocator) -> Vec<Eve
     // carried here to disambiguate — see `event_specs_from_typelib_metadata`.
     let mut seen = std::collections::HashSet::new();
     routes.retain(|route| seen.insert((route.binding, route.event, route.handler)));
-    routes
+    Ok(routes)
 }
 
 /// The `(folded event name, event id)` list of a WithEvents source class. An
@@ -332,10 +351,23 @@ fn source_events(
     env: &ResolutionEnvironment,
     ids: &IdAllocator,
     module_scope_by_name: &HashMap<String, ScopeId>,
+    active_project_name: Option<&str>,
     source_name: &str,
-) -> Vec<(String, i32)> {
+) -> Option<Vec<(String, i32)>> {
     // Active project class.
-    if let Some(&source_scope) = module_scope_by_name.get(&fold_identifier(source_name)) {
+    let source_name_folded = fold_identifier(source_name);
+    let active_class_name = match source_name.split_once('.') {
+        Some((project, class))
+            if active_project_name.is_some_and(|active| fold_identifier(project) == active) =>
+        {
+            Some(fold_identifier(class))
+        }
+        Some(_) => None,
+        None => Some(source_name_folded),
+    };
+    if let Some(source_class_name) = active_class_name
+        && let Some(&source_scope) = module_scope_by_name.get(&source_class_name)
+    {
         let symbols = &env.symbols;
         let mut out = Vec::new();
         for ev_sym in symbols.symbols_in_scope(source_scope).unwrap_or_default() {
@@ -353,7 +385,7 @@ fn source_events(
             };
             out.push((ev_name, event));
         }
-        return out;
+        return Some(out);
     }
     // Referenced project class (possibly `Project.Class`). Search the referenced
     // surfaces (index 0 is the active project's own surface, skipped).
@@ -373,19 +405,20 @@ fn source_events(
             .iter()
             .find(|t| fold_identifier(&t.name) == class)
         {
-            return ty
-                .events
-                .iter()
-                .map(|e| (fold_identifier(&e.name), e.event_id))
-                .collect();
+            return Some(
+                ty.events
+                    .iter()
+                    .map(|e| (fold_identifier(&e.name), e.event_id))
+                    .collect(),
+            );
         }
     }
     // Referenced COM coclass (a typelib source). The `event id` is the event's
     // dispid/token — the runtime subscribe/poll key.
     if let Some(events) = env.com_source_events(source_name) {
-        return events;
+        return Some(events);
     }
-    Vec::new()
+    None
 }
 
 /// Build the `Declare Lib` external-call descriptors from the scanned `Declare`

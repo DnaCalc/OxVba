@@ -206,6 +206,8 @@ pub enum SymbolModelError {
     UnsupportedOptionCompareDatabase,
     #[error("Friend is only valid in object modules: `{name}`")]
     FriendNotValidInStandardModule { name: String },
+    #[error("WithEvents is only valid in object modules: `{name}`")]
+    WithEventsNotValidInStandardModule { name: String },
     #[error("ambiguous name detected: {name}")]
     AmbiguousName { name: String },
     #[error("unknown scope {0:?}")]
@@ -276,6 +278,12 @@ impl SymbolModelError {
                 format!("Friend is only valid in object modules: {name}"),
             )
             .with_help("Use Public or Private in a standard module, or move the Friend member to a class/object module."),
+            SymbolModelError::WithEventsNotValidInStandardModule { name } => Diagnostic::error(
+                "SYM-E-WITHEVENTS-ONLY-VALID-IN-OBJECT-MODULE",
+                DiagnosticPhase::Symbol,
+                format!("WithEvents is only valid in object modules: {name}"),
+            )
+            .with_help("Move the WithEvents member to a class/object module."),
             SymbolModelError::AmbiguousName { name } => Diagnostic::error(
                 "SYM-E-AMBIGUOUS-NAME",
                 DiagnosticPhase::Symbol,

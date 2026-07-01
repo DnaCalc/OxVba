@@ -252,6 +252,15 @@ impl ScanCtx<'_> {
                     let name = normalize_identifier_token(token.text);
                     let declared_type =
                         declared_var_type_with_default(declarator, &self.default_types, !is_const);
+                    if module_level
+                        && !is_const
+                        && declarator.is_with_events()
+                        && self.module_kind == ModuleKind::Procedural
+                    {
+                        return Err(SymbolModelError::WithEventsNotValidInStandardModule {
+                            name: name.to_string(),
+                        });
+                    }
                     let (ns, kind) = if is_const {
                         // A `Const` is a constant at any scope (module- or proc-level):
                         // namespace `Local`, kind `Const`. Its value is folded by the
@@ -325,9 +334,7 @@ impl ScanCtx<'_> {
             && visibility == Visibility::Friend
             && self.module_kind == ModuleKind::Procedural
         {
-            return Err(SymbolModelError::FriendNotValidInStandardModule {
-                name: logical,
-            });
+            return Err(SymbolModelError::FriendNotValidInStandardModule { name: logical });
         }
         let sig = self
             .signatures
@@ -1530,9 +1537,8 @@ mod tests {
 
     #[test]
     fn scanner_rejects_friend_in_standard_modules() {
-        let err =
-            scan_members_for_kind(ModuleKind::Procedural, "Friend Sub Helper()\nEnd Sub\n")
-                .expect_err("standard module Friend should be rejected");
+        let err = scan_members_for_kind(ModuleKind::Procedural, "Friend Sub Helper()\nEnd Sub\n")
+            .expect_err("standard module Friend should be rejected");
         assert_eq!(
             err,
             SymbolModelError::FriendNotValidInStandardModule {
@@ -1542,6 +1548,23 @@ mod tests {
         assert_eq!(
             err.to_diagnostic().code.as_str(),
             "SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE"
+        );
+    }
+
+    #[test]
+    fn scanner_rejects_withevents_in_standard_modules() {
+        let err =
+            scan_members_for_kind(ModuleKind::Procedural, "Private WithEvents src As Clock\n")
+                .expect_err("standard module WithEvents should be rejected");
+        assert_eq!(
+            err,
+            SymbolModelError::WithEventsNotValidInStandardModule {
+                name: "src".to_string()
+            }
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-WITHEVENTS-ONLY-VALID-IN-OBJECT-MODULE"
         );
     }
 

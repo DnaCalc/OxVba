@@ -320,6 +320,39 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
 
+## 2026-07-01 - WithEvents Source Visibility And Handler Binding (`bd-4ktq.36.6`)
+
+- Closed the follow-up `WithEvents` source visibility and handler-prefix binding
+  subset for PMR-CLS-001 / PMR-CLS-002.
+- Live Excel evidence for the active source/handler baseline is in
+  `docs/evidence/conformance/vm3_scoping_followup_oracle_20260701T1655Z/`:
+  `SCOPING-WITHEVENTS-ACTIVE` returns `23`.
+- `oxvba-symbol` now rejects module-level `WithEvents` declarations in
+  procedural modules with `SYM-E-WITHEVENTS-ONLY-VALID-IN-OBJECT-MODULE`,
+  instead of letting the allocator treat the declaration as an ordinary global.
+- `oxvba-bind` now distinguishes a known event source with no matching handler
+  from an unknown or inaccessible `WithEvents` source type, reporting
+  `BIND-E-UNRESOLVED-NAME` for the latter instead of silently emitting no event
+  routes.
+- `crates/oxvba-differential/tests/scoping_visibility_vm3.rs` now has active
+  rows proving:
+  - active-project `WithEvents src As Clock` routes `Clock.Tick` to
+    `src_Tick`,
+  - referenced-project `WithEvents src As LibProj.Clock` routes through the
+    referenced export surface,
+  - a mismatched handler prefix does not route,
+  - procedural-module `WithEvents` declarations reject with a deterministic
+    diagnostic,
+  - a declaration-only `WithEvents src As LibProj.Clock` rejects when `Clock` is
+    not exported,
+  - non-exposed referenced event source classes are not visible across the
+    project boundary.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+
 ## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
 
 - Closed the `Val("&H...")`/`Val("&O...")` radix-prefix gap.
