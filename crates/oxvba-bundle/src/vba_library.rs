@@ -171,6 +171,16 @@ fn build() -> Bundle {
             },
             target: ExportTarget::Proc(proc),
         });
+        for alias in id.library_member_aliases() {
+            exports.push(BundleExport {
+                token: ExportToken::ModuleFunc {
+                    module: module.to_string(),
+                    member: (*alias).to_string(),
+                    kind: ProjectMemberKind::Method,
+                },
+                target: ExportTarget::Proc(proc),
+            });
+        }
     }
 
     Bundle {
@@ -504,6 +514,50 @@ mod tests {
                 Some(NativeBody::Library(id)),
                 "library export {id:?} must have a NativeBody::Library body",
             );
+        }
+    }
+
+    #[test]
+    fn string_type_aliases_export_same_native_body() {
+        let b = vba_library_bundle();
+        for &id in NativeImplId::ALL {
+            let Some((module, primary)) = id.library_member() else {
+                continue;
+            };
+            let primary_proc = b
+                .exports
+                .iter()
+                .find_map(|e| {
+                    matches!(
+                        &e.token,
+                        ExportToken::ModuleFunc { module: owner, member, kind }
+                            if owner == module
+                                && member.eq_ignore_ascii_case(primary)
+                                && *kind == ProjectMemberKind::Method
+                    )
+                    .then_some(e.target)
+                })
+                .unwrap_or_else(|| panic!("missing primary export for {id:?}"));
+            for alias in id.library_member_aliases() {
+                let alias_proc = b
+                    .exports
+                    .iter()
+                    .find_map(|e| {
+                        matches!(
+                            &e.token,
+                            ExportToken::ModuleFunc { module: owner, member, kind }
+                                if owner == module
+                                    && member.eq_ignore_ascii_case(alias)
+                                    && *kind == ProjectMemberKind::Method
+                        )
+                        .then_some(e.target)
+                    })
+                    .unwrap_or_else(|| panic!("missing alias export {alias} for {id:?}"));
+                assert_eq!(
+                    alias_proc, primary_proc,
+                    "alias {alias} must target the same proc as {primary}"
+                );
+            }
         }
     }
 }

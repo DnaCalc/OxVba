@@ -1915,9 +1915,9 @@ impl<'h> Vm3<'h> {
                 })?;
             return self.call_proc_in(b, dst, FuncId(proc), args);
         }
-        let id = self.resolve_library_import(import)?;
+        let (id, string_typed_alias) = self.resolve_library_import(import)?;
         let argv = self.extern_args(args)?;
-        let result = self.invoke_native_lib(id, &argv)?;
+        let result = self.invoke_native_lib_with_policy(id, &argv, string_typed_alias)?;
         if let Some(dst) = dst {
             self.store(&dst, result)?;
         }
@@ -1934,7 +1934,7 @@ impl<'h> Vm3<'h> {
     /// `Unimplemented`, never silently mis-run. (Built-in object *methods*
     /// — `Collection.Add`/… , `NativeBody::Method` — never arrive here; they are reached by
     /// member dispatch on a `Collection` instance, which lands with the object model.)
-    fn resolve_library_import(&self, import: ImportId) -> Result<NativeImplId, Vm3Error> {
+    fn resolve_library_import(&self, import: ImportId) -> Result<(NativeImplId, bool), Vm3Error> {
         let imp = self
             .cur_program()
             .imports
@@ -1962,7 +1962,15 @@ impl<'h> Vm3<'h> {
             ));
         };
         match lib.procedures.get(proc).and_then(|p| p.native) {
-            Some(oxvba_bundle::NativeBody::Library(id)) => Ok(id),
+            Some(oxvba_bundle::NativeBody::Library(id)) => {
+                let string_typed_alias = match &imp.token {
+                    oxvba_bundle::ExportToken::ModuleFunc { member, .. } => {
+                        id.is_string_typed_library_alias(member)
+                    }
+                    _ => false,
+                };
+                Ok((id, string_typed_alias))
+            }
             Some(oxvba_bundle::NativeBody::Method(_)) => Err(Vm3Error::Malformed(
                 "a native object method is not callable via CallExtern".into(),
             )),
@@ -3156,6 +3164,18 @@ impl<'h> Vm3<'h> {
     /// so the interpreter and compiled code share one implementation and cannot drift.
     /// Keep its shape `(ctx, id, &[Variant]) -> Result<Variant, _>` ABI-friendly.
     fn invoke_native_lib(&mut self, id: NativeImplId, argv: &[Variant]) -> Result<Variant, Vm3Error> {
+        self.invoke_native_lib_with_policy(id, argv, false)
+    }
+
+    fn invoke_native_lib_with_policy(
+        &mut self,
+        id: NativeImplId,
+        argv: &[Variant],
+        string_typed_alias: bool,
+    ) -> Result<Variant, Vm3Error> {
+        if string_typed_alias && argv.iter().any(|arg| arg.vtype() == VarType::Null) {
+            return Err(Vm3Error::Fault(Fault::new(94, "invalid use of Null")));
+        }
         if id == NativeImplId::TypeName
             && let Some(object) = argv.first().and_then(|a| a.as_object_ref())
             && let Some(name) = self.object_type_name(&object)

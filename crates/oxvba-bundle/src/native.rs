@@ -540,6 +540,54 @@ impl NativeImplId {
         Some((module, member))
     }
 
+    /// Additional source-visible aliases exported by the synthetic `VBA` bundle
+    /// for the same native body. The primary export remains [`Self::library_member`],
+    /// while aliases preserve call-site spelling such as `Left$` when the binder
+    /// imports the member.
+    pub fn library_member_aliases(self) -> &'static [&'static str] {
+        use NativeImplId::*;
+        match self {
+            Left => &["Left$"],
+            Right => &["Right$"],
+            Mid => &["Mid$"],
+            LCase => &["LCase$"],
+            UCase => &["UCase$"],
+            Trim => &["Trim$"],
+            LTrim => &["LTrim$"],
+            RTrim => &["RTrim$"],
+            Chr => &["Chr$"],
+            ChrW => &["ChrW$"],
+            Space => &["Space$"],
+            StringRepeat => &["String$"],
+            Format => &["Format$"],
+            _ => &[],
+        }
+    }
+
+    /// The exported library location for a user-spelled member name. This keeps
+    /// suffixed aliases (`Left$`) distinct from primary names (`Left`) while still
+    /// resolving both to the same native implementation.
+    pub fn library_member_for_name(self, name: &str) -> Option<(&'static str, &'static str)> {
+        let (module, primary) = self.library_member()?;
+        if primary.eq_ignore_ascii_case(name) {
+            return Some((module, primary));
+        }
+        self.library_member_aliases()
+            .iter()
+            .copied()
+            .find(|alias| alias.eq_ignore_ascii_case(name))
+            .map(|alias| (module, alias))
+    }
+
+    /// True when a source-visible library alias denotes a string-returning `$`
+    /// form whose `Null` handling differs from the unsuffixed Variant-returning
+    /// form.
+    pub fn is_string_typed_library_alias(self, member: &str) -> bool {
+        self.library_member_aliases()
+            .iter()
+            .any(|alias| alias.eq_ignore_ascii_case(member))
+    }
+
     /// The informational parameter count recorded on the bundle's
     /// [`ProcedureDescriptor`] for this migrated library function — its
     /// **maximum** arity (the native body reads its arguments positionally and

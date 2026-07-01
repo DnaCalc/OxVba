@@ -234,14 +234,11 @@ pub fn invoke(
     ctx: &mut LibContext,
 ) -> LibResult<Variant> {
     use NativeImplId::*;
-    // VBA propagates `Null` through the value-returning string functions: if any argument is
-    // `Null`, the result is `Null` (these otherwise reach `as_str` → `variant_to_vba_string`,
-    // which raises Type mismatch 13 on `Null`).
-    //
-    // FIDELITY: the `$`-suffixed forms (`Left$`, `UCase$`, …) raise error 94 ("Invalid use of
-    // Null") instead, since a `String` cannot hold `Null` — but the binder resolves `Left` and
-    // `Left$` to the same `NativeImplId`, so the suffix is not visible here. Until it is
-    // threaded, both forms return `Null`. (See the builtin-library split note.)
+    // VBA propagates `Null` through the value-returning unsuffixed string functions: if any
+    // argument is `Null`, the result is `Null` (these otherwise reach `as_str` →
+    // `variant_to_vba_string`, which raises Type mismatch 13 on `Null`). The string-typed
+    // `$` aliases are distinguished by the VM's library import metadata and raise 94 before
+    // reaching this shared unsuffixed body.
     if string_fn_propagates_null(id) && args.iter().any(|a| a.vtype() == Vt::Null) {
         return Ok(Variant::null());
     }

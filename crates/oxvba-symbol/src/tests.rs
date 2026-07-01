@@ -817,6 +817,17 @@ fn unrelated_class_property_does_not_shadow_vba_left_intrinsic() {
             ..
         } if unit == "VBA" && owner == "Strings" && member == "Left"
     ));
+    let suffixed = env.resolve(&ctx, "Left$").expect("Left$ resolves");
+    assert!(matches!(
+        suffixed.route,
+        DispatchRoute::ExternMember {
+            ref unit,
+            ref owner,
+            ref member,
+            has_receiver: false,
+            ..
+        } if unit == "VBA" && owner == "Strings" && member == "Left$"
+    ));
 
     let receiver = VarTypeRef::Object("ControlLike".into());
     assert!(matches!(

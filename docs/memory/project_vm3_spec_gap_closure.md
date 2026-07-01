@@ -405,3 +405,29 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --test integer_literal_carrier_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - String `$` Alias Null Error (`bd-s7cr`)
+
+- Closed the residual `$`-suffix half of `null-not-propagated-string-fns`.
+- Kept the existing unsuffixed string-function behavior in `oxvba-lib`:
+  value-returning Variant forms still propagate a `Null` argument to `Null`.
+- Added source-visible synthetic `VBA` bundle alias exports for string-typed
+  forms such as `Left$`, `Right$`, `Mid$`, `UCase$`, `Trim$`, `Chr$`,
+  `ChrW$`, `Space$`, `String$`, and `Format$`.
+- Updated the VBA library provider to preserve the alias member name in the
+  cross-bundle import instead of canonicalizing every alias to the primary
+  unsuffixed member.
+- Updated vm3 library-import resolution so a call imported through a `$` alias
+  raises run-time error 94 (`Invalid use of Null`) when any argument is `Null`,
+  before entering the shared unsuffixed native body.
+- Added regression coverage:
+  - unsuffixed string functions still return `Null` for `Null`,
+  - `$` aliases raise error 94 for `Null`,
+  - non-`Null` `$` alias calls still execute normally,
+  - `Left$` resolves as `VBA.Strings.Left$`, and alias exports target the same
+    native body as their primary member.
+- Verification target:
+  - `cargo test -p oxvba-differential --test null_string_fns_vm3`
+  - `cargo test -p oxvba-bundle vba_library`
+  - `cargo test -p oxvba-symbol unrelated_class_property_does_not_shadow_vba_left_intrinsic`
+  - `cargo test -p oxvba-bind string_functions_left_mid_ucase`

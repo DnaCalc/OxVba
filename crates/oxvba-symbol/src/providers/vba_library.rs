@@ -54,7 +54,7 @@ impl Provider for VbaLibraryProvider {
             // forms (`IIf`/`Choose`/`Switch`), `CreateObject` + the `Com*` machinery,
             // the FileIo STATEMENT forms (P4), and Diagnostics — keep the `Native(id)`
             // route.
-            if let Some((owner, member)) = id.library_member() {
+            if let Some((owner, member)) = id.library_member_for_name(name) {
                 let entry = intrinsic_entry(id);
                 return Some(Binding::new(
                     None,
