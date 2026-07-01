@@ -55,6 +55,9 @@ Current executable subset (A1/A2):
 - `project_node_rejects_duplicate_module_name_case_insensitive`
 - `source_project_class_attribute_constraints_are_enforced`
 - `public_symbol_collisions_require_qualification`
+- `public_const_variable_collision_should_be_ambiguous`
+- `public_const_variable_collision_keeps_module_qualified_access`
+- `public_const_variable_collision_keeps_project_qualified_access`
 
 ## Lane B: Multi-module resolution
 
@@ -68,6 +71,12 @@ Expected probes:
 - two-module and three-module symbol collision + qualification cases,
 - reference-precedence shadowing cases,
 - private-module accessibility boundaries.
+
+Current executable subset:
+
+- `public_const_variable_collision_should_be_ambiguous`
+- `public_const_variable_collision_keeps_module_qualified_access`
+- `public_const_variable_collision_keeps_project_qualified_access`
 
 ## Lane C: Reference and automation bridge
 

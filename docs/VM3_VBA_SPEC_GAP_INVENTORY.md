@@ -70,6 +70,12 @@ visibility. Public UDT/Public Enum name collision remains open for
 `bd-4ktq.36.3`: Excel reports `Ambiguous name detected: Payload`, while vm3
 currently accepts the row.
 
+**Const/variable collision subset (bd-4ktq.36.2):** the Public Const/Public
+module variable case is closed for the follow-up batch. The active fixture now
+rejects unqualified `SharedName` as ambiguous and proves `Module.SharedName`
+plus `Project.Module.SharedName` remain deterministic. Broader declaration-space
+work stays open for `bd-4ktq.36.3` and related PMR-NAME-001/002 edges.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

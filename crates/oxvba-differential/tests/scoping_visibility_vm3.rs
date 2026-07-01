@@ -411,6 +411,46 @@ fn public_const_variable_collision_should_be_ambiguous() {
 }
 
 #[test]
+fn public_const_variable_collision_keeps_module_qualified_access() {
+    assert_snapshot_contains(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   Beta.SharedName = 2\n\
+                 \x20   result = Alpha.SharedName * 10 + Beta.SharedName\n\
+                 End Sub\n",
+            ),
+            ("Alpha", Procedural, "Public Const SharedName As Long = 1\n"),
+            ("Beta", Procedural, "Public SharedName As Long\n"),
+        ]),
+        canon(&Variant::from_i32(12)),
+    );
+}
+
+#[test]
+fn public_const_variable_collision_keeps_project_qualified_access() {
+    assert_snapshot_contains(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   VBAProject.Beta.SharedName = 3\n\
+                 \x20   result = VBAProject.Alpha.SharedName * 10 + VBAProject.Beta.SharedName\n\
+                 End Sub\n",
+            ),
+            ("Alpha", Procedural, "Public Const SharedName As Long = 1\n"),
+            ("Beta", Procedural, "Public SharedName As Long\n"),
+        ]),
+        canon(&Variant::from_i32(13)),
+    );
+}
+
+#[test]
 #[ignore = "bd-4ktq.36.3 follow-on: Public UDT/Public Enum collision diagnostic"]
 fn public_udt_enum_collision_should_be_ambiguous() {
     assert_ambiguous_compile_rejected(

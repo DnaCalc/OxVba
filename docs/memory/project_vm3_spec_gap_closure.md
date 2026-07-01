@@ -213,6 +213,29 @@
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
 
+## 2026-07-01 - Public Const / Variable Collision Diagnostics (`bd-4ktq.36.2`)
+
+- Closed the follow-up Public Const/Public module variable collision subset for
+  PMR-VIS-002 and PMR-NAME-001.
+- Live Excel evidence for the unqualified row is in
+  `docs/evidence/conformance/vm3_scoping_followup_oracle_20260701T1655Z/`:
+  `SCOPING-CONST-VAR-COLLISION` rejects with `Ambiguous name detected:
+  SharedName`, selected token `SharedName`, selected line
+  `RunProbe = SharedName`.
+- `crates/oxvba-differential/tests/scoping_visibility_vm3.rs` now has active
+  rows proving:
+  - unqualified `SharedName` across `Public Const SharedName` and
+    `Public SharedName As Long` is rejected as ambiguous,
+  - `Alpha.SharedName` / `Beta.SharedName` remain deterministic,
+  - `VBAProject.Alpha.SharedName` / `VBAProject.Beta.SharedName` remain
+    deterministic.
+- PMR clause docs and the fixture matrix now point to those vm3 differential
+  rows while keeping broader PMR-NAME-001 status partial because UDT/Enum and
+  other declaration-space edges remain open.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
 ## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
 
 - Closed the `Val("&H...")`/`Val("&O...")` radix-prefix gap.
