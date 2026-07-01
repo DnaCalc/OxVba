@@ -788,6 +788,9 @@ impl<'a> ProcLower<'a> {
         }
         if let Some(lref) = node.label_ref() {
             let name = lref.first_significant_token().map(|t| t.text).unwrap_or("");
+            if name == "0" {
+                return Ok(vec![CoreStmt::Error(ErrorOp::Resume)]);
+            }
             return Ok(vec![CoreStmt::Error(ErrorOp::ResumeLabel(
                 self.label_id(name),
             ))]);

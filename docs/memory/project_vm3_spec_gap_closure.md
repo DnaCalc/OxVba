@@ -660,3 +660,17 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - `Resume 0` Elaboration (`bd-4ktq.25`)
+
+- Closed `resume-0-fails-elaboration` for vm3.
+- Updated the binder's `ResumeStmt` lowering so a label reference token `0`
+  maps to `ErrorOp::Resume`, matching bare `Resume`, instead of creating a
+  synthetic label `0` that fails OxIR elaboration.
+- Added `crates/oxvba-differential/tests/resume_zero_vm3.rs` for `Resume 0`
+  re-entering the faulting statement and a bare `Resume` control.
+- Verification target:
+  - `cargo test -p oxvba-differential --test resume_zero_vm3`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
