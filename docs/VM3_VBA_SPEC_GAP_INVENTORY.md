@@ -119,6 +119,13 @@ no ignored follow-on rows for the scoped batch, all delivery beads
 `bd-4ktq.36.1` through `bd-4ktq.36.6` are closed, and PMR partial statuses are
 kept only where the PMR row is intentionally broader than this batch.
 
+**Scoping PMR residual audit (bd-4ktq.38.1):** the row-level residual map is now
+captured in
+`docs/evidence/language/PMR_SCOPING_VISIBILITY_RESIDUAL_MAP_2026-07-01.md`.
+It records the proved vm3 subsets, the broader PMR residual boundaries, and the
+owning follow-on beads `bd-4ktq.38.2` through `bd-4ktq.38.6`. The audit did not
+expose an untracked delivery lane beyond those existing child beads.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

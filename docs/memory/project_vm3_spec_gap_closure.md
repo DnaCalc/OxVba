@@ -1238,3 +1238,22 @@
   - `cargo test -p oxvba-differential --test settings_family_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
   - `br dep cycles --json`
+
+## 2026-07-01 - Scoping PMR Residual Audit (`bd-4ktq.38.1`)
+
+- Produced the row-level PMR residual map for the vm3 multi-module scoping and
+  visibility surface:
+  `docs/evidence/language/PMR_SCOPING_VISIBILITY_RESIDUAL_MAP_2026-07-01.md`.
+- The map reconciles closed scoping batches `bd-4ktq.9` and `bd-4ktq.36` with
+  older PMR rows for project references/qualifiers, public namespace
+  collisions, `Option Private Module`, and `WithEvents` source visibility.
+- Current result: no untracked delivery lane was exposed by the audit. The
+  remaining accepted reconciliation work is represented by child beads
+  `bd-4ktq.38.2` through `bd-4ktq.38.6`.
+- Verification target:
+  - docs fresh-eyes read-through of the residual map against
+    `MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`,
+    `PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md`,
+    `DEFERRED_ORACLE_GATES.csv`, and the vm3 inventory
+  - `git diff --check`
+  - `br dep cycles --json`
