@@ -1596,3 +1596,32 @@
   rewritten cleanly, and `Exit Do` validation was tightened so a nested
   `While/Wend` lowered as a `DoLoop` cannot become the runtime break target for
   a source `Exit Do`.
+
+## 2026-07-01 - Object/Array Residual Triage (`bd-4ktq.39.7`)
+
+- Closed this support bead by splitting every scoped accepted object/array or
+  lifecycle residual into explicit epic-level delivery beads, rather than
+  changing risky object semantics without a focused oracle/test slice.
+- Follow-up delivery paths:
+  `bd-4ktq.48` (`object-default-member-index-get` /
+  `object-default-member-index-set`), `bd-4ktq.49`
+  (`foreach-project-class-no-newenum`), `bd-4ktq.50`
+  (`paramarray-elements-byval`), `bd-4ktq.51`
+  (`fixed-string-udt-field-layout`), `bd-4ktq.52`
+  (`array-byval-accepted-lost` / `array-assign-into-fixed-lhs`),
+  `bd-4ktq.53` (`isarray-unallocated-false`), `bd-4ktq.54`
+  (`raiseevent-fan-out-order`), `bd-4ktq.55`
+  (`predeclared-singleton-no-resurrection`), and `bd-4ktq.56`
+  (`class-terminate-not-synchronous` / `dim-as-new-no-resurrection`).
+- Inventory rows now point to those beads explicitly, so the first-wave terminal
+  reconciliation can reason over an open delivery path instead of prose-only
+  residual text.
+- Verification completed:
+  - `br dep cycles --json`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - inventory/search audit for every scoped residual row
+- Fresh-eyes review re-read the new bead descriptions, inventory split markers,
+  memory entry, and bead graph. No scoped object/array/lifecycle residual remains
+  only as narrative text, and risky lifecycle rows remain delivery-gated on
+  focused oracle evidence rather than being closed by support triage.
