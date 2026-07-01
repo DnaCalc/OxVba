@@ -293,6 +293,8 @@ pub fn library_constant(name: &str) -> Option<CoreConst> {
         "vbdefaultbutton4" => int(768),
         "vbapplicationmodal" => int(0),
         "vbsystemmodal" => int(4096),
+        "vbmodeless" => int(0),
+        "vbmodal" => int(1),
         "vbmsgboxhelpbutton" => int(16384),
         "vbmsgboxsetforeground" => int(65536),
         "vbmsgboxright" => int(524288),

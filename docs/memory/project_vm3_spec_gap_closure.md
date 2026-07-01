@@ -1084,3 +1084,18 @@
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --test nothing_vs_empty_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Form Modality Constants (`bd-4ktq.37.1`)
+
+- Closed `vbmodal-vbmodeless-absent` for vm3.
+- Added `vbModeless = 0` and `vbModal = 1` to the shared VBA-library constant
+  provider so they fold exactly like other `vb*` value constants.
+- Added symbol-provider payload assertions and executable vm3 coverage in
+  `crates/oxvba-differential/tests/library_constants_vm3.rs`.
+- This bead deliberately does not broaden any form `Show` or UI modality runtime
+  claim; it only closes the missing constant surface.
+- Verification target:
+  - `rustfmt --edition 2024 --check crates/oxvba-symbol/src/providers/vba_library.rs crates/oxvba-symbol/src/tests.rs crates/oxvba-differential/tests/library_constants_vm3.rs`
+  - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms`
+  - `cargo test -p oxvba-differential --test library_constants_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

@@ -160,9 +160,17 @@ fn table_keeps_namespaces_distinct() {
 #[test]
 fn library_resolves_constants_intrinsics_structural_and_special_forms() {
     let p = VbaLibraryProvider;
+    let constant = |name: &str| {
+        p.resolve(name).and_then(|binding| match binding.route {
+            DispatchRoute::ConstValue(value) => Some(value),
+            _ => None,
+        })
+    };
     assert!(
         matches!(p.resolve("vbCrLf"), Some(b) if matches!(b.route, DispatchRoute::ConstValue(_)))
     );
+    assert_eq!(constant("vbModeless"), Some(CoreConst::I32(0)));
+    assert_eq!(constant("vbModal"), Some(CoreConst::I32(1)));
     // The by-name `FileStatement` forms (`Kill`/`MkDir`/… are not lexer keywords, so
     // they resolve by name) now route cross-bundle to the `VBA` unit's `FileSystem`
     // module, exactly like the by-name file functions — P4 migrated them off the
