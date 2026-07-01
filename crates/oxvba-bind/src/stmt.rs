@@ -636,11 +636,20 @@ impl<'a> ProcLower<'a> {
             let counter = node
                 .for_counter_token()
                 .ok_or_else(|| BindError::Malformed("For counter".into()))?;
-            let var = self.place_by_name(counter.text)?;
-            let start = self.bind_required(node.for_start(), "For start")?;
-            let end = self.bind_required(node.for_end(), "For end")?;
+            let (var, counter_ty) = self.place_ty_by_name(counter.text)?;
+            let start = types::coerce_store(
+                self.bind_required(node.for_start(), "For start")?,
+                &counter_ty,
+            );
+            let end = types::coerce_store(
+                self.bind_required(node.for_end(), "For end")?,
+                &counter_ty,
+            );
             let step = match node.for_step() {
-                Some(s) => Some(self.bind_expr(s)?.value),
+                Some(s) => Some(types::coerce_store(
+                    self.bind_expr(s)?.value,
+                    &counter_ty,
+                )),
                 None => None,
             };
             Ok(vec![CoreStmt::ForRange {
@@ -1795,8 +1804,16 @@ impl<'a> ProcLower<'a> {
 
     /// Resolve a bare name to a writable place (loop counters, ReDim targets).
     pub(crate) fn place_by_name(&mut self, name: &str) -> Result<CorePlace, BindError> {
+        self.place_ty_by_name(name).map(|(p, _)| p)
+    }
+
+    /// Resolve a bare name to a writable place and its declared type.
+    pub(crate) fn place_ty_by_name(
+        &mut self,
+        name: &str,
+    ) -> Result<(CorePlace, oxvba_symbol::signature::VarTypeRef), BindError> {
         if let Some(rl) = self.return_target(name) {
-            return Ok(CorePlace::Local(rl));
+            return Ok((CorePlace::Local(rl), self.info.return_type.clone()));
         }
         let binding = self
             .resolve(name)
@@ -1804,7 +1821,6 @@ impl<'a> ProcLower<'a> {
         binding
             .symbol
             .and_then(|s| self.place_for_symbol(s))
-            .map(|(p, _)| p)
             .ok_or_else(|| BindError::InvalidAssignment(format!("`{name}` is not a variable")))
     }
 
