@@ -1,0 +1,4 @@
+case_id,status,value,dialog_text,selected_text,selected_line,notes
+ERR-WRITE-001,ok,"6::|6:custom description:custom source|7:custom description:custom source|8:desc while clear:source while clear",,,,Err.Number/Description/Source assignments compile and are observable; Description/Source writes make omitted Err.Raise fields inherit even when Err.Number is 0.
+ERR-LASTDLL-ASSIGN-001,compile-error,,"Compile error: Can't assign to read-only property",".LastDllError =","Err.LastDllError = 123",VBE Debug -> Compile VBAProject surfaced the modal; UIA capture was scoped to the owned Excel PID and the OK button was dismissed.
+ERR-NUMBER-ZERO-001,ok,"8:desc5:src5|9:Subscript out of range:VBAProject|7:Out of memory:VBAProject",,,,Err.Number=0 preserves prior inheritable fields; Err.Clear followed by Err.Number assignment does not make Source/Description inheritable.
