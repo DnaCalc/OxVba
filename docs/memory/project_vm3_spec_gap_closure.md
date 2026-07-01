@@ -568,3 +568,16 @@
   - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Dynamic Array Bounds Error Proof (`bd-4ktq.19`)
+
+- Closed stale inventory row `lbound-ubound-unallocated-error-13` for vm3 with
+  regression evidence; no runtime code change was needed.
+- Added `crates/oxvba-differential/tests/array_bounds_unallocated_vm3.rs`,
+  which proves `LBound` and `UBound` on both never-allocated and erased dynamic
+  arrays raise run-time error 13, while allocated dynamic and fixed arrays still
+  return their declared bounds.
+- Verification target:
+  - `cargo test -p oxvba-differential --test array_bounds_unallocated_vm3`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
