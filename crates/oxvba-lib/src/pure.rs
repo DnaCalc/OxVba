@@ -1087,8 +1087,10 @@ pub fn date_part(args: &[Variant], part: DatePart) -> LibResult<Variant> {
                 DatePart::Year => y as i32,
                 DatePart::Month => m as i32,
                 DatePart::Day => d as i32,
-                // VBA Weekday: 1 = Sunday. Sakamoto returns 0 = Sunday, so add 1.
-                DatePart::Weekday => day_of_week(y as i32, m as u32, d as u32) + 1,
+                DatePart::Weekday => {
+                    let first = first_day_of_week(args, 1)?;
+                    weekday_number(y as i32, m as u32, d as u32, first)
+                }
                 _ => unreachable!(),
             }
         }
@@ -1102,6 +1104,23 @@ pub fn date_part(args: &[Variant], part: DatePart) -> LibResult<Variant> {
             }
         }
     }))
+}
+
+fn first_day_of_week(args: &[Variant], index: usize) -> LibResult<i32> {
+    let first = match opt(args, index) {
+        Some(v) => as_i32(v)?,
+        None => 1,
+    };
+    let first = if first == 0 { 1 } else { first };
+    if !(1..=7).contains(&first) {
+        return Err(LibError::invalid_call("firstdayofweek out of range"));
+    }
+    Ok(first)
+}
+
+fn weekday_number(year: i32, month: u32, day: u32, first: i32) -> i32 {
+    let dow0 = day_of_week(year, month, day);
+    (dow0 - (first - 1)).rem_euclid(7) + 1
 }
 
 pub fn month_name(args: &[Variant]) -> LibResult<Variant> {

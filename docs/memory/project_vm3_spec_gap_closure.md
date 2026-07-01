@@ -533,3 +533,20 @@
   - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Weekday First Day (`bd-4ktq.17`)
+
+- Closed `weekday-ignores-firstdayofweek` for vm3.
+- Changed the native `Weekday` path so its optional `firstdayofweek` argument
+  rotates the returned 1-based day number relative to the requested first day;
+  the default and explicit Sunday-first behavior remain unchanged.
+- Treats `0` (`vbUseSystemDayOfWeek`) as Sunday for deterministic vm3 behavior,
+  matching the existing `WeekdayName` handling.
+- Added `crates/oxvba-differential/tests/weekday_firstday_vm3.rs` for default
+  Sunday-first, explicit Sunday/`0`, and Monday-first controls.
+- Verification target:
+  - `cargo test -p oxvba-differential --test weekday_firstday_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
