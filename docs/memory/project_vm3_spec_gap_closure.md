@@ -1625,3 +1625,26 @@
   memory entry, and bead graph. No scoped object/array/lifecycle residual remains
   only as narrative text, and risky lifecycle rows remain delivery-gated on
   focused oracle evidence rather than being closed by support triage.
+
+## 2026-07-01 - Tier 4/5 First-Wave Reconciliation (`bd-4ktq.39.8`)
+
+- Reconciled the first-wave Tier 4/5 correctness batch (`bd-4ktq.39`):
+  children `bd-4ktq.39.1` through `bd-4ktq.39.7` are closed, with accepted
+  residuals either fixed in focused delivery beads or split into explicit
+  epic-level follow-up beads.
+- The inventory and memory now reflect the same truth:
+  `for-start-step-not-coerced`, date/time rows, numeric/string rows, `Print #`
+  layout, and the focused statement/parser rows are marked done with evidence;
+  the remaining statement/object/array/headless/frontend rows are linked to
+  `bd-4ktq.40` through `bd-4ktq.56`.
+- Removed the broad `bd-us4v` dependency on `bd-4ktq`. The remaining
+  UDT-record-field array performance issue is correctness-neutral and is now
+  unblocked after the scoped correctness residuals were fixed or split.
+- Verification completed:
+  - `br dep cycles --json`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - bead graph/status review for `bd-4ktq.39`, `bd-4ktq.39.8`, and `bd-us4v`
+- Fresh-eyes review checked for unsupported completion language, stale
+  `bd-us4v` blocked wording, prose-only residual rows, and missing delivery
+  paths. The stale performance-row block text was corrected before closure.
