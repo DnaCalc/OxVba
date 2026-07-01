@@ -18,7 +18,7 @@ Implemented a deterministic ProjectGraph compile path in current executable subs
 | `P3` | Project/module/reference identity checks and stable PMR codes | `compile_project_rejects_duplicate_module_names`; `compile_project_rejects_duplicate_reference_targets` |
 | `P4` | Qualified name handling in executable subset (module-qualified + same-project-qualified) | Historical compiler subset refreshed by `scoping_visibility_vm3::cross_module_public_qualified_matches_oracle`, `scoping_visibility_vm3::valid_project_qualifier_should_match_oracle`, and `scoping_visibility_vm3::wrong_project_qualifier_should_be_rejected` in `bd-4ktq.38.3` |
 | `P5` | `Option Private Module` module-kind legality + host-direct invocation export behavior | Historical CCT-038 host-direct oracle capture; refreshed by `scoping_visibility_vm3::option_private_module_hides_referenced_project_export`, `scoping_visibility_vm3::option_private_module_allows_same_project_access`, and `surface::tests::source_option_private_module_is_project_private` in `bd-4ktq.38.4` |
-| `P6` | Class-related PMR diagnostics remain explicit, stable, and non-silent | `project_model_*_requires_class_graph.bas`; PMR diagnostics in resolver |
+| `P6` | Class-related PMR diagnostics remain explicit, stable, and non-silent | `project_model_*_requires_class_graph.bas`; WithEvents legality refreshed by `scanner_rejects_withevents_in_standard_modules` and `scoping_visibility_vm3::withevents_in_procedural_module_should_be_rejected` in `bd-4ktq.38.5`; broader PMR diagnostics remain in resolver/compiler evidence |
 | `P7` | Host export registry for public procedural members | Historical host/export subset refreshed by CCT-038 oracle evidence and the current symbol export-surface boundary in `bd-4ktq.38.4` |
 | `P8` | Reference-order shadowing modeled in ProjectGraph resolution subset | Historical CCT-037 oracle capture in `pmr_project_model_20260303T070427Z`; refreshed by `scoping_visibility_vm3::referenced_project_precedence_and_project_qualifier_are_explicit` in `bd-4ktq.38.2` |
 | `P9` | Conformance/evidence synchronization and PMR coverage status updates | updated PMR clause catalog + requirements CSV + coverage index |
@@ -28,7 +28,7 @@ Implemented a deterministic ProjectGraph compile path in current executable subs
 
 - Cross-project reference execution in compiler backend remains staged; explicit diagnostic: `PMR-E-REFERENCE-CROSS-PROJECT-UNSUPPORTED`.
 - Project-qualified resolution currently supports current-project qualification in compile path; full host/project catalog parity remains deferred.
-- Class/interface/event deep semantics (`WithEvents`, `Implements`, `RaiseEvent`) continue under stable PMR gates until class graph integration lands.
+- The `WithEvents` handler-prefix/source-visibility subset is current in vm3; broader class/interface/event lifecycle semantics (`WithEvents` reassignment and cleanup, `Implements`, `RaiseEvent` dispatch ordering) continue under stable PMR gates until class graph integration lands.
 
 ## Oracle Gate State
 
