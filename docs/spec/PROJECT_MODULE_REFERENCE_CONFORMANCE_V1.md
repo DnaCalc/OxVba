@@ -63,6 +63,7 @@ Current executable subset (A1/A2):
 - `public_udt_enum_collision_should_be_ambiguous`
 - `public_udt_enum_collision_keeps_module_qualified_udt_type`
 - `public_udt_enum_collision_keeps_project_qualified_udt_type`
+- `source_option_private_module_is_project_private`
 - `option_private_module_hides_referenced_project_export`
 - `option_private_module_hides_referenced_project_qualified_export`
 - `option_private_module_allows_same_project_access`
@@ -88,6 +89,7 @@ Expected probes:
 
 Current executable subset:
 
+- `source_option_private_module_is_project_private`
 - `duplicate_public_unqualified_should_be_ambiguous`
 - `duplicate_public_unqualified_members_are_ambiguous_before_library_fallback`
 - `module_name_public_member_collision_should_be_rejected`
@@ -125,6 +127,7 @@ Current executable subset (C1):
 - `type_library_resolution_binds_unique_importlib_entry`
 - `type_library_resolution_requires_importlib_hint`
 - `type_library_resolution_reports_ambiguous_importlib`
+- `source_option_private_module_is_project_private`
 - `option_private_module_hides_referenced_project_export`
 - `option_private_module_hides_referenced_project_qualified_export`
 - `option_private_module_keeps_public_referenced_module_visible`

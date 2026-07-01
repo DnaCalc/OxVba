@@ -141,6 +141,13 @@ variable ambiguity, UDT/Enum ambiguity, and legal qualified access. Rows stay
 `partial` where their scope extends into broader project/module/library
 namespace behavior.
 
+**Option Private PMR reconciliation (bd-4ktq.38.4):**
+`MODPROJ-017`, `MODPROJ-039`, and `PMR-VIS-001` now cite live vm3/symbol
+fixtures for the referenced-project `Option Private Module` visibility boundary
+and historical CCT-038 oracle evidence for the host-direct invocation
+distinction. Rows stay `partial` where their scope extends into broader host
+catalog and host/HAL project-public-entity behavior.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

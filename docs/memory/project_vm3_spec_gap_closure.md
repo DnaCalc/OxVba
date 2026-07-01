@@ -1310,3 +1310,31 @@
   - `scripts/check-governance.ps1`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-01 - Option Private PMR Reconciliation (`bd-4ktq.38.4`)
+
+- Reconciled the PMR `Option Private Module` reference and host-boundary rows
+  against the closed scoping evidence from `bd-4ktq.36.4`.
+- Updated `MODPROJ-017`, `MODPROJ-039`, and `PMR-VIS-001` to point at live vm3
+  and symbol fixtures for referenced-project hiding, project-qualified hiding,
+  same-project access, normal public referenced-module access, and the current
+  project export-surface boundary.
+- Kept the host-direct invocation distinction tied to historical CCT-038 oracle
+  evidence because the old host-export unit anchors are no longer live test
+  names in the current crate graph.
+- Kept the affected rows `partial` where the row scope reaches broader host
+  catalog and host/HAL project-public-entity behavior beyond the vm3 scoping
+  subset.
+- Fresh-eyes review checked the new anchors against live vm3 and symbol tests,
+  verified the touched Option Private rows no longer cite the old host/export
+  test names, and left broader stale compiler-era anchors in non-scoping PMR
+  rows for the terminal reconciliation pass.
+- Verification completed:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-host -- --list`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
