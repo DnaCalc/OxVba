@@ -133,6 +133,14 @@ because external type-library, broken-reference, library/type-space, and
 broader reference-boundary edges remain outside the scoping batch under the
 existing PMR/COM residual lanes.
 
+**Public namespace collision PMR reconciliation (bd-4ktq.38.3):**
+`MODPROJ-018`, `MODPROJ-019`, `PMR-VIS-003`, and the current PMR
+qualified-name anchors now cite live vm3/symbol fixtures for duplicate Public
+procedure ambiguity, module-name/public-member collisions, Public Const/Public
+variable ambiguity, UDT/Enum ambiguity, and legal qualified access. Rows stay
+`partial` where their scope extends into broader project/module/library
+namespace behavior.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

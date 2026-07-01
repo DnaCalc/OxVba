@@ -54,7 +54,9 @@ Current executable subset (A1/A2):
 - `project_graph_rejects_invalid_project_name`
 - `project_node_rejects_duplicate_module_name_case_insensitive`
 - `source_project_class_attribute_constraints_are_enforced`
-- `public_symbol_collisions_require_qualification`
+- `duplicate_public_unqualified_should_be_ambiguous`
+- `duplicate_public_unqualified_members_are_ambiguous_before_library_fallback`
+- `module_name_public_member_collision_should_be_rejected`
 - `public_const_variable_collision_should_be_ambiguous`
 - `public_const_variable_collision_keeps_module_qualified_access`
 - `public_const_variable_collision_keeps_project_qualified_access`
@@ -86,6 +88,9 @@ Expected probes:
 
 Current executable subset:
 
+- `duplicate_public_unqualified_should_be_ambiguous`
+- `duplicate_public_unqualified_members_are_ambiguous_before_library_fallback`
+- `module_name_public_member_collision_should_be_rejected`
 - `public_const_variable_collision_should_be_ambiguous`
 - `public_const_variable_collision_keeps_module_qualified_access`
 - `public_const_variable_collision_keeps_project_qualified_access`

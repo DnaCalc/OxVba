@@ -1283,3 +1283,30 @@
   - `scripts/check-governance.ps1`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-01 - Public Namespace Collision PMR Reconciliation (`bd-4ktq.38.3`)
+
+- Reconciled the PMR public namespace collision rows against the closed
+  scoping evidence from `bd-4ktq.9` and `bd-4ktq.36`.
+- Updated `MODPROJ-018` and `MODPROJ-019` to point at live vm3 and symbol
+  fixtures for duplicate Public procedure ambiguity, module-name/public-member
+  collisions, Public Const/Public variable ambiguity, legal module/project
+  qualified access, and duplicate-member ambiguity before VBA-library fallback.
+- Refreshed `PMR-VIS-002`, `PMR-VIS-003`, `PMR-NAME-001`, and the current
+  qualified-name anchors to remove stale pre-refactor `oxvba-compiler` /
+  `public_symbol_collisions_require_qualification` references from the active
+  PMR scoping truth rows.
+- Kept the affected rows `partial` where the row scope reaches broader
+  project/module/library namespace behavior beyond the vm3 scoping subset.
+- Fresh-eyes review checked the new row anchors against live test functions,
+  verified stale public-collision and qualified-name anchors are gone from the
+  active PMR scoping rows, and confirmed the affected rows still use
+  subset-safe `partial` wording.
+- Verification completed:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
