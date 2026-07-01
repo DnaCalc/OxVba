@@ -37,6 +37,27 @@ impl<'a> ProcLower<'a> {
         binding: &Binding,
         arglist: Option<SyntaxNode<'_>>,
     ) -> Result<Bound, BindError> {
+        self.reject_sub_in_value_context(name, binding)?;
+        self.bind_call_route_any(name, binding, arglist)
+    }
+
+    /// Lower a resolved statement-position call. Unlike value context, this may
+    /// target a `Sub`, whose result is discarded by the enclosing `Eval`.
+    fn bind_call_route_statement(
+        &mut self,
+        name: &str,
+        binding: &Binding,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Bound, BindError> {
+        self.bind_call_route_any(name, binding, arglist)
+    }
+
+    fn bind_call_route_any(
+        &mut self,
+        name: &str,
+        binding: &Binding,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Bound, BindError> {
         match &binding.route {
             DispatchRoute::Value if self.binding_is_module(binding) => {
                 Err(self.module_as_value_error(name))
@@ -244,6 +265,24 @@ impl<'a> ProcLower<'a> {
                 "call route {other:?} for `{name}`"
             ))),
         }
+    }
+
+    fn reject_sub_in_value_context(&self, name: &str, binding: &Binding) -> Result<(), BindError> {
+        if matches!(
+            binding.route,
+            DispatchRoute::ProjectMember {
+                kind: ProjectMemberKind::Method
+            }
+        ) && let Some(sym) = binding.symbol
+            && self
+                .proc_signature_for(sym, ProjectMemberKind::Method)
+                .is_some_and(|sig| sig.return_type.is_none())
+        {
+            return Err(BindError::ExpectedFunctionOrVariable {
+                name: name.to_string(),
+            });
+        }
+        Ok(())
     }
 
     fn bind_native_args(
@@ -1723,6 +1762,27 @@ impl<'a> ProcLower<'a> {
         }
     }
 
+    fn try_module_qualified_statement(
+        &mut self,
+        node: SyntaxNode<'_>,
+        member: &str,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Option<Bound>, BindError> {
+        if node.member_has_leading_dot() {
+            return Ok(None);
+        }
+        let Some(parts) = self.qualified_namespace_member_parts(node, member) else {
+            return Ok(None);
+        };
+        let part_refs = parts.iter().map(String::as_str).collect::<Vec<_>>();
+        match self.g.env.resolve_qualified(&part_refs) {
+            Some(binding) => Ok(Some(
+                self.finish_value_or_call_statement(member, &binding, arglist)?,
+            )),
+            None => Ok(None),
+        }
+    }
+
     pub(crate) fn qualified_namespace_member_binding(
         &self,
         node: SyntaxNode<'_>,
@@ -1809,6 +1869,39 @@ impl<'a> ProcLower<'a> {
         self.bind_call_route(name, binding, arglist)
     }
 
+    fn finish_value_or_call_statement(
+        &mut self,
+        name: &str,
+        binding: &Binding,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Bound, BindError> {
+        if let DispatchRoute::ConstValue(c) = &binding.route {
+            return Ok(value_bound(
+                CoreValue::Const(c.clone()),
+                crate::expr::const_type(c),
+            ));
+        }
+        if let Some(sym) = binding.symbol
+            && let Some(c) = self.g.env.const_value(sym)
+        {
+            return Ok(value_bound(
+                CoreValue::Const(c.clone()),
+                crate::expr::const_type(c),
+            ));
+        }
+        if let DispatchRoute::Value = binding.route
+            && let Some(sym) = binding.symbol
+            && let Some((place, ty)) = self.place_for_symbol(sym)
+        {
+            return Ok(Bound {
+                value: CoreValue::Load(place.clone()),
+                ty,
+                place: Some(place),
+            });
+        }
+        self.bind_call_route_statement(name, binding, arglist)
+    }
+
     /// True if `name` is a bare namespace qualifier for `name.Member`: either a
     /// **standard** (`Procedural`) module, the built-in `VBA` library namespace, or
     /// an enum type. Class / Document / Form modules need an instance, so they are
@@ -1869,7 +1962,21 @@ impl<'a> ProcLower<'a> {
                 }
                 DispatchRoute::ProjectMember { kind } => {
                     let kind = *kind;
-                    let ty = self.member_return_type(binding.symbol, kind);
+                    let signature = binding
+                        .symbol
+                        .and_then(|s| self.proc_signature_for(s, kind));
+                    if kind == ProjectMemberKind::Method
+                        && signature
+                            .as_ref()
+                            .is_some_and(|sig| sig.return_type.is_none())
+                    {
+                        return Err(BindError::ExpectedFunctionOrVariable {
+                            name: member.to_string(),
+                        });
+                    }
+                    let ty = signature
+                        .and_then(|sig| sig.return_type)
+                        .unwrap_or(VarTypeRef::Variant);
                     let dispatch = self.interface_dispatch_name(&recv.ty, member);
                     Ok(value_bound(
                         self.late_member_call(&dispatch, kind, recv.value, Vec::new()),
@@ -1941,13 +2048,35 @@ impl<'a> ProcLower<'a> {
         member_node: SyntaxNode<'_>,
         arglist: Option<SyntaxNode<'_>>,
     ) -> Result<Bound, BindError> {
+        self.bind_member_call_inner(member_node, arglist, false)
+    }
+
+    fn bind_member_call_statement(
+        &mut self,
+        member_node: SyntaxNode<'_>,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Bound, BindError> {
+        self.bind_member_call_inner(member_node, arglist, true)
+    }
+
+    fn bind_member_call_inner(
+        &mut self,
+        member_node: SyntaxNode<'_>,
+        arglist: Option<SyntaxNode<'_>>,
+        allow_statement_only_sub: bool,
+    ) -> Result<Bound, BindError> {
         let member = member_node
             .member_name_token()
             .ok_or_else(|| BindError::Malformed("member call without name".into()))?
             .text;
         // `Module.Member(args)` — a qualified standard-module call (e.g. the startup
         // shim's `Call Module.Proc()`), not member access on a value.
-        if let Some(bound) = self.try_module_qualified(member_node, member, arglist)? {
+        let qualified = if allow_statement_only_sub {
+            self.try_module_qualified_statement(member_node, member, arglist)?
+        } else {
+            self.try_module_qualified(member_node, member, arglist)?
+        };
+        if let Some(bound) = qualified {
             return Ok(bound);
         }
         let recv = self.member_receiver_bound(member_node)?;
@@ -2013,6 +2142,16 @@ impl<'a> ProcLower<'a> {
                         (Some(sig), Some(s)) => self.bind_proc_args(arglist, sig, s)?,
                         _ => self.bind_args(arglist, None)?,
                     };
+                    if !allow_statement_only_sub
+                        && kind == ProjectMemberKind::Method
+                        && signature
+                            .as_ref()
+                            .is_some_and(|sig| sig.return_type.is_none())
+                    {
+                        return Err(BindError::ExpectedFunctionOrVariable {
+                            name: member.to_string(),
+                        });
+                    }
                     let ty = signature
                         .and_then(|s| s.return_type)
                         .unwrap_or(VarTypeRef::Variant);
@@ -2287,14 +2426,28 @@ impl<'a> ProcLower<'a> {
                 let binding = self
                     .resolve(name)
                     .ok_or_else(|| self.unresolved(name, "call statement"))?;
-                self.bind_call_route(name, &binding, arglist)
+                self.bind_call_route_statement(name, &binding, arglist)
             }
             // `Call Foo(a, b)` — the whole `Foo(a, b)` is the callee (an IndexExpr).
-            SyntaxKind::IndexExpr => self.bind_index_or_call(callee),
+            SyntaxKind::IndexExpr => self.bind_index_callee_statement(callee),
             // `obj.Method` / `.Method` in statement position (no parenthesised args).
-            SyntaxKind::MemberExpr => self.bind_member_call(callee, arglist),
+            SyntaxKind::MemberExpr => self.bind_member_call_statement(callee, arglist),
             other => Err(BindError::Unsupported(format!("call statement {other:?}"))),
         }
+    }
+
+    fn bind_index_callee_statement(&mut self, node: SyntaxNode<'_>) -> Result<Bound, BindError> {
+        let base = node
+            .index_base()
+            .ok_or_else(|| BindError::Malformed("call index without base".into()))?;
+        if base.kind() == SyntaxKind::IdentExpr
+            && let Some(tok) = base.ident_name_token()
+            && let Some(binding) = self.resolve_suffixed(base, tok.text)
+            && !matches!(binding.route, DispatchRoute::Value)
+        {
+            return self.bind_call_route_statement(tok.text, &binding, node.index_arg_list());
+        }
+        self.bind_index_or_call(node)
     }
 }
 

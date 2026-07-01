@@ -33,6 +33,9 @@ pub enum BindError {
     /// A required argument was omitted.
     #[error("Argument not optional: {parameter}")]
     ArgumentNotOptional { parameter: String },
+    /// A statement-only Sub was used where a value-producing expression is required.
+    #[error("Expected Function or variable: {name}")]
+    ExpectedFunctionOrVariable { name: String },
     /// A line label is defined more than once within a single procedure — a VBA
     /// compile error ("Duplicate declaration in current scope"). Label scope is
     /// per-procedure, so the same name in a different procedure is fine.
@@ -104,6 +107,12 @@ impl BindError {
                 format!("Argument not optional: {parameter}"),
             )
             .with_help("Supply the required argument, or mark the parameter Optional."),
+            BindError::ExpectedFunctionOrVariable { name } => Diagnostic::error(
+                "BIND-E-EXPECTED-FUNCTION-OR-VARIABLE",
+                DiagnosticPhase::Bind,
+                format!("Expected Function or variable: {name}"),
+            )
+            .with_help("Use a Function or Property Get in value context, or call the Sub as a statement."),
             BindError::DuplicateLabel { name } => Diagnostic::error(
                 "BIND-E-DUPLICATE-LABEL",
                 DiagnosticPhase::Bind,
@@ -201,5 +210,22 @@ mod tests {
         .to_diagnostic();
         assert_eq!(diagnostic.code.as_str(), "BIND-E-ARGUMENT-NOT-OPTIONAL");
         assert!(diagnostic.message.contains("Argument not optional: b"));
+    }
+
+    #[test]
+    fn expected_function_or_variable_has_stable_code() {
+        let diagnostic = BindError::ExpectedFunctionOrVariable {
+            name: "DoIt".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(
+            diagnostic.code.as_str(),
+            "BIND-E-EXPECTED-FUNCTION-OR-VARIABLE"
+        );
+        assert!(
+            diagnostic
+                .message
+                .contains("Expected Function or variable: DoIt")
+        );
     }
 }

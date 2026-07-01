@@ -110,6 +110,10 @@ struct Parser<'a> {
     offset: u32,
     /// Parenthesis nesting depth for expression parsing.
     paren_depth: u32,
+    /// Extra `Next` closures already consumed by a multi-variable `Next i, j`.
+    pending_multinext_closures: usize,
+    /// Active source-level `For` parser nesting.
+    for_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -121,6 +125,8 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             offset: 0,
             paren_depth: 0,
+            pending_multinext_closures: 0,
+            for_depth: 0,
         }
     }
 
@@ -1709,6 +1715,9 @@ impl<'a> Parser<'a> {
 
             // Check for terminators
             let kind = self.current_non_trivia();
+            if self.pending_multinext_closures > 0 && terminators.contains(&SyntaxKind::KwNext) {
+                break;
+            }
             if self.is_block_terminator(kind, terminators) {
                 break;
             }
@@ -1838,11 +1847,10 @@ impl<'a> Parser<'a> {
             k if Self::is_contextual_name_keyword(k) && self.peek_is_label_colon() => {
                 self.parse_label_stmt()
             }
-            SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::IntLiteral
-                if self.peek_is_label_colon() =>
-            {
+            SyntaxKind::Ident | SyntaxKind::BracketedIdent if self.peek_is_label_colon() => {
                 self.parse_label_stmt()
             }
+            SyntaxKind::IntLiteral => self.parse_line_number_label_stmt(),
             SyntaxKind::Ident | SyntaxKind::BracketedIdent | SyntaxKind::KwMe | SyntaxKind::Dot => {
                 self.parse_assign_or_call()
             }
@@ -1988,6 +1996,7 @@ impl<'a> Parser<'a> {
 
     fn parse_for_stmt(&mut self) {
         self.start_node(SyntaxKind::ForStmt);
+        self.for_depth += 1;
         self.eat_trivia();
         self.bump(); // For
         self.eat_whitespace();
@@ -2045,14 +2054,49 @@ impl<'a> Parser<'a> {
 
         // Next
         self.eat_trivia();
-        if self.at(SyntaxKind::KwNext) {
-            self.bump();
-            self.eat_to_eol();
+        if self.pending_multinext_closures > 0 {
+            self.pending_multinext_closures -= 1;
+        } else if self.at(SyntaxKind::KwNext) {
+            self.parse_next_clause();
         } else {
             self.error("expected `Next`".into());
         }
 
+        self.for_depth -= 1;
         self.finish_node();
+    }
+
+    fn parse_next_clause(&mut self) {
+        self.bump(); // Next
+        self.eat_whitespace();
+
+        let mut names = 0usize;
+        loop {
+            if self.at(SyntaxKind::Ident)
+                || self.at(SyntaxKind::BracketedIdent)
+                || self.current().is_keyword()
+            {
+                names += 1;
+                self.bump();
+                if self.at(SyntaxKind::TypeSuffix) {
+                    self.bump();
+                }
+                self.eat_whitespace();
+            }
+            if !self.eat(SyntaxKind::Comma) {
+                break;
+            }
+            self.eat_whitespace();
+        }
+        if names > 1 {
+            let extra = names - 1;
+            let available_enclosing = self.for_depth.saturating_sub(1);
+            self.pending_multinext_closures += extra.min(available_enclosing);
+            if extra > available_enclosing {
+                self.error("`Next` without matching `For`".into());
+            }
+        }
+        self.eat_to_eol();
     }
 
     // ── Do statement ────────────────────────────────────────
@@ -2491,6 +2535,15 @@ impl<'a> Parser<'a> {
         self.bump(); // label
         self.eat_whitespace();
         self.expect(SyntaxKind::Colon);
+        self.finish_node();
+    }
+
+    fn parse_line_number_label_stmt(&mut self) {
+        self.start_node(SyntaxKind::LabelStmt);
+        self.eat_trivia();
+        self.bump(); // line number
+        self.eat_whitespace();
+        self.eat(SyntaxKind::Colon);
         self.finish_node();
     }
 
@@ -3541,6 +3594,16 @@ mod tests {
     }
 
     #[test]
+    fn parses_colonless_line_number_labels_with_statement_body() {
+        let src = "Sub T()\nGoTo 200\n100 x = 1\n200 x = 5\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::LabelStmt).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::AssignStmt).len(), 2);
+    }
+
+    #[test]
     fn parses_contextual_keyword_labels() {
         let src = "Sub T()\nGoTo Name\nName:\nGoTo Print\nPrint:\nEnd Sub\n";
         let p = parse(src);
@@ -4035,6 +4098,30 @@ mod tests {
         let src = "Sub T()\nFor i = 1 To 10 Step 2\n    x = i\nNext i\nEnd Sub\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
+    }
+
+    #[test]
+    fn parses_multivariable_next_as_nested_loop_closures() {
+        let src = "Sub T()\nFor i = 1 To 2\nFor j = 1 To 3\nx = x + 1\nNext j, i\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::ForStmt).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::AssignStmt).len(), 1);
+    }
+
+    #[test]
+    fn multivariable_next_rejects_more_names_than_open_loops() {
+        let src = "Sub T()\nFor i = 1 To 2\nFor j = 1 To 3\nNext j, i, k\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(
+            p.errors()
+                .iter()
+                .any(|err| err.message.contains("without matching `For`")),
+            "unexpected errors: {:?}",
+            p.errors()
+        );
     }
 
     #[test]

@@ -15,11 +15,11 @@ use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
-use crate::ProcLower;
 use crate::call::err_field;
 use crate::error::BindError;
 use crate::expr::comparison_binop;
 use crate::types;
+use crate::{LoopContext, ProcLower};
 
 impl<'a> ProcLower<'a> {
     pub(crate) fn bind_block(&mut self, block: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
@@ -628,13 +628,13 @@ impl<'a> ProcLower<'a> {
     }
 
     fn bind_for(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
-        let body = self.bind_opt_block(node.body_block())?;
         if node.for_is_each() {
             let var_node = node
                 .foreach_var()
                 .ok_or_else(|| BindError::Malformed("For Each variable".into()))?;
             let (item, _ty) = self.bind_place(var_node)?;
             let source = self.bind_required(node.foreach_collection(), "For Each collection")?;
+            let body = self.bind_loop_body(node.body_block(), LoopContext::For)?;
             Ok(vec![CoreStmt::ForEach { item, source, body }])
         } else {
             let counter = node
@@ -651,6 +651,7 @@ impl<'a> ProcLower<'a> {
                 Some(s) => Some(types::coerce_store(self.bind_expr(s)?.value, &counter_ty)),
                 None => None,
             };
+            let body = self.bind_loop_body(node.body_block(), LoopContext::For)?;
             Ok(vec![CoreStmt::ForRange {
                 var,
                 start,
@@ -662,7 +663,7 @@ impl<'a> ProcLower<'a> {
     }
 
     fn bind_do(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
-        let body = self.bind_opt_block(node.body_block())?;
+        let body = self.bind_loop_body(node.body_block(), LoopContext::Do)?;
         if let Some(pre) = node.do_pre_cond() {
             let condition = self.bind_expr(pre)?.value;
             Ok(vec![CoreStmt::DoLoop {
@@ -692,13 +693,24 @@ impl<'a> ProcLower<'a> {
 
     fn bind_while(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
         let condition = self.bind_required(node.condition_expr(), "While condition")?;
-        let body = self.bind_opt_block(node.body_block())?;
+        let body = self.bind_loop_body(node.body_block(), LoopContext::While)?;
         Ok(vec![CoreStmt::DoLoop {
             condition,
             until: false,
             post_check: false,
             body,
         }])
+    }
+
+    fn bind_loop_body(
+        &mut self,
+        body: Option<SyntaxNode<'_>>,
+        kind: LoopContext,
+    ) -> Result<Vec<CoreStmt>, BindError> {
+        self.loop_stack.push(kind);
+        let result = self.bind_opt_block(body);
+        self.loop_stack.pop();
+        result
     }
 
     fn bind_select(&mut self, node: SyntaxNode<'_>) -> Result<Vec<CoreStmt>, BindError> {
@@ -768,8 +780,24 @@ impl<'a> ProcLower<'a> {
             }
             _ => None,
         });
-        kind.map(|k| vec![CoreStmt::Exit(k)])
-            .ok_or_else(|| BindError::Malformed("Exit kind".into()))
+        match kind {
+            Some(ExitKind::For) if self.loop_stack.iter().rev().any(|k| *k == LoopContext::For) => {
+                Ok(vec![CoreStmt::Exit(ExitKind::For)])
+            }
+            Some(ExitKind::For) => Err(BindError::Malformed("Exit For outside For loop".into())),
+            Some(ExitKind::Do) if self.can_exit_do() => Ok(vec![CoreStmt::Exit(ExitKind::Do)]),
+            Some(ExitKind::Do) => Err(BindError::Malformed("Exit Do outside Do loop".into())),
+            Some(ExitKind::Proc) => Ok(vec![CoreStmt::Exit(ExitKind::Proc)]),
+            None => Err(BindError::Malformed("Exit kind".into())),
+        }
+    }
+
+    fn can_exit_do(&self) -> bool {
+        self.loop_stack
+            .iter()
+            .rev()
+            .find(|kind| matches!(kind, LoopContext::Do | LoopContext::While))
+            .is_some_and(|kind| *kind == LoopContext::Do)
     }
 
     // ── Error state ─────────────────────────────────────────

@@ -569,6 +569,8 @@ struct ProcLower<'a> {
     info: &'a ProcInfo,
     /// Active `With` receivers (for leading-dot member access).
     with_stack: Vec<Bound>,
+    /// Source-level loop nesting used to validate `Exit For` / `Exit Do`.
+    loop_stack: Vec<LoopContext>,
     next_with_temp: usize,
     /// Label name → its allocated id (allocated on first reference).
     labels: HashMap<String, LabelId>,
@@ -579,6 +581,13 @@ struct ProcLower<'a> {
     /// ("Duplicate declaration in current scope"). Label scope is per-procedure,
     /// so this set is fresh per [`ProcLower`].
     defined_labels: HashSet<LabelId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopContext {
+    For,
+    Do,
+    While,
 }
 
 /// The result of binding an expression: its value, inferred type, and (when it

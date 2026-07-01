@@ -329,7 +329,10 @@ fn module_qualified_global_variable_is_read_and_written_as_place() {
     let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
     let host = NullHostServices::new(HostPolicy::deterministic_runtime());
     let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
-    assert_eq!(vm.slot(oxp.globals.len()).and_then(|v| v.as_i32()), Some(42));
+    assert_eq!(
+        vm.slot(oxp.globals.len()).and_then(|v| v.as_i32()),
+        Some(42)
+    );
 }
 
 #[test]
@@ -647,7 +650,10 @@ fn random_file_put_get_round_trips_through_vm() {
         })
         .build();
     let vm = oxvba_vm3::Vm3::run(&oxp, host.as_ref()).expect("run");
-    assert_eq!(vm.slot(oxp.globals.len()).and_then(|v| v.as_i32()), Some(222));
+    assert_eq!(
+        vm.slot(oxp.globals.len()).and_then(|v| v.as_i32()),
+        Some(222)
+    );
 }
 
 /// Run a single-module source on the standard (in-memory) host; read `Main`'s
@@ -757,13 +763,17 @@ fn extern_filesystem_call_args<'p>(
                 )
         })
     }
-    program.procs.iter().flat_map(|p| &p.body).find_map(|s| match s {
-        CoreStmt::Eval(CoreValue::Call {
-            callee: CoreCallee::ExternProc { import },
-            args,
-        }) if matches_member(program, *import, member) => Some(args),
-        _ => None,
-    })
+    program
+        .procs
+        .iter()
+        .flat_map(|p| &p.body)
+        .find_map(|s| match s {
+            CoreStmt::Eval(CoreValue::Call {
+                callee: CoreCallee::ExternProc { import },
+                args,
+            }) if matches_member(program, *import, member) => Some(args),
+            _ => None,
+        })
 }
 
 /// Count the `Main`-body assignments whose value is an `ExternProc` call into
@@ -797,7 +807,9 @@ fn extern_filesystem_assign_count(program: &CoreProgram, member: &str) -> usize 
         .procs
         .iter()
         .flat_map(|p| &p.body)
-        .filter(|s| matches!(s, CoreStmt::Assign { value, .. } if call_member(program, value, member)))
+        .filter(
+            |s| matches!(s, CoreStmt::Assign { value, .. } if call_member(program, value, member)),
+        )
         .count()
 }
 
@@ -1066,6 +1078,73 @@ fn label_referenced_many_times_but_defined_once_binds() {
     // reference as a definition.
     let src = "Sub Main()\n    Dim x As Long\n    On Error GoTo handler\n    GoTo handler\nhandler:\n    x = 1\nEnd Sub\n";
     bind(src);
+}
+
+#[test]
+fn colonless_line_number_labels_bind_and_branch() {
+    let src = "Sub Main()\n\
+               Dim x As Long\n\
+               GoTo 200\n\
+               100 x = 1\n\
+               200 x = 5\n\
+               End Sub\n";
+    assert_eq!(run_main_local0(src), Some(5.0));
+}
+
+#[test]
+fn multivariable_next_closes_nested_for_loops() {
+    let src = "Sub Main()\n\
+               Dim total As Long\n\
+               Dim i As Long\n\
+               Dim j As Long\n\
+               For i = 1 To 2\n\
+               For j = 1 To 3\n\
+                   total = total + 1\n\
+               Next j, i\n\
+               End Sub\n";
+    assert_eq!(run_main_local0(src), Some(6.0));
+}
+
+#[test]
+fn sub_used_as_expression_is_bind_error() {
+    let src = "Sub Main()\nDim x\nx = DoIt()\nEnd Sub\nSub DoIt()\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ExpectedFunctionOrVariable") || err.contains("Expected Function or variable"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn sub_called_as_statement_still_binds() {
+    let src = "Sub Main()\nDim x As Long\nDoIt x\nCall DoIt(x)\nEnd Sub\nSub DoIt(ByRef x As Long)\nx = x + 1\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(2.0));
+}
+
+#[test]
+fn exit_do_inside_while_wend_is_bind_error() {
+    let src = "Sub Main()\nWhile True\nExit Do\nWend\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("Exit Do outside Do loop"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn exit_do_inside_do_loop_still_binds() {
+    let src = "Sub Main()\nDim x As Long\nDo\nx = x + 1\nExit Do\nLoop\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(1.0));
+}
+
+#[test]
+fn exit_do_inside_while_nested_in_do_is_bind_error() {
+    let src = "Sub Main()\nDo\nWhile True\nExit Do\nWend\nLoop\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("Exit Do outside Do loop"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

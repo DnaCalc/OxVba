@@ -1550,3 +1550,49 @@
   invalid-call path, and `Seek #` in Append mode recomputes the formatted-output
   column from EOF rather than the reported seek cursor. No remaining scoped
   `Print #` layout residual is open.
+
+## 2026-07-01 - Statement Parser/Error-Model Slice (`bd-4ktq.39.6`)
+
+- Closed the focused statement/parser residual subset:
+  `next-multivariable-unsupported`, `line-number-labels-no-colon`,
+  `sub-in-expression-accepted`, and `exit-do-in-while-accepted`.
+- Parser support now treats colonless numeric line labels as label statements
+  that can prefix a same-line statement, and `Next j, i` closes the nested
+  source `For` statements while rejecting a `Next` name list longer than the
+  open loop stack.
+- Binder support now rejects a project `Sub` used as a value-producing
+  expression with stable diagnostic code
+  `BIND-E-EXPECTED-FUNCTION-OR-VARIABLE`. Statement-position calls, including
+  module-qualified and member method calls, remain valid.
+- The binder now tracks source-level loop kinds so `Exit Do` inside
+  `While/Wend` is rejected even though `While` lowers to the same vm3 `DoLoop`
+  shape as a real `Do` loop.
+- Remaining scoped rows were split into explicit delivery beads rather than
+  claimed here:
+  `bd-4ktq.40` (`lset-rset-unrecognized`), `bd-4ktq.41`
+  (`redim-undeclared-rejected`), `bd-4ktq.42` (`erl-absent` and
+  `on-error-undefined-label-malformed`), `bd-4ktq.43`
+  (`on-goto-out-of-range-no-5`), `bd-4ktq.44`
+  (`err-helpfile-helpcontext-dropped`), `bd-4ktq.45`
+  (`width-statement-no-wrap`), `bd-4ktq.46`
+  (`debug-assert-no-break` and `shell-blocks-until-exit`), and
+  `bd-4ktq.47` (`cc-constants-hardwired-64bit` and
+  `resolve-library-import-dead-guard`).
+- Golden drift was audited and re-blessed only for
+  `conformance/tests/goto_line_number_statement_basic.bas`, which now matches
+  the existing oracle/value evidence by returning `5` instead of parse-failing.
+- Verification completed:
+  - `cargo test -p oxvba-syntax`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `rustfmt --edition 2024 --check` on touched parser/binder Rust files
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Fresh-eyes review re-read the parser `Next` accounting, statement/value call
+  split, source loop-kind validation, new tests, inventory row state, split-bead
+  descriptions, and the golden line drift. The review caught and fixed two
+  issues before closure: PowerShell-mangled follow-up bead descriptions were
+  rewritten cleanly, and `Exit Do` validation was tightened so a nested
+  `While/Wend` lowered as a `DoLoop` cannot become the runtime break target for
+  a source `Exit Do`.
