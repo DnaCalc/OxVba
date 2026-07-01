@@ -126,6 +126,13 @@ It records the proved vm3 subsets, the broader PMR residual boundaries, and the
 owning follow-on beads `bd-4ktq.38.2` through `bd-4ktq.38.6`. The audit did not
 expose an untracked delivery lane beyond those existing child beads.
 
+**Project-reference/qualifier PMR reconciliation (bd-4ktq.38.2):**
+`MODPROJ-005` and `MODPROJ-016` now cite the scoped vm3
+referenced-project/qualifier fixtures directly. Both rows stay `partial`
+because external type-library, broken-reference, library/type-space, and
+broader reference-boundary edges remain outside the scoping batch under the
+existing PMR/COM residual lanes.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

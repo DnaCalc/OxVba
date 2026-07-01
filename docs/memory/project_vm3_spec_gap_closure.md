@@ -95,7 +95,10 @@
 - Flipped on the oracle-backed vm3 fixture for duplicate public `Dup()` across
   `Alpha` and `Beta`, and added a resolver regression where duplicate active
   public `Len` declarations block fallback to the VBA library `Len`.
-- Verification target:
+- Fresh-eyes review found and removed a stale host-test anchor that now matches
+  zero tests from the current PMR rows; the old anchor remains only in
+  historical oracle capture output.
+- Verification completed:
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
@@ -1255,5 +1258,28 @@
     `MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`,
     `PMR_PROJECT_MODEL_FIXTURE_MATRIX_V1.md`,
     `DEFERRED_ORACLE_GATES.csv`, and the vm3 inventory
+  - `git diff --check`
+  - `br dep cycles --json`
+
+## 2026-07-01 - Project Reference / Qualifier PMR Reconciliation (`bd-4ktq.38.2`)
+
+- Reconciled the PMR project-reference and qualifier rows against the closed
+  scoping evidence.
+- Updated `MODPROJ-005` and `MODPROJ-016` in
+  `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv` to point to
+  the scoped vm3 referenced-project and qualifier fixtures:
+  unqualified referenced public calls, module-qualified referenced calls,
+  project-qualified referenced calls, active-project shadowing,
+  first-reference precedence, wrong-project rejection, duplicate referenced
+  globals, and ambiguous-reference fallback blocking.
+- Kept both rows `partial` because external type-library, broken-reference,
+  library/type-space, and broader reference-boundary edges remain outside this
+  vm3 scoping subset under existing PMR/COM residual lanes such as `ODG-041`.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-bind --test cross_project cross_project`
+  - `scripts/check-governance.ps1`
   - `git diff --check`
   - `br dep cycles --json`
