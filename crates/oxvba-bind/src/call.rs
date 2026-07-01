@@ -2107,12 +2107,16 @@ impl<'a> ProcLower<'a> {
             let field_ty = self.g.resolve_udt_type(field_ty);
             return match arglist {
                 Some(a) => {
-                    let indices = self.bind_positional_values(a)?;
                     let elem_ty = match field_ty {
                         VarTypeRef::Array(inner) => self.g.resolve_udt_type(*inner),
                         VarTypeRef::FixedArray { element, .. } => self.g.resolve_udt_type(*element),
-                        _ => VarTypeRef::Variant,
+                        _ => {
+                            return Err(BindError::ExpectedArray {
+                                name: format!(".{member}"),
+                            });
+                        }
                     };
+                    let indices = self.bind_positional_values(a)?;
                     let place = CorePlace::Index {
                         array: Box::new(field_place),
                         indices,

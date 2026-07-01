@@ -1,0 +1,69 @@
+﻿[
+    {
+        "id":  "UDT-FIXED-ARRAY-FIELD",
+        "purpose":  "Fixed-array UDT field compiles and indexes.",
+        "ownedExcelPid":  16048,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-SCALAR-FIELD-INDEX-GET",
+        "purpose":  "Scalar UDT field used with index in value context.",
+        "ownedExcelPid":  31552,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nExpected array",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  ".Value",
+        "selectedLine":  "RunProbe = s.Value(0)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-SCALAR-FIELD-INDEX-SET",
+        "purpose":  "Scalar UDT field used with index in assignment context.",
+        "ownedExcelPid":  55268,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nExpected array",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  ".Value(0) =",
+        "selectedLine":  "s.Value(0) = 7",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]

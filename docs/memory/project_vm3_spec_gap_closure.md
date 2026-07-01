@@ -1658,12 +1658,16 @@
   `VbaRecord` payload and touch only one inline element instead of materializing
   the whole fixed-array field through `RecordGet`.
 - Added borrowed `VbaRecord`/`Variant` helpers for record array-field bounds and
-  element read/write. Legacy SAFEARRAY-backed record bags and non-array fields keep
-  the prior fallback path.
+  element read/write. The fused path is native-`VbaRecord` only; SAFEARRAY-backed
+  record bags are not retained as a compatibility route. Indexed scalar UDT fields
+  are rejected by the binder as `Expected array`, matching the Excel/VBE compile
+  oracle.
 - Evidence:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-record-array-field-oracle.ps1 -RunId vm3_record_array_field_oracle_20260701T2135Z`
   - `cargo test -p oxvba-oxir record_array_fields_elaborate_to_fused_ops --quiet`
   - `cargo check -p oxvba-vm3`
   - `cargo test -p oxvba-differential --test record_array_access_vm3 --quiet`
+  - `cargo test -p oxvba-bind module_udt_scalar_field_index --quiet`
   - `cargo test -p oxvba-differential --test array_access_perf_vm3 --quiet`
   - `cargo test -p oxvba-differential --test field_array_access_vm3 --quiet`
   - `cargo test -p oxvba-differential --test fixed_array_erase_vm3 --quiet`
@@ -1672,6 +1676,6 @@
   module ~12.0 -> 9.5 us/elem, class ~12.3 -> 10.6 us/elem, UDT ~10.4 ->
   8.9 us/elem across N=250,500,1000.
 - Fresh-eyes review checked that the change is scoped to element-level access,
-  preserves materialize-and-index fallback for legacy/non-array fields, does not
-  change fixed-array erase semantics, and updates the handover/inventory away
-  from stale "UDT remains" wording.
+  removes the legacy record-bag fallback, matches VBA's `Expected array` compile
+  behavior for scalar field indexing, does not change fixed-array erase semantics,
+  and updates the handover/inventory away from stale "UDT remains" wording.

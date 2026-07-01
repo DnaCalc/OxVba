@@ -1367,6 +1367,42 @@ fn module_udt_fixed_array_field_of_udt_elements_round_trips() {
 }
 
 #[test]
+fn module_udt_scalar_field_index_read_is_expected_array() {
+    let src = "Private Type State\n    Value As Long\nEnd Type\n\
+               Private s As State\n\n\
+               Public Sub Main()\n    Dim r As Long\n    r = s.Value(0)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ExpectedArray"),
+        "scalar UDT field indexing must bind as VBA compile error `Expected array`, got {err}"
+    );
+}
+
+#[test]
+fn module_udt_scalar_field_index_write_is_expected_array() {
+    let src = "Private Type State\n    Value As Long\nEnd Type\n\
+               Private s As State\n\n\
+               Public Sub Main()\n    s.Value(0) = 7\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ExpectedArray"),
+        "scalar UDT field index assignment must bind as VBA compile error `Expected array`, got {err}"
+    );
+}
+
+#[test]
+fn module_udt_scalar_field_index_error_precedes_index_binding() {
+    let src = "Private Type State\n    Value As Long\nEnd Type\n\
+               Private s As State\n\n\
+               Public Sub Main()\n    Dim r As Long\n    r = s.Value(MissingName)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ExpectedArray"),
+        "scalar UDT field shape should raise `Expected array` before binding index expressions, got {err}"
+    );
+}
+
+#[test]
 fn local_variable_shadows_standard_module_property_let() {
     let src = "Private mV As Long\n\n\
                Public Property Get Value() As Long\n    Value = mV\nEnd Property\n\n\

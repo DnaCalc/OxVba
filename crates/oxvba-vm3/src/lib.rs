@@ -1542,19 +1542,9 @@ impl<'h> Vm3<'h> {
             }
             OxInst::RecordGet { dst, record, index } => {
                 let source = self.operand(record)?;
-                // Native VBA records read by field index; a legacy SAFEARRAY-backed record
-                // bag (old/hand-built internal values) reads its element, bounds-checked.
-                let value = if let Some(rec) = source.as_safearray() {
-                    if *index >= rec.len() {
-                        return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
-                    }
-                    rec.variant_element(*index)
-                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
-                } else {
-                    source
-                        .read_record_field_variant(*index)
-                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
-                };
+                let value = source
+                    .read_record_field_variant(*index)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 self.store(dst, value)?;
             }
             OxInst::RecordArrayGet {
@@ -1563,13 +1553,8 @@ impl<'h> Vm3<'h> {
                 index,
                 indices,
             } => {
-                if let Some(value) = self.record_array_get_fast(record, *index, indices)? {
-                    self.store(dst, value)?;
-                } else {
-                    let source = self.operand(record)?;
-                    let field = self.record_field_value(source, *index)?;
-                    self.index_value_into(field, indices, dst)?;
-                }
+                let value = self.record_array_get(record, *index, indices)?;
+                self.store(dst, value)?;
             }
             OxInst::RecordSet {
                 record,
@@ -1581,18 +1566,9 @@ impl<'h> Vm3<'h> {
                 // semantics: the record's data is owned, so a ByRef-aliased record's backing
                 // receives the write (equivalent to vm2's in-place `read_place_mut`).
                 let mut target = self.read(record)?;
-                if let Some(rec) = target.as_safearray() {
-                    if *index >= rec.len() {
-                        return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
-                    }
-                    target
-                        .set_safearray_element(*index, &v)
-                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
-                } else {
-                    target
-                        .write_record_field_variant(*index, &v)
-                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
-                }
+                target
+                    .write_record_field_variant(*index, &v)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 self.store(record, target)?;
             }
             OxInst::RecordArraySet {
@@ -1602,14 +1578,7 @@ impl<'h> Vm3<'h> {
                 value,
             } => {
                 let v = self.operand(value)?;
-                if self.record_array_set_fast(record, *index, indices, &v)? {
-                    return Ok(());
-                }
-                let mut target = self.read(record)?;
-                let field = self.record_field_value(target.clone(), *index)?;
-                let updated = self.set_index_in_value(field, indices, &v)?;
-                self.write_record_field_value(&mut target, *index, &updated)?;
-                self.store(record, target)?;
+                self.record_array_set(record, *index, indices, &v)?;
             }
 
             // ── Objects / lifecycle / type identity (M3-5) ───────────────────────────
@@ -2233,61 +2202,54 @@ impl<'h> Vm3<'h> {
         Ok(true)
     }
 
-    fn record_array_get_fast(
+    fn record_array_get(
         &self,
         record: &OxOperand,
         index: usize,
         indices: &[OxOperand],
-    ) -> Result<Option<Variant>, Vm3Error> {
+    ) -> Result<Variant, Vm3Error> {
         let OxOperand::Use(place) = record else {
-            return Ok(None);
+            return Err(Vm3Error::Fault(Fault::new(
+                13,
+                "record array field requires a place",
+            )));
         };
         let loc = self.resolve(place);
         let Some(record) = self.read_loc_ref(loc)? else {
-            return Ok(None);
+            return Err(Vm3Error::Fault(Fault::new(13, "expected Record Variant")));
         };
-        if record.vtype() != VarType::Record {
-            return Ok(None);
-        }
         let Some((bounds, len)) = record
             .record_array_field_bounds_len(index)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
         else {
-            return Ok(None);
+            return Err(Vm3Error::Fault(Fault::new(13, "Expected array")));
         };
         let flat = self.flat_index(indices, &bounds)?;
         if flat >= len {
             return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
         }
-        let value = record
+        record
             .record_array_field_element(index, flat)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
-            .expect("record_array_field_bounds_len proved this is an array field");
-        Ok(Some(value))
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "Expected array")))
     }
 
-    fn record_array_set_fast(
+    fn record_array_set(
         &mut self,
         record: &OxPlace,
         index: usize,
         indices: &[OxOperand],
         value: &Variant,
-    ) -> Result<bool, Vm3Error> {
+    ) -> Result<(), Vm3Error> {
         let loc = self.resolve(record);
-        let (bounds, len) = match self.read_loc_ref(loc)? {
-            Some(record) => {
-                if record.vtype() != VarType::Record {
-                    return Ok(false);
-                }
-                match record
-                    .record_array_field_bounds_len(index)
-                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
-                {
-                    Some(bl) => bl,
-                    None => return Ok(false),
-                }
-            }
-            None => return Ok(false),
+        let Some(record) = self.read_loc_ref(loc)? else {
+            return Err(Vm3Error::Fault(Fault::new(13, "expected Record Variant")));
+        };
+        let Some((bounds, len)) = record
+            .record_array_field_bounds_len(index)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
+        else {
+            return Err(Vm3Error::Fault(Fault::new(13, "Expected array")));
         };
         let flat = self.flat_index(indices, &bounds)?;
         if flat >= len {
@@ -2296,44 +2258,10 @@ impl<'h> Vm3<'h> {
         let record = self
             .read_loc_mut(loc)?
             .expect("location borrowed immutably just above is still present");
-        let wrote = record
+        record
             .set_record_array_field_element(index, flat, value)
-            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
-        Ok(wrote.is_some())
-    }
-
-    fn record_field_value(&self, source: Variant, index: usize) -> Result<Variant, Vm3Error> {
-        if let Some(rec) = source.as_safearray() {
-            if index >= rec.len() {
-                return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
-            }
-            rec.variant_element(index)
-                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
-        } else {
-            source
-                .read_record_field_variant(index)
-                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
-        }
-    }
-
-    fn write_record_field_value(
-        &self,
-        target: &mut Variant,
-        index: usize,
-        value: &Variant,
-    ) -> Result<(), Vm3Error> {
-        if let Some(rec) = target.as_safearray() {
-            if index >= rec.len() {
-                return Err(Vm3Error::Fault(Fault::new(9, "record field out of range")));
-            }
-            target
-                .set_safearray_element(index, value)
-                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
-        } else {
-            target
-                .write_record_field_variant(index, value)
-                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
-        }
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "Expected array")))
     }
 
     /// The array (SAFEARRAY) value of an operand, else type mismatch (13).

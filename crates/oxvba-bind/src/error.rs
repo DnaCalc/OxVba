@@ -36,6 +36,9 @@ pub enum BindError {
     /// A statement-only Sub was used where a value-producing expression is required.
     #[error("Expected Function or variable: {name}")]
     ExpectedFunctionOrVariable { name: String },
+    /// A scalar expression or field was indexed where VBA requires an array.
+    #[error("Expected array")]
+    ExpectedArray { name: String },
     /// A line label is defined more than once within a single procedure — a VBA
     /// compile error ("Duplicate declaration in current scope"). Label scope is
     /// per-procedure, so the same name in a different procedure is fine.
@@ -113,6 +116,12 @@ impl BindError {
                 format!("Expected Function or variable: {name}"),
             )
             .with_help("Use a Function or Property Get in value context, or call the Sub as a statement."),
+            BindError::ExpectedArray { name } => Diagnostic::error(
+                "BIND-E-EXPECTED-ARRAY",
+                DiagnosticPhase::Bind,
+                "Expected array",
+            )
+            .with_help(format!("`{name}` is not an array.")),
             BindError::DuplicateLabel { name } => Diagnostic::error(
                 "BIND-E-DUPLICATE-LABEL",
                 DiagnosticPhase::Bind,
@@ -227,5 +236,15 @@ mod tests {
                 .message
                 .contains("Expected Function or variable: DoIt")
         );
+    }
+
+    #[test]
+    fn expected_array_has_vba_message() {
+        let diagnostic = BindError::ExpectedArray {
+            name: "s.Value".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "BIND-E-EXPECTED-ARRAY");
+        assert_eq!(diagnostic.message, "Expected array");
     }
 }

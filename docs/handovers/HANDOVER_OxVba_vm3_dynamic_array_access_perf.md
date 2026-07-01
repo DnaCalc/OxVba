@@ -199,8 +199,11 @@ Writes had the symmetric materialize/set/write-field path.
 Fix: the elaborator now emits `RecordArrayGet` / `RecordArraySet` for indexed UDT record-field
 access. vm3 borrows the record payload in place and reads or writes the single inline fixed-array
 element through `VbaRecord::read_array_field_element` /
-`VbaRecord::write_array_field_element`. Non-array/legacy record bags fall back to the prior
-materialize-and-index path.
+`VbaRecord::write_array_field_element`. This path is native-`VbaRecord` only; it does not preserve
+SAFEARRAY-backed record bags as a compatibility route. Real VBA rejects indexed scalar UDT fields
+at compile time with `Expected array` (captured in
+`docs/evidence/conformance/vm3_record_array_field_oracle_20260701T2135Z/summary.md`), so the
+binder rejects `rec.scalar(i)` before OxIR/vm3 rather than lowering it to a runtime fallback.
 
 Diagnostic after the round-3 fix (`array_perf_diagnose.rs`):
 
