@@ -1421,3 +1421,48 @@
   inventory wording, memory evidence, and bead graph. No unsupported completion
   language, stale residual references, or fixed-counter overflow regressions were
   found.
+
+## 2026-07-01 - Date/Time Residuals (`bd-4ktq.39.3`)
+
+- Closed the live date/time rows scoped to the first-wave residual bead:
+  `input-no-date-null-parse`, `datediff-w-day-count`,
+  `datediff-datepart-ww-ignore-firstday`, `negative-date-serial-floor`,
+  `date-range-not-validated`, `date-string-parser-inconsistent`, and
+  `hms-round-crosses-boundary`.
+- `DateDiff("w")` now counts matching weekdays between the two dates instead
+  of raw days, and `DateDiff("ww", ..., firstdayofweek)` now counts configured
+  week-boundary days.
+- VBA Date decomposition now uses the whole-number date part for negative
+  serials and carries second rounding over to the next displayed date when a
+  time rounds past 23:59:59.
+- Date constructors/conversions now reject serials outside the Windows VBA Date
+  range, while `IsDate` returns False for out-of-range date strings.
+- `CDate`/`TimeValue` share stricter time-string parsing, including AM/PM and
+  combined date-time strings with trailing AM/PM. Invalid time strings now raise
+  Type mismatch instead of becoming midnight.
+- `Input #` now parses `Write #` machine-readable date literals and `#NULL#`
+  fields back to Date/Null values through the standard HAL filesystem adapter.
+- Broad `cargo test -p oxvba-hal` exposed an out-of-scope existing seek
+  property failure (`prop_seek_eof_boundary`, `path_token = 1`, `offset = 0`);
+  it is tracked as `bd-1a2x` and its generated proptest seed was not committed
+  with this bead.
+- Verification completed:
+  - `cargo test -p oxvba-differential --test date_time_residuals_vm3`
+  - `cargo test -p oxvba-runtime vba_date`
+  - `cargo test -p oxvba-host --test filesystem_statements write_input_roundtrips_date_and_null_fields -- --exact`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-differential --test date_conversion_vm3`
+  - `cargo test -p oxvba-differential --test date_to_string_vm3`
+  - `cargo test -p oxvba-differential --test weekday_firstday_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `rustfmt --edition 2024 --check` on the touched date/runtime/HAL/vm3 test
+    files; the larger host filesystem test file still has pre-existing
+    rustfmt rewrap drift outside this bead's inserted test.
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Fresh-eyes review re-read the date library/runtime decomposition changes,
+  standard HAL `Input #` parser change, host/vm3 tests, inventory wording, bead
+  graph, and memory entry. No unsupported completion language or untracked
+  accepted date/time residual remained; the only out-of-scope issue found is
+  tracked as `bd-1a2x`.
