@@ -15,6 +15,11 @@ pub enum BindError {
     /// A name could not be resolved in the given context.
     #[error("unresolved name `{name}` ({context})")]
     Unresolved { name: String, context: String },
+    /// VBA's compile diagnostic for an undeclared variable under an explicit
+    /// declaration context, and for `ReDim Preserve` names that are not already
+    /// declared.
+    #[error("Variable not defined")]
+    VariableNotDefined { name: String },
     /// A bare name resolved to multiple equally viable project-level candidates.
     #[error("ambiguous name detected: {name}")]
     AmbiguousName { name: String },
@@ -76,6 +81,12 @@ impl BindError {
                 format!("unresolved name `{name}` ({context})"),
             )
             .with_help("Check the declaration spelling, module visibility, and project references."),
+            BindError::VariableNotDefined { name } => Diagnostic::error(
+                "BIND-E-VARIABLE-NOT-DEFINED",
+                DiagnosticPhase::Bind,
+                "Variable not defined",
+            )
+            .with_help(format!("Declare `{name}` before using it.")),
             BindError::AmbiguousName { name } => Diagnostic::error(
                 "BIND-E-AMBIGUOUS-NAME",
                 DiagnosticPhase::Bind,

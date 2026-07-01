@@ -1710,3 +1710,41 @@
   - `cargo test -p oxvba-bind --test bind_roundtrip lset --quiet`
   - `cargo test -p oxvba-bundle library_member_covers_exactly_the_migrated_ids --quiet`
   - `cargo test -p oxvba-differential --test lset_rset_vm3 --quiet`
+
+## 2026-07-01 - ReDim Implicit Declaration (`bd-4ktq.41`)
+
+- Captured live Excel/VBA 7.1 behavior with the VBE Debug -> Compile path and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_redim_implicit_oracle_20260701T2238Z/`.
+- Oracle findings:
+  - `ReDim a(1)` declares an otherwise undeclared dynamic Variant array even
+    when `Option Explicit` is present.
+  - The resulting array has `VarType(a) = 8204` (`vbArray + vbVariant`);
+    a small integer literal stored in an element has `VarType(a(0)) = 2`.
+  - An explicit `Dim a() As Long` target stays a Long array
+    (`VarType(a) = 8195`, `VarType(a(0)) = 3`).
+  - `ReDim Preserve a(1)` does not introduce an undeclared name, with or
+    without `Option Explicit`; Excel raises compile-time
+    `Variable not defined`.
+  - `ReDim` on a scalar `Long` target raises compile-time `Expected array`.
+- Implemented a narrow scanner pass that adds implicit local dynamic
+  `Variant()` symbols for simple non-`Preserve` `ReDim` targets after explicit
+  procedure declarations have been scanned, so later/hoisted `Dim` declarations
+  still win and dotted/member targets are not invented.
+- Binder validation now rejects scalar simple `ReDim` targets with
+  `Expected array`, while preserving Variant and declared dynamic-array targets.
+- Added vm3 coverage in
+  `crates/oxvba-differential/tests/redim_implicit_vm3.rs` plus binder
+  diagnostics in `crates/oxvba-bind/tests/bind_roundtrip.rs`.
+- Verification completed:
+  - Excel oracle artifacts captured in
+    `docs/evidence/conformance/vm3_redim_implicit_oracle_20260701T2238Z/`
+    with clean script exit. The older pre-existing Excel process was left
+    untouched.
+  - `cargo test -p oxvba-bind --test bind_roundtrip redim_ --quiet`
+  - `cargo test -p oxvba-differential --test redim_implicit_vm3 --quiet`
+  - `cargo test -p oxvba-symbol --quiet`
+  - `cargo test -p oxvba-bind --quiet`
+  - `cargo test -p oxvba-differential --test redim_negative_lower_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test fixed_array_erase_vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`

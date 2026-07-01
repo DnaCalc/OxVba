@@ -455,8 +455,62 @@ impl ScanCtx<'_> {
             let result = self.walk(proc_scope, body, false);
             self.proc_is_static = outer;
             result?;
+            self.scan_implicit_redim_locals(proc_scope, body, node.is_static())?;
         }
         Ok(())
+    }
+
+    fn scan_implicit_redim_locals(
+        &mut self,
+        proc_scope: ScopeId,
+        body: SyntaxNode<'_>,
+        proc_is_static: bool,
+    ) -> Result<(), SymbolModelError> {
+        for redim in redim_stmt_nodes(body) {
+            if redim_is_preserve(redim) {
+                continue;
+            }
+            for token in simple_redim_target_tokens(redim) {
+                let name = normalize_identifier_token(token.text);
+                if self.source_name_exists(proc_scope, name)? {
+                    continue;
+                }
+                self.symbols.declare_symbol(
+                    proc_scope,
+                    SymbolNamespace::Local,
+                    if proc_is_static {
+                        SymbolKind::StaticLocal
+                    } else {
+                        SymbolKind::Local
+                    },
+                    name,
+                    provenance(self.module_name, token),
+                    SymbolImpl::DeclaredType(VarTypeRef::Array(Box::new(VarTypeRef::Variant))),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn source_name_exists(&self, scope: ScopeId, name: &str) -> Result<bool, SymbolModelError> {
+        for namespace in [
+            SymbolNamespace::Local,
+            SymbolNamespace::Parameter,
+            SymbolNamespace::Procedure,
+            SymbolNamespace::Member,
+            SymbolNamespace::Type,
+            SymbolNamespace::Module,
+            SymbolNamespace::Project,
+        ] {
+            if self
+                .symbols
+                .resolve_in_scope_chain(scope, namespace, name)?
+                .is_some()
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn scan_declare(
@@ -1063,6 +1117,63 @@ fn parse_int_literal(text: &str) -> Option<CoreConst> {
 
 fn is_identifier_like(kind: SyntaxKind) -> bool {
     kind == SyntaxKind::Ident || kind == SyntaxKind::BracketedIdent
+}
+
+fn redim_stmt_nodes<'a>(root: SyntaxNode<'a>) -> Vec<SyntaxNode<'a>> {
+    let mut out = Vec::new();
+    collect_redim_stmt_nodes(root, &mut out);
+    out
+}
+
+fn collect_redim_stmt_nodes<'a>(node: SyntaxNode<'a>, out: &mut Vec<SyntaxNode<'a>>) {
+    if node.kind() == SyntaxKind::ReDimStmt {
+        out.push(node);
+        return;
+    }
+    for child in node.child_nodes() {
+        collect_redim_stmt_nodes(child, out);
+    }
+}
+
+fn redim_is_preserve(node: SyntaxNode<'_>) -> bool {
+    node.child_tokens()
+        .iter()
+        .any(|token| token.kind == SyntaxKind::KwPreserve)
+}
+
+fn simple_redim_target_tokens(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
+    let mut targets = Vec::new();
+    let mut segments: Vec<SyntaxToken<'_>> = Vec::new();
+    for element in node.children() {
+        match element {
+            SyntaxElement::Token(token)
+                if is_identifier_like(token.kind)
+                    || (token.kind.is_keyword()
+                        && !matches!(
+                            token.kind,
+                            SyntaxKind::KwReDim | SyntaxKind::KwPreserve | SyntaxKind::KwMe
+                        )) =>
+            {
+                segments.push(token);
+            }
+            SyntaxElement::Token(token)
+                if matches!(
+                    token.kind,
+                    SyntaxKind::Dot | SyntaxKind::Bang | SyntaxKind::TypeSuffix
+                ) => {}
+            SyntaxElement::Token(token) if token.kind == SyntaxKind::Comma => {
+                segments.clear();
+            }
+            SyntaxElement::Node(child) if child.kind() == SyntaxKind::ArrayBounds => {
+                if segments.len() == 1 {
+                    targets.push(segments[0]);
+                }
+                segments.clear();
+            }
+            _ => {}
+        }
+    }
+    targets
 }
 
 fn normalize_identifier_token(text: &str) -> &str {

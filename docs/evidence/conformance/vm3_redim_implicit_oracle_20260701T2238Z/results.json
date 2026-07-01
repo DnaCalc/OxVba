@@ -1,0 +1,201 @@
+﻿[
+    {
+        "id":  "NOEXPLICIT-REDIM-UNDECLARED",
+        "purpose":  "ReDim of an otherwise undeclared simple name without Option Explicit.",
+        "ownedExcelPid":  48808,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:1:8204:2:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-REDIM-UNDECLARED",
+        "purpose":  "ReDim of an otherwise undeclared simple name with Option Explicit.",
+        "ownedExcelPid":  35876,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:1:8204:2:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-UNDECLARED-READ-CONTROL",
+        "purpose":  "Option Explicit still rejects an undeclared name that was not introduced by ReDim.",
+        "ownedExcelPid":  27292,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "missingName",
+        "selectedLine":  "RunProbe = missingName",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-REDIM-THEN-UNDECLARED-READ",
+        "purpose":  "Option Explicit accepts the ReDim name but still rejects a separate undeclared read.",
+        "ownedExcelPid":  1252,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "missingName",
+        "selectedLine":  "RunProbe = missingName",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-DECLARED-VARIANT-REDIM",
+        "purpose":  "Declared Variant target can be ReDim\u0027d into a Variant array.",
+        "ownedExcelPid":  38400,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:1:8204:2:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-DECLARED-DYNAMIC-LONG-REDIM",
+        "purpose":  "Declared dynamic Long array keeps its element type through ReDim.",
+        "ownedExcelPid":  42368,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:1:8195:3:7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-SCALAR-LONG-REDIM",
+        "purpose":  "Scalar Long target used in ReDim.",
+        "ownedExcelPid":  33164,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nExpected array",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "ReDim a",
+        "selectedLine":  "ReDim a(1)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-REDIM-PRESERVE-UNDECLARED",
+        "purpose":  "ReDim Preserve of an otherwise undeclared name with Option Explicit.",
+        "ownedExcelPid":  7988,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "ReDim Preserve a",
+        "selectedLine":  "ReDim Preserve a(1)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  "Main.RunProbe",
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "NOEXPLICIT-REDIM-PRESERVE-UNDECLARED",
+        "purpose":  "ReDim Preserve of an otherwise undeclared name without Option Explicit.",
+        "ownedExcelPid":  36276,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "ReDim Preserve a",
+        "selectedLine":  "ReDim Preserve a(1)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  "Main.RunProbe",
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]

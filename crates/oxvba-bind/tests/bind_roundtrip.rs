@@ -989,6 +989,26 @@ fn redim_array_set_get() {
 }
 
 #[test]
+fn redim_undeclared_simple_name_declares_dynamic_variant_array() {
+    let body = "    Dim r As Long\n    ReDim a(0 To 2)\n    a(1) = 77\n    r = a(1)\n";
+    assert_eq!(run_main_local0(&main_sub(body)), Some(77.0));
+}
+
+#[test]
+fn redim_preserve_does_not_declare_undeclared_name() {
+    let err = bind_error_display("Option Explicit\nSub Main()\n    ReDim Preserve a(1)\nEnd Sub\n");
+    assert_eq!(err, "Variable not defined");
+}
+
+#[test]
+fn redim_scalar_declared_target_is_expected_array() {
+    let err = bind_error_display(
+        "Option Explicit\nSub Main()\n    Dim a As Long\n    ReDim a(1)\nEnd Sub\n",
+    );
+    assert_eq!(err, "Expected array");
+}
+
+#[test]
 fn on_error_resume_next_err_number() {
     let body =
         "    Dim r As Long\n    On Error Resume Next\n    Err.Raise 11\n    r = Err.Number\n";
@@ -1420,6 +1440,18 @@ fn module_udt_scalar_field_index_write_is_expected_array() {
     assert!(
         err.contains("ExpectedArray"),
         "scalar UDT field index assignment must bind as VBA compile error `Expected array`, got {err}"
+    );
+}
+
+#[test]
+fn module_udt_scalar_field_redim_is_expected_array() {
+    let src = "Private Type State\n    Value As Long\nEnd Type\n\
+               Private s As State\n\n\
+               Public Sub Main()\n    ReDim s.Value(0)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("ExpectedArray"),
+        "scalar UDT field ReDim must bind as VBA compile error `Expected array`, got {err}"
     );
 }
 

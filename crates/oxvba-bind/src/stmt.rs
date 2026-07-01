@@ -966,10 +966,11 @@ impl<'a> ProcLower<'a> {
     fn redim_target(
         &mut self,
         segments: &[&str],
+        preserve: bool,
     ) -> Result<(CorePlace, oxvba_bundle::ArrayElementType), BindError> {
         match segments {
             [] => Err(BindError::Malformed("ReDim target".into())),
-            [name] => Ok((self.place_by_name(name)?, self.array_element_for_name(name))),
+            [name] => self.redim_simple_target(name, preserve),
             _ => {
                 let (place, ty) = self.redim_dotted_place(segments)?;
                 // Only Local/Global/Field places are valid array storage — a
@@ -980,14 +981,51 @@ impl<'a> ProcLower<'a> {
                     ));
                 }
                 let element_type = match &ty {
+                    oxvba_symbol::signature::VarTypeRef::Variant => {
+                        oxvba_bundle::ArrayElementType::Variant
+                    }
                     oxvba_symbol::signature::VarTypeRef::Array(inner) => {
                         self.g.array_element_layout(inner)
                     }
-                    _ => oxvba_bundle::ArrayElementType::Variant,
+                    oxvba_symbol::signature::VarTypeRef::FixedArray { element, .. } => {
+                        self.g.array_element_layout(element)
+                    }
+                    _ => {
+                        return Err(BindError::ExpectedArray {
+                            name: segments.join("."),
+                        });
+                    }
                 };
                 Ok((place, element_type))
             }
         }
+    }
+
+    fn redim_simple_target(
+        &mut self,
+        name: &str,
+        preserve: bool,
+    ) -> Result<(CorePlace, oxvba_bundle::ArrayElementType), BindError> {
+        let (place, ty) = self.place_ty_by_name(name).map_err(|err| {
+            if preserve && matches!(err, BindError::Unresolved { .. }) {
+                BindError::VariableNotDefined {
+                    name: name.to_string(),
+                }
+            } else {
+                err
+            }
+        })?;
+        let element_type = match ty {
+            VarTypeRef::Variant => oxvba_bundle::ArrayElementType::Variant,
+            VarTypeRef::Array(inner) => self.g.array_element_layout(&inner),
+            VarTypeRef::FixedArray { element, .. } => self.g.array_element_layout(&element),
+            _ => {
+                return Err(BindError::ExpectedArray {
+                    name: name.to_string(),
+                });
+            }
+        };
+        Ok((place, element_type))
     }
 
     /// Rebuild a `CorePlace::Field` for a dotted ReDim target (`a.b.arr`): the
@@ -1083,7 +1121,7 @@ impl<'a> ProcLower<'a> {
         bounds_node: SyntaxNode<'_>,
         preserve: bool,
     ) -> Result<CoreStmt, BindError> {
-        let (array, element_type) = self.redim_target(segments)?;
+        let (array, element_type) = self.redim_target(segments, preserve)?;
         let bounds = self.bind_array_bounds(bounds_node)?;
         Ok(CoreStmt::ReDim {
             array,
@@ -1226,7 +1264,7 @@ impl<'a> ProcLower<'a> {
             // A fixed-size array allocates via ReDim.
             if let Some(bounds_node) = declarator.array_bounds() {
                 if !bounds_node.children_of(SyntaxKind::Bound).is_empty() {
-                    let (array, element_type) = self.redim_target(&[name.text])?;
+                    let (array, element_type) = self.redim_target(&[name.text], false)?;
                     let bounds = self.bind_array_bounds(bounds_node)?;
                     out.push(CoreStmt::ReDim {
                         array,
@@ -1982,15 +2020,6 @@ impl<'a> ProcLower<'a> {
             .symbol
             .and_then(|s| self.place_for_symbol(s))
             .ok_or_else(|| BindError::InvalidAssignment(format!("`{name}` is not a variable")))
-    }
-
-    fn array_element_for_name(&self, name: &str) -> oxvba_bundle::ArrayElementType {
-        if let Some(sym) = self.resolve(name).and_then(|b| b.symbol)
-            && let oxvba_symbol::signature::VarTypeRef::Array(inner) = self.symbol_type(sym)
-        {
-            return self.g.array_element_layout(&inner);
-        }
-        oxvba_bundle::ArrayElementType::Variant
     }
 
     /// Fold a value to a constant `i32` if possible (literals, unary negation,
