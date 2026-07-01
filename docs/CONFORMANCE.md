@@ -97,6 +97,26 @@ PMR oracle runner note:
 - Default behavior starts a hidden UI Automation watcher (`scripts/excel-dialog-guardian.ps1`) bound to the active Excel PID to auto-handle macro/add-in trust dialogs that can otherwise block unattended runs.
 - Guardian telemetry is written into each run folder as `excel_dialog_guardian.log`.
 
+Excel/VBA oracle modal-handling rule:
+- For any real Excel/VBA oracle run that can compile or execute injected VBA,
+  follow Govert's Excel/VBA agentic coding guide and Jun 27, 2026 follow-up:
+  `https://gist.github.com/govert/2d3946830c35c74806df3f32b597eb72`.
+- Always have a UI Automation helper ready before running VBA. If Excel is
+  unresponsive after a second or two, inspect UIA windows scoped to the owned
+  Excel/VBE process, capture dialog text, highlighted VBE token, and full
+  selected code line, then dismiss only the owned modal.
+- Do not use `Application.Run` as a compile check. For compile-error oracle
+  work, make the VBE visible, invoke Debug -> Compile VBAProject, and read the
+  resulting modal with UIA.
+- Treat "Cannot run the macro ... may not be available" as ambiguous: it can
+  mean macros disabled, target macro missing, or a compile failure anywhere in
+  the project/module. If VBOM access is available, macros are enabled, and the
+  macro exists, investigate as a compile failure.
+- Error location may point to a reference rather than the defect. Check the
+  called declaration and intrinsic-name shadowing traps (`Fix`, `Date`, `Time`,
+  `Name`, `Error`, `Left`, `Right`, `Len`, `Val`, `Format`, ...).
+- Keep cleanup PID-scoped and never blanket-dismiss user dialogs.
+
 ## Current policy
 At MVP stage, conformance compares:
 - execution status (`ok` / `error`)

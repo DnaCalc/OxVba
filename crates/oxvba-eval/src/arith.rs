@@ -12,7 +12,11 @@
 
 use oxvba_bundle::{NumericCoerceTarget, NumericMode, StringCompareMode};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{Variant, arithmetic as rt, coerce::coerce_to, variant_to_vba_string};
+use oxvba_runtime::{arithmetic as rt, coerce::coerce_to, variant_to_vba_string, Variant};
+
+const CURRENCY_SCALE: i128 = 10_000;
+const CURRENCY_MIN: i128 = i64::MIN as i128;
+const CURRENCY_MAX: i128 = i64::MAX as i128;
 
 /// An arithmetic/coercion error carrying its VBA run-time error code.
 #[derive(Debug, Clone)]
@@ -200,6 +204,7 @@ fn checked_binop(
 
 pub fn add(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     match mode {
+        NumericMode::Checked(NumericCoerceTarget::Currency) => currency_add(l, r),
         NumericMode::Checked(ty) => checked_binop(l, r, ty, |a, b| a.checked_add(b), |a, b| a + b),
         NumericMode::Widening => widening_add(l, r),
     }
@@ -207,6 +212,7 @@ pub fn add(l: &Variant, r: &Variant, mode: NumericMode) -> R {
 
 pub fn sub(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     match mode {
+        NumericMode::Checked(NumericCoerceTarget::Currency) => currency_sub(l, r),
         NumericMode::Checked(ty) => checked_binop(l, r, ty, |a, b| a.checked_sub(b), |a, b| a - b),
         NumericMode::Widening => widening_sub(l, r),
     }
@@ -214,8 +220,9 @@ pub fn sub(l: &Variant, r: &Variant, mode: NumericMode) -> R {
 
 pub fn mul(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     match mode {
+        NumericMode::Checked(NumericCoerceTarget::Currency) => currency_mul(l, r),
         NumericMode::Checked(ty) => checked_binop(l, r, ty, |a, b| a.checked_mul(b), |a, b| a * b),
-        NumericMode::Widening => widen(l, r, rt::mul),
+        NumericMode::Widening => widening_mul(l, r),
     }
 }
 
@@ -275,6 +282,142 @@ fn widen(l: &Variant, r: &Variant, f: impl Fn(&Variant, &Variant) -> Result<Vari
     f(l, r).map_err(ArithError::from)
 }
 
+fn checked_currency(scaled: i128) -> R {
+    if !(CURRENCY_MIN..=CURRENCY_MAX).contains(&scaled) {
+        return Err(ArithError::overflow());
+    }
+    Ok(Variant::from_currency_scaled_i64(scaled as i64))
+}
+
+fn scale_integer_to_currency(value: i128) -> Result<i128, ArithError> {
+    value
+        .checked_mul(CURRENCY_SCALE)
+        .filter(|scaled| (CURRENCY_MIN..=CURRENCY_MAX).contains(scaled))
+        .ok_or_else(ArithError::overflow)
+}
+
+fn exact_currency_operand(v: &Variant) -> Option<Result<i128, ArithError>> {
+    let scaled = match v.vtype() {
+        VarType::Empty => 0,
+        VarType::Boolean => {
+            if v.as_bool().unwrap_or(false) {
+                -CURRENCY_SCALE
+            } else {
+                0
+            }
+        }
+        VarType::SignedByte => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_i8().unwrap_or(0),
+            )));
+        }
+        VarType::Byte => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_u8().unwrap_or(0),
+            )));
+        }
+        VarType::Integer => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_i16().unwrap_or(0),
+            )));
+        }
+        VarType::UnsignedInteger => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_u16().unwrap_or(0),
+            )));
+        }
+        VarType::Long => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_i32().unwrap_or(0),
+            )));
+        }
+        VarType::UnsignedLong | VarType::UnsignedInt => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_u32().unwrap_or(0),
+            )));
+        }
+        VarType::LongLong => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_i64().unwrap_or(0),
+            )));
+        }
+        VarType::UnsignedLongLong => {
+            return Some(scale_integer_to_currency(i128::from(
+                v.as_u64().unwrap_or(0),
+            )));
+        }
+        VarType::Currency => i128::from(v.as_currency_scaled_i64().unwrap_or(0)),
+        _ => return None,
+    };
+    Some(Ok(scaled))
+}
+
+fn currency_operand(v: &Variant) -> Result<i128, ArithError> {
+    match exact_currency_operand(v) {
+        Some(result) => result,
+        None => coerce_numeric(v, NumericCoerceTarget::Currency)?
+            .as_currency_scaled_i64()
+            .map(i128::from)
+            .ok_or_else(ArithError::type_mismatch),
+    }
+}
+
+fn has_currency_exact_lane(l: &Variant, r: &Variant) -> bool {
+    exact_currency_operand(l).is_some() && exact_currency_operand(r).is_some()
+}
+
+fn currency_add(l: &Variant, r: &Variant) -> R {
+    if is_null(l) || is_null(r) {
+        return Ok(Variant::null());
+    }
+    checked_currency(
+        currency_operand(l)?
+            .checked_add(currency_operand(r)?)
+            .ok_or_else(ArithError::overflow)?,
+    )
+}
+
+fn currency_sub(l: &Variant, r: &Variant) -> R {
+    if is_null(l) || is_null(r) {
+        return Ok(Variant::null());
+    }
+    checked_currency(
+        currency_operand(l)?
+            .checked_sub(currency_operand(r)?)
+            .ok_or_else(ArithError::overflow)?,
+    )
+}
+
+fn div_round_ties_even(numerator: i128, denominator: i128) -> i128 {
+    debug_assert!(denominator > 0);
+    let negative = numerator < 0;
+    let magnitude = if negative { -numerator } else { numerator };
+    let quotient = magnitude / denominator;
+    let remainder = magnitude % denominator;
+    let twice_remainder = remainder * 2;
+    let rounded =
+        if twice_remainder > denominator || (twice_remainder == denominator && quotient % 2 != 0) {
+            quotient + 1
+        } else {
+            quotient
+        };
+    if negative {
+        -rounded
+    } else {
+        rounded
+    }
+}
+
+fn currency_mul(l: &Variant, r: &Variant) -> R {
+    if is_null(l) || is_null(r) {
+        return Ok(Variant::null());
+    }
+    let product = currency_operand(l)?
+        .checked_mul(currency_operand(r)?)
+        .ok_or_else(ArithError::overflow)?;
+    checked_currency(div_round_ties_even(product, CURRENCY_SCALE))
+}
+
 /// Is this operand a `Date`? `Date` arithmetic re-tags its (otherwise `Double`) result
 /// back to `Date` per live VBA (see date-arith-loses-date-type): `Date + <anything>`
 /// — including `Date + Date` — is a `Date`; in a `-`, a *single* `Date` operand keeps
@@ -308,10 +451,18 @@ fn widening_add(l: &Variant, r: &Variant) -> R {
     }
     let raw = if l.vtype() == VarType::String || r.vtype() == VarType::String {
         Variant::from_f64(num(l)? + num(r)?)
+    } else if has_currency_exact_lane(l, r)
+        && (l.vtype() == VarType::Currency || r.vtype() == VarType::Currency)
+    {
+        currency_add(l, r)?
     } else {
         rt::add(l, r).map_err(ArithError::from)?
     };
-    Ok(if is_date(l) || is_date(r) { as_date(raw) } else { raw })
+    Ok(if is_date(l) || is_date(r) {
+        as_date(raw)
+    } else {
+        raw
+    })
 }
 
 /// VBA `-` in the Variant regime. A single `Date` operand keeps the result a `Date`;
@@ -320,8 +471,30 @@ fn widening_sub(l: &Variant, r: &Variant) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
-    let raw = rt::sub(l, r).map_err(ArithError::from)?;
-    Ok(if is_date(l) != is_date(r) { as_date(raw) } else { raw })
+    let raw = if has_currency_exact_lane(l, r)
+        && (l.vtype() == VarType::Currency || r.vtype() == VarType::Currency)
+    {
+        currency_sub(l, r)?
+    } else {
+        rt::sub(l, r).map_err(ArithError::from)?
+    };
+    Ok(if is_date(l) != is_date(r) {
+        as_date(raw)
+    } else {
+        raw
+    })
+}
+
+fn widening_mul(l: &Variant, r: &Variant) -> R {
+    if is_null(l) || is_null(r) {
+        return Ok(Variant::null());
+    }
+    if has_currency_exact_lane(l, r)
+        && (l.vtype() == VarType::Currency || r.vtype() == VarType::Currency)
+    {
+        return currency_mul(l, r);
+    }
+    widen(l, r, rt::mul)
 }
 
 // ── Float-only operators ──────────────────────────────────────────────────────
@@ -518,7 +691,11 @@ fn bitlogic(
         // bit-op with the unknown operand as all-0 vs all-1: where the two agree, the known
         // operand decided every bit. (`x And Null` = Null unless x=0→0; `x Or Null` = Null
         // unless x=-1→-1; `Xor`/`Eqv` never agree → Null; `Imp` = `(Not a) Or b` follows.)
-        let (known, known_ty) = if l_null { (int(r)?, r.vtype()) } else { (int(l)?, l.vtype()) };
+        let (known, known_ty) = if l_null {
+            (int(r)?, r.vtype())
+        } else {
+            (int(l)?, l.vtype())
+        };
         let (lo, hi) = if l_null {
             (bit(0, known), bit(-1, known))
         } else {
@@ -578,10 +755,13 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
             if v.vtype() == VarType::Boolean {
                 return Ok(v.clone());
             }
-            if v.vtype() == VarType::String {
-                if let Some(b) = oxvba_runtime::coerce::parse_bool_text(&as_string(v)) {
-                    return Ok(Variant::from_bool(b));
-                }
+            let parsed_bool = if v.vtype() == VarType::String {
+                oxvba_runtime::coerce::parse_bool_text(&as_string(v))
+            } else {
+                None
+            };
+            if let Some(b) = parsed_bool {
+                return Ok(Variant::from_bool(b));
             }
             Ok(Variant::from_bool(num(v)? != 0.0))
         }
@@ -620,6 +800,9 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
         }
         NumericCoerceTarget::Double => Ok(Variant::from_f64(num(v)?)),
         NumericCoerceTarget::Currency => {
+            if let Some(scaled) = exact_currency_operand(v) {
+                return checked_currency(scaled?);
+            }
             let scaled = (num(v)? * 10_000.0).round_ties_even();
             if scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64 {
                 Ok(Variant::from_currency_scaled_i64(scaled as i64))
@@ -678,6 +861,63 @@ mod tests {
         assert_eq!(ty(sub(&one, &d, w)), VarType::Date);
         assert_eq!(ty(sub(&d, &d, w)), VarType::Double);
         assert_eq!(ty(mul(&d, &Variant::from_i32(2), w)), VarType::Double);
+    }
+
+    #[test]
+    fn currency_arithmetic_uses_exact_scaled_integer_math() {
+        let c = |scaled| Variant::from_currency_scaled_i64(scaled);
+        let checked = NumericMode::Checked(NumericCoerceTarget::Currency);
+        let widening = NumericMode::Widening;
+
+        let near = c(300_000_000_001);
+        let product = mul(&near, &near, checked).expect("near-boundary product");
+        assert_eq!(
+            product.as_currency_scaled_i64(),
+            Some(9_000_000_000_060_000_000)
+        );
+
+        let ordinary = mul(&c(12_345), &c(67_891), widening).expect("ordinary product");
+        assert_eq!(ordinary.vtype(), VarType::Currency);
+        assert_eq!(ordinary.as_currency_scaled_i64(), Some(83_811));
+
+        let negative = mul(&c(-12_345), &c(67_891), widening).expect("negative product");
+        assert_eq!(negative.as_currency_scaled_i64(), Some(-83_811));
+
+        let sum = add(&c(9_223_372_036_854_770_000), &c(5_807), widening).expect("exact max add");
+        assert_eq!(sum.as_currency_scaled_i64(), Some(i64::MAX));
+
+        let diff = sub(&c(i64::MIN), &c(-1), checked).expect("exact min plus one");
+        assert_eq!(diff.as_currency_scaled_i64(), Some(i64::MIN + 1));
+
+        let recoerced =
+            coerce_numeric(&c(9_000_000_000_060_000_000), NumericCoerceTarget::Currency)
+                .expect("Currency-to-Currency coercion");
+        assert_eq!(
+            recoerced.as_currency_scaled_i64(),
+            Some(9_000_000_000_060_000_000)
+        );
+    }
+
+    #[test]
+    fn currency_multiplication_rounds_ties_to_even_scaled_units() {
+        let c = |scaled| Variant::from_currency_scaled_i64(scaled);
+        let checked = NumericMode::Checked(NumericCoerceTarget::Currency);
+
+        let down_to_even = mul(&c(1), &c(5_000), checked).expect("0.5 scaled-unit tie");
+        assert_eq!(down_to_even.as_currency_scaled_i64(), Some(0));
+
+        let up_to_even = mul(&c(3), &c(5_000), checked).expect("1.5 scaled-unit tie");
+        assert_eq!(up_to_even.as_currency_scaled_i64(), Some(2));
+    }
+
+    #[test]
+    fn currency_arithmetic_overflow_reports_overflow() {
+        let c = |scaled| Variant::from_currency_scaled_i64(scaled);
+        let checked = NumericMode::Checked(NumericCoerceTarget::Currency);
+
+        assert_eq!(add(&c(i64::MAX), &c(1), checked).unwrap_err().code, 6);
+        assert_eq!(sub(&c(i64::MIN), &c(1), checked).unwrap_err().code, 6);
+        assert_eq!(mul(&c(i64::MAX), &c(20_000), checked).unwrap_err().code, 6);
     }
 
     /// Coercing a string to `Boolean` (the implicit `Dim b As Boolean: b = …` path)
