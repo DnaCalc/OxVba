@@ -610,3 +610,19 @@
   - `cargo test -p oxvba-differential --test foreach_scalar_source_vm3`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Stop Statement Headless No-Op (`bd-4ktq.22`)
+
+- Closed `stop-statement-fails-to-bind` for vm3.
+- Changed the statement binder so a bare `Stop` call-statement shape lowers to
+  no executable Core IR in headless vm3, rather than resolving as a user
+  procedure call and failing bind.
+- Rejected argument-bearing `Stop` forms in that special case instead of
+  silently ignoring malformed arguments.
+- Added `crates/oxvba-differential/tests/stop_statement_vm3.rs`, which proves
+  execution continues after `Stop` and `Err.Number` remains unchanged.
+- Verification target:
+  - `cargo test -p oxvba-differential --test stop_statement_vm3`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

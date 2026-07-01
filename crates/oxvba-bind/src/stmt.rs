@@ -405,6 +405,15 @@ impl<'a> ProcLower<'a> {
             .call_callee()
             .ok_or_else(|| BindError::Malformed("call statement callee".into()))?;
         let arglist = node.call_arg_list();
+        if callee
+            .first_significant_token()
+            .is_some_and(|t| fold_identifier(t.text) == "stop")
+        {
+            if arglist.as_ref().is_some_and(|a| !a.arg_items().is_empty()) {
+                return Err(BindError::Malformed("Stop takes no arguments".into()));
+            }
+            return Ok(Vec::new());
+        }
         // `Err.Raise` / `Err.Clear` are error-state statements, not value calls.
         if callee.kind() == SyntaxKind::MemberExpr
             && let Some(recv) = callee.member_receiver()

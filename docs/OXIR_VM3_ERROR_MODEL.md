@@ -219,8 +219,6 @@ Spec-silent or spec-ambiguous points to confirm against real Office before locki
   M2-c-2 or defer.
 - Distinct Office `Err.Description` text for codes 3 and 20 (tie to the
   `default_error_message` table extension).
-- `Stop` in a headless vm3 (spec: implementation-defined suspend) — decide no-op vs a
-  diagnostic break hook (adjacent to, not part of, the error model).
 
 ---
 
