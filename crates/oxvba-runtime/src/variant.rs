@@ -636,6 +636,10 @@ impl Variant {
         ))
     }
 
+    pub fn nothing() -> Self {
+        Self::from_core(VariantCore::from_bytes(VarType::Object, [0; 8]))
+    }
+
     pub fn as_object_ref(&self) -> Option<ObjectRef> {
         if self.vtype() != VarType::Object {
             return None;
@@ -994,6 +998,15 @@ mod tests {
         assert_eq!(value.as_bstr(), Some(BStr::from("abc")));
         assert!(value.string_core().is_some());
         assert_ne!(u64::from_le_bytes(value.data_bytes()), 0);
+    }
+
+    #[test]
+    fn nothing_is_null_object_variant() {
+        let value = Variant::nothing();
+        assert_eq!(value.vtype(), VarType::Object);
+        assert!(value.as_object_ref().is_none());
+        assert_eq!(value.data_bytes(), [0; 8]);
+        assert_eq!(value.clone(), value);
     }
 
     #[test]

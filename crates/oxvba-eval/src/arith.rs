@@ -50,6 +50,12 @@ impl ArithError {
             message: "Invalid use of Null".into(),
         }
     }
+    pub fn object_not_set() -> Self {
+        Self {
+            code: 91,
+            message: "Object variable or With block variable not set".into(),
+        }
+    }
 }
 
 /// A bare message (e.g. from the runtime coercion layer) is Type mismatch (13) unless
@@ -82,6 +88,20 @@ pub enum CmpOp {
 
 pub fn is_null(v: &Variant) -> bool {
     matches!(v.vtype(), VarType::Null)
+}
+
+fn is_object_nothing(v: &Variant) -> bool {
+    if v.vtype() != VarType::Object {
+        return false;
+    }
+    v.as_object_ref().map(|object| object.raw()).unwrap_or(0) == 0
+}
+
+fn reject_object_nothing(l: &Variant, r: &Variant) -> Result<(), ArithError> {
+    if is_object_nothing(l) || is_object_nothing(r) {
+        return Err(ArithError::object_not_set());
+    }
+    Ok(())
 }
 
 pub fn as_string(v: &Variant) -> String {
@@ -119,6 +139,7 @@ pub fn num(v: &Variant) -> Result<f64, ArithError> {
     match v.vtype() {
         VarType::Empty => Ok(0.0),
         VarType::Null => Err(ArithError::null_use()),
+        VarType::Object if is_object_nothing(v) => Err(ArithError::object_not_set()),
         VarType::Boolean => Ok(if v.as_bool().unwrap_or(false) {
             -1.0
         } else {
@@ -236,6 +257,7 @@ pub fn neg(v: &Variant, mode: NumericMode) -> R {
             ty,
         ),
         NumericMode::Checked(ty) => coerce_numeric(&Variant::from_f64(-num(v)?), ty),
+        NumericMode::Widening if is_object_nothing(v) => Err(ArithError::object_not_set()),
         NumericMode::Widening => rt::neg(v).map_err(ArithError::from),
     }
 }
@@ -279,6 +301,7 @@ fn widen(l: &Variant, r: &Variant, f: impl Fn(&Variant, &Variant) -> Result<Vari
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
+    reject_object_nothing(l, r)?;
     f(l, r).map_err(ArithError::from)
 }
 
@@ -442,6 +465,7 @@ fn widening_add(l: &Variant, r: &Variant) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
+    reject_object_nothing(l, r)?;
     if l.vtype() == VarType::String && r.vtype() == VarType::String {
         // Code-unit concatenation (see `concat_units`) so a `+` over two strings
         // preserves surrogate halves exactly, matching `&`.
@@ -471,6 +495,7 @@ fn widening_sub(l: &Variant, r: &Variant) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
+    reject_object_nothing(l, r)?;
     let raw = if has_currency_exact_lane(l, r)
         && (l.vtype() == VarType::Currency || r.vtype() == VarType::Currency)
     {
@@ -623,7 +648,15 @@ fn cmp_order(
         let ru = r.string_units().unwrap_or_default();
         return Ok(norm_units(&lu, mode).cmp(&norm_units(&ru, mode)));
     }
-    match (num(l), num(r)) {
+    let left_num = num(l);
+    let right_num = num(r);
+    if left_num.as_ref().is_err_and(|e| e.code == 91) {
+        return left_num.map(|_| std::cmp::Ordering::Equal);
+    }
+    if right_num.as_ref().is_err_and(|e| e.code == 91) {
+        return right_num.map(|_| std::cmp::Ordering::Equal);
+    }
+    match (left_num, right_num) {
         (Ok(a), Ok(b)) => Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)),
         // A non-numeric operand falls back to a string comparison.
         _ => Ok(norm(as_string(l), mode).cmp(&norm(as_string(r), mode))),

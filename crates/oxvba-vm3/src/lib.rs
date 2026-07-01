@@ -2388,6 +2388,16 @@ impl<'h> Vm3<'h> {
                 424,
                 format!("Object required: {target_name}"),
             ))),
+            Intent::Let
+                if target_kind == Kind::Variant
+                    && value.vtype() == VarType::Object
+                    && is_nothing(&value) =>
+            {
+                Err(Vm3Error::Fault(Fault::new(
+                    91,
+                    "Object variable or With block variable not set",
+                )))
+            }
             Intent::Let if target_kind == Kind::Object && is_object => Err(Vm3Error::Fault(
                 Fault::new(91, format!("Object variable requires Set: {target_name}")),
             )),
@@ -2395,6 +2405,7 @@ impl<'h> Vm3<'h> {
                 424,
                 format!("Object required: {target_name}"),
             ))),
+            Intent::Set if value.vtype() == VarType::Object && is_nothing(&value) => Ok(()),
             // Strict `Set` type check (error 13): when the target's declared type is a known
             // project class/interface, a project-instance source must be that class or
             // implement that interface. Unconstrained targets (`Object`/`Variant`, or any
@@ -2794,11 +2805,9 @@ impl<'h> Vm3<'h> {
     fn type_of_is(&self, object: &OxOperand, type_name: &str) -> Result<bool, Vm3Error> {
         let v = self.operand(object)?;
         // `TypeOf Nothing Is X` is False, not an error — and so is the same test on an unset
-        // or `Set …= Nothing` object variable (`Nothing` is represented as `Empty`) and on
-        // `Empty`/`Null`. Guard before `variant_to_object`, which would otherwise raise 91.
-        if matches!(v.vtype(), VarType::Empty | VarType::Null)
-            || v.as_object_ref().is_some_and(|o| o.raw() == 0)
-        {
+        // or `Set …= Nothing` object variable (a null Object Variant) and on `Empty`/`Null`.
+        // Guard before `variant_to_object`, which would otherwise raise 91.
+        if is_nothing(&v) {
             return Ok(false);
         }
         let obj = variant_to_object(&v)?;
@@ -3798,9 +3807,7 @@ fn const_variant(c: &OxConst) -> Variant {
     match c {
         OxConst::Empty => Variant::empty(),
         OxConst::Null => Variant::null(),
-        // `Nothing` is a null object reference; like vm2's `LoadEmpty`, an empty
-        // Variant stands in (the runtime treats Empty/0 as Nothing for `Is`).
-        OxConst::Nothing => Variant::empty(),
+        OxConst::Nothing => Variant::nothing(),
         OxConst::Bool(b) => Variant::from_bool(*b),
         OxConst::I16(n) => Variant::from_i16(*n),
         OxConst::I32(n) => Variant::from_i32(*n),

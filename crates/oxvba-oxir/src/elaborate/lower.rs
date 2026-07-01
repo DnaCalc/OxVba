@@ -560,11 +560,12 @@ impl<'a> Lowerer<'a> {
                 target_name,
                 target_type_name,
             } => {
-                let (src, _ty) = self.lower_value(value)?;
+                let (src, src_ty) = self.lower_value(value)?;
                 // A `Set` or object-typed assignment carries a run-time legality check
                 // (e.g. error 424 "Object required"), matching the linearize lowering.
                 if *intent == AssignmentIntent::Set
                     || *target_kind == AssignmentTargetKind::Object
+                    || matches!(src_ty, OxTy::Object(_))
                 {
                     self.emit(OxInst::ValidateAssignment {
                         src: src.clone(),
@@ -3051,6 +3052,34 @@ mod tests {
                 .iter()
                 .any(|b| b.instrs.iter().any(|i| matches!(i, OxInst::ValidateAssignment { .. }))),
             "Set assignment must emit ValidateAssignment"
+        );
+    }
+
+    /// A `Let` assignment of a statically object-valued source (notably `Nothing`) into
+    /// a Variant still needs the legality check so runtime error 91 can be caught by
+    /// `On Error Resume Next` before the store overwrites the old value.
+    #[test]
+    fn let_variant_nothing_assignment_emits_validate() {
+        let prog = program(sub(
+            "Main",
+            vec![variant_local("x")],
+            vec![CoreStmt::Assign {
+                place: CorePlace::Local(CoreLocalId(0)),
+                value: CoreValue::Const(CoreConst::Nothing),
+                intent: AssignmentIntent::Let,
+                target_kind: AssignmentTargetKind::Variant,
+                target_name: "x".to_string(),
+                target_type_name: "Variant".to_string(),
+            }],
+        ));
+        let oxp = elaborate(&prog).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        assert!(
+            oxp.funcs[0]
+                .blocks
+                .iter()
+                .any(|b| b.instrs.iter().any(|i| matches!(i, OxInst::ValidateAssignment { .. }))),
+            "Let Variant = Nothing must emit ValidateAssignment"
         );
     }
 

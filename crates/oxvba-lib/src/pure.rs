@@ -2164,6 +2164,9 @@ pub fn type_name(args: &[Variant]) -> LibResult<Variant> {
         VarType::Currency => "Currency",
         VarType::Date => "Date",
         VarType::String => "String",
+        VarType::Object if value.as_object_ref().map(|object| object.raw()).unwrap_or(0) == 0 => {
+            "Nothing"
+        }
         VarType::Object => "Object",
         VarType::Error => "Error",
         VarType::Boolean => "Boolean",

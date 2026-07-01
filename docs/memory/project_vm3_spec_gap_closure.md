@@ -849,3 +849,37 @@
   - `cargo check -p oxvba-hal`
   - `cargo test -p oxvba-hal time_`
   - `cargo test -p oxvba-host --test filesystem_statements`
+
+## 2026-07-01 - `Nothing` Distinct From `Empty` (`bd-4ktq.35`)
+
+- Closed `nothing-represented-as-empty` for vm3.
+- Captured live Excel/VBA 7.1 `Nothing`/`Empty` observables in
+  `docs/evidence/conformance/vm3_nothing_oracle_20260701T151239Z/` using VBE
+  Debug -> Compile VBAProject (`ID=578`) with PID-scoped UI Automation modal
+  handling. The assignment follow-up used `On Error Resume Next` to pin that
+  `v = Nothing` raises 91 and leaves a Variant `Empty`, while
+  `Set v = Nothing` succeeds and stores a null object Variant.
+- Added `Variant::nothing()` and made vm3 constants materialize `Nothing` as
+  `VT_OBJECT` with a null object pointer instead of `Empty`.
+- Updated `TypeName` to report null object Variants as `Nothing`, while ordinary
+  non-null objects still use the vm3 object-name path where available.
+- Extended OxIR assignment lowering and vm3 `ValidateAssignment` so object-valued
+  `Let` into a Variant catches the null-object `Nothing` value as runtime error
+  91, while `Set` assignments of `Nothing` remain valid.
+- Made null-object value-context numeric coercion, widening arithmetic, and mixed
+  comparison raise runtime error 91 instead of treating the object as `Empty` or
+  falling through to type mismatch.
+- Added `crates/oxvba-differential/tests/nothing_vs_empty_vm3.rs` covering
+  literal introspection, object variables set/unset to Nothing, the Empty
+  baseline, `Set Variant = Nothing`, and `Let Variant = Nothing` under
+  `On Error Resume Next`, plus unset object numeric assignment, arithmetic, and
+  comparison error 91.
+- Verification target:
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-eval`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-oxir`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --test nothing_vs_empty_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
