@@ -32,7 +32,7 @@ use console::ConsoleState;
 pub(crate) use descriptor::descriptor_for_profile;
 use dynlink::DynLinkBindingState;
 use filesystem::{FileHandleState, FileSystemState};
-use process::DirSearchState;
+use process::{DirSearchState, SettingsState};
 
 #[allow(unused_imports)]
 use crate::traits::TypeLibMemberInvokeKind;
@@ -69,6 +69,7 @@ use oxvba_runtime::{VarType, Variant};
 #[cfg(target_os = "windows")]
 use std::cell::Cell;
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
@@ -130,6 +131,7 @@ pub(crate) struct StandardHostServices {
     env_cache: StandardEnvCache,
     fs_state: Arc<Mutex<FileSystemState>>,
     dir_state: Arc<Mutex<DirSearchState>>,
+    settings_state: Arc<Mutex<SettingsState>>,
     console_state: Arc<Mutex<ConsoleState>>,
     projection_state: Arc<Mutex<ProjectionObjectState>>,
     #[cfg(target_os = "windows")]
@@ -146,9 +148,9 @@ pub(crate) struct StandardHostServices {
 #[derive(Default)]
 struct ProjectionObjectState {
     next_handle: i32,
-    handles_by_prog_id: std::collections::BTreeMap<String, i32>,
-    prog_ids_by_handle: std::collections::BTreeMap<i32, String>,
-    portable_objects_by_handle: std::collections::BTreeMap<i32, Arc<dyn PortableDispatch>>,
+    handles_by_prog_id: BTreeMap<String, i32>,
+    prog_ids_by_handle: BTreeMap<i32, String>,
+    portable_objects_by_handle: BTreeMap<i32, Arc<dyn PortableDispatch>>,
 }
 
 impl std::fmt::Debug for StandardHostServices {
@@ -260,12 +262,13 @@ impl StandardHostServices {
             env_cache,
             fs_state: Arc::new(Mutex::new(FileSystemState::default())),
             dir_state: Arc::new(Mutex::new(DirSearchState::default())),
+            settings_state: Arc::new(Mutex::new(SettingsState::default())),
             console_state: Arc::new(Mutex::new(ConsoleState::default())),
             projection_state: Arc::new(Mutex::new(ProjectionObjectState {
                 next_handle: 5_003,
-                handles_by_prog_id: std::collections::BTreeMap::new(),
-                prog_ids_by_handle: std::collections::BTreeMap::new(),
-                portable_objects_by_handle: std::collections::BTreeMap::new(),
+                handles_by_prog_id: BTreeMap::new(),
+                prog_ids_by_handle: BTreeMap::new(),
+                portable_objects_by_handle: BTreeMap::new(),
             })),
             dynlink_state: Arc::new(Mutex::new(DynLinkBindingState::default())),
             last_dll_error: Arc::new(std::sync::atomic::AtomicI32::new(0)),
@@ -380,6 +383,16 @@ impl StandardHostServices {
                 op,
                 "dir search state lock poisoned",
             )
+        })
+    }
+
+    fn settings_lock(
+        &self,
+        capability: CapabilityId,
+        op: &'static str,
+    ) -> HalResult<std::sync::MutexGuard<'_, SettingsState>> {
+        self.settings_state.lock().map_err(|_| {
+            HalError::adapter_fault(self.profile, capability, op, "settings state lock poisoned")
         })
     }
 
@@ -2966,6 +2979,73 @@ mod tests {
         assert_eq!(host.environ_variant(rv(88)).expect("environ"), rv(88));
         assert_eq!(host.dir_variant(rv(0), rv(0)).expect("dir"), rv(0));
         assert_eq!(host.dir_variant(rv(5), rv(0)).expect("dir"), rv(1));
+    }
+
+    #[test]
+    fn settings_state_round_trips_defaults_arrays_and_delete_faults() {
+        fn s(value: &str) -> Variant {
+            Variant::from_string(value)
+        }
+
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(
+            host.get_setting_variant(s("App"), s("Startup"), s("Left"), Variant::empty())
+                .expect("missing setting"),
+            s("")
+        );
+        assert_eq!(
+            host.get_setting_variant(s("App"), s("Startup"), s("Left"), s("fallback"))
+                .expect("defaulted setting"),
+            s("fallback")
+        );
+
+        host.save_setting_variant(s("App"), s("Startup"), s("Top"), rv(75))
+            .expect("save Top");
+        host.save_setting_variant(s("App"), s("Startup"), s("Left"), s("50"))
+            .expect("save Left");
+        assert_eq!(
+            host.get_setting_variant(s("APP"), s("startup"), s("top"), s("fallback"))
+                .expect("case-insensitive get"),
+            s("75")
+        );
+
+        let all = host
+            .get_all_settings_variant(s("App"), s("Startup"))
+            .expect("get all settings");
+        let array = all.as_safearray().expect("settings should return an array");
+        assert_eq!(
+            array.bounds(),
+            Some(vec![
+                oxvba_runtime::safe_array::SafeArrayBound { lower: 0, count: 2 },
+                oxvba_runtime::safe_array::SafeArrayBound { lower: 0, count: 2 },
+            ])
+        );
+        let elements = array.variant_elements().expect("settings values");
+        let texts: Vec<String> = elements
+            .iter()
+            .map(|value| value.as_bstr().expect("BSTR setting").as_str().to_string())
+            .collect();
+        assert_eq!(texts, ["Left", "50", "Top", "75"]);
+
+        host.delete_setting_variant(s("App"), s("Startup"), s("Left"))
+            .expect("delete key");
+        assert_eq!(
+            host.get_setting_variant(s("App"), s("Startup"), s("Left"), s("fallback"))
+                .expect("deleted key should default"),
+            s("fallback")
+        );
+        host.delete_setting_variant(s("App"), s("Startup"), Variant::empty())
+            .expect("delete section");
+        assert_eq!(
+            host.get_all_settings_variant(s("App"), s("Startup"))
+                .expect("deleted section")
+                .vtype(),
+            oxvba_runtime::VarType::Empty
+        );
+        let err = host
+            .delete_setting_variant(s("App"), s("Startup"), Variant::empty())
+            .expect_err("missing section should fault");
+        assert_eq!(err.host_error_code, Some(5));
     }
 
     #[test]

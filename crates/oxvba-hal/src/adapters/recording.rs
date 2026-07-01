@@ -276,6 +276,51 @@ impl ProcessEnvHal for RecordingHostServices {
         result
     }
 
+    fn get_setting_variant(
+        &self,
+        appname: Variant,
+        section: Variant,
+        key: Variant,
+        default: Variant,
+    ) -> HalResult<Variant> {
+        let result = self
+            .inner
+            .process()
+            .get_setting_variant(appname, section, key, default);
+        self.record_variant("process", "get_setting", "process.settings.get", &result);
+        result
+    }
+
+    fn get_all_settings_variant(&self, appname: Variant, section: Variant) -> HalResult<Variant> {
+        // SAFEARRAY results are not represented in the compact journal yet.
+        self.inner
+            .process()
+            .get_all_settings_variant(appname, section)
+    }
+
+    fn save_setting_variant(
+        &self,
+        appname: Variant,
+        section: Variant,
+        key: Variant,
+        setting: Variant,
+    ) -> HalResult<Variant> {
+        self.inner
+            .process()
+            .save_setting_variant(appname, section, key, setting)
+    }
+
+    fn delete_setting_variant(
+        &self,
+        appname: Variant,
+        section: Variant,
+        key: Variant,
+    ) -> HalResult<Variant> {
+        self.inner
+            .process()
+            .delete_setting_variant(appname, section, key)
+    }
+
     fn shell_variant(&self, command: Variant, window_style: Variant) -> HalResult<Variant> {
         let result = self.inner.process().shell_variant(command, window_style);
         self.record_variant("process", "shell", "process.shell", &result);

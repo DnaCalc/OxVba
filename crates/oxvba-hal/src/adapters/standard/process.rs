@@ -4,14 +4,33 @@ use crate::{
     model::CapabilityId,
     traits::ProcessEnvHal,
 };
-use oxvba_runtime::{VarType, Variant, bstr::BStr};
-use std::path::{Path, PathBuf};
+use oxvba_runtime::{
+    VarType, Variant,
+    bstr::BStr,
+    safe_array::{SafeArray, SafeArrayBound, VT_BSTR_VALUE},
+    variant_to_vba_string,
+};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use super::StandardHostServices;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct DirSearchState {
     pub(super) remaining: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SettingEntry {
+    key_name: String,
+    value: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct SettingsState {
+    values: BTreeMap<(String, String, String), SettingEntry>,
 }
 
 impl ProcessEnvHal for StandardHostServices {
@@ -25,6 +44,152 @@ impl ProcessEnvHal for StandardHostServices {
             return Ok(Variant::from_string(args));
         }
         Ok(Variant::from_string(BStr::empty()))
+    }
+
+    fn get_setting_variant(
+        &self,
+        appname: Variant,
+        section: Variant,
+        key: Variant,
+        default: Variant,
+    ) -> HalResult<Variant> {
+        let capability = CapabilityId::ProcessEnv;
+        let op = "get_setting";
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, op));
+        }
+        let appname = self.setting_text(&appname, capability, op, "appname")?;
+        let section = self.setting_text(&section, capability, op, "section")?;
+        let key = self.setting_text(&key, capability, op, "key")?;
+        let default = self.setting_text(&default, capability, op, "default")?;
+        let state = self.settings_lock(capability, op)?;
+        let value = state
+            .values
+            .get(&settings_key(&appname, &section, &key))
+            .map(|entry| entry.value.clone())
+            .unwrap_or(default);
+        Ok(Variant::from_string(value))
+    }
+
+    fn get_all_settings_variant(&self, appname: Variant, section: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::ProcessEnv;
+        let op = "get_all_settings";
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, op));
+        }
+        let appname = self.setting_text(&appname, capability, op, "appname")?;
+        let section = self.setting_text(&section, capability, op, "section")?;
+        let state = self.settings_lock(capability, op)?;
+        let prefix = (
+            normalize_setting_name(&appname),
+            normalize_setting_name(&section),
+        );
+        let entries: Vec<SettingEntry> = state
+            .values
+            .iter()
+            .filter(|((app, sec, _), _)| app == &prefix.0 && sec == &prefix.1)
+            .map(|(_, entry)| entry.clone())
+            .collect();
+        if entries.is_empty() {
+            return Ok(Variant::empty());
+        }
+
+        let mut values = Vec::with_capacity(entries.len() * 2);
+        for entry in entries {
+            values.push(Variant::from_string(entry.key_name));
+            values.push(Variant::from_string(entry.value));
+        }
+        let bounds = vec![
+            SafeArrayBound {
+                lower: 0,
+                count: u32::try_from(values.len() / 2).map_err(|_| {
+                    HalError::adapter_fault(
+                        self.profile,
+                        capability,
+                        op,
+                        "settings array row count exceeds SAFEARRAY bounds",
+                    )
+                })?,
+            },
+            SafeArrayBound { lower: 0, count: 2 },
+        ];
+        let array = SafeArray::from_typed_variants_nd(bounds, VT_BSTR_VALUE, values)
+            .map_err(|message| HalError::adapter_fault(self.profile, capability, op, message))?;
+        Ok(Variant::from_safearray(array))
+    }
+
+    fn save_setting_variant(
+        &self,
+        appname: Variant,
+        section: Variant,
+        key: Variant,
+        setting: Variant,
+    ) -> HalResult<Variant> {
+        let capability = CapabilityId::ProcessEnv;
+        let op = "save_setting";
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, op));
+        }
+        let appname = self.setting_text(&appname, capability, op, "appname")?;
+        let section = self.setting_text(&section, capability, op, "section")?;
+        let key_name = self.setting_text(&key, capability, op, "key")?;
+        let value = self.setting_text(&setting, capability, op, "setting")?;
+        let mut state = self.settings_lock(capability, op)?;
+        state.values.insert(
+            settings_key(&appname, &section, &key_name),
+            SettingEntry { key_name, value },
+        );
+        Ok(Variant::empty())
+    }
+
+    fn delete_setting_variant(
+        &self,
+        appname: Variant,
+        section: Variant,
+        key: Variant,
+    ) -> HalResult<Variant> {
+        let capability = CapabilityId::ProcessEnv;
+        let op = "delete_setting";
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, op));
+        }
+        let appname = self.setting_text(&appname, capability, op, "appname")?;
+        let section = self.setting_text(&section, capability, op, "section")?;
+        let mut state = self.settings_lock(capability, op)?;
+        if key.vtype() == VarType::Empty {
+            let prefix = (
+                normalize_setting_name(&appname),
+                normalize_setting_name(&section),
+            );
+            let before = state.values.len();
+            state
+                .values
+                .retain(|(app, sec, _), _| !(app == &prefix.0 && sec == &prefix.1));
+            if state.values.len() == before {
+                return Err(settings_missing_fault(
+                    self.profile,
+                    capability,
+                    op,
+                    "setting section does not exist",
+                ));
+            }
+            return Ok(Variant::empty());
+        }
+
+        let key = self.setting_text(&key, capability, op, "key")?;
+        if state
+            .values
+            .remove(&settings_key(&appname, &section, &key))
+            .is_none()
+        {
+            return Err(settings_missing_fault(
+                self.profile,
+                capability,
+                op,
+                "setting key does not exist",
+            ));
+        }
+        Ok(Variant::empty())
     }
 
     fn shell_variant(&self, command: Variant, _window_style: Variant) -> HalResult<Variant> {
@@ -189,6 +354,43 @@ impl ProcessEnvHal for StandardHostServices {
         };
         Ok(Variant::from_i32(out))
     }
+}
+
+impl StandardHostServices {
+    fn setting_text(
+        &self,
+        value: &Variant,
+        capability: CapabilityId,
+        op: &'static str,
+        field: &'static str,
+    ) -> HalResult<String> {
+        variant_to_vba_string(value)
+            .map(|text| text.as_str().to_string())
+            .map_err(|message| {
+                HalError::adapter_fault(self.profile, capability, op, format!("{field}: {message}"))
+            })
+    }
+}
+
+fn normalize_setting_name(value: &str) -> String {
+    value.to_ascii_lowercase()
+}
+
+fn settings_key(appname: &str, section: &str, key: &str) -> (String, String, String) {
+    (
+        normalize_setting_name(appname),
+        normalize_setting_name(section),
+        normalize_setting_name(key),
+    )
+}
+
+fn settings_missing_fault(
+    profile: crate::model::HalProfileId,
+    capability: CapabilityId,
+    op: &'static str,
+    message: &'static str,
+) -> HalError {
+    HalError::adapter_fault(profile, capability, op, message).with_host_error_code(5)
 }
 
 fn enumerate_dir_matches(target: &Path) -> std::io::Result<Vec<PathBuf>> {

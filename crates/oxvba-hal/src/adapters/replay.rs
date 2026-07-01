@@ -275,6 +275,39 @@ impl ProcessEnvHal for ReplayHostServices {
         self.replay_string_variant("command")
     }
 
+    fn get_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+        _default: Variant,
+    ) -> HalResult<Variant> {
+        self.replay_string_variant("get_setting")
+    }
+
+    fn get_all_settings_variant(&self, _appname: Variant, _section: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "get_all_settings"))
+    }
+
+    fn save_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+        _setting: Variant,
+    ) -> HalResult<Variant> {
+        Ok(Variant::empty())
+    }
+
+    fn delete_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+    ) -> HalResult<Variant> {
+        Ok(Variant::empty())
+    }
+
     fn shell_variant(&self, _cmd: Variant, _style: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("shell")
     }

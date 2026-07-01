@@ -6,7 +6,7 @@
 //! Variants to the `oxvba-com` token types and calls the `com()` facet, ported
 //! from the legacy VM's `semantics::variant_to_com_*` helpers.
 
-use crate::{LibError, LibResult, as_f64, need, opt, vunit};
+use crate::{LibError, LibResult, as_f64, as_str, need, opt, vunit};
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 use oxvba_hal::HostServices;
 use oxvba_runtime::Variant;
@@ -19,6 +19,18 @@ fn req(args: &[Variant], index: usize) -> LibResult<Variant> {
 
 fn arg_or_empty(args: &[Variant], index: usize) -> Variant {
     opt(args, index).cloned().unwrap_or_else(vunit)
+}
+
+fn string_arg(args: &[Variant], index: usize) -> LibResult<Variant> {
+    Ok(Variant::from_string(as_str(need(args, index)?)?))
+}
+
+fn optional_string_arg(args: &[Variant], index: usize) -> LibResult<Variant> {
+    match opt(args, index) {
+        Some(value) if matches!(value.vtype(), VarType::Empty) => Ok(Variant::empty()),
+        Some(value) => Ok(Variant::from_string(as_str(value)?)),
+        None => Ok(Variant::empty()),
+    }
 }
 
 // ── Time / locale ──
@@ -268,6 +280,34 @@ pub fn shell(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
 }
 pub fn command(host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.process().command_variant()?)
+}
+pub fn get_setting(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.process().get_setting_variant(
+        string_arg(args, 0)?,
+        string_arg(args, 1)?,
+        string_arg(args, 2)?,
+        optional_string_arg(args, 3)?,
+    )?)
+}
+pub fn get_all_settings(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host
+        .process()
+        .get_all_settings_variant(string_arg(args, 0)?, string_arg(args, 1)?)?)
+}
+pub fn save_setting(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.process().save_setting_variant(
+        string_arg(args, 0)?,
+        string_arg(args, 1)?,
+        string_arg(args, 2)?,
+        string_arg(args, 3)?,
+    )?)
+}
+pub fn delete_setting(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.process().delete_setting_variant(
+        string_arg(args, 0)?,
+        string_arg(args, 1)?,
+        optional_string_arg(args, 2)?,
+    )?)
 }
 pub fn environ(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.process().environ_variant(req(args, 0)?)?)

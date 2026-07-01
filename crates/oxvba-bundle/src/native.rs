@@ -209,8 +209,12 @@ native_impl_ids! {
     FileUnlock,  // `Unlock #n [, range]`
 
     // ── Interaction ──────────────────────────────────────────
-    Command,   // `Command` / `Command$` → host command-line arguments
-    Partition, // `Partition(number, start, stop, interval)` → range label
+    Command,        // `Command` / `Command$` → host command-line arguments
+    GetSetting,     // `GetSetting(app, section, key[, default])`
+    GetAllSettings, // `GetAllSettings(app, section)` → 2-D settings array or Empty
+    SaveSetting,    // `SaveSetting app, section, key, setting`
+    DeleteSetting,  // `DeleteSetting app, section[, key]`
+    Partition,      // `Partition(number, start, stop, interval)` → range label
     MsgBox,
     InputBox,
     Beep,
@@ -278,6 +282,10 @@ impl NativeImplId {
                 M::FileIo
             }
             Command
+            | GetSetting
+            | GetAllSettings
+            | SaveSetting
+            | DeleteSetting
             | MsgBox
             | Partition
             | InputBox
@@ -321,9 +329,10 @@ impl NativeImplId {
     ///   lowering, resolved by `special_form`, not `name_to_intrinsic`) and stay
     ///   `None`;
     /// - the `Interaction` by-name functions (`Partition` plus the host functions
-    ///   `Command`/`MsgBox`/`InputBox`/`Beep`/`DoEvents`/`Shell`/`Environ`/`Dir`). The host
-    ///   functions still reach host services through `invoke_native_lib`; `Partition`
-    ///   is deterministic but shares the same VBA typelib module. Their
+    ///   `Command`/`GetSetting`/`GetAllSettings`/`SaveSetting`/`DeleteSetting`/
+    ///   `MsgBox`/`InputBox`/`Beep`/`DoEvents`/`Shell`/`Environ`/`Dir`). The host
+    ///   functions still reach host services through `invoke_native_lib`;
+    ///   `Partition` is deterministic but shares the same VBA typelib module. Their
     ///   `Interaction`-module siblings `CreateObject` (object activation / `New`
     ///   lowering target) and the `Com*` event-machinery ids (not user-callable by
     ///   name) stay `None`;
@@ -480,6 +489,10 @@ impl NativeImplId {
             QbColor => "QBColor",
             // ── Interaction (by-name functions) ──
             Command => "Command",
+            GetSetting => "GetSetting",
+            GetAllSettings => "GetAllSettings",
+            SaveSetting => "SaveSetting",
+            DeleteSetting => "DeleteSetting",
             Partition => "Partition",
             MsgBox => "MsgBox",
             InputBox => "InputBox",
@@ -658,7 +671,9 @@ impl NativeImplId {
             Rgb => 3,
             // ── Interaction by-name functions ──
             Beep | Command | DoEvents => 0,
-            Partition => 4,
+            GetAllSettings => 2,
+            DeleteSetting => 3,
+            GetSetting | SaveSetting | Partition => 4,
             Environ => 1,
             Shell | Dir => 2,
             MsgBox => 5,
@@ -751,6 +766,10 @@ impl NativeImplId {
                 | NativeImplId::Now
                 | NativeImplId::Timer
                 | NativeImplId::Command
+                | NativeImplId::GetSetting
+                | NativeImplId::GetAllSettings
+                | NativeImplId::SaveSetting
+                | NativeImplId::DeleteSetting
                 | NativeImplId::MsgBox
                 | NativeImplId::InputBox
                 | NativeImplId::Beep

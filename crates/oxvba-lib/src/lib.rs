@@ -418,6 +418,10 @@ pub fn invoke(
 
         // ── Interaction / host ──
         Command => host::command(host),
+        GetSetting => host::get_setting(args, host),
+        GetAllSettings => host::get_all_settings(args, host),
+        SaveSetting => host::save_setting(args, host),
+        DeleteSetting => host::delete_setting(args, host),
         MsgBox => host::msg_box(args, host),
         InputBox => host::input_box(args, host),
         Beep => host::beep(host),

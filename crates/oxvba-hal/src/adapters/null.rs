@@ -187,6 +187,39 @@ impl ProcessEnvHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ProcessEnv, "command"))
     }
 
+    fn get_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+        _default: Variant,
+    ) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "get_setting"))
+    }
+
+    fn get_all_settings_variant(&self, _appname: Variant, _section: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "get_all_settings"))
+    }
+
+    fn save_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+        _setting: Variant,
+    ) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "save_setting"))
+    }
+
+    fn delete_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+    ) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "delete_setting"))
+    }
+
     fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }

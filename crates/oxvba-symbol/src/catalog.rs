@@ -267,6 +267,34 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
 
         // ── Interaction ──
         Command => e(Command, &["Command", "Command$"], sig(0, 0), Ordinary),
+        GetSetting => e_params(
+            GetSetting,
+            &["GetSetting"],
+            sig(3, 4),
+            &["AppName", "Section", "Key", "Default"],
+            Ordinary,
+        ),
+        GetAllSettings => e_params(
+            GetAllSettings,
+            &["GetAllSettings"],
+            sig(2, 2),
+            &["AppName", "Section"],
+            Ordinary,
+        ),
+        SaveSetting => e_params(
+            SaveSetting,
+            &["SaveSetting"],
+            sig(4, 4),
+            &["AppName", "Section", "Key", "Setting"],
+            FileStatement,
+        ),
+        DeleteSetting => e_params(
+            DeleteSetting,
+            &["DeleteSetting"],
+            sig(2, 3),
+            &["AppName", "Section", "Key"],
+            FileStatement,
+        ),
         Partition => e_params(
             Partition,
             &["Partition"],

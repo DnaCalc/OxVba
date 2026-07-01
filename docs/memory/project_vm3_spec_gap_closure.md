@@ -1180,3 +1180,31 @@
   - `cargo test -p oxvba-differential --test command_error_vm3`
   - `cargo test -p oxvba-differential --test default_error_messages_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Settings Function Family (`bd-4ktq.37.5`)
+
+- Closed `getsetting-family-absent` for vm3.
+- Used official Microsoft VBA documentation for the four-member family:
+  `SaveSetting appname, section, key, setting`, `GetSetting(appname,
+  section, key, [default])`, `GetAllSettings(appname, section)`, and
+  `DeleteSetting appname, section, [key]`.
+- Added `GetSetting`, `GetAllSettings`, `SaveSetting`, and `DeleteSetting` to
+  the VBA `Interaction` library surface, catalog metadata, bundle exports, and
+  oxvba-lib host dispatch.
+- Implemented a deterministic `ProcessEnv` HAL settings map in the standard
+  host. Values are scoped to one host instance/run, names compare
+  case-insensitively, original key casing is preserved for `GetAllSettings`,
+  and no real registry/HKCU persistence is claimed. Missing `GetSetting`
+  returns the supplied default or `""`; missing `GetAllSettings` returns
+  `Empty`; missing `DeleteSetting` targets surface runtime error 5.
+- `GetAllSettings` returns a 0-based two-dimensional BSTR SAFEARRAY shaped as
+  rows of key/value pairs (`[0..n-1, 0..1]`), matching the documented array
+  contract within the deterministic host boundary.
+- Verification target:
+  - `cargo test -p oxvba-bundle vba_library`
+  - `cargo test -p oxvba-symbol catalog`
+  - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms`
+  - `cargo test -p oxvba-hal settings_state_round_trips_defaults_arrays_and_delete_faults`
+  - `cargo test -p oxvba-lib setting`
+  - `cargo test -p oxvba-differential --test settings_family_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

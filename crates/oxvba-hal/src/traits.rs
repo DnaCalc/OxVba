@@ -301,6 +301,35 @@ pub trait ProcessEnvHal: Send + Sync {
     fn command_variant(&self) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ProcessEnv, "command_variant")
     }
+    fn get_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+        _default: Variant,
+    ) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "get_setting_variant")
+    }
+    fn get_all_settings_variant(&self, _appname: Variant, _section: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "get_all_settings_variant")
+    }
+    fn save_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+        _setting: Variant,
+    ) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "save_setting_variant")
+    }
+    fn delete_setting_variant(
+        &self,
+        _appname: Variant,
+        _section: Variant,
+        _key: Variant,
+    ) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "delete_setting_variant")
+    }
     fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ProcessEnv, "shell_variant")
     }

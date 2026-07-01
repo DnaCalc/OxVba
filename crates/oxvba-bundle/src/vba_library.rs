@@ -280,7 +280,19 @@ mod tests {
         let interaction_by_name = |id| {
             matches!(
                 id,
-                Command | Partition | MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir
+                Command
+                    | GetSetting
+                    | GetAllSettings
+                    | SaveSetting
+                    | DeleteSetting
+                    | Partition
+                    | MsgBox
+                    | InputBox
+                    | Beep
+                    | DoEvents
+                    | Shell
+                    | Environ
+                    | Dir
             )
         };
         // The FileIo ids resolved by NAME — both the `Ordinary` function forms and the
