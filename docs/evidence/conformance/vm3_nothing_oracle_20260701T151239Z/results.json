@@ -1,0 +1,82 @@
+[
+  {
+    "id": "NOTHING-LITERAL-INFO",
+    "purpose": "VarType/TypeName/IsObject/IsEmpty on the Nothing literal.",
+    "expression": "",
+    "ownedExcelPid": 35300,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "OK:9|OK:Nothing|OK:True|OK:False",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "OBJECT-VAR-SET-NOTHING",
+    "purpose": "VarType/TypeName/IsObject/IsEmpty/Is Nothing on an object variable explicitly Set to Nothing.",
+    "expression": "",
+    "ownedExcelPid": 41028,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "VT=9;E0:|TN=Nothing;E0:|IO=True;E0:|IE=False;E0:|IS=True;E0:",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "OBJECT-VAR-UNSET",
+    "purpose": "VarType/TypeName/IsObject/IsEmpty/Is Nothing on an unset object variable.",
+    "expression": "",
+    "ownedExcelPid": 48436,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "VT=9;E0:|TN=Nothing;E0:|IO=True;E0:|IE=False;E0:|IS=True;E0:",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "EMPTY-BASELINE",
+    "purpose": "VarType/TypeName/IsObject/IsEmpty on Empty baseline.",
+    "expression": "",
+    "ownedExcelPid": 12984,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "0:Empty:False:True",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  }
+]

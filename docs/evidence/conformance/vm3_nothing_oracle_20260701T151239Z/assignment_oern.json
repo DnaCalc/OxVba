@@ -1,0 +1,28 @@
+[
+  {
+    "id": "LET-VARIANT-NOTHING-OERN",
+    "purpose": "Let assignment of Nothing into a Variant under On Error Resume Next.",
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "91:Object variable or With block variable not set:0:Empty:False:True",
+    "observation": "Dim v As Variant : On Error Resume Next : v = Nothing raises Err 91 and leaves v as Empty."
+  },
+  {
+    "id": "SET-VARIANT-NOTHING-OERN",
+    "purpose": "Set assignment of Nothing into a Variant under On Error Resume Next.",
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "0::9:Nothing:True:False",
+    "observation": "Dim v As Variant : On Error Resume Next : Set v = Nothing succeeds and stores an object-null/Nothing Variant."
+  }
+]
