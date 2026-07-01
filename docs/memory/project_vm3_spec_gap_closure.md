@@ -715,3 +715,24 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Default Runtime Error Messages (`bd-4ktq.28`)
+
+- Closed `sparse-default-error-message` for vm3.
+- Captured live Excel/VBA 7.1 default `Err.Description` strings for the common
+  runtime codes in
+  `docs/evidence/conformance/vm3_default_error_message_oracle_20260701T1410Z/`
+  using VBE Debug -> Compile VBAProject (`ID=578`) before running the probe and
+  PID-scoped UI Automation modal handling.
+- Expanded `crates/oxvba-vm3/src/lib.rs` `default_error_message` beyond the
+  previous handful of codes to cover common core/file/object/Automation errors
+  that vm3 already surfaces, while preserving the generic
+  `Application-defined or object-defined error` fallback for unmapped custom
+  codes.
+- Added `crates/oxvba-differential/tests/default_error_messages_vm3.rs` to
+  exercise both `Error n` and omitted-description `Err.Raise n` against the
+  captured table, plus an unmapped custom-code fallback control.
+- Verification target:
+  - `cargo test -p oxvba-differential --test default_error_messages_vm3`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

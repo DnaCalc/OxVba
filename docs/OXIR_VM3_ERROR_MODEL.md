@@ -118,8 +118,11 @@ Each rule cites its MS-VBAL basis. "R*" ids are referenced from the code.
 - **R11 — `Err.Raise(Number[, Source][, Description][, HelpFile][, HelpContext])`.** All
   supplied args honoured; omitted args inherit the *un-cleared* `Err` fields; omitted
   `Source` defaults to the project name; omitted `Description` is mapped from `Number`
-  (else "Application-defined or object-defined error"). `Error <n>` ≡ `Err.Raise <n>`.
-  *(§6.1.3.2.1.2 ll. 9055–9071; §5.4.4.3.)* **(M2-c-2/3.)**
+  (else "Application-defined or object-defined error"). `Error <n>` uses the same
+  default-description mapping, but does not inherit prior un-cleared `Err` fields.
+  *(§6.1.3.2.1.2 ll. 9055–9071; §5.4.4.3; Excel/VBA oracle in
+  `docs/evidence/conformance/vm3_default_error_message_oracle_20260701T1410Z/`.)*
+  **(M2-c-2/3.)**
 
 - **R12 — GoSub is a per-activation LIFO list.** `GoSub` pushes its `ret`; `Return` pops
   the most recent and branches there; `Return` on an empty list raises runtime error 3
@@ -200,11 +203,12 @@ Spec-silent or spec-ambiguous points to confirm against real Office before locki
    rejected or does it silently re-arm?
 3. **Default `Err.Source`** for an omitted Source — confirm it is the VBA project name;
    capture the literal.
-4. **Default `Err.Description`** text — mapped (e.g. 11 → "Division by zero") vs unmapped
-   (513 → "Application-defined or object-defined error").
-5. **`Err.Raise` un-cleared-field inheritance (§9071)** — a second `Raise` omitting
+4. **`Err.Raise` un-cleared-field inheritance (§9071)** — a second `Raise` omitting
    Source/Description inherits the previously-set un-cleared fields.
-6. **Re-raise inside an active `Goto` handler propagates to the caller** (confirms D1/R9).
+5. **Re-raise inside an active `Goto` handler propagates to the caller** (confirms D1/R9).
+
+Default `Err.Description` text for the common runtime-message table has been captured in
+`docs/evidence/conformance/vm3_default_error_message_oracle_20260701T1410Z/`.
 
 (Each item carries an exact VBA snippet in the M2-c research record / memory.)
 
@@ -217,8 +221,6 @@ Spec-silent or spec-ambiguous points to confirm against real Office before locki
 - `Err` properties are **writable** in real VBA (`Err.Number = …`, `Err.Source = …`);
   vm2 has no Err-write path. Needed to make §9071 inheritance observable — scope for
   M2-c-2 or defer.
-- Distinct Office `Err.Description` text for codes 3 and 20 (tie to the
-  `default_error_message` table extension).
 
 ---
 
