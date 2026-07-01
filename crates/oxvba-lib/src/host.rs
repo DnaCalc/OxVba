@@ -266,6 +266,9 @@ pub fn shell(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
         .process()
         .shell_variant(req(args, 0)?, arg_or_empty(args, 1))?)
 }
+pub fn command(host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host.process().command_variant()?)
+}
 pub fn environ(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.process().environ_variant(req(args, 0)?)?)
 }

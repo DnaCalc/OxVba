@@ -298,6 +298,9 @@ pub trait FileSystemHal: Send + Sync {
 }
 
 pub trait ProcessEnvHal: Send + Sync {
+    fn command_variant(&self) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::ProcessEnv, "command_variant")
+    }
     fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::ProcessEnv, "shell_variant")
     }

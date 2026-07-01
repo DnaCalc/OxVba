@@ -17,7 +17,7 @@
 //!
 //! Today this exposes the `Collection` class and the migrated library members —
 //! the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial` modules,
-//! the `Information` predicates, the `Interaction` by-name functions, the `FileIo`
+//! the `Information` by-name functions, the `Interaction` by-name functions, the `FileIo`
 //! by-name members (functions + the by-name statements `Kill`/`MkDir`/… — exported
 //! under the `FileSystem` module), and the name-less file STATEMENTS (`Open`/`Print`/
 //! `Put`/`Get`/… — also under `FileSystem`, via fixed internal member names) — every
@@ -131,7 +131,7 @@ fn build() -> Bundle {
     // matches this export token exactly). The by-NAME members come from
     // `library_member` (member = catalog primary; shared with the binder's
     // `name_to_intrinsic` reroute — the whole `Strings`/`Math`/`DateTime`/`Conversion`/
-    // `Random`/`Financial` modules, the `Information` predicates, the `Interaction`
+    // `Random`/`Financial` modules, the `Information` by-name functions, the `Interaction`
     // by-name functions, and the `FileSystem` by-name functions + by-name statements). The
     // name-LESS file STATEMENTS come from `library_statement_member` (fixed internal
     // names; shared with the parser-bound lowering in `oxvba-bind/stmt.rs`). Both yield
@@ -231,8 +231,8 @@ mod tests {
     /// migrated set and `None` for everything else. Migrated =
     /// - the whole `Strings`/`Math`/`DateTime`/`Conversion`/`Random`/`Financial`
     ///   modules, minus the name-less `MidStmt`/`Like`;
-    /// - the `Information` **predicates** (but NOT the `IIf`/`Choose`/`Switch` special
-    ///   forms);
+    /// - the `Information` by-name functions (but NOT the `IIf`/`Choose`/`Switch`
+    ///   special forms);
     /// - the `Interaction` by-name functions (`Partition` plus the host functions,
     ///   but NOT `CreateObject` or the `Com*` event machinery);
     /// - the `FileIo` by-**name** members: the `Ordinary` functions (`FreeFile`/
@@ -253,7 +253,7 @@ mod tests {
         use crate::native::LibraryModule as M;
         use NativeImplId::*;
 
-        // Information predicates, Interaction by-name functions, and the FileIo by-name
+        // Information by-name functions, Interaction by-name functions, and the FileIo by-name
         // members are migrated members of their (otherwise partially excluded)
         // modules; everything else in those modules is explicitly excluded below.
         // The Information-module ids that are migrated by-name bundle members: the
@@ -272,6 +272,7 @@ mod tests {
                     | IsNull
                     | IsEmpty
                     | IsMissing
+                    | ErrorText
                     | Rgb
                     | QbColor
             )
@@ -279,7 +280,7 @@ mod tests {
         let interaction_by_name = |id| {
             matches!(
                 id,
-                Partition | MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir
+                Command | Partition | MsgBox | InputBox | Beep | DoEvents | Shell | Environ | Dir
             )
         };
         // The FileIo ids resolved by NAME — both the `Ordinary` function forms and the

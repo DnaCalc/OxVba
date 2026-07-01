@@ -17,6 +17,7 @@ pub mod safe_array;
 pub mod value_types;
 pub mod variant;
 pub mod vba_date;
+pub mod vba_error;
 pub mod vba_radix;
 pub mod vba_record;
 
@@ -46,12 +47,13 @@ pub use object_ref::{
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore};
 pub use vba_date::{
-    civil_from_days, days_from_civil, format_general_date, format_write_date, serial_to_hms,
-    serial_to_ymd, ymd_to_serial, VBA_EPOCH_DAYS_FROM_UNIX,
+    VBA_EPOCH_DAYS_FROM_UNIX, civil_from_days, days_from_civil, format_general_date,
+    format_write_date, serial_to_hms, serial_to_ymd, ymd_to_serial,
 };
+pub use vba_error::default_error_message;
 pub use vba_radix::{
-    parse_vba_radix, parse_vba_radix_with_width, vba_radix_signed_value, vba_radix_width,
-    VbaRadixWidth,
+    VbaRadixWidth, parse_vba_radix, parse_vba_radix_with_width, vba_radix_signed_value,
+    vba_radix_width,
 };
 pub use vba_record::{
     VbaRecord, VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,

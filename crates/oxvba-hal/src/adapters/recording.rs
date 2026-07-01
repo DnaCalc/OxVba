@@ -270,6 +270,12 @@ impl FileSystemHal for RecordingHostServices {
 }
 
 impl ProcessEnvHal for RecordingHostServices {
+    fn command_variant(&self) -> HalResult<Variant> {
+        let result = self.inner.process().command_variant();
+        self.record_variant("process", "command", "process.command", &result);
+        result
+    }
+
     fn shell_variant(&self, command: Variant, window_style: Variant) -> HalResult<Variant> {
         let result = self.inner.process().shell_variant(command, window_style);
         self.record_variant("process", "shell", "process.shell", &result);

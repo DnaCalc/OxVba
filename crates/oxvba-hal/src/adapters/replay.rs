@@ -92,6 +92,19 @@ impl ReplayHostServices {
         Ok(Variant::from_i32(value))
     }
 
+    fn replay_string_variant(&self, op: &'static str) -> HalResult<Variant> {
+        let entry = self.next_entry(op)?;
+        let Some(value) = entry.result.as_str() else {
+            return Err(HalError::adapter_fault(
+                HalProfileId::Null,
+                CapabilityId::DiagnosticsTelemetry,
+                op,
+                "replay string value is not a JSON string".to_string(),
+            ));
+        };
+        Ok(Variant::from_string(value.to_string()))
+    }
+
     fn decode_variant(&self, op: &'static str, entry: HalJournalEntry) -> HalResult<Variant> {
         let Some(kind) = entry.result.get("kind").and_then(|value| value.as_str()) else {
             return Err(HalError::adapter_fault(
@@ -258,6 +271,10 @@ impl FileSystemHal for ReplayHostServices {
 }
 
 impl ProcessEnvHal for ReplayHostServices {
+    fn command_variant(&self) -> HalResult<Variant> {
+        self.replay_string_variant("command")
+    }
+
     fn shell_variant(&self, _cmd: Variant, _style: Variant) -> HalResult<Variant> {
         self.replay_i32_variant("shell")
     }

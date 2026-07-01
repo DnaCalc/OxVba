@@ -183,6 +183,10 @@ impl FileSystemHal for NullHostServices {
 }
 
 impl ProcessEnvHal for NullHostServices {
+    fn command_variant(&self) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ProcessEnv, "command"))
+    }
+
     fn shell_variant(&self, _command: Variant, _window_style: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ProcessEnv, "shell"))
     }

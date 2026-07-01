@@ -49,9 +49,9 @@ use oxvba_com::{
     DynamicMemberSelector, DynamicValue, TypeLibMemberInvokeKind,
 };
 use oxvba_eval::arith::{self, ArithError};
+use oxvba_eval::collection::{CollectionError, CollectionMethod, dispatch_collection};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
-use oxvba_eval::collection::{CollectionError, CollectionMethod, dispatch_collection};
 use oxvba_lib::LibContext;
 use oxvba_oxir::value::{
     ArithOp, BoundWhich, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
@@ -353,7 +353,8 @@ pub struct Vm3<'h> {
     /// `None` (the default) means project events only fan out to internal `WithEvents`
     /// subscribers. Mirrors vm2's `project_event_sink`.
     #[allow(clippy::type_complexity)]
-    project_event_sink: Option<Box<dyn FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h>>,
+    project_event_sink:
+        Option<Box<dyn FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h>>,
 }
 
 impl<'h> Vm3<'h> {
@@ -526,7 +527,9 @@ impl<'h> Vm3<'h> {
             .programs
             .get(obj_bundle)
             .map(|lp| lp.program)
-            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, "Object doesn't support this member")))?;
+            .ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+            })?;
         let class = program.classes.get(class_idx).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
         })?;
@@ -534,13 +537,24 @@ impl<'h> Vm3<'h> {
             .methods
             .iter()
             .find(|m| m.name.eq_ignore_ascii_case(name) && kind_hint.is_none_or(|k| m.kind == k))
-            .or_else(|| class.methods.iter().find(|m| m.name.eq_ignore_ascii_case(name)));
+            .or_else(|| {
+                class
+                    .methods
+                    .iter()
+                    .find(|m| m.name.eq_ignore_ascii_case(name))
+            });
         let proc = member.map(|m| m.proc).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'")))
         })?;
         // Host args are already by-value (resolution-order is moot), but run in the object's
         // program (target_prog = obj_bundle).
-        self.run_proc_with_values(obj_bundle, proc, Variant::from_object_ref(object), args, false)
+        self.run_proc_with_values(
+            obj_bundle,
+            proc,
+            Variant::from_object_ref(object),
+            args,
+            false,
+        )
     }
 
     /// A built-in `Collection` member call with already-marshaled by-value args (the
@@ -553,7 +567,10 @@ impl<'h> Vm3<'h> {
         args: Vec<Variant>,
     ) -> Result<Variant, Vm3Error> {
         let native = Self::vba_collection_native_method(name).ok_or_else(|| {
-            Vm3Error::Fault(Fault::new(438, format!("Collection doesn't support '{name}'")))
+            Vm3Error::Fault(Fault::new(
+                438,
+                format!("Collection doesn't support '{name}'"),
+            ))
         })?;
         let method = match native {
             oxvba_bundle::NativeMethodId::CollectionAdd => CollectionMethod::Add,
@@ -746,7 +763,10 @@ impl<'h> Vm3<'h> {
                 }
                 // The landing pad: dispatch the in-flight fault on the activation's
                 // handler policy (MS-VBAL §5.4.4; doc rules R4/R9).
-                OxTerminator::FaultDispatch { resume, resume_next } => {
+                OxTerminator::FaultDispatch {
+                    resume,
+                    resume_next,
+                } => {
                     let rp = ResumePoint {
                         resume: *resume,
                         resume_next: *resume_next,
@@ -868,7 +888,9 @@ impl<'h> Vm3<'h> {
                     None => self.raise_runtime_error(3)?, // Return without GoSub
                 },
                 OxTerminator::Unreachable => {
-                    return Err(Vm3Error::Malformed("reached an Unreachable terminator".into()));
+                    return Err(Vm3Error::Malformed(
+                        "reached an Unreachable terminator".into(),
+                    ));
                 }
             }
         }
@@ -894,9 +916,7 @@ impl<'h> Vm3<'h> {
         let pad = self.cur_program().funcs[func.0].blocks[block.0]
             .fault_target
             .ok_or_else(|| {
-                Vm3Error::Malformed(
-                    "fallible instruction in a block with no fault_target".into(),
-                )
+                Vm3Error::Malformed("fallible instruction in a block with no fault_target".into())
             })?;
         self.raise(fault);
         self.goto(top, pad);
@@ -1044,12 +1064,7 @@ impl<'h> Vm3<'h> {
                 let r = self.operand(rhs)?;
                 self.store_arith(dst, arith::compare(&l, &r, *mode, cmp_op(*op)))?;
             }
-            OxInst::Logical {
-                dst,
-                op,
-                lhs,
-                rhs,
-            } => {
+            OxInst::Logical { dst, op, lhs, rhs } => {
                 let l = self.operand(lhs)?;
                 let r = self.operand(rhs)?;
                 let out = match op {
@@ -1132,7 +1147,9 @@ impl<'h> Vm3<'h> {
                     .operand(target)?
                     .as_proc_ref()
                     .filter(|&p| p < self.cur_program().funcs.len())
-                    .ok_or_else(|| Vm3Error::Fault(Fault::new(490, "invalid procedure reference")))?;
+                    .ok_or_else(|| {
+                        Vm3Error::Fault(Fault::new(490, "invalid procedure reference"))
+                    })?;
                 let dst = dst.as_ref().copied();
                 self.call_proc_in(self.cur, dst, FuncId(proc), args)?;
             }
@@ -1167,12 +1184,10 @@ impl<'h> Vm3<'h> {
                 let value = self.operand(src)?;
                 match field {
                     ErrField::Number => {
-                        let coerced = arith::coerce_numeric(
-                            &value,
-                            oxvba_bundle::NumericCoerceTarget::Long,
-                        )
-                        .map_err(Fault::from_arith)
-                        .map_err(Vm3Error::Fault)?;
+                        let coerced =
+                            arith::coerce_numeric(&value, oxvba_bundle::NumericCoerceTarget::Long)
+                                .map_err(Fault::from_arith)
+                                .map_err(Vm3Error::Fault)?;
                         self.err.number = coerced.as_i32().unwrap_or(0);
                     }
                     ErrField::Description => {
@@ -1208,7 +1223,9 @@ impl<'h> Vm3<'h> {
                     PtrKind::Str => pointer_helpers::register_utf16_string(&arith::as_string(&v)),
                     PtrKind::Var => pointer_helpers::register_variant_pointer(&v),
                     PtrKind::VarString => pointer_helpers::register_string_variant_pointer(&v),
-                    PtrKind::VarVariant => pointer_helpers::register_variant_var_variant_pointer(&v),
+                    PtrKind::VarVariant => {
+                        pointer_helpers::register_variant_var_variant_pointer(&v)
+                    }
                     PtrKind::Obj => pointer_helpers::register_object_variant_pointer(&v),
                 }
                 .map_err(|e| Vm3Error::Fault(Fault::from_string(e)))?;
@@ -1231,13 +1248,9 @@ impl<'h> Vm3<'h> {
                 target_kind,
                 target_name,
                 target_type_name,
-            } => self.validate_assignment(
-                src,
-                *intent,
-                *target_kind,
-                target_name,
-                target_type_name,
-            )?,
+            } => {
+                self.validate_assignment(src, *intent, *target_kind, target_name, target_type_name)?
+            }
 
             // ── Arrays / For Each (M3-2) ─────────────────────────────────────────────
             OxInst::ArrayLiteral {
@@ -1268,7 +1281,10 @@ impl<'h> Vm3<'h> {
                     None => Vec::new(),
                 };
                 elems.push(self.operand(item)?);
-                self.store(dst, Variant::from_safearray(SafeArray::from_variants(elems)))?;
+                self.store(
+                    dst,
+                    Variant::from_safearray(SafeArray::from_variants(elems)),
+                )?;
             }
             OxInst::ArrayRedim {
                 dst,
@@ -1330,7 +1346,10 @@ impl<'h> Vm3<'h> {
                         Some((|| -> Result<Variant, Vm3Error> {
                             let flat = self.flat_index(indices, &bounds)?;
                             if flat >= len {
-                                return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+                                return Err(Vm3Error::Fault(Fault::new(
+                                    9,
+                                    "subscript out of range",
+                                )));
                             }
                             arr.safearray_element(flat)
                                 .expect("safearray_bounds_len proved this is an array")
@@ -1347,8 +1366,9 @@ impl<'h> Vm3<'h> {
                         // Field is absent or not an array (e.g. an object whose default
                         // member is indexed): materialize (cheap for an object ref) and
                         // index generically.
-                        let field_val =
-                            instance.project_field_get(*field).unwrap_or_else(Variant::empty);
+                        let field_val = instance
+                            .project_field_get(*field)
+                            .unwrap_or_else(Variant::empty);
                         self.index_value_into(field_val, indices, dst)?;
                     }
                 }
@@ -1369,7 +1389,10 @@ impl<'h> Vm3<'h> {
                         Some((|| -> Result<(), Vm3Error> {
                             let flat = self.flat_index(indices, &bounds)?;
                             if flat >= len {
-                                return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+                                return Err(Vm3Error::Fault(Fault::new(
+                                    9,
+                                    "subscript out of range",
+                                )));
                             }
                             arr.set_safearray_element(flat, &v)
                                 .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
@@ -1380,8 +1403,9 @@ impl<'h> Vm3<'h> {
                     Some(result) => result?,
                     None => {
                         // Not an array field: materialize, set the element, write back.
-                        let field_val =
-                            instance.project_field_get(*field).unwrap_or_else(Variant::empty);
+                        let field_val = instance
+                            .project_field_get(*field)
+                            .unwrap_or_else(Variant::empty);
                         let updated = self.set_index_in_value(field_val, indices, &v)?;
                         instance.project_field_set(*field, updated);
                     }
@@ -1478,8 +1502,13 @@ impl<'h> Vm3<'h> {
                     )));
                 };
                 let key = self.resolve(iter);
-                self.for_each
-                    .insert(key, ForEachState { elements, position: 0 });
+                self.for_each.insert(
+                    key,
+                    ForEachState {
+                        elements,
+                        position: 0,
+                    },
+                );
             }
             OxInst::ForEachNext {
                 iter,
@@ -1507,8 +1536,8 @@ impl<'h> Vm3<'h> {
             OxInst::NewRecord { dst, fields } => {
                 let layout = vba_record_layout_for_fields(fields)
                     .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
-                let record =
-                    VbaRecord::new_default(layout).map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                let record = VbaRecord::new_default(layout)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 self.store(dst, Variant::from_vba_record(record))?;
             }
             OxInst::RecordGet { dst, record, index } => {
@@ -1728,8 +1757,9 @@ impl<'h> Vm3<'h> {
                         .as_object_ref()
                         .map(|o| o.bundle_id() as usize)
                         .unwrap_or(self.cur);
-                    if let Some(&handler) =
-                        self.programs[owner_bundle].event_routes.get(&(token, event_id))
+                    if let Some(&handler) = self.programs[owner_bundle]
+                        .event_routes
+                        .get(&(token, event_id))
                     {
                         let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
                         targets.push((sink_id, binding.owner.clone(), handler, owner_bundle));
@@ -1839,7 +1869,11 @@ impl<'h> Vm3<'h> {
 
             // Everything else is a later milestone (cross-bundle calls / objects / COM /
             // arrays / records M3) — explicit, never a silent no-op.
-            other => return Err(Vm3Error::Unimplemented { what: inst_kind(other) }),
+            other => {
+                return Err(Vm3Error::Unimplemented {
+                    what: inst_kind(other),
+                });
+            }
         }
         Ok(())
     }
@@ -1976,11 +2010,9 @@ impl<'h> Vm3<'h> {
     /// — `Collection.Add`/… , `NativeBody::Method` — never arrive here; they are reached by
     /// member dispatch on a `Collection` instance, which lands with the object model.)
     fn resolve_library_import(&self, import: ImportId) -> Result<(NativeImplId, bool), Vm3Error> {
-        let imp = self
-            .cur_program()
-            .imports
-            .get(import.0)
-            .ok_or_else(|| Vm3Error::Malformed(format!("CallExtern names unknown import {}", import.0)))?;
+        let imp = self.cur_program().imports.get(import.0).ok_or_else(|| {
+            Vm3Error::Malformed(format!("CallExtern names unknown import {}", import.0))
+        })?;
         if !imp.unit.eq_ignore_ascii_case("VBA") {
             return Err(Vm3Error::Unimplemented {
                 what: "cross-project OxProgram link",
@@ -2197,7 +2229,9 @@ impl<'h> Vm3<'h> {
             if obj.route_key() == VBA_COLLECTION_ROUTE_KEY {
                 let argv = self.operands_to_values(indices)?;
                 let value = obj
-                    .with_native_collection(|d| dispatch_collection(CollectionMethod::Item, d, &argv))
+                    .with_native_collection(|d| {
+                        dispatch_collection(CollectionMethod::Item, d, &argv)
+                    })
                     .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?
                     .map_err(Self::collection_fault)
                     .map_err(Vm3Error::Fault)?;
@@ -2301,7 +2335,12 @@ impl<'h> Vm3<'h> {
         // the runtime analog, error 10 "This array is fixed or temporarily locked". The
         // fixed-`Dim`/UDT-field allocation itself is `fixed = true` against an uninitialized
         // slot, so it is never caught here.
-        if !fixed && self.read(dst)?.as_safearray().is_some_and(|a| a.is_fixed_size()) {
+        if !fixed
+            && self
+                .read(dst)?
+                .as_safearray()
+                .is_some_and(|a| a.is_fixed_size())
+        {
             return Err(Vm3Error::Fault(Fault::new(
                 10,
                 "This array is fixed or temporarily locked",
@@ -2313,16 +2352,16 @@ impl<'h> Vm3<'h> {
         // that would feed a bogus allocation.
         let mut count = 1usize;
         for b in &bounds {
-            count = count.checked_mul(b.count as usize).ok_or_else(|| {
-                Vm3Error::Fault(Fault::new(7, "array too large to allocate"))
-            })?;
+            count = count
+                .checked_mul(b.count as usize)
+                .ok_or_else(|| Vm3Error::Fault(Fault::new(7, "array too large to allocate")))?;
         }
         let elems: Vec<Variant> = if preserve {
             let cur = self.read(dst)?;
-            match cur
-                .as_safearray()
-                .and_then(|a| a.bounds().map(|b| (b, a.variant_elements().unwrap_or_default())))
-            {
+            match cur.as_safearray().and_then(|a| {
+                a.bounds()
+                    .map(|b| (b, a.variant_elements().unwrap_or_default()))
+            }) {
                 // `ReDim Preserve` over an existing allocation: VBA permits changing ONLY the
                 // last dimension's upper bound. Changing the rank, any earlier dimension, or
                 // the last dimension's lower bound is subscript out of range (9). Surviving
@@ -2470,8 +2509,13 @@ impl<'h> Vm3<'h> {
         let initialize = class.initialize;
         let instance_id = self.next_instance_id;
         self.next_instance_id += 1;
-        let object =
-            ObjectRef::from_project_instance(instance_id, class_idx as i32, self.cur as i32, has_terminate, descriptor);
+        let object = ObjectRef::from_project_instance(
+            instance_id,
+            class_idx as i32,
+            self.cur as i32,
+            has_terminate,
+            descriptor,
+        );
         let value = Variant::from_object_ref(object.clone());
         if let Some(init) = initialize {
             self.run_proc_with_me(self.cur, init, Variant::from_object_ref(object), &[], false)?;
@@ -2483,7 +2527,10 @@ impl<'h> Vm3<'h> {
     /// singleton + run `Class_Initialize` on first access, then reuse the cached instance.
     /// Mirrors vm2's `predeclared_instance`.
     fn predeclared_instance(&mut self, class_idx: usize) -> Result<Variant, Vm3Error> {
-        if let Some(existing) = self.programs[self.cur].predeclared_singletons.get(&class_idx) {
+        if let Some(existing) = self.programs[self.cur]
+            .predeclared_singletons
+            .get(&class_idx)
+        {
             return Ok(existing.clone());
         }
         let descriptor = *self.programs[self.cur]
@@ -2499,10 +2546,17 @@ impl<'h> Vm3<'h> {
         let initialize = class.initialize;
         let instance_id = self.next_instance_id;
         self.next_instance_id += 1;
-        let object =
-            ObjectRef::from_project_instance(instance_id, class_idx as i32, self.cur as i32, has_terminate, descriptor);
+        let object = ObjectRef::from_project_instance(
+            instance_id,
+            class_idx as i32,
+            self.cur as i32,
+            has_terminate,
+            descriptor,
+        );
         let value = Variant::from_object_ref(object);
-        self.programs[self.cur].predeclared_singletons.insert(class_idx, value.clone());
+        self.programs[self.cur]
+            .predeclared_singletons
+            .insert(class_idx, value.clone());
         if let Some(init) = initialize {
             self.run_proc_with_me(self.cur, init, value.clone(), &[], false)?;
         }
@@ -2682,8 +2736,13 @@ impl<'h> Vm3<'h> {
                     // globals/funcs resolve there. A fault in `Class_Terminate` is swallowed
                     // (suppress); a `Malformed` defect would still surface — drop it to match
                     // vm2's `let _ = …`.
-                    let _ =
-                        self.run_proc_with_me(bundle, proc, Variant::from_object_ref(object), &[], true);
+                    let _ = self.run_proc_with_me(
+                        bundle,
+                        proc,
+                        Variant::from_object_ref(object),
+                        &[],
+                        true,
+                    );
                 }
                 oxvba_runtime::finish_pending_termination(instance_id);
                 // Drop any `WithEvents` bindings + host (COM) subscriptions the terminated
@@ -2781,8 +2840,11 @@ impl<'h> Vm3<'h> {
                 .get(&payload.subscription.raw())
                 .map(|sink| (sink.owner.clone(), sink.handler));
             if let Some((owner, handler)) = sink {
-                let values: Vec<Variant> =
-                    payload.args.iter().map(|arg| arg.variant().clone()).collect();
+                let values: Vec<Variant> = payload
+                    .args
+                    .iter()
+                    .map(|arg| arg.variant().clone())
+                    .collect();
                 // Run the handler in the sink owner's program (its bundle_id), suppressing faults.
                 let owner_bundle = owner
                     .as_object_ref()
@@ -2852,7 +2914,11 @@ impl<'h> Vm3<'h> {
                 .and_then(|lp| lp.program.classes.get(object.route_key() as usize))
                 .map(|c| c.name.clone());
         }
-        self.host.com().object_type_name(object.clone()).ok().flatten()
+        self.host
+            .com()
+            .object_type_name(object.clone())
+            .ok()
+            .flatten()
     }
 
     /// Late-bound dispatch on a project instance: resolve the class member by name + accessor
@@ -2884,7 +2950,9 @@ impl<'h> Vm3<'h> {
             .programs
             .get(obj_bundle)
             .map(|lp| lp.program)
-            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, "Object doesn't support this member")))?;
+            .ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+            })?;
         let class = program.classes.get(class_idx).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
         })?;
@@ -2896,10 +2964,9 @@ impl<'h> Vm3<'h> {
         // `Method` call resolves a same-named `PropertyGet` (vm2's accessor fallback).
         let member = exact.or_else(|| {
             if kind == ProjectMemberKind::PropertyGet && args.is_empty() {
-                class
-                    .methods
-                    .iter()
-                    .find(|m| m.name.eq_ignore_ascii_case(name) && m.kind == ProjectMemberKind::Method)
+                class.methods.iter().find(|m| {
+                    m.name.eq_ignore_ascii_case(name) && m.kind == ProjectMemberKind::Method
+                })
             } else if kind == ProjectMemberKind::Method {
                 class.methods.iter().find(|m| {
                     m.name.eq_ignore_ascii_case(name) && m.kind == ProjectMemberKind::PropertyGet
@@ -2908,9 +2975,9 @@ impl<'h> Vm3<'h> {
                 None
             }
         });
-        let proc = member
-            .map(|m| m.proc)
-            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'"))))?;
+        let proc = member.map(|m| m.proc).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'")))
+        })?;
         // ByRef args alias the caller's place (write-back); ByVal/Named copy in. A `Const` arg
         // only arises for library built-ins, never a project method.
         let proc_args: Vec<OxArg> = args
@@ -3063,7 +3130,10 @@ impl<'h> Vm3<'h> {
         args: &[OxCallArg],
     ) -> Result<Variant, Vm3Error> {
         let native = Self::vba_collection_native_method(name).ok_or_else(|| {
-            Vm3Error::Fault(Fault::new(438, format!("Collection doesn't support '{name}'")))
+            Vm3Error::Fault(Fault::new(
+                438,
+                format!("Collection doesn't support '{name}'"),
+            ))
         })?;
         let method = match native {
             oxvba_bundle::NativeMethodId::CollectionAdd => CollectionMethod::Add,
@@ -3107,7 +3177,10 @@ impl<'h> Vm3<'h> {
     fn vba_collection_native_method(member: &str) -> Option<oxvba_bundle::NativeMethodId> {
         let lib = oxvba_bundle::vba_library_bundle();
         let class = lib.classes.first()?;
-        let m = class.methods.iter().find(|m| m.name.eq_ignore_ascii_case(member))?;
+        let m = class
+            .methods
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(member))?;
         match lib.procedures.get(m.proc).and_then(|p| p.native) {
             Some(oxvba_bundle::NativeBody::Method(id)) => Some(id),
             _ => None,
@@ -3172,7 +3245,9 @@ impl<'h> Vm3<'h> {
             let (value, arg_name) = match arg {
                 OxCallArg::Operand(op) => (Some(self.operand(op)?), None),
                 OxCallArg::ByRef(place) => (Some(self.read(place)?), None),
-                OxCallArg::Named { name, value } => (Some(self.operand(value)?), Some(name.clone())),
+                OxCallArg::Named { name, value } => {
+                    (Some(self.operand(value)?), Some(name.clone()))
+                }
                 OxCallArg::Omitted => (None, None),
                 OxCallArg::Const(n) => (Some(Variant::from_i32(*n)), None),
             };
@@ -3218,7 +3293,11 @@ impl<'h> Vm3<'h> {
     /// `extern "C"` shim that recovers `&mut Vm3` from its `ctx` and calls *this* method,
     /// so the interpreter and compiled code share one implementation and cannot drift.
     /// Keep its shape `(ctx, id, &[Variant]) -> Result<Variant, _>` ABI-friendly.
-    fn invoke_native_lib(&mut self, id: NativeImplId, argv: &[Variant]) -> Result<Variant, Vm3Error> {
+    fn invoke_native_lib(
+        &mut self,
+        id: NativeImplId,
+        argv: &[Variant],
+    ) -> Result<Variant, Vm3Error> {
         self.invoke_native_lib_with_policy(id, argv, false)
     }
 
@@ -3231,6 +3310,9 @@ impl<'h> Vm3<'h> {
         if string_typed_alias && argv.iter().any(|arg| arg.vtype() == VarType::Null) {
             return Err(Vm3Error::Fault(Fault::new(94, "invalid use of Null")));
         }
+        if id == NativeImplId::ErrorText && argv.is_empty() {
+            return Ok(Variant::from_string(self.err.description.clone()));
+        }
         if id == NativeImplId::TypeName
             && let Some(object) = argv.first().and_then(|a| a.as_object_ref())
             && let Some(name) = self.object_type_name(&object)
@@ -3240,7 +3322,8 @@ impl<'h> Vm3<'h> {
             // pure body (which yields the generic "Object"), exactly as vm2 does.
             return Ok(Variant::from_string(name));
         }
-        oxvba_lib::invoke(id, argv, self.host, &mut self.lib).map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))
+        oxvba_lib::invoke(id, argv, self.host, &mut self.lib)
+            .map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))
     }
 
     /// Marshal a native built-in's arguments to plain values — a built-in reads the
@@ -3491,18 +3574,18 @@ impl<'h> Vm3<'h> {
     fn write_loc(&mut self, loc: Loc, v: Variant) -> Result<(), Vm3Error> {
         match loc {
             Loc::Global(p, g) => {
-                *self.programs[p]
-                    .globals
-                    .get_mut(g)
-                    .ok_or_else(|| Vm3Error::Malformed(format!("global [{p}][{g}] out of range")))? = v;
+                *self.programs[p].globals.get_mut(g).ok_or_else(|| {
+                    Vm3Error::Malformed(format!("global [{p}][{g}] out of range"))
+                })? = v;
             }
             Loc::Local(fi, li) => {
                 *self
                     .frames
                     .get_mut(fi)
                     .and_then(|f| f.locals.get_mut(li))
-                    .ok_or_else(|| Vm3Error::Malformed(format!("local [{fi}][{li}] out of range")))? =
-                    v;
+                    .ok_or_else(|| {
+                        Vm3Error::Malformed(format!("local [{fi}][{li}] out of range"))
+                    })? = v;
             }
             Loc::Temp(fi, ti) => {
                 if let Some(f) = self.frames.get_mut(fi) {
@@ -3576,99 +3659,9 @@ impl<'h> Vm3<'h> {
 }
 
 /// The default VBA message for a run-time error code, used as `Err.Description` when a
-/// raised error has no explicit Description. The table is intentionally limited to
-/// live-Excel/default Visual Basic codes; host-defined and unmapped custom codes keep
-/// the generic application/object-defined fallback.
+/// raised error has no explicit Description.
 fn default_error_message(code: i32) -> String {
-    match code {
-        3 => "Return without GoSub",
-        5 => "Invalid procedure call or argument",
-        6 => "Overflow",
-        7 => "Out of memory",
-        9 => "Subscript out of range",
-        10 => "This array is fixed or temporarily locked",
-        11 => "Division by zero",
-        13 => "Type mismatch",
-        14 => "Out of string space",
-        16 => "Expression too complex",
-        17 => "Can't perform requested operation",
-        18 => "User interrupt occurred",
-        20 => "Resume without error",
-        28 => "Out of stack space",
-        35 => "Sub or Function not defined",
-        48 => "Error in loading DLL",
-        49 => "Bad DLL calling convention",
-        52 => "Bad file name or number",
-        53 => "File not found",
-        54 => "Bad file mode",
-        55 => "File already open",
-        57 => "Device I/O error",
-        58 => "File already exists",
-        61 => "Disk full",
-        62 => "Input past end of file",
-        67 => "Too many files",
-        68 => "Device unavailable",
-        70 => "Permission denied",
-        71 => "Disk not ready",
-        74 => "Can't rename with different drive",
-        75 => "Path/File access error",
-        76 => "Path not found",
-        91 => "Object variable or With block variable not set",
-        92 => "For loop not initialized",
-        93 => "Invalid pattern string",
-        94 => "Invalid use of Null",
-        97 => "Can not call friend function on object which is not an instance of defining class",
-        98 => {
-            "A property or method call cannot include a reference to a private object, either as an argument or as a return value"
-        }
-        380 => "Invalid property value",
-        381 => "Invalid property array index",
-        382 => "Set not supported at runtime",
-        383 => "Set not supported (read-only property)",
-        385 => "Need property array index",
-        387 => "Set not permitted",
-        393 => "Get not supported at runtime",
-        394 => "Get not supported (write-only property)",
-        422 => "Property not found",
-        423 => "Property or method not found",
-        424 => "Object required",
-        429 => "ActiveX component can't create object",
-        430 => "Class does not support Automation or does not support expected interface",
-        432 => "File name or class name not found during Automation operation",
-        438 => "Object doesn't support this property or method",
-        440 => "Automation error",
-        442 => {
-            "Connection to type library or object library for remote process has been lost. Press OK for dialog to remove reference."
-        }
-        443 => "Automation object does not have a default value",
-        445 => "Object doesn't support this action",
-        446 => "Object doesn't support named arguments",
-        447 => "Object doesn't support current locale setting",
-        448 => "Named argument not found",
-        449 => "Argument not optional",
-        450 => "Wrong number of arguments or invalid property assignment",
-        451 => {
-            "Property let procedure not defined and property get procedure did not return an object"
-        }
-        452 => "Invalid ordinal",
-        453 => "Specified DLL function not found",
-        454 => "Code resource not found",
-        455 => "Code resource lock error",
-        457 => "This key is already associated with an element of this collection",
-        458 => "Variable uses an Automation type not supported in Visual Basic",
-        459 => "Object or class does not support the set of events",
-        460 => "Invalid clipboard format",
-        461 => "Method or data member not found",
-        462 => "The remote server machine does not exist or is unavailable",
-        463 => "Class not registered on local machine",
-        481 => "Invalid picture",
-        482 => "Printer error",
-        735 => "Can't save file to TEMP",
-        744 => "Search text not found",
-        746 => "Replacements too long",
-        _ => "Application-defined or object-defined error",
-    }
-    .to_string()
+    oxvba_runtime::default_error_message(code).to_string()
 }
 
 fn cmp_op(op: CmpOp) -> arith::CmpOp {
@@ -3874,15 +3867,15 @@ mod tests {
 
     use oxvba_bundle::coreir::{
         CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreClassMethod, CoreConst, CoreGlobal,
-        CoreLocal, CoreParam, CorePlace,
-        CoreProc, CoreProgram, CoreStmt, CoreValue, ErrorOp, ExitKind, LabelId,
-        LocalId as CoreLocalId, ProcId, PtrWriteback,
+        CoreLocal, CoreParam, CorePlace, CoreProc, CoreProgram, CoreStmt, CoreValue, ErrorOp,
+        ExitKind, LabelId, LocalId as CoreLocalId, ProcId, PtrWriteback,
     };
     use oxvba_bundle::{
-        AssignmentIntent, AssignmentTargetKind, BuiltinType, DeclareParamType, ExternalCallDescriptor,
-        NativeImplId, NumericCoerceTarget, NumericMode, ProcedureKind, ProjectMemberKind,
-        StringCompareMode, VarTypeRef,
+        AssignmentIntent, AssignmentTargetKind, BuiltinType, DeclareParamType,
+        ExternalCallDescriptor, NativeImplId, NumericCoerceTarget, NumericMode, ProcedureKind,
+        ProjectMemberKind, StringCompareMode, VarTypeRef,
     };
+    use oxvba_com::{ComCallbackPayload, ComCallbackToken, ComMemberToken, ComSubscriptionToken};
     use oxvba_hal::HostPolicy;
     use oxvba_hal::adapters::null::NullHostServices;
     use oxvba_hal::error::{HalError, HalResult};
@@ -3892,23 +3885,21 @@ mod tests {
         ProcessEnvHal, TimeLocaleHal, TypeLibCacheScope, TypeLibMetadataBlob,
         TypeLibResolveRequest, TypeLibResolvedIdentity, UiInteractionHal,
     };
-    use oxvba_com::{
-        ComCallbackPayload, ComCallbackToken, ComMemberToken, ComSubscriptionToken,
-    };
     use oxvba_oxir::program::{OxFunc, OxLocal, OxParamInfo};
     use oxvba_oxir::ty::OxTy;
+    use oxvba_runtime::DynLinkSymbol;
     use oxvba_runtime::object_ref::{
         RUNTIME_E_NOINTERFACE, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeGuid,
     };
-    use oxvba_runtime::DynLinkSymbol;
     use oxvba_runtime::variant::VarType;
 
     /// Bind-free: hand-build a `CoreProgram`, elaborate it to OxIR, run it on vm3, and
     /// read back a snapshot slot.
     fn run_core(prog: &CoreProgram) -> Vm3<'_> {
         // Leak the elaborated program so the returned VM can borrow it for the test.
-        let oxp: &'static OxProgram =
-            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(prog).expect("elaborate")));
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(prog).expect("elaborate"),
+        ));
         let host: &'static NullHostServices =
             Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
         Vm3::run(oxp, host).expect("vm3 run")
@@ -3967,7 +3958,14 @@ mod tests {
         return_local: Option<CoreLocalId>,
         body: Vec<CoreStmt>,
     ) -> CoreProc {
-        CoreProc { name: name.into(), kind, params, locals, return_local, body }
+        CoreProc {
+            name: name.into(),
+            kind,
+            params,
+            locals,
+            return_local,
+            body,
+        }
     }
 
     fn long_param(name: &str) -> CoreParam {
@@ -4083,7 +4081,10 @@ mod tests {
     fn module_globals_lead_the_snapshot() {
         // A module global `g As Long` then `Sub Main(): g = 7`.
         let g = CorePlace::Global(oxvba_bundle::coreir::GlobalId(0));
-        let mut prog = main_proc(Vec::new(), vec![assign(g, CoreValue::Const(CoreConst::I32(7)))]);
+        let mut prog = main_proc(
+            Vec::new(),
+            vec![assign(g, CoreValue::Const(CoreConst::I32(7)))],
+        );
         prog.globals = vec![CoreGlobal {
             name: "g".into(),
             ty: VarTypeRef::Builtin(BuiltinType::Long),
@@ -4113,8 +4114,16 @@ mod tests {
             );
             run_core(&prog).slot(0).and_then(|v| v.as_i32())
         };
-        assert_eq!(run_if(1), Some(5), "a truthy condition takes the Then branch");
-        assert_eq!(run_if(0), Some(9), "a falsy condition takes the Else branch");
+        assert_eq!(
+            run_if(1),
+            Some(5),
+            "a truthy condition takes the Then branch"
+        );
+        assert_eq!(
+            run_if(0),
+            Some(9),
+            "a falsy condition takes the Else branch"
+        );
     }
 
     #[test]
@@ -4183,7 +4192,10 @@ mod tests {
             let s = || CorePlace::Local(CoreLocalId(0));
             let x = || CorePlace::Local(CoreLocalId(1));
             let prog = main_proc(
-                vec![local("s", sel_ty), local("x", VarTypeRef::Builtin(BuiltinType::Long))],
+                vec![
+                    local("s", sel_ty),
+                    local("x", VarTypeRef::Builtin(BuiltinType::Long)),
+                ],
                 vec![
                     assign(s(), sel),
                     CoreStmt::Select {
@@ -4201,7 +4213,10 @@ mod tests {
         };
         // Selector 1 matches `Case 1` -> x = 5.
         assert_eq!(
-            run_select(CoreValue::Const(CoreConst::I32(1)), VarTypeRef::Builtin(BuiltinType::Long)),
+            run_select(
+                CoreValue::Const(CoreConst::I32(1)),
+                VarTypeRef::Builtin(BuiltinType::Long)
+            ),
             Some(5)
         );
         // A Null selector matches nothing (is_truthy(Null) = False) -> Case Else, x = 9.
@@ -4290,8 +4305,9 @@ mod tests {
             vec![local("n", VarTypeRef::Builtin(BuiltinType::Long))],
             vec![assign(lc(0), CoreValue::Const(CoreConst::I32(42)))],
         );
-        let oxp: &'static OxProgram =
-            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate")));
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate"),
+        ));
         let host: &'static NullHostServices =
             Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
         let mut vm = Vm3::link(&[oxp], host).expect("link single program");
@@ -4318,7 +4334,14 @@ mod tests {
             Some(CoreLocalId(2)),
             vec![assign(lc(2), long_add(load(1), load(1)))],
         );
-        let main = proc("Main", ProcedureKind::Sub, Vec::new(), Vec::new(), None, Vec::new());
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
         let prog = CoreProgram {
             procs: vec![main, twice],
             entry: Some(ProcId(0)),
@@ -4337,8 +4360,9 @@ mod tests {
             }],
             ..Default::default()
         };
-        let oxp: &'static OxProgram =
-            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate")));
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate"),
+        ));
         let host: &'static NullHostServices =
             Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
         let mut vm = Vm3::activate(oxp, host).expect("activate");
@@ -4352,7 +4376,11 @@ mod tests {
                 vec![Variant::from_i32(21)],
             )
             .expect("invoke Twice");
-        assert_eq!(r.as_i32(), Some(42), "create + invoke a member with value args");
+        assert_eq!(
+            r.as_i32(),
+            Some(42),
+            "create + invoke a member with value args"
+        );
         // An unknown class is "can't create object" (429).
         assert!(matches!(
             vm.create_project_instance("Nope"),
@@ -4379,10 +4407,18 @@ mod tests {
             vec![assign(lc(3), long_add(load(1), load(2)))],
         );
         // Main is a no-op entry (procs_program requires procs[0] to be the entry); we never run it.
-        let main = proc("Main", ProcedureKind::Sub, Vec::new(), Vec::new(), None, Vec::new());
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
         let prog = procs_program(vec![main, add]);
-        let oxp: &'static OxProgram =
-            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate")));
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate"),
+        ));
         let host: &'static NullHostServices =
             Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
         let mut vm = Vm3::activate(oxp, host).expect("activate"); // NOT run() — Main never executes
@@ -4396,7 +4432,11 @@ mod tests {
                 false,
             )
             .expect("invoke Add #1");
-        assert_eq!(first.as_i32(), Some(42), "value-seeded args reach the proc and return their sum");
+        assert_eq!(
+            first.as_i32(),
+            Some(42),
+            "value-seeded args reach the proc and return their sum"
+        );
 
         let second = vm
             .run_proc_with_values(
@@ -4407,7 +4447,11 @@ mod tests {
                 false,
             )
             .expect("invoke Add #2");
-        assert_eq!(second.as_i32(), Some(3), "a second invoke against the same activation works");
+        assert_eq!(
+            second.as_i32(),
+            Some(3),
+            "a second invoke against the same activation works"
+        );
     }
 
     #[test]
@@ -4420,7 +4464,10 @@ mod tests {
             vec![long_param("x")], // LocalId 0
             Vec::new(),
             None,
-            vec![assign(lc(0), long_add(load(0), CoreValue::Const(CoreConst::I32(1))))],
+            vec![assign(
+                lc(0),
+                long_add(load(0), CoreValue::Const(CoreConst::I32(1))),
+            )],
         );
         let main = proc(
             "Main",
@@ -4454,7 +4501,10 @@ mod tests {
             vec![long_param("x")],
             Vec::new(),
             None,
-            vec![assign(lc(0), long_add(load(0), CoreValue::Const(CoreConst::I32(1))))],
+            vec![assign(
+                lc(0),
+                long_add(load(0), CoreValue::Const(CoreConst::I32(1))),
+            )],
         );
         let main = proc(
             "Main",
@@ -4492,7 +4542,9 @@ mod tests {
                 lc(0),
                 CoreValue::Call {
                     callee: CoreCallee::Native(NativeImplId::Len),
-                    args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str("abc".into())))],
+                    args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(
+                        "abc".into(),
+                    )))],
                 },
             )],
         );
@@ -4698,7 +4750,9 @@ mod tests {
             scope: TypeLibCacheScope,
             reference_name: Option<&str>,
         ) -> HalResult<Variant> {
-            self.inner.com().invalidate_typelib_cache(scope, reference_name)
+            self.inner
+                .com()
+                .invalidate_typelib_cache(scope, reference_name)
         }
     }
 
@@ -4766,8 +4820,9 @@ mod tests {
 
     /// Elaborate a hand-built `CoreProgram` and run it on vm3 with a chosen host.
     fn run_core_with_host<'h>(prog: &CoreProgram, host: &'h dyn HostServices) -> Vm3<'h> {
-        let oxp: &'static OxProgram =
-            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(prog).expect("elaborate")));
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(prog).expect("elaborate"),
+        ));
         Vm3::run(oxp, host).expect("vm3 run")
     }
 
@@ -4923,7 +4978,10 @@ mod tests {
         let s = oxvba_runtime::variant_to_vba_string(&vm.slot(0).expect("s"))
             .map(|b| b.as_str().to_string())
             .unwrap_or_default();
-        assert_eq!(s, "hi", "the StrPtr pin must read back the source string unchanged");
+        assert_eq!(
+            s, "hi",
+            "the StrPtr pin must read back the source string unchanged"
+        );
     }
 
     #[test]
@@ -4944,9 +5002,9 @@ mod tests {
             name: "Main".into(),
             kind: ProcedureKind::Sub,
             locals: vec![
-                ox_local("arg", OxTy::Long, None), // Local 0
+                ox_local("arg", OxTy::Long, None),  // Local 0
                 ox_local("f", OxTy::ProcRef, None), // Local 1 (the AddressOf value)
-                ox_local("n", OxTy::Long, None),   // Local 2 (result, snapshot slot 2)
+                ox_local("n", OxTy::Long, None),    // Local 2 (result, snapshot slot 2)
             ],
             param_count: 0,
             return_local: None,
@@ -5035,7 +5093,9 @@ mod tests {
                 lc(0),
                 CoreValue::Call {
                     callee: CoreCallee::Native(NativeImplId::TypeName),
-                    args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str("hi".into())))],
+                    args: vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(
+                        "hi".into(),
+                    )))],
                 },
             )],
         );
@@ -5062,8 +5122,9 @@ mod tests {
                 args: Vec::new(),
             })],
         );
-        let oxp: &'static OxProgram =
-            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(&procs_program(vec![spin])).expect("elaborate")));
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(&procs_program(vec![spin])).expect("elaborate"),
+        ));
         let host: &'static NullHostServices =
             Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
         match Vm3::run(oxp, host) {
@@ -5077,8 +5138,9 @@ mod tests {
 
     /// Run a single-proc program and expect it to end with an uncaught fault of `code`.
     fn run_expecting_fault(prog: &CoreProgram, code: i32) {
-        let oxp: &'static OxProgram =
-            Box::leak(Box::new(oxvba_oxir::elaborate::elaborate(prog).expect("elaborate")));
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(prog).expect("elaborate"),
+        ));
         let host: &'static NullHostServices =
             Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
         match Vm3::run(oxp, host) {

@@ -372,6 +372,7 @@ pub fn invoke(
         IsNull => pure::is_vtype(args, |t| matches!(t, Vt::Null)),
         IsEmpty => pure::is_vtype(args, |t| matches!(t, Vt::Empty)),
         IsMissing => pure::is_missing(args),
+        ErrorText => pure::error_text(args),
         IIf => pure::iif(args),
         Choose => pure::choose(args),
         Switch => pure::switch(args),
@@ -416,6 +417,7 @@ pub fn invoke(
         FileUnlock => host::file_unlock(args, host),
 
         // ── Interaction / host ──
+        Command => host::command(host),
         MsgBox => host::msg_box(args, host),
         InputBox => host::input_box(args, host),
         Beep => host::beep(host),

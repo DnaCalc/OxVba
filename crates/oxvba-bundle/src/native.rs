@@ -167,6 +167,7 @@ native_impl_ids! {
     IsNull,
     IsEmpty,
     IsMissing, // `IsMissing(optionalArg)` — True for an omitted optional Variant
+    ErrorText, // `Error([number])` / `Error$([number])` → default error message
     IIf,       // `IIf(cond, t, f)` — eager (both arms evaluated)
     Choose,    // `Choose(idx, v1, …)` — 1-based, eager
     Switch,    // `Switch(c1, v1, c2, v2, …)` — eager
@@ -208,6 +209,7 @@ native_impl_ids! {
     FileUnlock,  // `Unlock #n [, range]`
 
     // ── Interaction ──────────────────────────────────────────
+    Command,   // `Command` / `Command$` → host command-line arguments
     Partition, // `Partition(number, start, stop, interval)` → range label
     MsgBox,
     InputBox,
@@ -265,7 +267,9 @@ impl NativeImplId {
                 M::Financial
             }
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
-            | IsEmpty | IsMissing | IIf | Choose | Switch | Rgb | QbColor => M::Information,
+            | IsEmpty | IsMissing | ErrorText | IIf | Choose | Switch | Rgb | QbColor => {
+                M::Information
+            }
             FreeFile | FileOpen | FileClose | FileKill | FileMkDir | FileRmDir | FileCurDir
             | FileChDir | FileLen | FileCopy | FileGetAttr | FileSetAttr | FileChDrive
             | FileDateTime | FileRead | FileWrite | FilePrint | ConsolePrint | FileInput
@@ -273,7 +277,8 @@ impl NativeImplId {
             | FileLoc | FilePut | FileGetInto | FileWidth | FileRename | FileLock | FileUnlock => {
                 M::FileIo
             }
-            MsgBox
+            Command
+            | MsgBox
             | Partition
             | InputBox
             | Beep
@@ -309,14 +314,14 @@ impl NativeImplId {
     ///   `Financial` modules — minus their name-less members (`MidStmt`, the
     ///   `Mid(…) = …` statement form, and `Like`, the operator, which are not
     ///   ordinary by-name library functions);
-    /// - the `Information` **predicate** functions (`IsArray`/`VarType`/`TypeName`/
-    ///   `IsNumeric`/`IsError`/`IsDate`/`IsObject`/`IsNull`/`IsEmpty`/`IsMissing`) —
-    ///   ordinary by-name functions; their `Information`-module siblings `IIf`,
+    /// - the `Information` by-name functions (`IsArray`/`VarType`/`TypeName`/
+    ///   `IsNumeric`/`IsError`/`IsDate`/`IsObject`/`IsNull`/`IsEmpty`/`IsMissing`/
+    ///   `Error`/`RGB`/`QBColor`) — ordinary by-name functions; their siblings `IIf`,
     ///   `Choose`, `Switch` are **special forms** (eager but with dedicated binder
     ///   lowering, resolved by `special_form`, not `name_to_intrinsic`) and stay
     ///   `None`;
     /// - the `Interaction` by-name functions (`Partition` plus the host functions
-    ///   `MsgBox`/`InputBox`/`Beep`/`DoEvents`/`Shell`/`Environ`/`Dir`). The host
+    ///   `Command`/`MsgBox`/`InputBox`/`Beep`/`DoEvents`/`Shell`/`Environ`/`Dir`). The host
     ///   functions still reach host services through `invoke_native_lib`; `Partition`
     ///   is deterministic but shares the same VBA typelib module. Their
     ///   `Interaction`-module siblings `CreateObject` (object activation / `New`
@@ -457,7 +462,7 @@ impl NativeImplId {
             Sln => "SLN",
             Syd => "SYD",
             Ddb => "DDB",
-            // ── Information (predicates only — IIf/Choose/Switch stay special forms) ──
+            // ── Information (by-name functions — IIf/Choose/Switch stay special forms) ──
             IsArray => "IsArray",
             VarType => "VarType",
             TypeName => "TypeName",
@@ -468,11 +473,13 @@ impl NativeImplId {
             IsNull => "IsNull",
             IsEmpty => "IsEmpty",
             IsMissing => "IsMissing",
+            ErrorText => "Error",
             // RGB/QBColor are ordinary by-name `Information` members (unlike the
             // `IIf`/`Choose`/`Switch` special forms).
             Rgb => "RGB",
             QbColor => "QBColor",
             // ── Interaction (by-name functions) ──
+            Command => "Command",
             Partition => "Partition",
             MsgBox => "MsgBox",
             InputBox => "InputBox",
@@ -573,6 +580,8 @@ impl NativeImplId {
             Space => &["Space$"],
             StringRepeat => &["String$"],
             Format => &["Format$"],
+            ErrorText => &["Error$"],
+            Command => &["Command$"],
             _ => &[],
         }
     }
@@ -643,12 +652,12 @@ impl NativeImplId {
             Rate | IPmt | PPmt => 6,
             // ── Information predicates ── (all single-argument)
             IsArray | VarType | TypeName | IsNumeric | IsError | IsDate | IsObject | IsNull
-            | IsEmpty | IsMissing => 1,
+            | IsEmpty | IsMissing | QbColor => 1,
+            ErrorText => 1,
             // ── Information colour functions ──
-            QbColor => 1,
             Rgb => 3,
             // ── Interaction by-name functions ──
-            Beep | DoEvents => 0,
+            Beep | Command | DoEvents => 0,
             Partition => 4,
             Environ => 1,
             Shell | Dir => 2,
@@ -741,6 +750,7 @@ impl NativeImplId {
                 | NativeImplId::TimeNow
                 | NativeImplId::Now
                 | NativeImplId::Timer
+                | NativeImplId::Command
                 | NativeImplId::MsgBox
                 | NativeImplId::InputBox
                 | NativeImplId::Beep

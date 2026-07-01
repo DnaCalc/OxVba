@@ -1149,3 +1149,34 @@
   - `cargo test -p oxvba-lib format_`
   - `cargo test -p oxvba-differential --test format_number_family_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - `Command` and `Error` Functions (`bd-4ktq.37.4`)
+
+- Closed `command-absent` and `error-function-unsupported` for vm3.
+- Added `Command`/`Command$` to the VBA `Interaction` library surface, catalog,
+  bundle exports, and oxvba-lib host dispatch. The runtime now calls a
+  `ProcessEnv` HAL facet: deterministic headless mode returns an empty string,
+  native host mode can expose process arguments, and unsupported adapters report
+  the process-env capability boundary explicitly.
+- Added `Error`/`Error$` to the VBA `Information` library surface and moved the
+  vm3 default-error-message table into `oxvba-runtime` so `Error(number)`, the
+  legacy `Error n` statement, and omitted-description `Err.Raise n` share the
+  same text source. `Error(0)` returns an empty string, unmapped positive codes
+  return the generic application/object message, and negative codes raise error
+  5.
+- vm3 intercepts zero-argument `Error()`/`Error$()` so expression-form calls
+  read the current `Err.Description`, matching the stateful language behavior
+  while keeping `Error(number)` in the pure library path.
+- Extended the parser's contextual-name keyword set so `Error(...)` can parse as
+  a function expression without disturbing `On Error ...` or legacy `Error n`
+  statement parsing.
+- Verification target:
+  - `cargo test -p oxvba-syntax error_keyword_can_be_function_expression`
+  - `cargo test -p oxvba-bundle vba_library`
+  - `cargo test -p oxvba-symbol catalog`
+  - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms`
+  - `cargo test -p oxvba-lib error_text_returns_default_messages_and_fallbacks`
+  - `cargo test -p oxvba-hal process_env`
+  - `cargo test -p oxvba-differential --test command_error_vm3`
+  - `cargo test -p oxvba-differential --test default_error_messages_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

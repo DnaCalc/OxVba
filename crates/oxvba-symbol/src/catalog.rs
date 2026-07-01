@@ -249,6 +249,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         IsNull => e(IsNull, &["IsNull"], sig(1, 1), Ordinary),
         IsEmpty => e(IsEmpty, &["IsEmpty"], sig(1, 1), Ordinary),
         IsMissing => e(IsMissing, &["IsMissing"], sig(1, 1), Ordinary),
+        ErrorText => e(ErrorText, &["Error", "Error$"], sig(0, 1), Ordinary),
         // IIf/Choose/Switch resolve by name through the `vba_library` special-form
         // route, not the intrinsic-name map — so they carry no names here; the
         // entry exists only to give the lowering target a shape.
@@ -265,6 +266,7 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         QbColor => e(QbColor, &["QBColor"], sig(1, 1), Ordinary),
 
         // ── Interaction ──
+        Command => e(Command, &["Command", "Command$"], sig(0, 0), Ordinary),
         Partition => e_params(
             Partition,
             &["Partition"],

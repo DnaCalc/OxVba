@@ -1343,6 +1343,23 @@ pub fn is_missing(args: &[Variant]) -> LibResult<Variant> {
     Ok(vbool(missing))
 }
 
+pub fn error_text(args: &[Variant]) -> LibResult<Variant> {
+    let Some(value) = opt(args, 0) else {
+        return Ok(vstr(""));
+    };
+    if value.vtype() == VarType::Empty {
+        return Ok(vstr(""));
+    }
+    let code = as_i32(value)?;
+    if code == 0 {
+        return Ok(vstr(""));
+    }
+    if code < 0 {
+        return Err(LibError::invalid_call("Error number must be non-negative"));
+    }
+    Ok(vstr(oxvba_runtime::default_error_message(code)))
+}
+
 /// Lenient truthiness for an optional Boolean-ish flag argument.
 fn as_bool_lenient(v: &Variant) -> bool {
     v.as_bool()
@@ -2794,6 +2811,21 @@ mod tests {
                 .code,
             5
         );
+    }
+
+    #[test]
+    fn error_text_returns_default_messages_and_fallbacks() {
+        assert_eq!(bstr(error_text(&[])), "");
+        assert_eq!(bstr(error_text(&[Variant::from_i32(0)])), "");
+        assert_eq!(
+            bstr(error_text(&[Variant::from_i32(11)])),
+            "Division by zero"
+        );
+        assert_eq!(
+            bstr(error_text(&[Variant::from_i32(12345)])),
+            "Application-defined or object-defined error"
+        );
+        assert_eq!(error_text(&[Variant::from_i32(-1)]).unwrap_err().code, 5);
     }
 
     #[test]

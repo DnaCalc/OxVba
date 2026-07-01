@@ -349,6 +349,7 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::KwShared
                 | SyntaxKind::KwLine
                 | SyntaxKind::KwName
+                | SyntaxKind::KwError
                 // `Lib` is a keyword only inside `Declare … Lib "…"`; everywhere else
                 // (e.g. a project named `Lib` in `Lib.Member` / `TypeOf x Is Lib.IFoo`)
                 // it is an ordinary identifier.
@@ -3219,6 +3220,16 @@ mod tests {
         // On Error GoTo 0 keeps the `0` as a LabelRef too.
         let z = parse_ok(&in_sub("On Error GoTo 0"));
         assert!(has_node_kind(&z.syntax(), SyntaxKind::LabelRef));
+    }
+
+    #[test]
+    fn error_keyword_can_be_function_expression() {
+        let p = parse_ok(&in_sub(
+            "s = Error(11)\nt = \"[\" & Error$() & \"]\"\nError 5",
+        ));
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::AssignStmt).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::IndexExpr).len(), 2);
+        assert_eq!(collect_nodes(&p.syntax(), SyntaxKind::ErrorStmt).len(), 1);
     }
 
     #[test]

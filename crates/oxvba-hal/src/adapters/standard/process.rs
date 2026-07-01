@@ -15,6 +15,18 @@ pub(super) struct DirSearchState {
 }
 
 impl ProcessEnvHal for StandardHostServices {
+    fn command_variant(&self) -> HalResult<Variant> {
+        let capability = CapabilityId::ProcessEnv;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "command"));
+        }
+        if self.native_process_enabled() && !self.policy.deterministic_mode {
+            let args = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
+            return Ok(Variant::from_string(args));
+        }
+        Ok(Variant::from_string(BStr::empty()))
+    }
+
     fn shell_variant(&self, command: Variant, _window_style: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::ProcessEnv;
         if !self.supports(capability) {

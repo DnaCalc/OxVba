@@ -2959,6 +2959,10 @@ mod tests {
     #[test]
     fn process_env_deterministic_projection_contract() {
         let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(
+            host.command_variant().expect("command"),
+            Variant::from_string("")
+        );
         assert_eq!(host.environ_variant(rv(88)).expect("environ"), rv(88));
         assert_eq!(host.dir_variant(rv(0), rv(0)).expect("dir"), rv(0));
         assert_eq!(host.dir_variant(rv(5), rv(0)).expect("dir"), rv(1));
