@@ -1397,3 +1397,27 @@
 - Fresh-eyes review rechecked the active PMR/spec/evidence anchors for stale
   compiler-era references and found no remaining accepted scoping delivery work
   outside the closed child beads.
+
+## 2026-07-01 - For Header Coercion (`bd-4ktq.39.2`)
+
+- Closed the `for-start-step-not-coerced` Tier 4 residual for declared scalar
+  vm3 loop counters.
+- `bind_for` now resolves the counter's declared type and wraps the `For`
+  start, end/limit, and explicit `Step` expressions with the same
+  `types::coerce_store` path used by ordinary scalar assignment.
+- Added `for_header_coercion_vm3` coverage for string-valued numeric bounds,
+  string-valued `Step`, and fractional `Integer` headers that round once before
+  loop execution. Existing fixed-integer overflow coverage remains in
+  `for_counter_overflow_vm3`.
+- Verification completed:
+  - `cargo test -p oxvba-differential --test for_header_coercion_vm3`
+  - `cargo test -p oxvba-differential --test for_counter_overflow_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-bind`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Fresh-eyes review re-read the binder diff, new vm3 differential tests,
+  inventory wording, memory evidence, and bead graph. No unsupported completion
+  language, stale residual references, or fixed-counter overflow regressions were
+  found.
