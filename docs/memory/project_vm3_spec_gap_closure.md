@@ -157,3 +157,17 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Multi-Module Scoping Visibility Batch (`bd-4ktq.9`)
+
+- Closed the scoping/visibility batch after all six child beads landed:
+  oracle truth surface, Private visibility, duplicate Public ambiguity,
+  module-name/member collision diagnostics, project qualifier validation, and
+  standard-module Friend rejection.
+- The active vm3 scoping fixture now covers 11 live-oracle-backed cases with no
+  ignored tests.
+- Terminal batch verification:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
