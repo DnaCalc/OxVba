@@ -52,6 +52,13 @@ the remaining user-named work (AddressOf, GetObject) + the 3 Critical file-I/O b
 cross-module resolution edges (WithEvents source visibility, Public Const cross-module collision)
 may remain unexamined.
 
+**Scoping fixture baseline (bd-4ktq.9.1):** live Excel/VBA oracle evidence for the
+multi-module visibility batch is captured in
+`docs/evidence/conformance/vm3_scoping_visibility_oracle_20260701T0945Z/` using
+VBE Debug -> Compile (`ID=578`) plus PID-scoped UI Automation modal capture.
+Current-green vm3 baselines and ignored follow-on assertions live in
+`crates/oxvba-differential/tests/scoping_visibility_vm3.rs`.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

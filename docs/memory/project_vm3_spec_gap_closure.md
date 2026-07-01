@@ -31,3 +31,29 @@
   PID-scoped UI Automation watcher/helper for Excel/VBA compile/runtime modals,
   and treat `Application.Run` macro-availability errors as ambiguous until a
   VBE Debug -> Compile diagnostic is captured.
+
+## 2026-07-01 - Scoping Visibility Fixture Baseline (`bd-4ktq.9.1`)
+
+- Created the fixture-first truth surface for the multi-module scoping batch
+  under `bd-4ktq.9`.
+- Live Excel/VBA oracle evidence lives in
+  `docs/evidence/conformance/vm3_scoping_visibility_oracle_20260701T0945Z/`.
+  The runner invokes VBE Debug -> Compile VBAProject through command id `578`,
+  captures owned compile modals with UI Automation, and kills only the owned
+  Excel PID for each case.
+- Oracle matrix:
+  - same-module `Private` function: compiles and runs (`7`),
+  - cross-module unqualified `Private`: `Sub or Function not defined`,
+  - cross-module `Module.PrivateMember`: `Method or data member not found`,
+  - duplicate Public unqualified member: `Ambiguous name detected: Dup`,
+  - module-name/Public-member collision: `Expected variable or procedure, not module`,
+  - valid `VBAProject.Module.Member`: compiles and runs (`13`),
+  - wrong project qualifier under `Option Explicit`: `Variable not defined`,
+  - `Friend` in a standard module: `Only valid in object module`,
+  - `Friend` in a class module: compiles and runs (`19`).
+- Added `crates/oxvba-differential/tests/scoping_visibility_vm3.rs`.
+  Current-green tests cover the legal baseline shapes; ignored tests encode the
+  oracle-backed expected failures for `bd-4ktq.9.2` through `bd-4ktq.9.6`.
+- Verification passed:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

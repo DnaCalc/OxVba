@@ -1,0 +1,185 @@
+﻿[
+    {
+        "id":  "SCOPING-SAME-MODULE-PRIVATE",
+        "purpose":  "Private function is callable from the declaring standard module.",
+        "ownedPid":  29700,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "SCOPING-CROSS-UNQUAL-PRIVATE",
+        "purpose":  "Private function in another standard module is not visible by unqualified name.",
+        "ownedPid":  12092,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nSub or Function not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Lib"
+                    ]
+    },
+    {
+        "id":  "SCOPING-CROSS-QUAL-PRIVATE",
+        "purpose":  "Private function in another standard module is not visible through Module.Member.",
+        "ownedPid":  28756,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nMethod or data member not found",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Lib"
+                    ]
+    },
+    {
+        "id":  "SCOPING-DUP-PUBLIC",
+        "purpose":  "Duplicate Public procedures in standard modules make an unqualified call ambiguous.",
+        "ownedPid":  16428,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nAmbiguous name detected: Dup",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Alpha",
+                        "Beta"
+                    ]
+    },
+    {
+        "id":  "SCOPING-MODULE-MEMBER-COLLISION",
+        "purpose":  "A standard module name colliding with a Public member name is ambiguous.",
+        "ownedPid":  1736,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nExpected variable or procedure, not module",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Clash",
+                        "Other"
+                    ]
+    },
+    {
+        "id":  "SCOPING-VALID-PROJECT-QUALIFIER",
+        "purpose":  "The default Excel project qualifier can qualify a module member.",
+        "ownedPid":  7788,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "13",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Lib"
+                    ]
+    },
+    {
+        "id":  "SCOPING-WRONG-PROJECT-QUALIFIER",
+        "purpose":  "A nonexistent project qualifier must not be ignored.",
+        "ownedPid":  30440,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Lib"
+                    ]
+    },
+    {
+        "id":  "SCOPING-FRIEND-STANDARD-MODULE",
+        "purpose":  "Friend is rejected on standard-module procedures.",
+        "ownedPid":  15848,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nOnly valid in object module",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "SCOPING-FRIEND-CLASS-MODULE",
+        "purpose":  "Friend is accepted on class-module procedures and callable inside the same project.",
+        "ownedPid":  11212,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "19",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Widget"
+                    ]
+    }
+]
