@@ -1201,8 +1201,9 @@ impl<'a> Lowerer<'a> {
     /// `On <selector> GoTo/GoSub L1, L2, …` — a 1-based computed branch lowered to a
     /// chain of equality `Branch`es (the Select-Case shape; no new terminator). The
     /// selector is evaluated once (coerced to `Long`, as VBA rounds it); `targets[k-1]`
-    /// is taken when `selector == k`; `0`/out-of-range falls through to `end`. For
-    /// `GoSub`, a taken target returns to `end` (the statement after `On … GoSub`).
+    /// is taken when `selector == k`; `0`/out-of-range falls through to `end`, while a
+    /// negative selector raises error 5. For `GoSub`, a taken target returns to `end`
+    /// (the statement after `On … GoSub`).
     fn lower_computed_goto(
         &mut self,
         selector: &CoreValue,
@@ -1221,6 +1222,35 @@ impl<'a> Lowerer<'a> {
             target: OxCoerceTarget::Numeric(oxvba_bundle::NumericCoerceTarget::Long),
         });
         let sel_op = OxOperand::temp(sel_t);
+
+        let neg_t = self.new_temp();
+        self.emit(OxInst::Compare {
+            dst: OxPlace::Temp(neg_t),
+            op: CmpOp::Lt,
+            lhs: sel_op.clone(),
+            rhs: OxOperand::Const(OxConst::I32(0)),
+            mode: oxvba_bundle::StringCompareMode::Binary,
+        });
+        let negative = self.truthy_cond(OxOperand::temp(neg_t));
+        let raise_negative = self.reserve();
+        let first_selector_check = self.reserve();
+        self.finish_to(
+            OxTerminator::Branch {
+                cond: negative,
+                then_blk: raise_negative,
+                else_blk: first_selector_check,
+            },
+            raise_negative,
+        );
+        self.finish_to(
+            OxTerminator::Raise {
+                number: OxOperand::Const(OxConst::I32(5)),
+                source: None,
+                description: None,
+                inherit: false,
+            },
+            first_selector_check,
+        );
 
         for (i, label) in targets.iter().enumerate() {
             self.cur_fault = pad;

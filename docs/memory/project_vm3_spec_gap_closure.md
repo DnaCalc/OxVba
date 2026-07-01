@@ -1800,3 +1800,36 @@
   Excel oracle harness, golden drift, and docs. No legacy OxVBA fallback was
   retained for undefined labels; user-visible behavior is the VBA compile/runtime
   behavior captured from Excel.
+
+## 2026-07-01 - Computed On n GoTo/GoSub Selectors (`bd-4ktq.43`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_on_computed_branch_oracle_20260701T2321Z/`.
+- Oracle findings:
+  - `On 1 GoTo` selects the first target; `On 2 GoSub` calls the second target
+    and `Return` resumes after the `On ... GoSub` statement.
+  - Selector `0` falls through for both `GoTo` and `GoSub`.
+  - Selector values beyond the target list also fall through; they do not raise
+    error 5. This corrected the original gap label.
+  - Negative selectors raise trappable runtime error 5 for both `GoTo` and
+    `GoSub`.
+  - Fractional selectors are coerced through VBA Long rounding before branch
+    selection: `1.5` selects target 2, and `2.5` rounds to 2 rather than falling
+    past a two-target list.
+  - Nonnumeric string selectors raise error 13; `Null` selectors raise error 94.
+- Implemented the vm3 parity fix in OxIR lowering: after selector coercion to
+  `Long`, a single `selector < 0` branch raises normal runtime error 5 through
+  the statement fault pad. Zero and out-of-range selectors intentionally keep the
+  fallthrough path.
+- Added source-level vm3 regressions in
+  `crates/oxvba-bind/tests/bind_roundtrip.rs` for computed `GoTo` and `GoSub`
+  in-range, zero, negative, out-of-range, fractional, string, `Null`, and GoSub
+  return-stack behavior.
+- Verification completed:
+  - `scripts/run-vm3-on-computed-branch-oracle.ps1 -RunId vm3_on_computed_branch_oracle_20260701T2321Z -CaseId ...`
+  - `cargo test -p oxvba-bind --test bind_roundtrip computed_ --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `cargo test -p oxvba-bind --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`

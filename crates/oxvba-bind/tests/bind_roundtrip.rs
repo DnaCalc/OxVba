@@ -1225,6 +1225,89 @@ fn on_error_undefined_label_is_bind_error() {
     assert!(err.contains("Label not defined"), "unexpected error: {err}");
 }
 
+fn computed_goto_result(selector: &str) -> Option<String> {
+    let src = format!(
+        "Sub Main()\n\
+         Dim r As String\n\
+         Dim n As Variant\n\
+         On Error GoTo EH\n\
+         n = {selector}\n\
+         On n GoTo L1, L2\n\
+         r = \"fallthrough:\" & CStr(Err.Number)\n\
+         Exit Sub\n\
+         L1:\n\
+         r = \"L1:\" & CStr(Err.Number)\n\
+         Exit Sub\n\
+         L2:\n\
+         r = \"L2:\" & CStr(Err.Number)\n\
+         Exit Sub\n\
+         EH:\n\
+         r = \"err:\" & CStr(Err.Number)\n\
+         End Sub\n"
+    );
+    run_main_local0_string(&src)
+}
+
+fn computed_gosub_result(selector: &str) -> Option<String> {
+    let src = format!(
+        "Sub Main()\n\
+         Dim r As String\n\
+         Dim n As Variant\n\
+         On Error GoTo EH\n\
+         r = \"before\"\n\
+         n = {selector}\n\
+         On n GoSub S1, S2\n\
+         r = r & \":after:\" & CStr(Err.Number)\n\
+         Exit Sub\n\
+         S1:\n\
+         r = r & \":S1\"\n\
+         Return\n\
+         S2:\n\
+         r = r & \":S2\"\n\
+         Return\n\
+         EH:\n\
+         r = \"err:\" & CStr(Err.Number) & \":\" & r\n\
+         End Sub\n"
+    );
+    run_main_local0_string(&src)
+}
+
+#[test]
+fn computed_goto_selector_matches_vba_boundaries() {
+    assert_eq!(computed_goto_result("1"), Some("L1:0".to_string()));
+    assert_eq!(computed_goto_result("0"), Some("fallthrough:0".to_string()));
+    assert_eq!(computed_goto_result("3"), Some("fallthrough:0".to_string()));
+    assert_eq!(computed_goto_result("-1"), Some("err:5".to_string()));
+    assert_eq!(computed_goto_result("1.5"), Some("L2:0".to_string()));
+    assert_eq!(computed_goto_result("2.5"), Some("L2:0".to_string()));
+    assert_eq!(computed_goto_result("\"x\""), Some("err:13".to_string()));
+    assert_eq!(computed_goto_result("Null"), Some("err:94".to_string()));
+}
+
+#[test]
+fn computed_gosub_selector_matches_vba_boundaries() {
+    assert_eq!(
+        computed_gosub_result("2"),
+        Some("before:S2:after:0".to_string())
+    );
+    assert_eq!(
+        computed_gosub_result("0"),
+        Some("before:after:0".to_string())
+    );
+    assert_eq!(
+        computed_gosub_result("3"),
+        Some("before:after:0".to_string())
+    );
+    assert_eq!(
+        computed_gosub_result("-1"),
+        Some("err:5:before".to_string())
+    );
+    assert_eq!(
+        computed_gosub_result("1.5"),
+        Some("before:S2:after:0".to_string())
+    );
+}
+
 #[test]
 fn multivariable_next_closes_nested_for_loops() {
     let src = "Sub Main()\n\
