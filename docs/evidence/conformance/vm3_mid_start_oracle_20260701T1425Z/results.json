@@ -1,0 +1,17 @@
+{
+  "runId": "vm3_mid_start_oracle_20260701T1425Z",
+  "capturedAt": "2026-07-01T14:25Z",
+  "ownedExcelPid": 47960,
+  "compileModalObserved": false,
+  "modalHandling": "Fresh owned Excel PID; VBE visible; Debug -> Compile VBAProject (ID=578) before Application.Run; UI Automation scan for owned VBE compile modal text; owned-dialog dismissal if needed; PID-scoped Excel cleanup.",
+  "publicReference": "https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/mid-function",
+  "results": {
+    "fn0": "ERR:5:Invalid procedure call or argument",
+    "fnNeg": "ERR:5:Invalid procedure call or argument",
+    "fn1": "ab",
+    "fnPast": "",
+    "stmt0": "ERR:5:Invalid procedure call or argument:abcdef",
+    "stmtNeg": "ERR:5:Invalid procedure call or argument:abcdef",
+    "stmt2": "aZZdef"
+  }
+}
