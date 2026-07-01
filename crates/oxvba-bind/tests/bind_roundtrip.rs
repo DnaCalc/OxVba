@@ -990,9 +990,9 @@ fn keyword_named_proc_does_not_desync_frames() {
 
 #[test]
 fn parenthesized_argument_forces_by_val() {
-    // A parenthesized argument `Inc((r))` is forced ByVal → caller unchanged
+    // A parenthesized statement-call argument `Inc (r)` is forced ByVal → caller unchanged
     // (without the parens, `Inc r` would mutate r to 105 via ByRef).
-    let src = "Sub Main()\n    Dim r As Long\n    r = 5\n    Inc ((r))\nEnd Sub\n\nSub Inc(ByRef n As Long)\n    n = n + 100\nEnd Sub\n";
+    let src = "Sub Main()\n    Dim r As Long\n    r = 5\n    Inc (r)\nEnd Sub\n\nSub Inc(ByRef n As Long)\n    n = n + 100\nEnd Sub\n";
     assert_eq!(run_main_local0(src), Some(5.0));
 }
 

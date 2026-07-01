@@ -213,3 +213,25 @@
   - `scripts/run-vm3-call-argument-oracle.ps1 -RunId vm3_call_argument_oracle_20260701T1040Z`
   - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Statement Call Parentheses Force ByVal (`bd-4ktq.10.2`)
+
+- Closed `statement-call-paren-not-byval`.
+- Parser change: implicit statement-call callee parsing now leaves
+  whitespace-separated terminal parentheses (`Inc (x)`) for the bare argument
+  list instead of swallowing them as a callee `IndexExpr`.
+- Compatibility guard: attached no-space forms (`DispatchInvoke(...)`) still
+  parse as attached `IndexExpr` callees, and indexed receivers that continue
+  into member access (`obj(1).Inc (x)`) keep the receiver index in the callee
+  while splitting only the terminal parenthesized argument.
+- Binder/vm3 effect: the existing parenthesized-argument path now sees
+  `ParenExpr` for `Inc (r)` and constructs a ByVal argument, so the caller stays
+  unchanged while bare `Inc r` and `Call Inc(r)` keep ByRef writeback behavior.
+- Golden snapshot audit: one intended line changed in
+  `vmr04_byref_expression_forms.bas`; `Touch (seed)` now leaves
+  `forcedByValObserved = 10` instead of the previous wrong `11`.
+- Verification target:
+  - `cargo test -p oxvba-syntax`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

@@ -1165,6 +1165,66 @@ mod tests {
     }
 
     #[test]
+    fn statement_call_parenthesized_arg_stays_argument_paren_expr() {
+        let p = crate::parser::parse(&in_sub("Inc (x)\n"));
+        assert!(
+            p.errors().is_empty(),
+            "statement parenthesized arg must parse without error, got {:?}",
+            p.errors()
+        );
+        let call = find_first(p.syntax(), SyntaxKind::CallStmt).expect("call stmt");
+        assert_eq!(call.call_callee().unwrap().kind(), SyntaxKind::IdentExpr);
+        let items = call.call_arg_list().expect("arg list").arg_items();
+        assert_eq!(items.len(), 1);
+        match items[0] {
+            ArgItem::Positional(expr, CallSitePassing::Default) => {
+                assert_eq!(expr.kind(), SyntaxKind::ParenExpr);
+            }
+            _ => panic!("expected parenthesized positional argument"),
+        }
+    }
+
+    #[test]
+    fn statement_call_attached_parenthesized_callee_stays_index_expr() {
+        let p = crate::parser::parse(&in_sub("DispatchInvoke(app, \"Visible\", False)\n"));
+        assert!(
+            p.errors().is_empty(),
+            "attached parenthesized callee must parse without error, got {:?}",
+            p.errors()
+        );
+        let call = find_first(p.syntax(), SyntaxKind::CallStmt).expect("call stmt");
+        assert_eq!(call.call_callee().unwrap().kind(), SyntaxKind::IndexExpr);
+        assert!(
+            call.call_arg_list().is_none(),
+            "attached parens belong to the callee, not a bare arg list"
+        );
+    }
+
+    #[test]
+    fn statement_call_indexed_receiver_keeps_parenthesized_arg_separate() {
+        let p = crate::parser::parse(&in_sub("obj(1).Inc (x)\n"));
+        assert!(
+            p.errors().is_empty(),
+            "indexed receiver call must parse without error, got {:?}",
+            p.errors()
+        );
+        let call = find_first(p.syntax(), SyntaxKind::CallStmt).expect("call stmt");
+        assert_eq!(call.call_callee().unwrap().kind(), SyntaxKind::MemberExpr);
+        assert!(
+            find_first(p.syntax(), SyntaxKind::IndexExpr).is_some(),
+            "indexed receiver must remain in the callee expression"
+        );
+        let items = call.call_arg_list().expect("arg list").arg_items();
+        assert_eq!(items.len(), 1);
+        match items[0] {
+            ArgItem::Positional(expr, CallSitePassing::Default) => {
+                assert_eq!(expr.kind(), SyntaxKind::ParenExpr);
+            }
+            _ => panic!("expected parenthesized positional argument"),
+        }
+    }
+
+    #[test]
     fn arg_items_leading_omitted_bare_statement_call() {
         // A statement-form call whose argument list STARTS with omitted positionals
         // (`obj.Add , , 2` — the Excel `Worksheets.Add , , 2` idiom). Previously the

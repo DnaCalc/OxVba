@@ -74,7 +74,6 @@ fn byval_parameter_does_not_mutate_caller() {
 }
 
 #[test]
-#[ignore = "bd-4ktq.10.2: statement-form parenthesized ByRef arg still writes back today"]
 fn statement_parenthesized_byref_argument_is_forced_byval() {
     assert_snapshot_contains(
         run_call_case(

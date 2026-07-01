@@ -361,6 +361,57 @@ impl<'a> Parser<'a> {
             || Self::is_contextual_name_keyword(kind)
     }
 
+    /// True when the current parenthesized postfix indexes a receiver that
+    /// immediately continues with member access (`obj(1).Foo arg`), so it still
+    /// belongs to an implicit statement-call callee.
+    fn paren_postfix_continues_member(&self) -> bool {
+        debug_assert!(self.at(SyntaxKind::LParen));
+
+        let mut j = self.pos;
+        let mut depth: i32 = 0;
+        while j < self.tokens.len() {
+            match self.tokens[j].0 {
+                SyntaxKind::LParen => depth += 1,
+                SyntaxKind::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        j += 1;
+                        while j < self.tokens.len()
+                            && matches!(
+                                self.tokens[j].0,
+                                SyntaxKind::Whitespace | SyntaxKind::LineContinuation
+                            )
+                        {
+                            j += 1;
+                        }
+                        return matches!(
+                            self.tokens.get(j).map(|(kind, _)| *kind),
+                            Some(SyntaxKind::Dot | SyntaxKind::Bang)
+                        );
+                    }
+                }
+                SyntaxKind::Eof | SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Colon
+                    if depth == 0 =>
+                {
+                    return false;
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+
+        false
+    }
+
+    fn paren_postfix_is_attached(&self) -> bool {
+        debug_assert!(self.at(SyntaxKind::LParen));
+        self.pos > 0
+            && !matches!(
+                self.tokens[self.pos - 1].0,
+                SyntaxKind::Whitespace | SyntaxKind::LineContinuation
+            )
+    }
+
     /// True if this token stops expression parsing (at zero paren depth).
     fn is_expr_stop(&self, kind: SyntaxKind) -> bool {
         match kind {
@@ -426,8 +477,19 @@ impl<'a> Parser<'a> {
         self.parse_expr_bp(29);
     }
 
+    /// Parse the callee of an implicit statement call. A following parenthesized
+    /// expression belongs to the argument list (`Foo (x)`), not the callee.
+    fn parse_statement_call_callee_expr(&mut self) {
+        self.eat_expr_whitespace();
+        self.parse_expr_bp_with_options(29, false);
+    }
+
     /// Pratt parser core.
     fn parse_expr_bp(&mut self, min_bp: u8) {
+        self.parse_expr_bp_with_options(min_bp, true);
+    }
+
+    fn parse_expr_bp_with_options(&mut self, min_bp: u8, allow_index_postfix: bool) {
         let before = self.pos;
 
         // ── Prefix / primary ───────────────────────────────
@@ -477,7 +539,10 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 SyntaxKind::LParen => {
-                    if min_bp > 30 {
+                    let allow_index_here = allow_index_postfix
+                        || self.paren_postfix_is_attached()
+                        || self.paren_postfix_continues_member();
+                    if !allow_index_here || min_bp > 30 {
                         break;
                     }
                     self.start_node_at(cp, SyntaxKind::IndexExpr);
@@ -2787,10 +2852,12 @@ impl<'a> Parser<'a> {
             self.eat_trivia();
             if self.is_expr_start() {
                 // Statement-position calls split the callable expression from the
-                // following bare argument list. Parse only the name/member/index
-                // callee here so `Proc -1, x` is a call with a negative first
-                // argument, not a binary-expression callee `Proc - 1`.
-                self.parse_lvalue_expr();
+                // following bare argument list. Parse only the attached
+                // name/member/index callee here so `Proc -1, x` is a call with a
+                // negative first argument, not a binary-expression callee
+                // `Proc - 1`, and whitespace-separated `Proc (x)` keeps `(x)` as
+                // a ByVal-forcing argument expression.
+                self.parse_statement_call_callee_expr();
             }
             // Bare argument list. A leading call-site `ByVal`/`ByRef` modifier
             // (`Inc ByVal r`) also starts the argument list even though the
