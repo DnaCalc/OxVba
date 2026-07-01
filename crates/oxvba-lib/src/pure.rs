@@ -1223,6 +1223,9 @@ pub fn str_fn(args: &[Variant]) -> LibResult<Variant> {
 pub fn val(args: &[Variant]) -> LibResult<Variant> {
     let s = as_str(need(args, 0)?)?;
     let trimmed = s.trim_start();
+    if let Some((value, _rest)) = parse_vba_prefixed_integer_token(trimmed, true) {
+        return Ok(vf64(value as f64));
+    }
     let mut end = 0;
     for (i, c) in trimmed.char_indices() {
         if c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E') {
@@ -1878,36 +1881,90 @@ fn parse_vba_numeric_string(s: &str) -> Option<f64> {
 }
 
 fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
+    let (value, rest) = parse_vba_prefixed_integer_token(t, false)?;
+    if rest.trim().is_empty() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+// `Val` reads a leading token and ignores spaces/tabs/newlines inside it; the
+// conversion functions and `IsNumeric` require the whole string to be numeric.
+fn parse_vba_prefixed_integer_token(
+    t: &str,
+    skip_embedded_space: bool,
+) -> Option<(i64, &str)> {
+    let bytes = t.as_bytes();
+    let mut pos = 0;
     let (sign, rest) = if let Some(rest) = t.strip_prefix('-') {
+        pos = 1;
         (-1_i64, rest)
     } else if let Some(rest) = t.strip_prefix('+') {
+        pos = 1;
         (1_i64, rest)
     } else {
         (1_i64, t)
     };
     // VBA hex (`&H…`) / octal (`&O…` or bare `&` + octal digits) integer literals,
     // with an optional trailing `&` Long-type suffix.
-    let rest = rest.strip_prefix('&')?;
-    let (radix, digits) = match rest.as_bytes().first() {
-        Some(b'H' | b'h') => (16, &rest[1..]),
-        Some(b'O' | b'o') => (8, &rest[1..]),
+    rest.strip_prefix('&')?;
+    pos += 1;
+    let (radix, digit_start) = match bytes.get(pos) {
+        Some(b'H' | b'h') => (16, pos + 1),
+        Some(b'O' | b'o') => (8, pos + 1),
         // Bare `&` followed by octal digits (VBA's terse octal form).
-        _ => (8, rest),
+        _ => (8, pos),
     };
-    // The width-based two's-complement sign rule applies to `Val`/`CInt`/`CLng`
-    // of a `&H…`/`&O…` *string* exactly as to a literal — `Val("&HFFFF")` is -1
-    // (verified live). Honour an optional `%`/`&`/`^` type character too.
-    let suffix = match digits.as_bytes().last() {
-        Some(&b @ (b'%' | b'&' | b'^')) => Some(b),
-        _ => None,
-    };
-    let digits = digits.trim_end_matches(['&', '%', '^']);
+    pos = digit_start;
+
+    let mut digits = String::new();
+    while let Some(&byte) = bytes.get(pos) {
+        if skip_embedded_space && is_val_ignored_space(byte) {
+            pos += 1;
+            continue;
+        }
+        let is_digit = match radix {
+            16 => byte.is_ascii_hexdigit(),
+            8 => (b'0'..=b'7').contains(&byte),
+            _ => false,
+        };
+        if !is_digit {
+            break;
+        }
+        digits.push(char::from(byte));
+        pos += 1;
+    }
     if digits.is_empty() {
         return None;
     }
-    let magnitude = u64::from_str_radix(digits, radix).ok()?;
+
+    if skip_embedded_space {
+        while let Some(&byte) = bytes.get(pos) {
+            if !is_val_ignored_space(byte) {
+                break;
+            }
+            pos += 1;
+        }
+    }
+    // The width-based two's-complement sign rule applies to `Val`/`CInt`/`CLng`
+    // of a `&H…`/`&O…` *string* exactly as to a literal — `Val("&HFFFF")` is -1
+    // (verified live). Honour an optional `%`/`&`/`^` type character too.
+    let suffix = match bytes.get(pos) {
+        Some(&b @ (b'%' | b'&' | b'^')) => Some(b),
+        _ => None,
+    };
+    if suffix.is_some() {
+        pos += 1;
+    }
+    let magnitude = u64::from_str_radix(&digits, radix).ok()?;
     let width = oxvba_runtime::vba_radix_width(magnitude, suffix)?;
-    oxvba_runtime::vba_radix_signed_value(magnitude, width).checked_mul(sign)
+    let value = oxvba_runtime::vba_radix_signed_value(magnitude, width).checked_mul(sign)?;
+    Some((value, &t[pos..]))
+}
+
+fn is_val_ignored_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
 }
 
 pub fn is_date(args: &[Variant]) -> LibResult<Variant> {
@@ -1990,6 +2047,20 @@ mod tests {
             .iter()
             .map(|v| v.as_bstr().map(|b| b.as_str()).unwrap_or_default())
             .collect()
+    }
+    fn val_(s: &str) -> f64 {
+        val(&[vs(s)]).unwrap().as_f64().unwrap()
+    }
+
+    #[test]
+    fn val_parses_vba_radix_prefixes() {
+        assert_eq!(val_("&HFFFFFFFF"), -1.0);
+        assert_eq!(val_("&HFFFF&"), 65_535.0);
+        assert_eq!(val_("&O37777777777"), -1.0);
+        assert_eq!(val_("+&H7F"), 127.0);
+        assert_eq!(val_("-&O10"), -8.0);
+        assert_eq!(val_("&H F F"), 255.0);
+        assert_eq!(val_("&H10 trailing"), 16.0);
     }
 
     #[test]

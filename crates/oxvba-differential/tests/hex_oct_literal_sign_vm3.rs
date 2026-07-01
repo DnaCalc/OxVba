@@ -6,8 +6,8 @@
 //! narrowest of Integer/Long/LongLong that holds the magnitude. So `&HFFFF` is
 //! -1 (Integer width), `&HFFFF&` is 65535 (Long), `&HFFFFFFFF` is -1 (Long),
 //! and `&O37777777777` is -1 (octal of 0xFFFFFFFF). Closes
-//! `vba-hex-oct-literal-sign`. The same rule governs `Val`/`CLng` of a
-//! `&H…` *string*.
+//! `vba-hex-oct-literal-sign`. The same rule governs `Val`/`CLng` of
+//! `&H…`/`&O…` *strings*.
 
 use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
 use oxvba_runtime::Variant;
@@ -19,7 +19,11 @@ fn run_main(body: &str) -> RunOutcome {
 
 fn assert_value(body: &str, expected: &Canon) {
     let outcome = run_main(body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     let snap = outcome.result.unwrap_or_else(|e| panic!("run failed: {e}"));
     assert_eq!(snap.first(), Some(expected), "{snap:?}");
 }
@@ -62,10 +66,30 @@ fn octal_shares_the_rule() {
 fn conversion_of_hex_string_applies_the_sign_rule() {
     // `CLng`/`CInt`/`CDbl` of a `&H…` string share the literal sign rule
     // (`parse_vba_numeric_string`): `CLng("&HFFFFFFFF")` is -1, `CInt("&HFFFF")`
-    // is -1. (`Val` has its own leading-prefix scanner — a separate gap.)
+    // is -1.
     assert_long("    r = CLng(\"&HFFFFFFFF\")\n", -1);
     assert_long("    r = CLng(\"&HFFFF\")\n", -1);
     assert_value("    r = CInt(\"&HFFFF\")\n", &canon(&Variant::from_i16(-1)));
+}
+
+#[test]
+fn val_of_radix_string_applies_the_sign_rule() {
+    assert_value(
+        "    r = Val(\"&HFFFFFFFF\")\n",
+        &canon(&Variant::from_f64(-1.0)),
+    );
+    assert_value(
+        "    r = Val(\"&HFFFF&\")\n",
+        &canon(&Variant::from_f64(65_535.0)),
+    );
+    assert_value(
+        "    r = Val(\"&O37777777777\")\n",
+        &canon(&Variant::from_f64(-1.0)),
+    );
+    assert_value(
+        "    r = Val(\"+&H7F\")\n",
+        &canon(&Variant::from_f64(127.0)),
+    );
 }
 
 // LongLong-width literals (`&H1FFFFFFFF`, `&HFFFFFFFFFFFFFFFF^`) carry the sign

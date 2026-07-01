@@ -171,3 +171,20 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
+
+- Closed the `Val("&H...")`/`Val("&O...")` radix-prefix gap.
+- `Val` now checks for a leading VBA radix token before falling back to its
+  existing decimal-prefix scanner, reusing the runtime width/sign helpers so
+  `&HFFFFFFFF` and `&O37777777777` evaluate to `-1`.
+- `CInt`/`CLng`/`CDbl` and `IsNumeric` keep full-token parsing; `Val` uses the
+  leading-token form and can skip VBA-ignored spaces inside the radix token.
+- The remaining wide-literal carrier issue is still tracked separately as
+  `integer-literal-surfaces-as-long`.
+- Verification target:
+  - `cargo test -p oxvba-lib val_parses_vba_radix_prefixes`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind numeric_conversion_intrinsics`
+  - `cargo test -p oxvba-differential --test hex_oct_literal_sign_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
