@@ -589,7 +589,7 @@ pub enum CoreArg {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreBound {
     pub upper: CoreValue,
-    pub lower: i32,
+    pub lower: CoreValue,
 }
 
 #[derive(Debug, Clone, PartialEq)]

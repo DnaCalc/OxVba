@@ -648,16 +648,32 @@
 - Closed `redim-negative-lower-rejected` for vm3.
 - Extended the binder's `fold_const_i32` helper to fold unary
   `CoreUnOp::Negate` over integer constants with checked negation.
-- Dynamic `ReDim a(-N To M)` and fixed `Dim a(-N To M)` now bind and execute,
-  while nonconstant lower bounds remain the separate open
-  `redim-nonconstant-lower-rejected` gap.
+- Dynamic `ReDim a(-N To M)` and fixed `Dim a(-N To M)` now bind and execute.
 - Added `crates/oxvba-differential/tests/redim_negative_lower_vm3.rs` for
   dynamic and fixed arrays, checking `LBound`/`UBound` and negative-index
-  element access, plus a control that nonconstant lower bounds remain
-  rejected.
+  element access.
 - Verification target:
   - `cargo test -p oxvba-differential --test redim_negative_lower_vm3`
   - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Runtime `ReDim` Lower Bounds (`bd-4ktq.34`)
+
+- Closed `redim-nonconstant-lower-rejected` for vm3.
+- `CoreBound.lower` and `OxInst::ArrayRedim.lower_bounds` now carry runtime
+  values/operands, matching the existing runtime upper-bound path, instead of
+  forcing explicit `lo To hi` lower bounds through a binder-only constant `i32`.
+- vm3 now coerces both lower and upper bound operands at resize time, preserving
+  the existing subscript/out-of-memory guards and `ReDim Preserve` lower-bound
+  compatibility checks.
+- Extended `crates/oxvba-differential/tests/redim_negative_lower_vm3.rs` so
+  `ReDim a(n To n + 4)` executes and reports the expected `LBound`/`UBound`,
+  while a single-bound `ReDim a(3)` still honors `Option Base 1`.
+- Verification target:
+  - `cargo test -p oxvba-differential --test redim_negative_lower_vm3`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-oxir`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
 

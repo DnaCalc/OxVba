@@ -303,7 +303,7 @@ pub enum OxInst {
     ArrayRedim {
         dst: OxPlace,
         upper_bounds: Vec<OxOperand>,
-        lower_bounds: Vec<i32>,
+        lower_bounds: Vec<OxOperand>,
         element: ArrayElementType,
         preserve: bool,
         /// Whether the allocated array is fixed-size (set on the runtime

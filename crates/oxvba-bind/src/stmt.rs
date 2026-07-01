@@ -1013,8 +1013,7 @@ impl<'a> ProcLower<'a> {
     }
 
     /// Lower an `ArrayBounds` node to `CoreBound`s (each `lower To upper`, or
-    /// `<Option Base> To upper` for a single bound). The lower bound must be a
-    /// constant.
+    /// `<Option Base> To upper` for a single bound).
     fn bind_array_bounds(
         &mut self,
         bounds_node: SyntaxNode<'_>,
@@ -1026,12 +1025,14 @@ impl<'a> ProcLower<'a> {
                 0 => return Err(BindError::Malformed("empty array bound".into())),
                 // A single bound (`Dim a(10)`) takes the module's `Option Base` as
                 // its lower bound; an explicit `lo To hi` overrides it.
-                1 => (self.info.option_base, self.bind_expr(exprs[0])?.value),
+                1 => (
+                    CoreValue::Const(CoreConst::I32(self.info.option_base)),
+                    self.bind_expr(exprs[0])?.value,
+                ),
                 _ => {
                     let lo_val = self.bind_expr(exprs[0])?.value;
-                    let lo = self.const_i32(&lo_val)?;
                     let up = self.bind_expr(exprs[1])?.value;
-                    (lo, up)
+                    (lo_val, up)
                 }
             };
             bounds.push(CoreBound { upper, lower });
@@ -1841,11 +1842,6 @@ impl<'a> ProcLower<'a> {
             }
             _ => None,
         }
-    }
-
-    fn const_i32(&self, value: &CoreValue) -> Result<i32, BindError> {
-        self.fold_const_i32(value)
-            .ok_or_else(|| BindError::Unsupported("ReDim bound must be a constant".into()))
     }
 
     fn err_raise_arg(&mut self, arglist: Option<SyntaxNode<'_>>) -> Result<ErrorOp, BindError> {

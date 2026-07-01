@@ -2036,18 +2036,23 @@ impl<'h> Vm3<'h> {
             .collect()
     }
 
-    /// Build SAFEARRAY bounds from `ReDim` upper-bound operands + static lower bounds, with
+    /// Build SAFEARRAY bounds from `ReDim` upper/lower-bound operands, with
     /// vm2's overflow guards: `upper < lower` → subscript out of range (9); a dimension above
     /// `u32::MAX` elements → out of memory (7), so a garbage bound raises a VBA error instead
     /// of attempting an unbounded host allocation that would abort the process.
     fn build_bounds(
         &self,
         upper_bounds: &[OxOperand],
-        lower_bounds: &[i32],
+        lower_bounds: &[OxOperand],
     ) -> Result<Vec<SafeArrayBound>, Vm3Error> {
         let mut bounds = Vec::with_capacity(upper_bounds.len());
         for (i, upper_op) in upper_bounds.iter().enumerate() {
-            let lower = lower_bounds.get(i).copied().unwrap_or(0);
+            let lower = if let Some(lower_op) = lower_bounds.get(i) {
+                let lower_v = self.operand(lower_op)?;
+                arith::int(&lower_v).map_err(arith_fault)? as i32
+            } else {
+                0
+            };
             let upper_v = self.operand(upper_op)?;
             let upper = arith::int(&upper_v).map_err(arith_fault)? as i32;
             if upper < lower {
@@ -2284,7 +2289,7 @@ impl<'h> Vm3<'h> {
         &mut self,
         dst: &OxPlace,
         upper_bounds: &[OxOperand],
-        lower_bounds: &[i32],
+        lower_bounds: &[OxOperand],
         element: &ArrayElementType,
         preserve: bool,
         fixed: bool,

@@ -19,19 +19,6 @@ fn s(text: &str) -> Canon {
     canon(&Variant::from_string(text.to_string()))
 }
 
-fn assert_rejected(body: &str) {
-    let source = format!("Public r As Variant\nSub Main()\n{body}End Sub\n");
-    let outcome = run(Executor::Vm3, &source);
-    let err = outcome
-        .result
-        .err()
-        .expect("expected nonconstant lower bound to remain rejected");
-    assert!(
-        err.contains("ReDim bound must be a constant"),
-        "expected nonconstant lower-bound diagnostic, got {err:?}"
-    );
-}
-
 #[test]
 fn redim_accepts_negative_constant_lower_bound() {
     assert_eq!(
@@ -53,8 +40,24 @@ fn fixed_array_dim_accepts_negative_constant_lower_bound() {
 }
 
 #[test]
-fn redim_nonconstant_lower_bound_remains_separate_gap() {
-    assert_rejected(
-        "    Dim a() As Long\n    Dim n As Long\n    n = -2\n    ReDim a(n To 2)\n    r = LBound(a)\n",
+fn redim_accepts_runtime_lower_bound_expression() {
+    assert_eq!(
+        value(
+            "    Dim a() As Long\n    Dim n As Long\n    n = -2\n    ReDim a(n To n + 4)\n    a(-2) = 11\n    a(2) = 6\n    r = CStr(LBound(a)) & \":\" & CStr(UBound(a)) & \":\" & CStr(a(-2) + a(2))\n"
+        ),
+        s("-2:2:17")
     );
+}
+
+#[test]
+fn redim_single_bound_still_uses_option_base() {
+    let source = "Option Base 1\nPublic r As Variant\nSub Main()\n    Dim a() As Long\n    ReDim a(3)\n    a(1) = 8\n    a(3) = 9\n    r = CStr(LBound(a)) & \":\" & CStr(UBound(a)) & \":\" & CStr(a(1) + a(3))\nEnd Sub\n";
+    let outcome = run(Executor::Vm3, source);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    let snap = outcome.result.unwrap_or_else(|e| panic!("run failed: {e}"));
+    assert_eq!(snap.first().cloned().expect("snapshot slot"), s("1:3:17"));
 }

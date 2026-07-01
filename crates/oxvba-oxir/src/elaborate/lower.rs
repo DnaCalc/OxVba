@@ -659,7 +659,7 @@ impl<'a> Lowerer<'a> {
                 let mut lower_bounds = Vec::with_capacity(bounds.len());
                 for b in bounds {
                     upper_bounds.push(self.lower_value(&b.upper)?.0);
-                    lower_bounds.push(b.lower);
+                    lower_bounds.push(self.lower_value(&b.lower)?.0);
                 }
                 // A simple target is resized in place; a COMPOUND target (e.g. a member
                 // array `ReDim b.arr(n)`) builds the new array into a temp, which is then
@@ -2833,7 +2833,7 @@ mod tests {
                 array: a(),
                 bounds: vec![CoreBound {
                     upper: CoreValue::Const(CoreConst::I32(10)),
-                    lower: 1,
+                    lower: CoreValue::Const(CoreConst::I32(1)),
                 }],
                 element_type: ArrayElementType::Long,
                 preserve: false,
