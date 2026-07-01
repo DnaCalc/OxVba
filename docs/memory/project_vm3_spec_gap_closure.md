@@ -188,3 +188,28 @@
   - `cargo test -p oxvba-bind numeric_conversion_intrinsics`
   - `cargo test -p oxvba-differential --test hex_oct_literal_sign_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Call Argument Oracle Truth Surface (`bd-4ktq.10.1`)
+
+- Created the `bd-4ktq.10` call/argument fixture and oracle truth surface.
+- Live Excel/VBA evidence:
+  `docs/evidence/conformance/vm3_call_argument_oracle_20260701T1040Z/`.
+- The oracle runner uses VBE Debug -> Compile (command ID 578), PID-scoped UI
+  Automation modal capture/dismissal, VBIDE selected token/line fallback, and
+  PID-scoped Excel cleanup.
+- Oracle outcomes:
+  - bare statement ByRef mutates caller: `105`
+  - ByVal parameter does not mutate caller: `5`
+  - statement-form parenthesized ByRef arg is forced ByVal: `5`
+  - `Call Inc(x)` keeps ByRef writeback: `105`
+  - ByRef type mismatch compile error on selected line `TakeLong x`, token `x`
+  - extra arg compile error on selected line `TakeOne 1, 2`
+  - missing required arg compile error on selected line `TakeTwo 1`
+  - optional default and ParamArray legal baselines return `12` and `6`
+- Added vm3 fixture `call_argument_binding_vm3.rs`: 5 active baselines green and
+  4 ignored follow-on assertions for `bd-4ktq.10.2` through `bd-4ktq.10.4`.
+- Verification target:
+  - PowerShell parser check for `scripts/run-vm3-call-argument-oracle.ps1`
+  - `scripts/run-vm3-call-argument-oracle.ps1 -RunId vm3_call_argument_oracle_20260701T1040Z`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
