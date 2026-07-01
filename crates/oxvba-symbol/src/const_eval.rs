@@ -259,6 +259,7 @@ fn fold_enums(
 
 fn as_i32(c: &CoreConst) -> Option<i32> {
     match c {
+        CoreConst::I16(n) => Some(i32::from(*n)),
         CoreConst::I32(n) => Some(*n),
         // An `Enum` member is a `Long`: a value outside i32's *signed* range (e.g.
         // `&HFFFFFFFF`, folded as I64 4294967295) is the Long bit pattern (-1), so
@@ -348,7 +349,7 @@ pub(crate) fn coerce_const_to_declared_type(
             let n = const_to_i64(&value)?;
             (i64::from(i16::MIN)..=i64::from(i16::MAX))
                 .contains(&n)
-                .then_some(CoreConst::I32(n as i32))
+                .then_some(CoreConst::I16(n as i16))
         }
         VarTypeRef::Builtin(BuiltinType::Long) => {
             let n = const_to_i64(&value)?;
@@ -691,13 +692,7 @@ pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
 }
 
 fn parse_int(text: &str) -> Option<CoreConst> {
-    let digits = text.trim_end_matches(['&', '%', '@', '!', '#', '$', '^']);
-    let n: i64 = digits.parse().ok()?;
-    Some(if i32::try_from(n).is_ok() {
-        CoreConst::I32(n as i32)
-    } else {
-        CoreConst::I64(n)
-    })
+    CoreConst::from_int_literal(text)
 }
 
 fn parse_radix(text: &str, radix: u32) -> Option<CoreConst> {
@@ -714,6 +709,7 @@ fn unquote(text: &str) -> String {
 
 pub(crate) fn negate_const(c: CoreConst) -> Option<CoreConst> {
     Some(match c {
+        CoreConst::I16(n) => CoreConst::I16(n.checked_neg()?),
         CoreConst::I32(n) => CoreConst::I32(n.checked_neg()?),
         CoreConst::I64(n) => CoreConst::I64(n.checked_neg()?),
         CoreConst::F64(bits) => CoreConst::F64((-f64::from_bits(bits)).to_bits()),
@@ -727,6 +723,7 @@ pub(crate) fn negate_const(c: CoreConst) -> Option<CoreConst> {
 pub(crate) fn not_const(c: CoreConst) -> Option<CoreConst> {
     Some(match c {
         CoreConst::Bool(b) => CoreConst::Bool(!b),
+        CoreConst::I16(n) => CoreConst::I16(!n),
         CoreConst::I32(n) => CoreConst::I32(!n),
         CoreConst::I64(n) => CoreConst::I64(!n),
         _ => return None,
@@ -740,6 +737,7 @@ enum ConstNum {
 
 fn const_num(c: &CoreConst) -> Option<ConstNum> {
     Some(match c {
+        CoreConst::I16(n) => ConstNum::Int(i64::from(*n)),
         CoreConst::I32(n) => ConstNum::Int(i64::from(*n)),
         CoreConst::I64(n) => ConstNum::Int(*n),
         CoreConst::Bool(b) => ConstNum::Int(if *b { -1 } else { 0 }),
@@ -790,6 +788,7 @@ fn const_to_date_bits(c: &CoreConst) -> Option<u64> {
 
 fn const_to_i64(c: &CoreConst) -> Option<i64> {
     match c {
+        CoreConst::I16(n) => Some(i64::from(*n)),
         CoreConst::I32(n) => Some(i64::from(*n)),
         CoreConst::I64(n) => Some(*n),
         _ => {
@@ -816,6 +815,7 @@ fn f64_const(v: f64) -> CoreConst {
 fn const_to_string(c: &CoreConst) -> Option<String> {
     Some(match c {
         CoreConst::Str(s) => s.clone(),
+        CoreConst::I16(n) => n.to_string(),
         CoreConst::I32(n) => n.to_string(),
         CoreConst::I64(n) => n.to_string(),
         CoreConst::Bool(b) => {

@@ -2,12 +2,12 @@
 //! two's-complement sign rule (MS-VBAL §3.3.2), verified against live Office.
 //!
 //! The digits are an unsigned magnitude reinterpreted as a signed value of the
-//! literal's *type width*: a trailing `%`/`&`/`^` fixes the width, otherwise the
-//! narrowest of Integer/Long/LongLong that holds the magnitude. So `&HFFFF` is
-//! -1 (Integer width), `&HFFFF&` is 65535 (Long), `&HFFFFFFFF` is -1 (Long),
-//! and `&O37777777777` is -1 (octal of 0xFFFFFFFF). Closes
-//! `vba-hex-oct-literal-sign`. The same rule governs `Val`/`CLng` of
-//! `&H…`/`&O…` *strings*.
+//! literal's *type width*: a trailing `%`/`&`/`^` fixes the width, otherwise
+//! legal unsuffixed literals use the narrowest of Integer/Long that holds the
+//! magnitude. So `&HFFFF` is -1 (Integer width), `&HFFFF&` is 65535 (Long),
+//! `&HFFFFFFFF` is -1 (Long), and `&O37777777777` is -1 (octal of 0xFFFFFFFF).
+//! Closes `vba-hex-oct-literal-sign`. The same sign rule also governs
+//! `Val`/`CLng` of `&H…`/`&O…` *strings*.
 
 use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
 use oxvba_runtime::Variant;
@@ -32,12 +32,16 @@ fn assert_long(body: &str, expected: i32) {
     assert_value(body, &canon(&Variant::from_i32(expected)));
 }
 
+fn assert_integer(body: &str, expected: i16) {
+    assert_value(body, &canon(&Variant::from_i16(expected)));
+}
+
 #[test]
 fn hex_integer_width_two_s_complement() {
-    assert_long("    r = &HFFFF\n", -1);
-    assert_long("    r = &H8000\n", -32768);
-    assert_long("    r = &H7FFF\n", 32767);
-    assert_long("    r = &HFF\n", 255);
+    assert_integer("    r = &HFFFF\n", -1);
+    assert_integer("    r = &H8000\n", -32768);
+    assert_integer("    r = &H7FFF\n", 32767);
+    assert_integer("    r = &HFF\n", 255);
 }
 
 #[test]
@@ -57,9 +61,9 @@ fn type_character_fixes_the_width() {
 #[test]
 fn octal_shares_the_rule() {
     // 0xFFFF == &O177777 (Integer width) and 0xFFFFFFFF == &O37777777777 (Long).
-    assert_long("    r = &O177777\n", -1);
+    assert_integer("    r = &O177777\n", -1);
     assert_long("    r = &O37777777777\n", -1);
-    assert_long("    r = &O17\n", 15);
+    assert_integer("    r = &O17\n", 15);
 }
 
 #[test]
@@ -92,7 +96,6 @@ fn val_of_radix_string_applies_the_sign_rule() {
     );
 }
 
-// LongLong-width literals (`&H1FFFFFFFF`, `&HFFFFFFFFFFFFFFFF^`) carry the sign
-// rule correctly in `parse_vba_radix`, but vm3 still truncates a 64-bit literal
-// constant to Long when loading it — that is the separate LongLong-literal /
-// integer-literal-surfaces-as-long carrier gap, not the sign rule.
+// LongLong-width string conversions carry the sign rule in `parse_vba_radix`;
+// literal LongLong carriers and unsuffixed beyond-Long syntax are covered by
+// `integer_literal_carrier_vm3`.

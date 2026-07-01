@@ -183,6 +183,7 @@ pub enum CoreConst {
     Null,
     Nothing,
     Bool(bool),
+    I16(i16),
     I32(i32),
     I64(i64),
     /// IEEE-754 `f64` bit pattern.
@@ -197,18 +198,51 @@ pub enum CoreConst {
 }
 
 impl CoreConst {
+    /// Parse a VBA decimal integer-literal token into its VBA-visible runtime
+    /// carrier. A trailing `%`/`&`/`^` fixes Integer/Long/LongLong. Without a
+    /// suffix, Excel/VBA uses Integer for the signed 16-bit range, Long for the
+    /// signed 32-bit range, and Double beyond Long.
+    pub fn from_int_literal(text: &str) -> Option<CoreConst> {
+        let trimmed = text.trim();
+        let suffix = match trimmed.as_bytes().last() {
+            Some(&b @ (b'%' | b'&' | b'^')) => Some(b),
+            _ => None,
+        };
+        let digits = trimmed.trim_end_matches(['%', '&', '^']);
+        let n: i64 = digits.parse().ok()?;
+        match suffix {
+            Some(b'%') => i16::try_from(n).ok().map(CoreConst::I16),
+            Some(b'&') => i32::try_from(n).ok().map(CoreConst::I32),
+            Some(b'^') => Some(CoreConst::I64(n)),
+            _ => {
+                if let Ok(v) = i16::try_from(n) {
+                    Some(CoreConst::I16(v))
+                } else if let Ok(v) = i32::try_from(n) {
+                    Some(CoreConst::I32(v))
+                } else {
+                    let value: f64 = digits.parse().ok()?;
+                    value.is_finite().then_some(CoreConst::F64(value.to_bits()))
+                }
+            }
+        }
+    }
+
     /// Parse a VBA hex (`&H…`) or octal (`&O…`) integer-literal token into a
     /// typed constant, applying the width-based two's-complement sign rule
-    /// (MS-VBAL §3.3.2; see [`oxvba_runtime::parse_vba_radix`]). `radix` is 16
-    /// or 8. The carrier is `I32` when the signed value fits a 32-bit Long,
-    /// else `I64` (a LongLong-width literal). Returns `None` on malformed digits
-    /// or a type-character width overflow.
+    /// (MS-VBAL §3.3.2; see [`oxvba_runtime::parse_vba_radix_with_width`]).
+    /// `radix` is 16 or 8. The carrier follows the literal width:
+    /// Integer/Long/LongLong. Excel/VBA rejects unsuffixed radix literals beyond
+    /// Long width; LongLong radix requires an explicit `^` suffix. Returns `None`
+    /// on malformed digits, syntax rejection, or a type-character width overflow.
     pub fn from_vba_radix(text: &str, radix: u32) -> Option<CoreConst> {
-        let value = oxvba_runtime::parse_vba_radix(text, radix)?;
-        Some(match i32::try_from(value) {
-            Ok(v) => CoreConst::I32(v),
-            Err(_) => CoreConst::I64(value),
-        })
+        let (value, width, suffix) = oxvba_runtime::parse_vba_radix_with_width(text, radix)?;
+        use oxvba_runtime::VbaRadixWidth;
+        match width {
+            VbaRadixWidth::Integer => Some(CoreConst::I16(value as i16)),
+            VbaRadixWidth::Long => Some(CoreConst::I32(value as i32)),
+            VbaRadixWidth::LongLong if suffix == Some(b'^') => Some(CoreConst::I64(value)),
+            VbaRadixWidth::LongLong => None,
+        }
     }
 
     /// Parse a VBA floating-point literal token into its typed constant by the
@@ -232,6 +266,53 @@ impl CoreConst {
                 .then_some(CoreConst::F32((value as f32).to_bits())),
             _ => value.is_finite().then_some(CoreConst::F64(value.to_bits())),
         }
+    }
+}
+
+#[cfg(test)]
+mod core_const_tests {
+    use super::CoreConst;
+
+    #[test]
+    fn decimal_integer_literal_keeps_vba_visible_carrier() {
+        assert_eq!(CoreConst::from_int_literal("7"), Some(CoreConst::I16(7)));
+        assert_eq!(
+            CoreConst::from_int_literal("32767"),
+            Some(CoreConst::I16(32767))
+        );
+        assert_eq!(CoreConst::from_int_literal("7%"), Some(CoreConst::I16(7)));
+        assert_eq!(
+            CoreConst::from_int_literal("32768"),
+            Some(CoreConst::I32(32768))
+        );
+        assert_eq!(CoreConst::from_int_literal("7&"), Some(CoreConst::I32(7)));
+        assert_eq!(CoreConst::from_int_literal("7^"), Some(CoreConst::I64(7)));
+        assert!(matches!(
+            CoreConst::from_int_literal("2147483648"),
+            Some(CoreConst::F64(_))
+        ));
+    }
+
+    #[test]
+    fn radix_integer_literal_keeps_vba_visible_carrier() {
+        assert_eq!(
+            CoreConst::from_vba_radix("&HFFFF", 16),
+            Some(CoreConst::I16(-1))
+        );
+        assert_eq!(
+            CoreConst::from_vba_radix("&O177777", 8),
+            Some(CoreConst::I16(-1))
+        );
+        assert_eq!(
+            CoreConst::from_vba_radix("&HFFFF&", 16),
+            Some(CoreConst::I32(65535))
+        );
+        assert_eq!(
+            CoreConst::from_vba_radix("&HFFFFFFFFFFFFFFFF^", 16),
+            Some(CoreConst::I64(-1))
+        );
+        assert_eq!(CoreConst::from_vba_radix("&H100000000", 16), None);
+        assert_eq!(CoreConst::from_vba_radix("&O40000000000", 8), None);
     }
 }
 

@@ -2194,6 +2194,7 @@ fn lower_const(c: &CoreConst) -> OxConst {
         CoreConst::Null => OxConst::Null,
         CoreConst::Nothing => OxConst::Nothing,
         CoreConst::Bool(b) => OxConst::Bool(*b),
+        CoreConst::I16(n) => OxConst::I16(*n),
         CoreConst::I32(n) => OxConst::I32(*n),
         CoreConst::I64(n) => OxConst::I64(*n),
         CoreConst::F64(bits) => OxConst::F64(*bits),
@@ -2211,6 +2212,7 @@ fn const_type(c: &CoreConst) -> OxTy {
         // `Nothing` is a null object reference.
         CoreConst::Nothing => OxTy::Object(crate::ty::ObjClass::Untyped),
         CoreConst::Bool(_) => OxTy::Bool,
+        CoreConst::I16(_) => OxTy::Integer,
         CoreConst::I32(_) => OxTy::Long,
         CoreConst::I64(_) => OxTy::LongLong,
         CoreConst::F64(_) => OxTy::Double,

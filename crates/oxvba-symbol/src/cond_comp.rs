@@ -255,6 +255,7 @@ fn eval_cc(node: SyntaxNode<'_>, cc: &CcConstants) -> CoreConst {
 fn truthy(value: &CoreConst) -> bool {
     match value {
         CoreConst::Bool(b) => *b,
+        CoreConst::I16(n) => *n != 0,
         CoreConst::I32(n) => *n != 0,
         CoreConst::I64(n) | CoreConst::Currency(n) => *n != 0,
         CoreConst::F64(bits) | CoreConst::Date(bits) => f64::from_bits(*bits) != 0.0,

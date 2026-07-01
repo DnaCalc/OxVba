@@ -1012,15 +1012,16 @@ fn parse_default_literal(rhs: &str) -> Option<CoreConst> {
         ));
     }
     let raw = parse_int_literal(token)?;
-    let value = if negate { -raw } else { raw };
-    Some(match i32::try_from(value) {
-        Ok(value) => CoreConst::I32(value),
-        Err(_) => CoreConst::I64(value),
-    })
+    if negate {
+        crate::const_eval::negate_const(raw)
+    } else {
+        Some(raw)
+    }
 }
 
 fn default_value_from_core_const(value: CoreConst) -> Option<DefaultValue> {
     Some(match value {
+        CoreConst::I16(value) => DefaultValue::I32(i32::from(value)),
         CoreConst::I32(value) => DefaultValue::I32(value),
         CoreConst::I64(value) => DefaultValue::I64(value),
         CoreConst::F64(bits) => DefaultValue::F64(bits),
@@ -1033,7 +1034,7 @@ fn default_value_from_core_const(value: CoreConst) -> Option<DefaultValue> {
     })
 }
 
-fn parse_int_literal(text: &str) -> Option<i64> {
+fn parse_int_literal(text: &str) -> Option<CoreConst> {
     let trimmed = text.trim();
     // Hex/oct literals carry the width-based two's-complement sign rule, shared
     // with the binder (MS-VBAL §3.3.2).
@@ -1043,16 +1044,9 @@ fn parse_int_literal(text: &str) -> Option<i64> {
         _ => None,
     };
     if let Some(radix) = radix {
-        return match CoreConst::from_vba_radix(trimmed, radix)? {
-            CoreConst::I32(value) => Some(i64::from(value)),
-            CoreConst::I64(value) => Some(value),
-            _ => None,
-        };
+        return CoreConst::from_vba_radix(trimmed, radix);
     }
-    trimmed
-        .trim_end_matches(['&', '!', '#', '@', '%'])
-        .parse()
-        .ok()
+    CoreConst::from_int_literal(trimmed)
 }
 
 fn is_identifier_like(kind: SyntaxKind) -> bool {

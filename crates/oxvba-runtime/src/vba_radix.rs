@@ -65,11 +65,15 @@ pub fn vba_radix_signed_value(magnitude: u64, width: VbaRadixWidth) -> i64 {
     }
 }
 
-/// Parse a `&H…`/`&O…` token of the given `radix` (16 or 8) into its signed
-/// value. The text may carry the `&H`/`&O` prefix and/or a trailing `%`/`&`/`^`
-/// type character; both are stripped here. Returns `None` on malformed digits
-/// or a type-character width overflow.
-pub fn parse_vba_radix(text: &str, radix: u32) -> Option<i64> {
+/// Parse a `&H…`/`&O…` token of the given `radix` (16 or 8), returning the signed
+/// value, selected width, and explicit suffix if present. The text may carry the
+/// `&H`/`&O` prefix and/or a trailing `%`/`&`/`^` type character; both are
+/// stripped here. Returns `None` on malformed digits or a type-character width
+/// overflow.
+pub fn parse_vba_radix_with_width(
+    text: &str,
+    radix: u32,
+) -> Option<(i64, VbaRadixWidth, Option<u8>)> {
     let trimmed = text.trim();
     let suffix = match trimmed.as_bytes().last() {
         Some(&b @ (b'%' | b'&' | b'^')) => Some(b),
@@ -84,7 +88,14 @@ pub fn parse_vba_radix(text: &str, radix: u32) -> Option<i64> {
     }
     let magnitude = u64::from_str_radix(body, radix).ok()?;
     let width = vba_radix_width(magnitude, suffix)?;
-    Some(vba_radix_signed_value(magnitude, width))
+    Some((vba_radix_signed_value(magnitude, width), width, suffix))
+}
+
+/// Parse a `&H…`/`&O…` token of the given `radix` (16 or 8) into its signed
+/// value. See [`parse_vba_radix_with_width`] for the width/suffix-preserving
+/// variant.
+pub fn parse_vba_radix(text: &str, radix: u32) -> Option<i64> {
+    parse_vba_radix_with_width(text, radix).map(|(value, _, _)| value)
 }
 
 #[cfg(test)]
@@ -114,6 +125,22 @@ mod tests {
         // `^` forces LongLong (no narrowing).
         assert_eq!(parse_vba_radix("&HFFFFFFFF^", 16), Some(0xFFFF_FFFF));
         assert_eq!(parse_vba_radix("&HFFFFFFFFFFFFFFFF^", 16), Some(-1));
+    }
+
+    #[test]
+    fn width_preserving_parser_reports_carrier_and_suffix() {
+        assert_eq!(
+            parse_vba_radix_with_width("&HFFFF", 16),
+            Some((-1, VbaRadixWidth::Integer, None))
+        );
+        assert_eq!(
+            parse_vba_radix_with_width("&HFFFF&", 16),
+            Some((65_535, VbaRadixWidth::Long, Some(b'&')))
+        );
+        assert_eq!(
+            parse_vba_radix_with_width("&HFFFFFFFFFFFFFFFF^", 16),
+            Some((-1, VbaRadixWidth::LongLong, Some(b'^')))
+        );
     }
 
     #[test]

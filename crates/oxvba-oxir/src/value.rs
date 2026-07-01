@@ -19,6 +19,7 @@ pub enum OxConst {
     Null,
     Nothing,
     Bool(bool),
+    I16(i16),
     I32(i32),
     I64(i64),
     /// IEEE-754 `f32` bit pattern.

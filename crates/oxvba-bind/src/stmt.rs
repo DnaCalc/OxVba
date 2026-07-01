@@ -1763,6 +1763,7 @@ impl<'a> ProcLower<'a> {
     /// resolves to a library constant).
     fn fold_const_i32(&self, value: &CoreValue) -> Option<i32> {
         match value {
+            CoreValue::Const(CoreConst::I16(n)) => Some(i32::from(*n)),
             CoreValue::Const(CoreConst::I32(n)) => Some(*n),
             CoreValue::Const(CoreConst::I64(n)) => i32::try_from(*n).ok(),
             CoreValue::Binary { op, lhs, rhs, .. } => {

@@ -341,3 +341,43 @@
 - Verification target:
   - `cargo test -p oxvba-differential --test integer_literal_carrier_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Integer Literal Carrier Preservation (`bd-4ktq.11.2`)
+
+- Implemented the direct literal carrier path for
+  `integer-literal-surfaces-as-long`.
+- Added `CoreConst::I16` and `OxConst::I16`, then threaded it through binder
+  literal inference, radix parsing, symbol const/default handling, conditional
+  compilation truthiness, OxIR lowering/type inference, and vm3 `const_variant`.
+- Decimal integer literals now use the VBA-visible carrier:
+  Integer for signed 16-bit unsuffixed/`%`, Long for Long-width/`&`,
+  LongLong for `^`, and Double for unsuffixed decimal beyond Long.
+- Radix literals now keep the width carrier from
+  `parse_vba_radix_with_width`: Integer/Long for legal unsuffixed widths,
+  explicit `^` for LongLong, and rejection for unsuffixed radix beyond Long
+  width.
+- Activated all rows in
+  `crates/oxvba-differential/tests/integer_literal_carrier_vm3.rs`; all 8 pass.
+- Updated `hex_oct_literal_sign_vm3.rs` so sign coverage now expects
+  Integer-tagged variants for Integer-width radix literals.
+- Preserved nearby compatibility behavior that used small numeric values as
+  object identities / `Nothing` sentinels by teaching vm3 object helpers about
+  `Integer` in addition to `Long`.
+- Golden snapshot was re-blessed and audited: the drift is the expected broad
+  `Raw { tag: 3 }` to `Raw { tag: 2 }` retagging for Variant/default outputs
+  fed by small integer literals; the suspicious `TypeOf 5 Is 5` error drift was
+  fixed before blessing.
+- Remaining follow-up: `bd-4ktq.11.3` should audit folded constants and
+  optional/default metadata paths for any remaining carrier erasure.
+- Verification target:
+  - `cargo test -p oxvba-runtime vba_radix`
+  - `cargo test -p oxvba-bundle core_const_tests`
+  - `cargo test -p oxvba-eval collection`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-oxir`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --test integer_literal_carrier_vm3`
+  - `cargo test -p oxvba-differential --test hex_oct_literal_sign_vm3`
+  - `cargo test -p oxvba-differential --test numeric_suffix_literals_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

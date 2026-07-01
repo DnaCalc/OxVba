@@ -68,7 +68,9 @@ fn variant_selector(v: &Variant) -> Selector {
         Selector::Key(s.as_str().to_ascii_lowercase())
     } else {
         let index = v
-            .as_i32()
+            .as_i16()
+            .map(i32::from)
+            .or_else(|| v.as_i32())
             .or_else(|| v.as_i64().map(|n| n as i32))
             .or_else(|| v.as_f64().map(|n| n.round() as i32))
             .unwrap_or(0);
@@ -195,5 +197,18 @@ mod tests {
         .unwrap();
         let vals: Vec<i32> = c.values().iter().filter_map(|v| v.as_i32()).collect();
         assert_eq!(vals, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn integer_literal_selector_indexes_collection() {
+        let mut c = CollectionData::default();
+        dispatch_collection(CollectionMethod::Add, &mut c, &[Variant::from_i32(10)]).unwrap();
+        dispatch_collection(CollectionMethod::Add, &mut c, &[Variant::from_i32(20)]).unwrap();
+        assert_eq!(
+            dispatch_collection(CollectionMethod::Item, &mut c, &[Variant::from_i16(2)])
+                .unwrap()
+                .as_i32(),
+            Some(20)
+        );
     }
 }

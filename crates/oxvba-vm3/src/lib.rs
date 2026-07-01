@@ -3578,7 +3578,7 @@ fn is_nothing(value: &Variant) -> bool {
     match value.vtype() {
         VarType::Object => value.as_object_ref().map(|o| o.raw()).unwrap_or(0) == 0,
         VarType::Empty | VarType::Null => true,
-        _ => value.as_i32() == Some(0),
+        _ => value.as_i16() == Some(0) || value.as_i32() == Some(0),
     }
 }
 
@@ -3641,7 +3641,7 @@ fn variant_to_object(value: &Variant) -> Result<ObjectRef, Vm3Error> {
             "Object variable or With block variable not set",
         )));
     }
-    if let Some(raw) = value.as_i32() {
+    if let Some(raw) = value.as_i16().map(i32::from).or_else(|| value.as_i32()) {
         return Ok(ObjectRef::from_compat_identity(raw));
     }
     if let Some(raw) = value.as_i64() {
@@ -3660,6 +3660,7 @@ fn const_variant(c: &OxConst) -> Variant {
         // Variant stands in (the runtime treats Empty/0 as Nothing for `Is`).
         OxConst::Nothing => Variant::empty(),
         OxConst::Bool(b) => Variant::from_bool(*b),
+        OxConst::I16(n) => Variant::from_i16(*n),
         OxConst::I32(n) => Variant::from_i32(*n),
         OxConst::I64(n) => Variant::from_i64(*n),
         OxConst::F32(bits) => Variant::from_f32(f32::from_bits(*bits)),

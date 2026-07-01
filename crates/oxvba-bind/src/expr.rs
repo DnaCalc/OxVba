@@ -55,7 +55,7 @@ impl<'a> ProcLower<'a> {
         let (value, ty) = match tok.kind {
             SyntaxKind::IntLiteral => {
                 let c = parse_int(tok.text)?;
-                let ty = int_literal_type(tok.text, &c);
+                let ty = const_type(&c);
                 (c, ty)
             }
             SyntaxKind::HexLiteral => {
@@ -590,37 +590,8 @@ impl<'a> ProcLower<'a> {
 // ── Literal parsing ──────────────────────────────────────────────────────────
 
 fn parse_int(text: &str) -> Result<CoreConst, BindError> {
-    // Trim any VBA type-declaration suffix, incl. `^` (LongLong) and `&` (Long).
-    let digits = text.trim_end_matches(['&', '%', '@', '!', '#', '$', '^']);
-    let n: i64 = digits
-        .parse()
-        .map_err(|_| BindError::Malformed(format!("integer literal `{text}`")))?;
-    Ok(if i32::try_from(n).is_ok() {
-        CoreConst::I32(n as i32)
-    } else {
-        CoreConst::I64(n)
-    })
-}
-
-/// The static type of a decimal integer literal: an explicit type-suffix wins,
-/// else the smallest integer type that holds the value (`Integer` ≤ 32767, then
-/// `Long`, then `LongLong`) — VBA's literal typing. This is what makes
-/// `Integer + Integer` overflow as `Integer` (the classic `30000 * 30000` gotcha)
-/// rather than silently widening; the run-time payload stays `I32`/`I64` and is
-/// re-tagged by the result coercion ([`types::narrow_arith`]).
-fn int_literal_type(text: &str, c: &CoreConst) -> VarTypeRef {
-    match text.trim().chars().next_back() {
-        Some('%') => builtin(BuiltinType::Integer),
-        Some('&') => builtin(BuiltinType::Long),
-        Some('^') => builtin(BuiltinType::LongLong),
-        _ => match c {
-            CoreConst::I32(n) if (i32::from(i16::MIN)..=i32::from(i16::MAX)).contains(n) => {
-                builtin(BuiltinType::Integer)
-            }
-            CoreConst::I64(_) => builtin(BuiltinType::LongLong),
-            _ => builtin(BuiltinType::Long),
-        },
-    }
+    CoreConst::from_int_literal(text)
+        .ok_or_else(|| BindError::Malformed(format!("integer literal `{text}`")))
 }
 
 fn parse_radix(text: &str, radix: u32) -> Result<CoreConst, BindError> {
@@ -630,12 +601,10 @@ fn parse_radix(text: &str, radix: u32) -> Result<CoreConst, BindError> {
         .ok_or_else(|| BindError::Malformed(format!("radix literal `{text}`")))
 }
 
-/// The declared type of a hex/oct literal: `LongLong` for a 64-bit-width
-/// literal (carried as `I64`), otherwise `Long`. (Integer-width literals also
-/// surface as `Long` here — refining that to `Integer` is the separate
-/// integer-literal-surfaces-as-long item.)
+/// The declared type of a hex/oct literal follows its width carrier.
 fn radix_literal_type(c: &CoreConst) -> VarTypeRef {
     match c {
+        CoreConst::I16(_) => builtin(BuiltinType::Integer),
         CoreConst::I64(_) => builtin(BuiltinType::LongLong),
         _ => builtin(BuiltinType::Long),
     }
@@ -650,6 +619,7 @@ fn unquote(text: &str) -> String {
 /// The inferred type of a folded constant value.
 pub(crate) fn const_type(c: &CoreConst) -> VarTypeRef {
     match c {
+        CoreConst::I16(_) => builtin(BuiltinType::Integer),
         CoreConst::I32(_) => builtin(BuiltinType::Long),
         CoreConst::I64(_) => builtin(BuiltinType::LongLong),
         CoreConst::F64(_) => builtin(BuiltinType::Double),
