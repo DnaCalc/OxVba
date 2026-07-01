@@ -593,3 +593,20 @@
   - `cargo test -p oxvba-differential --test collection_missing_key_vm3`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - For Each Scalar Source Error (`bd-4ktq.21`)
+
+- Closed `foreach-scalar-non-object-empty` for vm3.
+- Changed `OxInst::ForEachInit` so non-array, non-object sources raise run-time
+  error 13 instead of snapshotting an empty iterator and silently skipping the
+  loop body.
+- Kept the existing array, built-in `Collection`, project-instance, and foreign
+  COM object paths unchanged; the separate `foreach-com-failure-swallowed` gap
+  remains open.
+- Added `crates/oxvba-differential/tests/foreach_scalar_source_vm3.rs` for
+  statically scalar and Variant-held scalar sources, plus array and
+  `Collection` controls.
+- Verification target:
+  - `cargo test -p oxvba-differential --test foreach_scalar_source_vm3`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

@@ -1416,7 +1416,7 @@ impl<'h> Vm3<'h> {
                 let src = self.operand(source)?;
                 // Snapshot the source's elements at loop entry (matching vm2). An array
                 // enumerates its elements; a `Collection`/COM object needs the object model
-                // (M3-5/M3-8); anything else is an empty iteration.
+                // (M3-5/M3-8); scalar sources are a type mismatch.
                 let elements = if let Some(arr) = src.as_safearray() {
                     arr.variant_elements().unwrap_or_default()
                 } else if let Some(obj) = src.as_object_ref() {
@@ -1434,7 +1434,10 @@ impl<'h> Vm3<'h> {
                         self.host.com().enumerate_object(obj).unwrap_or_default()
                     }
                 } else {
-                    Vec::new()
+                    return Err(Vm3Error::Fault(Fault::new(
+                        13,
+                        "For Each can only iterate over a collection object or an array",
+                    )));
                 };
                 let key = self.resolve(iter);
                 self.for_each
