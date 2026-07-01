@@ -92,6 +92,13 @@ active fixture rejects unqualified and project-qualified external calls into
 inside its defining project, and proves a normal public referenced module in
 the same project remains visible.
 
+**Referenced-project precedence subset (bd-4ktq.36.5):** active-project names,
+ordered referenced-project names, explicit project qualifiers, wrong project
+qualifiers, and duplicate global names inside a referenced project now have
+active vm3 coverage. `SurfaceProvider` now reports ambiguous unqualified names
+inside a referenced project so the first ambiguous reference blocks fallback to
+later references or the VBA library.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

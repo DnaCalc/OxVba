@@ -65,6 +65,11 @@ Current executable subset (A1/A2):
 - `option_private_module_hides_referenced_project_qualified_export`
 - `option_private_module_allows_same_project_access`
 - `option_private_module_keeps_public_referenced_module_visible`
+- `referenced_project_precedence_and_project_qualifier_are_explicit`
+- `active_project_member_shadows_referenced_project_member`
+- `wrong_referenced_project_qualifier_should_be_rejected`
+- `duplicate_referenced_project_global_name_should_be_ambiguous`
+- `duplicate_referenced_project_global_name_blocks_later_reference_fallback`
 
 ## Lane B: Multi-module resolution
 
@@ -91,6 +96,11 @@ Current executable subset:
 - `option_private_module_hides_referenced_project_qualified_export`
 - `option_private_module_allows_same_project_access`
 - `option_private_module_keeps_public_referenced_module_visible`
+- `referenced_project_precedence_and_project_qualifier_are_explicit`
+- `active_project_member_shadows_referenced_project_member`
+- `wrong_referenced_project_qualifier_should_be_rejected`
+- `duplicate_referenced_project_global_name_should_be_ambiguous`
+- `duplicate_referenced_project_global_name_blocks_later_reference_fallback`
 
 ## Lane C: Reference and automation bridge
 
@@ -113,6 +123,13 @@ Current executable subset (C1):
 - `option_private_module_hides_referenced_project_export`
 - `option_private_module_hides_referenced_project_qualified_export`
 - `option_private_module_keeps_public_referenced_module_visible`
+- `cross_project_fixture_baseline_uses_two_active_modules_and_reference`
+- `cross_project_module_qualified_reference_call_matches_current_baseline`
+- `referenced_project_precedence_and_project_qualifier_are_explicit`
+- `active_project_member_shadows_referenced_project_member`
+- `wrong_referenced_project_qualifier_should_be_rejected`
+- `duplicate_referenced_project_global_name_should_be_ambiguous`
+- `duplicate_referenced_project_global_name_blocks_later_reference_fallback`
 
 ## Lane D: Class/event integration
 

@@ -152,6 +152,43 @@ impl SurfaceProvider {
         self.const_binding(name)
     }
 
+    fn has_ambiguous_global_name(&self, name: &str) -> bool {
+        let folded = fold_identifier(name);
+        let mut owners = Vec::new();
+        for ty in self
+            .surface
+            .types
+            .iter()
+            .filter(|t| t.global_namespace && !Self::is_coclass(t))
+        {
+            let has_member = ty
+                .members
+                .iter()
+                .any(|m| Self::is_bindable_cross_project(m) && fold_identifier(&m.name) == folded);
+            if has_member {
+                let owner = format!("type:{}", fold_identifier(&ty.name));
+                if !owners.contains(&owner) {
+                    owners.push(owner);
+                    if owners.len() > 1 {
+                        return true;
+                    }
+                }
+            }
+        }
+        for c in &self.surface.consts {
+            if fold_identifier(&c.name) == folded {
+                let owner = format!("const:{:?}", c.symbol);
+                if !owners.contains(&owner) {
+                    owners.push(owner);
+                    if owners.len() > 1 {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn resolve_type_member(&self, owner: &str, member: &str) -> Option<Binding> {
         if let Some(ty) = self.type_by_name(owner)
             && let Some(m) = Self::find_member(ty, member, None)
@@ -166,6 +203,10 @@ impl SurfaceProvider {
 impl Provider for SurfaceProvider {
     fn resolve(&self, name: &str) -> Option<Binding> {
         self.resolve_global(name)
+    }
+
+    fn has_ambiguous_unqualified_name(&self, name: &str) -> bool {
+        self.has_ambiguous_global_name(name)
     }
 
     fn resolve_member(

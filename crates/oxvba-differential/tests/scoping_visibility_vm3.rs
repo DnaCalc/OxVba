@@ -670,6 +670,120 @@ fn referenced_project_precedence_and_project_qualifier_are_explicit() {
 }
 
 #[test]
+fn active_project_member_shadows_referenced_project_member() {
+    let lib_modules = || {
+        vec![proc_module(
+            "PickTools",
+            "Public Function Pick() As Long\n    Pick = 1\nEnd Function\n",
+        )]
+    };
+    let lib = project("LibProj", lib_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   result = Pick() * 10 + LibProj.PickTools.Pick()\n\
+                 End Sub\n",
+            ),
+            proc_module(
+                "LocalTools",
+                "Public Function Pick() As Long\n    Pick = 9\nEnd Function\n",
+            ),
+        ],
+        vec![referenced("LibProj", lib_modules())],
+    );
+    assert_project_closure_contains(&[lib, app], canon(&Variant::from_i32(91)));
+}
+
+#[test]
+fn wrong_referenced_project_qualifier_should_be_rejected() {
+    let lib_modules = || {
+        vec![proc_module(
+            "PickTools",
+            "Public Function Pick() As Long\n    Pick = 1\nEnd Function\n",
+        )]
+    };
+    let lib = project("LibProj", lib_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![proc_module(
+            "Main",
+            "Public result As Variant\n\
+             Sub Main()\n\
+             \x20   result = MissingProj.PickTools.Pick()\n\
+             End Sub\n",
+        )],
+        vec![referenced("LibProj", lib_modules())],
+    );
+    assert_compile_rejected(run_scoping_closure(&[lib, app]));
+}
+
+#[test]
+fn duplicate_referenced_project_global_name_should_be_ambiguous() {
+    let lib_modules = || {
+        vec![
+            proc_module(
+                "Alpha",
+                "Public Function Clash() As Long\n    Clash = 1\nEnd Function\n",
+            ),
+            proc_module(
+                "Beta",
+                "Public Function Clash() As Long\n    Clash = 2\nEnd Function\n",
+            ),
+        ]
+    };
+    let lib = project("LibProj", lib_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![proc_module(
+            "Main",
+            "Public result As Variant\nSub Main()\n    result = Clash()\nEnd Sub\n",
+        )],
+        vec![referenced("LibProj", lib_modules())],
+    );
+    assert_ambiguous_compile_rejected(run_scoping_closure(&[lib, app]), "Clash");
+}
+
+#[test]
+fn duplicate_referenced_project_global_name_blocks_later_reference_fallback() {
+    let lib_a_modules = || {
+        vec![
+            proc_module(
+                "Alpha",
+                "Public Function Clash() As Long\n    Clash = 1\nEnd Function\n",
+            ),
+            proc_module(
+                "Beta",
+                "Public Function Clash() As Long\n    Clash = 2\nEnd Function\n",
+            ),
+        ]
+    };
+    let lib_b_modules = || {
+        vec![proc_module(
+            "Only",
+            "Public Function Clash() As Long\n    Clash = 9\nEnd Function\n",
+        )]
+    };
+    let lib_a = project("LibA", lib_a_modules(), vec![]);
+    let lib_b = project("LibB", lib_b_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![proc_module(
+            "Main",
+            "Public result As Variant\nSub Main()\n    result = Clash()\nEnd Sub\n",
+        )],
+        vec![
+            referenced("LibA", lib_a_modules()),
+            referenced("LibB", lib_b_modules()),
+        ],
+    );
+    assert_ambiguous_compile_rejected(run_scoping_closure(&[lib_a, lib_b, app]), "Clash");
+}
+
+#[test]
 fn referenced_project_withevents_source_routes_to_active_project_handler() {
     let lib = project("LibProj", source_events(), vec![]);
     let app = project(

@@ -290,6 +290,36 @@
   - `cargo test -p oxvba-symbol`
   - `cargo test -p oxvba-bind`
 
+## 2026-07-01 - Referenced-Project Precedence And Qualifiers (`bd-4ktq.36.5`)
+
+- Closed the follow-up referenced-project precedence and qualifier subset for
+  PMR-NAME-003 / PMR-REF-001.
+- Live Excel evidence for the ordered-reference row is in
+  `docs/evidence/conformance/vm3_scoping_followup_oracle_20260701T1655Z/`:
+  `SCOPING-XREF-PRECEDENCE` returns `102`, proving the first reference wins for
+  unqualified `Pick()` while `LibB.PickTools.Pick()` reaches the later
+  reference explicitly.
+- `SurfaceProvider` now reports ambiguous unqualified global names within one
+  referenced project. That stops lookup before a later reference or the VBA
+  library can be selected, matching the active-project provider contract.
+- `crates/oxvba-differential/tests/scoping_visibility_vm3.rs` now has active
+  rows proving:
+  - active project members shadow referenced project members while explicit
+    project qualifiers still reach the reference,
+  - reference order selects the first project for unqualified duplicate members
+    while explicit project qualifiers disambiguate a later reference,
+  - wrong referenced-project qualifiers reject,
+  - duplicate global names inside one referenced project are ambiguous,
+  - an ambiguous first reference blocks fallback to a later reference.
+- PMR clause docs and the fixture matrix now point to those vm3 differential
+  rows while keeping broader PMR-NAME-003 / PMR-REF-001 status partial for
+  remaining library/type-space and broader reference-boundary edges.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+
 ## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
 
 - Closed the `Val("&H...")`/`Val("&O...")` radix-prefix gap.
