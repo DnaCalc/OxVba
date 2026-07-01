@@ -4,6 +4,11 @@
 > `docs/VM3_VBA_SPEC_GAP_INVENTORY.md`) is complete.** Captured 2026-06-29 from a maintainer
 > note. This is a *direction*, not a finalized plan — the design questions below are open.
 
+> **2026-07-01 reconciliation note:** the `bd-4ktq.37` library absent-surface batch closed
+> `vbModal`/`vbModeless`, `Partition`, the `FormatNumber` family, `Command`/`Error`, and the
+> `GetSetting` family as existing native/deterministic vm3 behavior. Future VBA-body split work
+> should treat those as refactor candidates with regression coverage, not as still-absent APIs.
+
 ## Where we are
 
 The **builtins-as-library** program is done: the whole VBA built-in surface (constants, all

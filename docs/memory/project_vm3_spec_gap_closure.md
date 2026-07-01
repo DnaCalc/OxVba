@@ -1208,3 +1208,33 @@
   - `cargo test -p oxvba-lib setting`
   - `cargo test -p oxvba-differential --test settings_family_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Library Absent-Surface Batch Reconciliation (`bd-4ktq.37.6`)
+
+- Reconciled the `bd-4ktq.37` batch after all delivery children closed:
+  `vbmodal-vbmodeless-absent`, `partition-absent`,
+  `format-number-family-absent`, `command-absent`,
+  `error-function-unsupported`, and `getsetting-family-absent`.
+- Confirmed `docs/VM3_VBA_SPEC_GAP_INVENTORY.md` marks each scoped row done
+  with coverage and residual-boundary language. `Command` and `GetSetting`
+  family behavior remains explicitly host-policy/deterministic rather than
+  overclaiming Access command-line or persistent registry semantics.
+- Added a reconciliation note to `docs/BUILTIN_LIBRARY_NATIVE_VS_VBA_SPLIT.md`
+  so future built-in-body split work treats this batch as existing native
+  behavior/refactor baseline, not absent API surface.
+- No new delivery bead was required by fresh-eyes review; remaining inventory
+  rows such as `AddressOf` native callbacks, `LeftB`/`RightB`,
+  SendKeys/AppActivate, and Erl stay outside this batch and remain owned by the
+  broader `bd-4ktq` inventory.
+- Verification target:
+  - `cargo test -p oxvba-bundle vba_library`
+  - `cargo test -p oxvba-symbol catalog`
+  - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms`
+  - `cargo test -p oxvba-differential --test library_constants_vm3`
+  - `cargo test -p oxvba-differential --test partition_vm3`
+  - `cargo test -p oxvba-differential --test format_number_family_vm3`
+  - `cargo test -p oxvba-differential --test command_error_vm3`
+  - `cargo test -p oxvba-differential --test default_error_messages_vm3`
+  - `cargo test -p oxvba-differential --test settings_family_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+  - `br dep cycles --json`
