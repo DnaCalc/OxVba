@@ -278,6 +278,10 @@ pub fn invoke(
         StrReverse => pure::str_reverse(args),
         StrConv => pure::str_conv(args),
         Format => pure::format(args),
+        FormatNumber => pure::format_number(args),
+        FormatCurrency => pure::format_currency(args),
+        FormatPercent => pure::format_percent(args),
+        FormatDateTime => pure::format_date_time(args),
         Filter => pure::filter(args),
 
         // ── Math ──

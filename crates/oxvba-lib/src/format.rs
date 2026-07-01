@@ -111,6 +111,124 @@ fn bool_word(value: &Variant, yes: &str, no: &str) -> String {
     if num(value) != 0.0 { yes } else { no }.to_string()
 }
 
+/// Deterministic `FormatNumber` helper. VBA delegates omitted/default settings to
+/// regional options; vm3 uses this module's invariant separators instead.
+pub fn format_number(
+    value: &Variant,
+    decimals: usize,
+    include_leading_digit: bool,
+    parens_for_negative: bool,
+    group_digits: bool,
+) -> String {
+    format_signed_fixed(
+        num(value),
+        decimals,
+        include_leading_digit,
+        parens_for_negative,
+        group_digits,
+        "",
+        "",
+    )
+}
+
+/// Deterministic `FormatCurrency` helper using the same `$`/`,`/`.` convention
+/// already used by the named `Format(..., "Currency")` path.
+pub fn format_currency(
+    value: &Variant,
+    decimals: usize,
+    include_leading_digit: bool,
+    parens_for_negative: bool,
+    group_digits: bool,
+) -> String {
+    format_signed_fixed(
+        num(value),
+        decimals,
+        include_leading_digit,
+        parens_for_negative,
+        group_digits,
+        "$",
+        "",
+    )
+}
+
+/// Deterministic `FormatPercent` helper: multiply by 100, append `%`.
+pub fn format_percent(
+    value: &Variant,
+    decimals: usize,
+    include_leading_digit: bool,
+    parens_for_negative: bool,
+    group_digits: bool,
+) -> String {
+    format_signed_fixed(
+        num(value) * 100.0,
+        decimals,
+        include_leading_digit,
+        parens_for_negative,
+        group_digits,
+        "",
+        "%",
+    )
+}
+
+/// Deterministic `FormatDateTime` helper. `named_format` is one of the
+/// `vbGeneralDate`/`vbLongDate`/`vbShortDate`/`vbLongTime`/`vbShortTime`
+/// constants; regional settings are bounded to this module's existing masks.
+pub fn format_date_time(value: &Variant, named_format: i32) -> Option<String> {
+    Some(match named_format {
+        0 => format_date(value, "general date"),
+        1 => format_date(value, "dddd, mmmm d, yyyy"),
+        2 => format_date(value, "m/d/yyyy"),
+        3 => format_date(value, "h:nn:ss AM/PM"),
+        4 => format_date(value, "hh:nn"),
+        _ => return None,
+    })
+}
+
+fn format_signed_fixed(
+    value: f64,
+    decimals: usize,
+    include_leading_digit: bool,
+    parens_for_negative: bool,
+    group_digits: bool,
+    prefix: &str,
+    suffix: &str,
+) -> String {
+    let negative = value < 0.0;
+    let number = format_fixed_abs(value.abs(), decimals, include_leading_digit, group_digits);
+    let body = format!("{prefix}{number}{suffix}");
+    if negative {
+        if parens_for_negative {
+            format!("({body})")
+        } else {
+            format!("-{body}")
+        }
+    } else {
+        body
+    }
+}
+
+fn format_fixed_abs(
+    value: f64,
+    decimals: usize,
+    include_leading_digit: bool,
+    group_digits: bool,
+) -> String {
+    let rendered = format!("{value:.decimals$}");
+    let (mut int_s, frac_s) = match rendered.split_once('.') {
+        Some((i, f)) => (i.to_string(), Some(f)),
+        None => (rendered, None),
+    };
+    if !include_leading_digit && decimals > 0 && int_s == "0" {
+        int_s.clear();
+    } else if group_digits {
+        int_s = group_thousands(&int_s);
+    }
+    match frac_s {
+        Some(frac_s) => format!("{int_s}.{frac_s}"),
+        None => int_s,
+    }
+}
+
 /// VBA "General Number": full precision, no thousands separator, trailing zeros
 /// trimmed.
 fn general_number(n: f64) -> String {

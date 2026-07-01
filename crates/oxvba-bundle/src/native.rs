@@ -73,6 +73,10 @@ native_impl_ids! {
     StrReverse,
     StrConv,
     Format,
+    FormatNumber,
+    FormatCurrency,
+    FormatPercent,
+    FormatDateTime,
     Filter, // `Filter(arr, match, [include], [compare])`
 
     // ── Math ─────────────────────────────────────────────────
@@ -248,7 +252,8 @@ impl NativeImplId {
         match self {
             Len | LenB | Left | Right | Mid | MidStmt | InStr | InStrRev | LCase | UCase
             | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like | Chr | Asc | ChrW
-            | AscW | Space | StringRepeat | StrReverse | StrConv | Format | Filter => M::Strings,
+            | AscW | Space | StringRepeat | StrReverse | StrConv | Format | FormatNumber
+            | FormatCurrency | FormatPercent | FormatDateTime | Filter => M::Strings,
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
             | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DatePart
@@ -374,6 +379,10 @@ impl NativeImplId {
             StrReverse => "StrReverse",
             StrConv => "StrConv",
             Format => "Format",
+            FormatNumber => "FormatNumber",
+            FormatCurrency => "FormatCurrency",
+            FormatPercent => "FormatPercent",
+            FormatDateTime => "FormatDateTime",
             Filter => "Filter",
             // `MidStmt` (assignment form) and `Like` (operator) are name-less — not
             // bundle members, even though their module is `Strings`.
@@ -605,9 +614,10 @@ impl NativeImplId {
             // ── Strings ──
             Len | LenB | LCase | UCase | Trim | LTrim | RTrim | Chr | Asc | ChrW | AscW | Space
             | StrReverse => 1,
-            Left | Right | Join | StringRepeat => 2,
+            Left | Right | Join | StringRepeat | FormatDateTime => 2,
             Mid | StrComp | StrConv => 3,
             InStr | InStrRev | Split | Format | Filter => 4,
+            FormatNumber | FormatCurrency | FormatPercent => 5,
             Replace => 6,
             // ── Math ──
             Abs | Int | Fix | Sgn | Sqr | Sin | Cos | Log | Exp | Atn | Tan => 1,

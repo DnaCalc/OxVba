@@ -1123,3 +1123,29 @@
   - `cargo test -p oxvba-lib partition`
   - `cargo test -p oxvba-differential --test partition_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - FormatNumber Family (`bd-4ktq.37.3`)
+
+- Closed `format-number-family-absent` for vm3.
+- Used official Microsoft documentation for the argument shape and tri-state
+  semantics, plus a local `Microsoft.VisualBasic.Strings` probe to confirm the
+  regional nature of defaults and representative explicit overrides.
+- Added `FormatNumber`, `FormatCurrency`, `FormatPercent`, and `FormatDateTime`
+  as ordinary migrated VBA-library `Strings` members with catalog metadata,
+  bundle exports, and `oxvba-lib` dispatch.
+- Implemented a deterministic formatting boundary in `format.rs`: decimal `.`,
+  grouping `,`, currency `$`, and the existing date masks. Omitted or `-1`
+  decimal places normalize to `2`; `vbUseDefault` tri-state options normalize to
+  leading digit on, grouping on, parentheses off. This closes the absent API
+  surface without claiming full host regional-settings emulation.
+- Added oxvba-lib unit tests and `format_number_family_vm3` coverage for all
+  four functions, explicit tri-state overrides, named date/time constants, and
+  invalid option runtime error 5.
+- Verification target:
+  - `rustfmt --edition 2024 --check crates/oxvba-bundle/src/native.rs crates/oxvba-symbol/src/catalog.rs crates/oxvba-lib/src/lib.rs crates/oxvba-lib/src/format.rs crates/oxvba-lib/src/pure.rs crates/oxvba-differential/tests/format_number_family_vm3.rs`
+  - `cargo test -p oxvba-bundle vba_library`
+  - `cargo test -p oxvba-symbol catalog`
+  - `cargo test -p oxvba-symbol library_resolves_constants_intrinsics_structural_and_special_forms`
+  - `cargo test -p oxvba-lib format_`
+  - `cargo test -p oxvba-differential --test format_number_family_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

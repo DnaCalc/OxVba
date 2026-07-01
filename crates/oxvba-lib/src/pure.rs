@@ -657,6 +657,98 @@ pub fn format(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(crate::format::apply(value, &mask)))
 }
 
+pub fn format_number(args: &[Variant]) -> LibResult<Variant> {
+    let value = need(args, 0)?;
+    let options = fixed_format_options(args)?;
+    Ok(vstr(crate::format::format_number(
+        value,
+        options.decimals,
+        options.include_leading_digit,
+        options.parens_for_negative,
+        options.group_digits,
+    )))
+}
+
+pub fn format_currency(args: &[Variant]) -> LibResult<Variant> {
+    let value = need(args, 0)?;
+    let options = fixed_format_options(args)?;
+    Ok(vstr(crate::format::format_currency(
+        value,
+        options.decimals,
+        options.include_leading_digit,
+        options.parens_for_negative,
+        options.group_digits,
+    )))
+}
+
+pub fn format_percent(args: &[Variant]) -> LibResult<Variant> {
+    let value = need(args, 0)?;
+    let options = fixed_format_options(args)?;
+    Ok(vstr(crate::format::format_percent(
+        value,
+        options.decimals,
+        options.include_leading_digit,
+        options.parens_for_negative,
+        options.group_digits,
+    )))
+}
+
+pub fn format_date_time(args: &[Variant]) -> LibResult<Variant> {
+    let value = need(args, 0)?;
+    let named_format = match opt(args, 1) {
+        Some(value) if !matches!(value.vtype(), VarType::Empty) => as_i32(value)?,
+        _ => 0,
+    };
+    crate::format::format_date_time(value, named_format)
+        .map(vstr)
+        .ok_or_else(|| LibError::invalid_call("FormatDateTime named format must be 0 to 4"))
+}
+
+struct FixedFormatOptions {
+    decimals: usize,
+    include_leading_digit: bool,
+    parens_for_negative: bool,
+    group_digits: bool,
+}
+
+fn fixed_format_options(args: &[Variant]) -> LibResult<FixedFormatOptions> {
+    Ok(FixedFormatOptions {
+        decimals: fixed_decimals(args)?,
+        include_leading_digit: tri_state_arg(args, 2, true)?,
+        parens_for_negative: tri_state_arg(args, 3, false)?,
+        group_digits: tri_state_arg(args, 4, true)?,
+    })
+}
+
+fn fixed_decimals(args: &[Variant]) -> LibResult<usize> {
+    let value = match opt(args, 1) {
+        Some(value) if !matches!(value.vtype(), VarType::Empty) => as_i32(value)?,
+        _ => -1,
+    };
+    match value {
+        -1 => Ok(2),
+        0..=99 => Ok(value as usize),
+        _ => Err(LibError::invalid_call(
+            "NumDigitsAfterDecimal must be -1 or 0 to 99",
+        )),
+    }
+}
+
+fn tri_state_arg(args: &[Variant], index: usize, default: bool) -> LibResult<bool> {
+    let value = match opt(args, index) {
+        Some(value) if !matches!(value.vtype(), VarType::Empty) => as_i32(value)?,
+        _ => -2,
+    };
+    match value {
+        -2 => Ok(default),
+        -1 => Ok(true),
+        0 => Ok(false),
+        _ => Err(LibError::invalid_call(
+            "TriState argument must be -2, -1, or 0",
+        )),
+    }
+}
+
 // ── Math ──────────────────────────────────────────────────────────────────────
 
 pub fn math1(args: &[Variant], f: impl Fn(f64) -> f64) -> LibResult<Variant> {
@@ -2526,6 +2618,9 @@ mod tests {
     fn partition_(args: &[Variant]) -> String {
         partition(args).unwrap().as_bstr().unwrap().as_str()
     }
+    fn bstr(result: LibResult<Variant>) -> String {
+        result.unwrap().as_bstr().unwrap().as_str()
+    }
 
     #[test]
     fn val_parses_vba_radix_prefixes() {
@@ -2579,6 +2674,125 @@ mod tests {
                 .unwrap()
                 .as_str(),
             "ab"
+        );
+    }
+
+    #[test]
+    fn format_number_family_honours_defaults_and_tristates() {
+        assert_eq!(
+            bstr(format_number(&[Variant::from_f64(1234.567)])),
+            "1,234.57"
+        );
+        assert_eq!(
+            bstr(format_number(&[
+                Variant::from_f64(1234.567),
+                Variant::from_i32(0),
+                Variant::from_i32(-2),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+            ])),
+            "1235"
+        );
+        assert_eq!(
+            bstr(format_number(&[
+                Variant::from_f64(0.5),
+                Variant::from_i32(2),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+            ])),
+            ".50"
+        );
+        assert_eq!(
+            bstr(format_number(&[
+                Variant::from_f64(-1234.5),
+                Variant::from_i32(2),
+                Variant::from_i32(-1),
+                Variant::from_i32(-1),
+                Variant::from_i32(-1),
+            ])),
+            "(1,234.50)"
+        );
+        assert_eq!(
+            bstr(format_currency(&[
+                Variant::from_f64(-1234.5),
+                Variant::from_i32(2),
+                Variant::from_i32(-1),
+                Variant::from_i32(-1),
+                Variant::from_i32(-1),
+            ])),
+            "($1,234.50)"
+        );
+        assert_eq!(
+            bstr(format_percent(&[
+                Variant::from_f64(0.1234),
+                Variant::from_i32(1),
+                Variant::from_i32(-1),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+            ])),
+            "12.3%"
+        );
+        assert_eq!(
+            bstr(format_percent(&[
+                Variant::from_f64(0.005),
+                Variant::from_i32(2),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+            ])),
+            ".50%"
+        );
+    }
+
+    #[test]
+    fn format_date_time_honours_named_formats() {
+        let date = Variant::from_date_f64(ymd_to_serial(2020, 1, 15) + 13.5 / 24.0);
+        assert_eq!(
+            bstr(format_date_time(&[date.clone(), Variant::from_i32(0)])),
+            "1/15/2020 1:30:00 PM"
+        );
+        assert_eq!(
+            bstr(format_date_time(&[date.clone(), Variant::from_i32(1)])),
+            "Wednesday, January 15, 2020"
+        );
+        assert_eq!(
+            bstr(format_date_time(&[date.clone(), Variant::from_i32(2)])),
+            "1/15/2020"
+        );
+        assert_eq!(
+            bstr(format_date_time(&[date.clone(), Variant::from_i32(3)])),
+            "1:30:00 PM"
+        );
+        assert_eq!(
+            bstr(format_date_time(&[date, Variant::from_i32(4)])),
+            "13:30"
+        );
+    }
+
+    #[test]
+    fn format_family_rejects_invalid_option_values() {
+        assert_eq!(
+            format_number(&[Variant::from_f64(1.2), Variant::from_i32(-2)])
+                .unwrap_err()
+                .code,
+            5
+        );
+        assert_eq!(
+            format_number(&[
+                Variant::from_f64(1.2),
+                Variant::from_i32(2),
+                Variant::from_i32(1),
+            ])
+            .unwrap_err()
+            .code,
+            5
+        );
+        assert_eq!(
+            format_date_time(&[Variant::from_f64(1.2), Variant::from_i32(5)])
+                .unwrap_err()
+                .code,
+            5
         );
     }
 

@@ -115,6 +115,52 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         StrReverse => e(StrReverse, &["StrReverse"], sig(1, 1), Ordinary),
         StrConv => e(StrConv, &["StrConv"], sig(2, 3), Ordinary),
         Format => e(Format, &["Format", "Format$"], sig(1, 4), Ordinary),
+        FormatNumber => e_params(
+            FormatNumber,
+            &["FormatNumber"],
+            sig(1, 5),
+            &[
+                "Expression",
+                "NumDigitsAfterDecimal",
+                "IncludeLeadingDigit",
+                "UseParensForNegativeNumbers",
+                "GroupDigits",
+            ],
+            Ordinary,
+        ),
+        FormatCurrency => e_params(
+            FormatCurrency,
+            &["FormatCurrency"],
+            sig(1, 5),
+            &[
+                "Expression",
+                "NumDigitsAfterDecimal",
+                "IncludeLeadingDigit",
+                "UseParensForNegativeNumbers",
+                "GroupDigits",
+            ],
+            Ordinary,
+        ),
+        FormatPercent => e_params(
+            FormatPercent,
+            &["FormatPercent"],
+            sig(1, 5),
+            &[
+                "Expression",
+                "NumDigitsAfterDecimal",
+                "IncludeLeadingDigit",
+                "UseParensForNegativeNumbers",
+                "GroupDigits",
+            ],
+            Ordinary,
+        ),
+        FormatDateTime => e_params(
+            FormatDateTime,
+            &["FormatDateTime"],
+            sig(1, 2),
+            &["Date", "NamedFormat"],
+            Ordinary,
+        ),
         Filter => e(Filter, &["Filter"], sig(2, 4), Ordinary),
 
         // ── Math ──
