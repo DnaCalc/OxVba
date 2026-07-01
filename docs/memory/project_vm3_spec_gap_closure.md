@@ -626,3 +626,19 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Fixed-Length String Scalar Defaults (`bd-4ktq.23`)
+
+- Closed `fixed-string-scalar-init-empty` for vm3.
+- Changed the binder's scalar default helper so fixed-length string defaults
+  pass through `types::coerce_store(..., FixedString(N))`, reusing the existing
+  padding/truncation path used by ordinary assignments.
+- Local and module-level `Dim/Public s As String * N` slots now initialize as
+  `N` spaces instead of an empty BSTR.
+- Added `crates/oxvba-differential/tests/fixed_string_default_vm3.rs` for
+  local and module-level defaults plus assignment padding/truncation controls.
+- Verification target:
+  - `cargo test -p oxvba-differential --test fixed_string_default_vm3`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

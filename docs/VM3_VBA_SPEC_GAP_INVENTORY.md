@@ -138,7 +138,7 @@ nothing-represented-as-empty(M) · ~~weekday-ignores-firstdayofweek(S)~~ *(DONE:
 now-date-time-utc-not-local(M) · ~~hal-errors-flattened-to-5(M)~~ *(DONE: `From<HalError> for LibError` now preserves `host_error_code` instead of hardcoding invalid_call(5); COM activation faults set it — `CreateObject` fail→429, `GetObject` running-instance/create→429, file-bind→432, all live-verified. The dispatch path already threaded it via `Fault::from_hal`. getobject_vm3 now asserts 429/432; golden no-drift)* · resume-0-fails-elaboration(S) ·
 sparse-default-error-message(M) · err-properties-not-writable(M) ·
 ~~stop-statement-fails-to-bind(S)~~ *(DONE: bead `bd-4ktq.22`; headless vm3 binds `Stop` as a no-op debugger suspend point, with no `Err` mutation; covered by `stop_statement_vm3`)* · end-statement-misparsed(M) · redim-nonconstant-lower-rejected(M) · redim-negative-lower-rejected(S) ·
-cdec-absent(M) · fixed-string-scalar-init-empty(S)
+cdec-absent(M) · ~~fixed-string-scalar-init-empty(S)~~ *(DONE: bead `bd-4ktq.23`; fixed-length scalar strings now default through the existing fixed-string store coercion, so local and module-level `String * N` slots initialize as `N` spaces; covered by `fixed_string_default_vm3` with assignment controls)*
 
 ## Tier 4 — Medium/Low (less common or larger)
 

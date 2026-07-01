@@ -1667,8 +1667,11 @@ fn default_value_for_type(
     String,
 )> {
     let value = match ty {
-        VarTypeRef::Builtin(BuiltinType::String) | VarTypeRef::FixedString(_) => {
+        VarTypeRef::Builtin(BuiltinType::String) => {
             CoreValue::Const(CoreConst::Str(String::new()))
+        }
+        VarTypeRef::FixedString(_) => {
+            types::coerce_store(CoreValue::Const(CoreConst::Str(String::new())), ty)
         }
         VarTypeRef::Builtin(BuiltinType::Boolean) => CoreValue::Const(CoreConst::Bool(false)),
         VarTypeRef::Builtin(
