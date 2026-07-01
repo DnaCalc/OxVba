@@ -24,7 +24,7 @@
 
 pub mod oracle;
 
-use oxvba_host::{Engine, FinalErr, HostConfig, SnapshotOutcome};
+use oxvba_host::{Engine, FinalErr, HostConfig, SnapshotOutcome, Vm3Snapshot};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, variant_to_vba_string};
 
@@ -231,6 +231,44 @@ pub fn run_modules(
         Executor::Vm3 => engine.execute_manifest_snapshot_with_err_vm3(&manifest),
     };
     RunOutcome::from_snapshot(outcome)
+}
+
+/// Run a leaf-first project closure under `executor` and capture the entry project's globals.
+///
+/// This is the differential counterpart of
+/// [`oxvba_host::Engine::execute_project_closure_with_variant_snapshot_vm3`]. It is used for
+/// reference-project fixtures where a single manifest is not enough to exercise the production
+/// cross-project binding/linking path.
+pub fn run_project_closure(
+    executor: Executor,
+    closure_leaf_first: &[oxvba_symbol::manifest::SymbolProjectManifest],
+) -> RunOutcome {
+    let engine = Engine::new(HostConfig { enable_jit: false });
+    let outcome = match executor {
+        Executor::Vm3 => {
+            engine.execute_project_closure_with_variant_snapshot_vm3(closure_leaf_first)
+        }
+    };
+    match outcome {
+        Vm3Snapshot::Ran(values) => RunOutcome {
+            result: Ok(values.iter().map(canon).collect()),
+            err: FinalErr::default(),
+            raised: false,
+            unsupported: None,
+        },
+        Vm3Snapshot::Unsupported(what) => RunOutcome {
+            result: Ok(Vec::new()),
+            err: FinalErr::default(),
+            raised: false,
+            unsupported: Some(what),
+        },
+        Vm3Snapshot::Failed(msg) => RunOutcome {
+            result: Err(msg),
+            err: FinalErr::default(),
+            raised: false,
+            unsupported: None,
+        },
+    }
 }
 
 /// Run `source` under `executor` (as project `project_name`) on a worker thread with a

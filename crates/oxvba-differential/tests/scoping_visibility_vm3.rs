@@ -6,12 +6,79 @@
 //! oracle-backed gaps that the follow-on scoping beads are expected to unignore
 //! and satisfy as each resolver diagnostic is implemented.
 
-use oxvba_differential::{Canon, Executor, RunOutcome, canon, run_modules};
+use std::collections::BTreeMap;
+
+use oxvba_differential::{
+    Canon, Executor, RunOutcome, canon, run_modules, run_project_closure,
+};
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+use oxvba_symbol::manifest::{
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference,
+    ReferencedProjectManifest, SymbolProjectManifest,
+};
 
 fn run_scoping_case(modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)]) -> RunOutcome {
     run_modules(Executor::Vm3, modules, "VBAProject")
+}
+
+fn module(name: &str, kind: ModuleKind, src: &str) -> ModuleUnit {
+    ModuleUnit {
+        module_name: name.to_string(),
+        module_kind: kind,
+        attributes: ModuleAttributes::named(name),
+        source: src.to_string(),
+    }
+}
+
+fn proc_module(name: &str, src: &str) -> ModuleUnit {
+    module(name, Procedural, src)
+}
+
+fn class_module(name: &str, src: &str) -> ModuleUnit {
+    let mut module = module(name, Class, src);
+    module.attributes.vb_exposed = true;
+    module.attributes.vb_creatable = true;
+    module
+}
+
+fn option_private_proc_module(name: &str, src: &str) -> ModuleUnit {
+    let mut module = proc_module(name, src);
+    module.attributes.option_private_module = true;
+    module
+}
+
+fn referenced(project_name: &str, modules: Vec<ModuleUnit>) -> ReferencedProjectManifest {
+    ReferencedProjectManifest {
+        project_name: project_name.to_string(),
+        project_kind: ProjectKind::Library,
+        modules,
+    }
+}
+
+fn project(
+    name: &str,
+    modules: Vec<ModuleUnit>,
+    refs: Vec<ReferencedProjectManifest>,
+) -> SymbolProjectManifest {
+    let references = refs
+        .iter()
+        .map(|reference| ProjectReference::Project {
+            referenced_project_name: reference.project_name.clone(),
+        })
+        .collect();
+    SymbolProjectManifest {
+        project_name: name.to_string(),
+        project_kind: ProjectKind::Source,
+        modules,
+        references,
+        reference_projects: refs,
+        conditional_constants: BTreeMap::new(),
+    }
+}
+
+fn run_scoping_closure(closure_leaf_first: &[SymbolProjectManifest]) -> RunOutcome {
+    run_project_closure(Executor::Vm3, closure_leaf_first)
 }
 
 fn assert_snapshot_contains(outcome: RunOutcome, expected: Canon) {
@@ -27,6 +94,10 @@ fn assert_snapshot_contains(outcome: RunOutcome, expected: Canon) {
         values.contains(&expected),
         "snapshot {values:?} did not contain {expected:?}"
     );
+}
+
+fn assert_project_closure_contains(closure_leaf_first: &[SymbolProjectManifest], expected: Canon) {
+    assert_snapshot_contains(run_scoping_closure(closure_leaf_first), expected);
 }
 
 fn assert_compile_rejected(outcome: RunOutcome) {
@@ -258,4 +329,205 @@ fn friend_on_standard_module_should_be_rejected() {
         Procedural,
         "Friend Sub Helper()\nEnd Sub\n\nPublic result As Variant\nSub Main()\n    Helper\n    result = 1\nEnd Sub\n",
     )]));
+}
+
+// Follow-up scoping batch: project-reference fixture surface.
+
+fn reference_tools() -> Vec<ModuleUnit> {
+    vec![proc_module(
+        "RefTools",
+        "Public Function RefValue() As Long\n    RefValue = 30\nEnd Function\n",
+    )]
+}
+
+fn source_events() -> Vec<ModuleUnit> {
+    vec![class_module(
+        "Clock",
+        "Public Event Tick(ByVal n As Long)\n\
+         Public Sub Fire()\n    RaiseEvent Tick(23)\nEnd Sub\n",
+    )]
+}
+
+#[test]
+fn cross_project_fixture_baseline_uses_two_active_modules_and_reference() {
+    let lib = project("LibProj", reference_tools(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   result = LocalValue() + RefValue()\n\
+                 End Sub\n",
+            ),
+            proc_module(
+                "LocalTools",
+                "Public Function LocalValue() As Long\n    LocalValue = 12\nEnd Function\n",
+            ),
+        ],
+        vec![referenced("LibProj", reference_tools())],
+    );
+    assert_project_closure_contains(&[lib, app], canon(&Variant::from_i32(42)));
+}
+
+#[test]
+fn cross_project_module_qualified_reference_call_matches_current_baseline() {
+    let lib = project("LibProj", reference_tools(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   result = LocalTools.LocalValue() + RefTools.RefValue()\n\
+                 End Sub\n",
+            ),
+            proc_module(
+                "LocalTools",
+                "Public Function LocalValue() As Long\n    LocalValue = 12\nEnd Function\n",
+            ),
+        ],
+        vec![referenced("LibProj", reference_tools())],
+    );
+    assert_project_closure_contains(&[lib, app], canon(&Variant::from_i32(42)));
+}
+
+#[test]
+fn public_const_variable_collision_should_be_ambiguous() {
+    assert_ambiguous_compile_rejected(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\nSub Main()\n    result = SharedName\nEnd Sub\n",
+            ),
+            ("Alpha", Procedural, "Public Const SharedName As Long = 1\n"),
+            ("Beta", Procedural, "Public SharedName As Long\n"),
+        ]),
+        "SharedName",
+    );
+}
+
+#[test]
+#[ignore = "bd-4ktq.36.3 follow-on: Public UDT/Public Enum collision diagnostic"]
+fn public_udt_enum_collision_should_be_ambiguous() {
+    assert_ambiguous_compile_rejected(
+        run_scoping_case(&[
+            (
+                "Main",
+                Procedural,
+                "Public result As Variant\nSub Main()\n    Dim value As Payload\n    result = 1\nEnd Sub\n",
+            ),
+            (
+                "Types",
+                Procedural,
+                "Public Type Payload\n    Value As Long\nEnd Type\n",
+            ),
+            (
+                "Enums",
+                Procedural,
+                "Public Enum Payload\n    PayloadA = 1\nEnd Enum\n",
+            ),
+        ]),
+        "Payload",
+    );
+}
+
+#[test]
+fn option_private_module_hides_referenced_project_export() {
+    let hidden = || {
+        option_private_proc_module(
+            "HiddenTools",
+            "Option Private Module\n\
+             Public Function HiddenValue() As Long\n    HiddenValue = 77\nEnd Function\n",
+        )
+    };
+    let lib = project("LibProj", vec![hidden()], vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\nSub Main()\n    result = HiddenValue()\nEnd Sub\n",
+            ),
+            proc_module(
+                "LocalTools",
+                "Public Function LocalValue() As Long\n    LocalValue = 1\nEnd Function\n",
+            ),
+        ],
+        vec![referenced("LibProj", vec![hidden()])],
+    );
+    assert_compile_rejected(run_scoping_closure(&[lib, app]));
+}
+
+#[test]
+fn referenced_project_precedence_and_project_qualifier_are_explicit() {
+    let lib_a_modules = || {
+        vec![proc_module(
+            "PickTools",
+            "Public Function Pick() As Long\n    Pick = 1\nEnd Function\n",
+        )]
+    };
+    let lib_b_modules = || {
+        vec![proc_module(
+            "PickTools",
+            "Public Function Pick() As Long\n    Pick = 2\nEnd Function\n",
+        )]
+    };
+    let lib_a = project("LibA", lib_a_modules(), vec![]);
+    let lib_b = project("LibB", lib_b_modules(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   result = Pick() * 100 + LibB.PickTools.Pick()\n\
+                 End Sub\n",
+            ),
+            proc_module(
+                "LocalTools",
+                "Public Function LocalValue() As Long\n    LocalValue = 0\nEnd Function\n",
+            ),
+        ],
+        vec![
+            referenced("LibA", lib_a_modules()),
+            referenced("LibB", lib_b_modules()),
+        ],
+    );
+    assert_project_closure_contains(&[lib_a, lib_b, app], canon(&Variant::from_i32(102)));
+}
+
+#[test]
+fn referenced_project_withevents_source_routes_to_active_project_handler() {
+    let lib = project("LibProj", source_events(), vec![]);
+    let app = project(
+        "AppProj",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Sub Main()\n\
+                 \x20   Dim listener As Listener\n\
+                 \x20   Set listener = New Listener\n\
+                 \x20   listener.Hook\n\
+                 \x20   listener.Fire\n\
+                 \x20   result = listener.Fired\n\
+                 End Sub\n",
+            ),
+            class_module(
+                "Listener",
+                "Private WithEvents src As LibProj.Clock\n\
+                 Public Fired As Long\n\
+                 Public Sub Hook()\n    Set src = New LibProj.Clock\nEnd Sub\n\
+                 Public Sub Fire()\n    src.Fire\nEnd Sub\n\
+                 Private Sub src_Tick(ByVal n As Long)\n    Fired = n\nEnd Sub\n",
+            ),
+        ],
+        vec![referenced("LibProj", source_events())],
+    );
+    assert_project_closure_contains(&[lib, app], canon(&Variant::from_i32(23)));
 }

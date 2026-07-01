@@ -59,6 +59,17 @@ VBE Debug -> Compile (`ID=578`) plus PID-scoped UI Automation modal capture.
 Current-green vm3 baselines and ignored follow-on assertions live in
 `crates/oxvba-differential/tests/scoping_visibility_vm3.rs`.
 
+**Scoping follow-up surface (bd-4ktq.36.1):** the cross-project expansion is
+captured in
+`docs/evidence/conformance/vm3_scoping_followup_oracle_20260701T1655Z/` using the
+same modal-safe VBE compile path. The shared fixture now also covers a
+two-module active project with a referenced project, referenced module/project
+qualification, Public Const/Public variable ambiguity, referenced
+`Option Private Module` hiding, reference precedence, and WithEvents source
+visibility. Public UDT/Public Enum name collision remains open for
+`bd-4ktq.36.3`: Excel reports `Ambiguous name detected: Payload`, while vm3
+currently accepts the row.
+
 ### Critic-added gaps (15)
 
 | # | id | sev/class | eff | gap | fix locus |

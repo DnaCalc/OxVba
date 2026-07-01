@@ -172,6 +172,47 @@
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
 
+## 2026-07-01 - Scoping Follow-up Cross-Project Fixture Surface (`bd-4ktq.36.1`)
+
+- Created the follow-up scoping/visibility oracle and fixture surface for
+  `bd-4ktq.36`.
+- Live Excel/VBA 7.1 evidence lives in
+  `docs/evidence/conformance/vm3_scoping_followup_oracle_20260701T1655Z/`,
+  captured by `scripts/run-vm3-scoping-followup-oracle.ps1`.
+- The oracle runner follows the modal-safe Excel/VBA guidance: it invokes VBE
+  Debug -> Compile VBAProject through command id `578`, captures compile
+  dialogs with PID-scoped UI Automation, captures selected token/line via UIA
+  and the VBIDE selection fallback where exposed, dismisses only owned dialogs,
+  and cleans up only the owned Excel PID.
+- Oracle matrix:
+  - active project with two modules plus referenced `LibProj.RefTools`:
+    compiles and runs (`42`),
+  - referenced module-qualified call `RefTools.RefValue()`: compiles and runs
+    (`42` with the local helper),
+  - referenced project-qualified call `LibProj.RefTools.RefValue()`: compiles
+    and runs (`30`),
+  - Public Const/Public variable collision: `Ambiguous name detected:
+    SharedName`,
+  - Public Type/Public Enum collision: `Ambiguous name detected: Payload`,
+  - referenced `Option Private Module` export: `Sub or Function not defined`,
+  - referenced project precedence plus explicit later-project qualifier:
+    compiles and runs (`102`),
+  - active-project WithEvents source/handler baseline: compiles and runs (`23`).
+- Added `oxvba_differential::run_project_closure` so tests can execute
+  leaf-first project-reference closures through the same vm3 closure path used
+  by the host.
+- Extended `crates/oxvba-differential/tests/scoping_visibility_vm3.rs` with
+  active project-reference fixtures for the green baseline, module-qualified
+  reference calls, Public Const/variable ambiguity, referenced Option Private
+  hiding, reference precedence/project qualifier behavior, and a synthetic
+  referenced-project WithEvents source route.
+- Left the Public UDT/Public Enum collision fixture ignored for
+  `bd-4ktq.36.3`: live Excel rejects it as `Ambiguous name detected: Payload`,
+  while vm3 currently accepts the row.
+- Verification target:
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
 ## 2026-07-01 - Val Radix Prefix Strings (`bd-4ktq.7`)
 
 - Closed the `Val("&H...")`/`Val("&O...")` radix-prefix gap.
