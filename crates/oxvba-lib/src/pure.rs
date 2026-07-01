@@ -20,6 +20,9 @@ pub(crate) use oxvba_runtime::{
     civil_from_days, days_from_civil, serial_to_hms, serial_to_ymd, ymd_to_serial,
 };
 
+const VBA_DATE_MIN_SERIAL: f64 = -657_434.0; // 0100-01-01
+const VBA_DATE_MAX_EXCLUSIVE_SERIAL: f64 = 2_958_466.0; // 10000-01-01
+
 // ── Strings ──────────────────────────────────────────────────────────────────
 
 pub fn len(args: &[Variant]) -> LibResult<Variant> {
@@ -970,17 +973,67 @@ pub(crate) fn day_of_week(year: i32, month: u32, day: u32) -> i32 {
     (y + y / 4 - y / 100 + y / 400 + table[(m - 1) as usize] + day as i32).rem_euclid(7)
 }
 
+fn validate_vba_date_serial(serial: f64) -> LibResult<f64> {
+    if serial.is_finite() && (VBA_DATE_MIN_SERIAL..VBA_DATE_MAX_EXCLUSIVE_SERIAL).contains(&serial)
+    {
+        Ok(serial)
+    } else {
+        Err(LibError::invalid_call("date out of range"))
+    }
+}
+
+fn validate_dateserial_arg(value: i64) -> LibResult<i64> {
+    if (-32_768..=32_767).contains(&value) {
+        Ok(value)
+    } else {
+        Err(LibError::invalid_call("DateSerial argument out of range"))
+    }
+}
+
+fn date_day_index(serial: f64) -> i64 {
+    serial.trunc() as i64
+}
+
+fn day_index_weekday(day: i64) -> i32 {
+    let (y, m, d) = serial_to_ymd(day as f64);
+    day_of_week(y as i32, m as u32, d as u32)
+}
+
+fn count_weekday_boundaries_forward(start_day: i64, end_day: i64, target_dow: i32) -> i64 {
+    if end_day <= start_day {
+        return 0;
+    }
+    let first_candidate = start_day + 1;
+    let offset = (target_dow - day_index_weekday(first_candidate)).rem_euclid(7) as i64;
+    let first_hit = first_candidate + offset;
+    if first_hit > end_day {
+        0
+    } else {
+        1 + (end_day - first_hit) / 7
+    }
+}
+
+fn count_weekday_boundaries(start_day: i64, end_day: i64, target_dow: i32) -> i64 {
+    if end_day >= start_day {
+        count_weekday_boundaries_forward(start_day, end_day, target_dow)
+    } else {
+        -count_weekday_boundaries_forward(end_day, start_day, target_dow)
+    }
+}
+
 pub fn date_serial(args: &[Variant]) -> LibResult<Variant> {
-    let y = as_i64(need(args, 0)?)?;
-    let m = as_i64(need(args, 1)?)?;
-    let d = as_i64(need(args, 2)?)?;
-    Ok(Variant::from_date_f64(ymd_to_serial(y, m, d)))
+    let y = validate_dateserial_arg(as_i64(need(args, 0)?)?)?;
+    let m = validate_dateserial_arg(as_i64(need(args, 1)?)?)?;
+    let d = validate_dateserial_arg(as_i64(need(args, 2)?)?)?;
+    Ok(Variant::from_date_f64(validate_vba_date_serial(
+        ymd_to_serial(y, m, d),
+    )?))
 }
 
 pub fn time_serial(args: &[Variant]) -> LibResult<Variant> {
-    let h = as_f64(need(args, 0)?)?;
-    let m = as_f64(need(args, 1)?)?;
-    let s = as_f64(need(args, 2)?)?;
+    let h = validate_dateserial_arg(as_i64(need(args, 0)?)?)? as f64;
+    let m = validate_dateserial_arg(as_i64(need(args, 1)?)?)? as f64;
+    let s = validate_dateserial_arg(as_i64(need(args, 2)?)?)? as f64;
     Ok(Variant::from_date_f64(
         (h * 3600.0 + m * 60.0 + s) / 86400.0,
     ))
@@ -997,7 +1050,9 @@ pub fn date_value(args: &[Variant]) -> LibResult<Variant> {
         VarType::String => cdate_from_string(&as_str(v)?)?.as_date_f64().unwrap_or(0.0),
         _ => conv_f64(v)?,
     };
-    Ok(Variant::from_date_f64(serial.trunc()))
+    Ok(Variant::from_date_f64(validate_vba_date_serial(
+        serial.trunc(),
+    )?))
 }
 
 /// VBA `TimeValue` returns the TIME-OF-DAY part of its argument. Like `DateValue` it accepts a
@@ -1008,17 +1063,8 @@ pub fn time_value(args: &[Variant]) -> LibResult<Variant> {
     let v = need(args, 0)?;
     let serial = match v.vtype() {
         VarType::Date => v.as_date_f64().unwrap_or(0.0),
-        VarType::String => {
-            let s = as_str(v)?;
-            let parts: Vec<f64> = s
-                .split(':')
-                .map(|p| p.trim().parse::<f64>().unwrap_or(0.0))
-                .collect();
-            let h = parts.first().copied().unwrap_or(0.0);
-            let m = parts.get(1).copied().unwrap_or(0.0);
-            let sec = parts.get(2).copied().unwrap_or(0.0);
-            (h * 3600.0 + m * 60.0 + sec) / 86400.0
-        }
+        VarType::String => parse_time_value_string(&as_str(v)?)?,
+        VarType::Null => return Ok(Variant::null()),
         _ => conv_f64(v)?,
     };
     // Keep only the time-of-day fraction (drop the integer date part).
@@ -1040,6 +1086,77 @@ fn parse_date(s: &str) -> LibResult<(i64, i64, i64)> {
         return Err(err());
     }
     Ok((y, m, d))
+}
+
+fn parse_time_value_string(s: &str) -> LibResult<f64> {
+    let s = s.trim();
+    let err = || LibError::type_mismatch(format!("cannot parse time `{s}`"));
+    if s.is_empty() {
+        return Err(err());
+    }
+    if let Some((date_part, time_part)) = split_trailing_time(s) {
+        parse_date(date_part.trim())?;
+        return parse_time_only(&time_part).ok_or_else(err);
+    }
+    parse_time_only(s).ok_or_else(err)
+}
+
+fn split_trailing_time(s: &str) -> Option<(&str, String)> {
+    let (before, last) = s.trim().rsplit_once(' ')?;
+    if last.eq_ignore_ascii_case("am") || last.eq_ignore_ascii_case("pm") {
+        let (date_part, time_part) = before.trim_end().rsplit_once(' ')?;
+        if time_part.contains(':') {
+            return Some((date_part.trim(), format!("{time_part} {last}")));
+        }
+    } else if last.contains(':') {
+        return Some((before.trim(), last.trim().to_string()));
+    }
+    None
+}
+
+fn parse_time_only(s: &str) -> Option<f64> {
+    let mut text = s.trim();
+    let mut meridian = None;
+    let lower = text.to_ascii_lowercase();
+    if lower.ends_with("am") || lower.ends_with("pm") {
+        meridian = Some(&lower[lower.len() - 2..]);
+        text = text[..text.len() - 2].trim_end();
+    }
+
+    let parts: Vec<&str> = text.split(':').collect();
+    if !(2..=3).contains(&parts.len()) {
+        return None;
+    }
+    let mut h = parts[0].trim().parse::<i64>().ok()?;
+    let m = parts[1].trim().parse::<i64>().ok()?;
+    let sec = match parts.get(2) {
+        Some(value) => value.trim().parse::<f64>().ok()?,
+        None => 0.0,
+    };
+    if !(0..=59).contains(&m) || !(0.0..60.0).contains(&sec) {
+        return None;
+    }
+    match meridian {
+        Some("am") => {
+            if !(1..=12).contains(&h) {
+                return None;
+            }
+            if h == 12 {
+                h = 0;
+            }
+        }
+        Some("pm") => {
+            if !(1..=12).contains(&h) {
+                return None;
+            }
+            if h != 12 {
+                h += 12;
+            }
+        }
+        _ if !(0..=23).contains(&h) => return None,
+        _ => {}
+    }
+    Some((h as f64 * 3600.0 + m as f64 * 60.0 + sec) / 86400.0)
 }
 
 /// Parse a date string into `(year, month, day)` WITHOUT validating the calendar (see
@@ -1137,7 +1254,7 @@ pub fn date_add(args: &[Variant]) -> LibResult<Variant> {
             )));
         }
     };
-    Ok(Variant::from_date_f64(result))
+    Ok(Variant::from_date_f64(validate_vba_date_serial(result)?))
 }
 
 /// FIDELITY: difference in the unit; calendar-unit diffs are approximate.
@@ -1145,10 +1262,19 @@ pub fn date_diff(args: &[Variant]) -> LibResult<Variant> {
     let interval = as_str(need(args, 0)?)?.to_lowercase();
     let a = as_f64(need(args, 1)?)?;
     let b = as_f64(need(args, 2)?)?;
-    let days = b.floor() - a.floor();
+    let a_day = date_day_index(a);
+    let b_day = date_day_index(b);
+    let days = (b_day - a_day) as f64;
     let result = match interval.as_str() {
-        "d" | "y" | "w" => days,
-        "ww" => (days / 7.0).trunc(),
+        "d" | "y" => days,
+        "w" => {
+            let start_weekday = day_index_weekday(a_day);
+            count_weekday_boundaries(a_day, b_day, start_weekday) as f64
+        }
+        "ww" => {
+            let first = first_day_of_week(args, 3)?;
+            count_weekday_boundaries(a_day, b_day, first - 1) as f64
+        }
         "h" => (b - a) * 24.0,
         "n" => (b - a) * 1440.0,
         "s" => (b - a) * 86400.0,
@@ -1480,7 +1606,10 @@ pub fn cdate(args: &[Variant]) -> LibResult<Variant> {
         // A string parses as a date and/or time; everything else numeric IS the date
         // serial (the integer part is the day, the fraction the time of day).
         VarType::String => cdate_from_string(&as_str(v)?),
-        _ => Ok(Variant::from_date_f64(conv_f64(v)?)),
+        _ => {
+            let serial = validate_vba_date_serial(conv_f64(v)?)?;
+            Ok(Variant::from_date_f64(serial))
+        }
     }
 }
 
@@ -1497,17 +1626,19 @@ fn cdate_from_string(s: &str) -> LibResult<Variant> {
         return time_value(&[vstr(s)]);
     }
     // "date time" — split a trailing time off the date.
-    if let Some((date_part, time_part)) = s.rsplit_once(' ')
-        && time_part.contains(':')
-    {
+    if let Some((date_part, time_part)) = split_trailing_time(s) {
         let (y, m, d) = parse_date(date_part.trim())?;
-        let time = time_value(&[vstr(time_part.trim())])?
+        let time = time_value(&[vstr(&time_part)])?
             .as_date_f64()
             .unwrap_or(0.0);
-        return Ok(Variant::from_date_f64(ymd_to_serial(y, m, d) + time));
+        return Ok(Variant::from_date_f64(validate_vba_date_serial(
+            ymd_to_serial(y, m, d) + time,
+        )?));
     }
     let (y, m, d) = parse_date(s)?;
-    Ok(Variant::from_date_f64(ymd_to_serial(y, m, d)))
+    Ok(Variant::from_date_f64(validate_vba_date_serial(
+        ymd_to_serial(y, m, d),
+    )?))
 }
 pub fn cverr(args: &[Variant]) -> LibResult<Variant> {
     Ok(Variant::from_error_code(as_i32(need(args, 0)?)?))

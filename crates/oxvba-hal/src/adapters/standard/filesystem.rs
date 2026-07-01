@@ -3,7 +3,7 @@ use crate::{
     model::CapabilityId,
     traits::FileSystemHal,
 };
-use oxvba_runtime::{VarType, Variant, bstr::BStr};
+use oxvba_runtime::{VarType, Variant, bstr::BStr, vba_date::ymd_to_serial};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::path::{Component, Path, PathBuf};
@@ -324,7 +324,10 @@ fn variant_from_input_field(field: &str) -> Variant {
         return Variant::from_bool(false);
     }
     if field.eq_ignore_ascii_case("#NULL#") {
-        return Variant::empty();
+        return Variant::null();
+    }
+    if let Some(value) = parse_write_date_field(field) {
+        return value;
     }
     if let Ok(value) = field.parse::<i32>() {
         return Variant::from_i32(value);
@@ -333,6 +336,35 @@ fn variant_from_input_field(field: &str) -> Variant {
         return Variant::from_f64(value);
     }
     Variant::from_string(field)
+}
+
+fn parse_write_date_field(field: &str) -> Option<Variant> {
+    let inner = field.strip_prefix('#')?.strip_suffix('#')?;
+    let (date_part, time_part) = inner.split_once(' ').unwrap_or((inner, ""));
+    let mut date_bits = date_part.split('-');
+    let y = date_bits.next()?.parse::<i64>().ok()?;
+    let m = date_bits.next()?.parse::<i64>().ok()?;
+    let d = date_bits.next()?.parse::<i64>().ok()?;
+    if date_bits.next().is_some() || !(100..=9999).contains(&y) {
+        return None;
+    }
+    let time = if time_part.is_empty() {
+        0.0
+    } else {
+        let mut time_bits = time_part.split(':');
+        let h = time_bits.next()?.parse::<i64>().ok()?;
+        let mi = time_bits.next()?.parse::<i64>().ok()?;
+        let s = time_bits.next()?.parse::<i64>().ok()?;
+        if time_bits.next().is_some()
+            || !(0..=23).contains(&h)
+            || !(0..=59).contains(&mi)
+            || !(0..=59).contains(&s)
+        {
+            return None;
+        }
+        (h * 3600 + mi * 60 + s) as f64 / 86_400.0
+    };
+    Some(Variant::from_date_f64(ymd_to_serial(y, m, d) + time))
 }
 
 fn advance_input_separator(data: &[u8], mut cursor: usize) -> usize {

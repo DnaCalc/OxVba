@@ -40,15 +40,26 @@ pub fn ymd_to_serial(y: i64, m: i64, d: i64) -> f64 {
     (days_from_civil(y, m, d) - VBA_EPOCH_DAYS_FROM_UNIX) as f64
 }
 
+fn serial_day_and_seconds(serial: f64) -> (i64, i64) {
+    let mut day = serial.trunc() as i64;
+    let frac = (serial - serial.trunc()).abs();
+    let mut total = (frac * 86_400.0).round() as i64;
+    if total >= 86_400 {
+        day += 1;
+        total -= 86_400;
+    }
+    (day, total)
+}
+
 /// The `(year, month, day)` of a VBA `Date` serial.
 pub fn serial_to_ymd(serial: f64) -> (i64, i64, i64) {
-    civil_from_days(serial.floor() as i64 + VBA_EPOCH_DAYS_FROM_UNIX)
+    let (day, _) = serial_day_and_seconds(serial);
+    civil_from_days(day + VBA_EPOCH_DAYS_FROM_UNIX)
 }
 
 /// The `(hour, minute, second)` of a VBA `Date` serial's time-of-day fraction.
 pub fn serial_to_hms(serial: f64) -> (i64, i64, i64) {
-    let frac = serial.abs().fract();
-    let total = ((frac * 86_400.0).round() as i64).rem_euclid(86_400);
+    let (_, total) = serial_day_and_seconds(serial);
     (total / 3600, (total % 3600) / 60, total % 60)
 }
 
@@ -119,8 +130,22 @@ mod tests {
     }
 
     #[test]
+    fn negative_serial_uses_whole_number_date_part() {
+        assert_eq!(format_general_date(-1.25), "12/29/1899 6:00:00 AM");
+    }
+
+    #[test]
+    fn rounded_time_can_carry_to_next_date() {
+        let almost_next_day = ymd_to_serial(2020, 1, 15) + 86_399.6 / 86_400.0;
+        assert_eq!(format_general_date(almost_next_day), "1/16/2020");
+    }
+
+    #[test]
     fn write_date_form() {
-        assert_eq!(format_write_date(ymd_to_serial(2020, 1, 15)), "#2020-01-15#");
+        assert_eq!(
+            format_write_date(ymd_to_serial(2020, 1, 15)),
+            "#2020-01-15#"
+        );
         let serial = ymd_to_serial(2020, 1, 15) + 0.5;
         assert_eq!(format_write_date(serial), "#2020-01-15 12:00:00#");
     }

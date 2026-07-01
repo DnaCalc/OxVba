@@ -342,6 +342,52 @@ fn append_reports_fresh_cursor_but_writes_at_eof() {
     );
 }
 
+#[test]
+fn write_input_roundtrips_date_and_null_fields() {
+    let dir = unique_temp_dir("writeinput_date_null");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("records.txt");
+    let source = format!(
+        "Public gotDateText As String\nPublic gotNull As Boolean\n\
+         Sub Main()\n\
+         \u{20}   Dim f As Integer\n\
+         \u{20}   Dim d As Date\n\
+         \u{20}   Dim n As Variant\n\
+         \u{20}   d = DateSerial(2020, 1, 15) + TimeSerial(13, 30, 5)\n\
+         \u{20}   n = Null\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   Write #f, d, n\n\
+         \u{20}   Close #f\n\
+         \u{20}   d = 0\n\
+         \u{20}   n = Empty\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Input As #f\n\
+         \u{20}   Input #f, d, n\n\
+         \u{20}   Close #f\n\
+         \u{20}   gotDateText = CStr(d)\n\
+         \u{20}   gotNull = IsNull(n)\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(
+        snap[0].as_bstr().map(|s| s.as_str().to_string()),
+        Some("1/15/2020 1:30:05 PM".to_string()),
+        "Input # should parse Write # date literals: {snap:?}"
+    );
+    assert_eq!(
+        snap[1].as_bool(),
+        Some(true),
+        "Input # should parse #NULL# as Null: {snap:?}"
+    );
+}
+
 /// For sequential output `Loc(f)` is `byte position \ 128`. Writing 200 bytes
 /// gives Loc=1, 400 bytes gives Loc=3 and Seek=401. (Live-Excel verified:
 /// w200_loc=1 w400_loc=3 w400_seek=401.)
