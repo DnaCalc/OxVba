@@ -550,3 +550,21 @@
   - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
   - `cargo test -p oxvba-vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Array VarType/TypeName Elements (`bd-4ktq.18`)
+
+- Closed `vartype-typename-array-element` for vm3.
+- Changed `VarType` and `TypeName` for array Variants to read the
+  `SafeArray::element_vartype()` metadata instead of treating every array as a
+  `Variant()` SAFEARRAY.
+- Typed arrays now report `vbArray + element VARTYPE` and `<Element>()`, e.g.
+  `Dim a() As Integer` reports 8194 / `Integer()`. `Array(...)` remains a
+  Variant array (8204 / `Variant()`).
+- Added `crates/oxvba-differential/tests/array_introspection_vm3.rs` for typed
+  `Integer`, `Long`, and `String` arrays plus the `Array(...)` control.
+- Verification target:
+  - `cargo test -p oxvba-differential --test array_introspection_vm3`
+  - `cargo test -p oxvba-lib`
+  - `cargo test -p oxvba-bind math_datetime_conversion_functions_route_through_vba_bundle`
+  - `cargo test -p oxvba-vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

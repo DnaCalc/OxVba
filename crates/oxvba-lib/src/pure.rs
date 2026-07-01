@@ -9,7 +9,11 @@ use crate::{
     LibContext, LibError, LibResult, alloc_count, as_f64, as_i32, as_i64, as_str, as_usize, need,
     opt, vbool, vf64, vi32, vstr, vunit,
 };
-use oxvba_runtime::{Variant, safe_array::SafeArray, variant::VarType};
+use oxvba_runtime::{
+    Variant,
+    safe_array::{SafeArray, VT_VARIANT_VALUE},
+    variant::VarType,
+};
 // The VBA serial ↔ civil calendar math is canonical in `oxvba_runtime::vba_date`; re-export it
 // at `crate::pure::*` so this module's date functions (and `format.rs`) keep their call sites.
 pub(crate) use oxvba_runtime::{
@@ -1865,11 +1869,23 @@ pub fn is_vtype(args: &[Variant], pred: impl Fn(VarType) -> bool) -> LibResult<V
 }
 
 pub fn var_type(args: &[Variant]) -> LibResult<Variant> {
-    Ok(vi32(need(args, 0)?.vtype() as i32))
+    let value = need(args, 0)?;
+    let code = match value.as_safearray() {
+        Some(array) => 0x2000 | i32::from(array.element_vartype()),
+        None => value.vtype() as i32,
+    };
+    Ok(vi32(code))
 }
 
 pub fn type_name(args: &[Variant]) -> LibResult<Variant> {
-    let name = match need(args, 0)?.vtype() {
+    let value = need(args, 0)?;
+    if let Some(array) = value.as_safearray() {
+        return Ok(vstr(format!(
+            "{}()",
+            type_name_for_vartype(array.element_vartype())
+        )));
+    }
+    let name = match value.vtype() {
         VarType::Empty => "Empty",
         VarType::Null => "Null",
         VarType::Integer => "Integer",
@@ -1889,6 +1905,30 @@ pub fn type_name(args: &[Variant]) -> LibResult<Variant> {
         _ => "Variant",
     };
     Ok(vstr(name))
+}
+
+fn type_name_for_vartype(vartype: u16) -> &'static str {
+    if vartype == VT_VARIANT_VALUE {
+        return "Variant";
+    }
+    match VarType::from_u16(vartype) {
+        Some(VarType::Empty) => "Empty",
+        Some(VarType::Null) => "Null",
+        Some(VarType::Integer) => "Integer",
+        Some(VarType::Long) => "Long",
+        Some(VarType::Single) => "Single",
+        Some(VarType::Double) => "Double",
+        Some(VarType::Currency) => "Currency",
+        Some(VarType::Date) => "Date",
+        Some(VarType::String) => "String",
+        Some(VarType::Object) => "Object",
+        Some(VarType::Error) => "Error",
+        Some(VarType::Boolean) => "Boolean",
+        Some(VarType::Decimal) => "Decimal",
+        Some(VarType::Byte) => "Byte",
+        Some(VarType::LongLong) => "LongLong",
+        _ => "Variant",
+    }
 }
 
 pub fn is_numeric(args: &[Variant]) -> LibResult<Variant> {
