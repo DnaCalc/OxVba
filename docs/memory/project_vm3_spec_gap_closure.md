@@ -1383,6 +1383,8 @@
   note, divergence reproduction commands, residual map, and inventory so they
   agree on the scoped closure and on residual owners (`DIV-0004`, `ODG-041`,
   host/HAL, storage, startup, and broader event/COM work).
+- Closed the parent residual batch bead `bd-4ktq.38` after all audit,
+  delivery, and terminal reconciliation children were closed.
 - Verification completed:
   - `cargo test -p oxvba-differential --test scoping_visibility_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
