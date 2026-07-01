@@ -20,6 +20,10 @@ fn run_probe(expr: &str) -> RunOutcome {
     run(Executor::Vm3, &source)
 }
 
+fn run_project_probe(source: &str) -> RunOutcome {
+    run(Executor::Vm3, source)
+}
+
 fn assert_probe(expr: &str, expected: &str) {
     let outcome = run_probe(expr);
     assert!(
@@ -34,6 +38,23 @@ fn assert_probe(expr: &str, expected: &str) {
     assert!(
         values.contains(&want),
         "probe `{expr}` produced {values:?}, expected to contain {expected:?}"
+    );
+}
+
+fn assert_project_probe(source: &str, expected: &str) {
+    let outcome = run_project_probe(source);
+    assert!(
+        outcome.unsupported.is_none(),
+        "vm3 declined integer literal project case as unsupported: {:?}",
+        outcome.unsupported
+    );
+    let values = outcome
+        .result
+        .unwrap_or_else(|err| panic!("vm3 integer literal project case failed: {err}"));
+    let want = canon(&Variant::from_string(expected));
+    assert!(
+        values.contains(&want),
+        "project probe produced {values:?}, expected to contain {expected:?}"
     );
 }
 
@@ -92,4 +113,60 @@ fn caret_radix_literal_is_longlong() {
 fn unsuffixed_radix_beyond_long_width_is_compile_error() {
     assert_compile_rejected("&H100000000");
     assert_compile_rejected("&O40000000000");
+}
+
+#[test]
+fn untyped_const_integer_width_values_are_integer() {
+    assert_project_probe(
+        "Public result As String\n\
+         Const K = 7\n\
+         Sub Main()\n\
+             result = CStr(VarType(K)) & \":\" & TypeName(K) & \":\" & CStr(K)\n\
+         End Sub\n",
+        "2:Integer:7",
+    );
+    assert_project_probe(
+        "Public result As String\n\
+         Const K = &HFFFF\n\
+         Sub Main()\n\
+             result = CStr(VarType(K)) & \":\" & TypeName(K) & \":\" & CStr(K)\n\
+         End Sub\n",
+        "2:Integer:-1",
+    );
+}
+
+#[test]
+fn declared_const_and_enum_long_values_remain_long() {
+    assert_project_probe(
+        "Public result As String\n\
+         Const K As Long = 7\n\
+         Sub Main()\n\
+             result = CStr(VarType(K)) & \":\" & TypeName(K) & \":\" & CStr(K)\n\
+         End Sub\n",
+        "3:Long:7",
+    );
+    assert_project_probe(
+        "Public result As String\n\
+         Public Enum Color\n\
+             Red = 7\n\
+         End Enum\n\
+         Sub Main()\n\
+             result = CStr(VarType(Red)) & \":\" & TypeName(Red) & \":\" & CStr(Red)\n\
+         End Sub\n",
+        "3:Long:7",
+    );
+}
+
+#[test]
+fn optional_variant_integer_default_keeps_integer_carrier() {
+    assert_project_probe(
+        "Public result As String\n\
+         Sub Main()\n\
+             Probe\n\
+         End Sub\n\
+         Sub Probe(Optional ByVal value As Variant = 7)\n\
+             result = CStr(VarType(value)) & \":\" & TypeName(value) & \":\" & CStr(value)\n\
+         End Sub\n",
+        "2:Integer:7",
+    );
 }

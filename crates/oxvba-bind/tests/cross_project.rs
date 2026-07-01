@@ -366,6 +366,31 @@ fn cross_bundle_free_function_applies_optional_defaults() {
 }
 
 #[test]
+fn cross_bundle_variant_optional_default_preserves_integer_carrier() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Function DefaultTag(Optional ByVal value As Variant = 7) As Long\n\
+             DefaultTag = VarType(value)\n\
+             End Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             r = DefaultTag()\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(2));
+}
+
+#[test]
 fn cross_bundle_free_function_applies_named_optional_defaults_between_supplied_args() {
     let lib_mod = || {
         proc_module(

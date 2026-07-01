@@ -541,6 +541,7 @@ fn param_lists(
 
 fn default_value_to_core_const(default: &DefaultValue) -> Option<CoreConst> {
     Some(match default {
+        DefaultValue::I16(value) => CoreConst::I16(*value),
         DefaultValue::I32(value) => CoreConst::I32(*value),
         DefaultValue::I64(value) => CoreConst::I64(*value),
         DefaultValue::F64(bits) => CoreConst::F64(*bits),

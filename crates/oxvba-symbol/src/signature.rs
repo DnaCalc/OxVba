@@ -16,6 +16,7 @@ pub enum PassingMode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DefaultValue {
+    I16(i16),
     I32(i32),
     I64(i64),
     /// IEEE-754 `f64` bit pattern.

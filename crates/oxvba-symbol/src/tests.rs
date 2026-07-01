@@ -976,6 +976,26 @@ fn optional_parameter_default_is_parsed() {
 }
 
 #[test]
+fn optional_variant_integer_default_preserves_i16_metadata_carrier() {
+    let src = "Sub S(Optional ByVal n As Variant = 5)\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("sub resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol id"))
+        .expect("symbol");
+    let SymbolImpl::Signature(sig_id) = symbol.imp else {
+        panic!("expected a signature");
+    };
+    let signature = env.signatures.get(sig_id).expect("signature");
+    assert_eq!(signature.params[0].default, Some(DefaultValue::I16(5)));
+}
+
+#[test]
 fn optional_parameter_string_defaults_coerce_to_declared_metadata() {
     let src = "Sub S(Optional ByVal n As Long = \"7\", Optional ByVal b As Boolean = \"False\", Optional ByVal c As Currency = \"1.25\", Optional ByVal d As Date = \"2026-02-28\")\r\nEnd Sub\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

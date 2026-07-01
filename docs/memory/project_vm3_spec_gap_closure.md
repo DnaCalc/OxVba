@@ -367,8 +367,8 @@
   `Raw { tag: 3 }` to `Raw { tag: 2 }` retagging for Variant/default outputs
   fed by small integer literals; the suspicious `TypeOf 5 Is 5` error drift was
   fixed before blessing.
-- Remaining follow-up: `bd-4ktq.11.3` should audit folded constants and
-  optional/default metadata paths for any remaining carrier erasure.
+- Follow-up completed in `bd-4ktq.11.3`: folded constants and optional/default
+  metadata paths now have explicit carrier coverage.
 - Verification target:
   - `cargo test -p oxvba-runtime vba_radix`
   - `cargo test -p oxvba-bundle core_const_tests`
@@ -380,4 +380,28 @@
   - `cargo test -p oxvba-differential --test integer_literal_carrier_vm3`
   - `cargo test -p oxvba-differential --test hex_oct_literal_sign_vm3`
   - `cargo test -p oxvba-differential --test numeric_suffix_literals_vm3`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`
+
+## 2026-07-01 - Integer Literal Const/Default Audit (`bd-4ktq.11.3`)
+
+- Closed the folded constant/default side of
+  `integer-literal-surfaces-as-long`.
+- Added `DefaultValue::I16` so scanned signature metadata can preserve an
+  Integer-width optional default instead of converting it to `I32`/Long before
+  exported surface construction.
+- Updated surface default conversion so referenced-project calls receive
+  `CoreConst::I16` for optional `Variant = 7` defaults.
+- Added differential coverage proving:
+  - untyped `Const K = 7` and `Const K = &HFFFF` surface as Integer,
+  - declared `Const K As Long = 7` remains Long,
+  - `Enum` members remain Long as VBA specifies,
+  - active-project optional `Variant = 7` defaults preserve Integer.
+- Added a cross-project binding regression proving referenced-project optional
+  `Variant = 7` metadata also preserves Integer (`VarType` returns `2`, not
+  `3`).
+- Golden snapshot did not drift after the audit changes.
+- Verification target:
+  - `cargo test -p oxvba-symbol`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --test integer_literal_carrier_vm3`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot`

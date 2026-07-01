@@ -1021,7 +1021,7 @@ fn parse_default_literal(rhs: &str) -> Option<CoreConst> {
 
 fn default_value_from_core_const(value: CoreConst) -> Option<DefaultValue> {
     Some(match value {
-        CoreConst::I16(value) => DefaultValue::I32(i32::from(value)),
+        CoreConst::I16(value) => DefaultValue::I16(value),
         CoreConst::I32(value) => DefaultValue::I32(value),
         CoreConst::I64(value) => DefaultValue::I64(value),
         CoreConst::F64(bits) => DefaultValue::F64(bits),
