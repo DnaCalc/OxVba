@@ -261,6 +261,14 @@ pub enum OxInst {
         dst: OxPlace,
         import: ImportId,
     },
+    PredeclaredSet {
+        class: ClassId,
+        value: OxOperand,
+    },
+    PredeclaredExternSet {
+        import: ImportId,
+        value: OxOperand,
+    },
     NewRecord {
         dst: OxPlace,
         fields: Vec<ArrayElementType>,
@@ -447,8 +455,14 @@ pub enum OxInst {
         may_terminate: bool,
     },
     /// The start of a VBA source statement (drives `Resume` granularity and
-    /// finalization timing). `stmt` is the source-statement index.
-    StmtBoundary { stmt: u32 },
+    /// finalization timing). `stmt` is the source-statement index. `clear_temps_from`
+    /// releases compiler temporaries that belonged to the previous statement while
+    /// preserving lower-numbered temps that intentionally live across a compound
+    /// statement, such as `For` limits or `With` receivers.
+    StmtBoundary {
+        stmt: u32,
+        clear_temps_from: usize,
+    },
     /// A numeric source line label has become the active line number for this
     /// procedure activation. A later caught error copies it into `Erl`.
     SetLineNumber { line: i32 },

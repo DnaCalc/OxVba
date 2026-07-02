@@ -1,0 +1,134 @@
+﻿[
+    {
+        "id":  "PERSISTENCE",
+        "purpose":  "Repeated predeclared class access uses one initialized default instance.",
+        "ownedExcelPid":  18644,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "12|I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "LOCAL-REF-SET-NOTHING",
+        "purpose":  "Dropping an ordinary local reference to the default instance does not reset it.",
+        "ownedExcelPid":  3368,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "11|I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "SET-PREDECLARED-NOTHING",
+        "purpose":  "Assigning Nothing to the predeclared class name.",
+        "ownedExcelPid":  21124,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "11:10|I;T11;I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "SET-PREDECLARED-NOTHING-IDENTITY",
+        "purpose":  "Object identity after assigning Nothing to the predeclared class name and accessing again.",
+        "ownedExcelPid":  464,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "True:10|I;T11;I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "SET-PREDECLARED-NEW",
+        "purpose":  "Assigning a fresh instance to the predeclared class name.",
+        "ownedExcelPid":  22624,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "10|I;I;T11;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "HELD-OLD-REF-THEN-RESET",
+        "purpose":  "An ordinary object reference still points at the old default instance when the default name is reset.",
+        "ownedExcelPid":  7072,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "11:10|I;I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    }
+]

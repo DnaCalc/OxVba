@@ -234,6 +234,10 @@ impl Loc {
     }
 }
 
+fn is_cleared_temp(loc: Loc, frame_index: usize, first_temp: usize) -> bool {
+    matches!(loc, Loc::Temp(frame, temp) if frame == frame_index && temp >= first_temp)
+}
+
 /// `For Each` iterator state: the snapshot of source elements (taken at loop entry,
 /// matching vm2) and the current position. Keyed in [`Vm3::for_each`] by the loop
 /// variable's resolved [`Loc`], so concurrent/reentrant loops never alias.
@@ -1382,9 +1386,12 @@ impl<'h> Vm3<'h> {
             // A statement boundary drives finalization timing: run any parked
             // `Class_Terminate`s released by the previous statement (the error model takes its
             // `Resume` seeds from `FaultDispatch`, not from here).
-            OxInst::StmtBoundary { .. } => {
+            OxInst::StmtBoundary {
+                clear_temps_from, ..
+            } => {
                 // VBA statement-granular timing: run parked `Class_Terminate`s, then dispatch any
                 // inbound host (COM) events (mirrors vm2's statement-boundary drain + pump).
+                self.clear_statement_temps(*clear_temps_from);
                 self.maybe_drain();
                 self.pump_com_events();
             }
@@ -1739,6 +1746,14 @@ impl<'h> Vm3<'h> {
             OxInst::PredeclaredExtern { dst, import } => {
                 let object = self.predeclared_extern_instance(*import)?;
                 self.store(dst, object)?;
+            }
+            OxInst::PredeclaredSet { class, value } => {
+                let object = self.operand(value)?;
+                self.set_predeclared_instance(self.cur, class.0, object)?;
+            }
+            OxInst::PredeclaredExternSet { import, value } => {
+                let object = self.operand(value)?;
+                self.set_predeclared_extern_instance(*import, object)?;
             }
             OxInst::FieldGet { dst, object, field } => {
                 let recv = self.operand(object)?;
@@ -2845,6 +2860,32 @@ impl<'h> Vm3<'h> {
         Ok(value)
     }
 
+    /// Assign the storage slot behind a `VB_PredeclaredId` class name. Real VBA treats
+    /// `Set ClassName = Nothing` as clearing the default-instance slot, and a later
+    /// `ClassName.Member` access creates a fresh default instance. Assigning a non-Nothing
+    /// object replaces the slot with that object; the RHS has already been evaluated by the
+    /// caller, preserving VBA's `New`-then-release-old ordering.
+    fn set_predeclared_instance(
+        &mut self,
+        program_index: usize,
+        class_idx: usize,
+        value: Variant,
+    ) -> Result<(), Vm3Error> {
+        let program = self
+            .programs
+            .get_mut(program_index)
+            .ok_or_else(|| Vm3Error::Malformed(format!("unknown program {program_index}")))?;
+        if class_idx >= program.program.classes.len() {
+            return Err(Vm3Error::Malformed(format!("unknown class {class_idx}")));
+        }
+        if is_nothing(&value) {
+            program.predeclared_singletons.remove(&class_idx);
+        } else {
+            program.predeclared_singletons.insert(class_idx, value);
+        }
+        Ok(())
+    }
+
     /// Run a procedure to completion **synchronously** with `me` as its hidden first local —
     /// the lifecycle/event entry point (`Class_Initialize`/`Class_Terminate`/event handlers).
     ///
@@ -3495,6 +3536,15 @@ impl<'h> Vm3<'h> {
         result
     }
 
+    fn set_predeclared_extern_instance(
+        &mut self,
+        import: ImportId,
+        value: Variant,
+    ) -> Result<(), Vm3Error> {
+        let (program_index, class_idx) = self.resolve_cross_project_class(import)?;
+        self.set_predeclared_instance(program_index, class_idx, value)
+    }
+
     /// Resolve a `New <LibClass>` import to its runtime QI descriptor. The `ExportToken::Class`
     /// analogue of [`Self::resolve_library_import`]. Only `VBA.Collection` is wired today;
     /// another VBA project needs the multi-`OxProgram` linker (deferred), and any other library
@@ -4109,6 +4159,24 @@ impl<'h> Vm3<'h> {
         Ok(())
     }
 
+    fn clear_statement_temps(&mut self, first_temp: usize) {
+        let Some(frame_index) = self.frames.len().checked_sub(1) else {
+            return;
+        };
+        if let Some(frame) = self.frames.get_mut(frame_index) {
+            frame.temps.retain(|temp, _| *temp < first_temp);
+        }
+        self.for_each
+            .retain(|loc, _| !is_cleared_temp(*loc, frame_index, first_temp));
+        self.param_array_aliases.retain(|loc, aliases| {
+            !is_cleared_temp(*loc, frame_index, first_temp)
+                && aliases
+                    .iter()
+                    .flatten()
+                    .all(|alias| !is_cleared_temp(*alias, frame_index, first_temp))
+        });
+    }
+
     /// Store the result of a fallible kernel op, raising its fault on error.
     fn store_arith(
         &mut self,
@@ -4434,7 +4502,10 @@ fn inst_kind(inst: &OxInst) -> &'static str {
         OxInst::CompareObjectIs { .. } => "CompareObjectIs",
         OxInst::TypeOfIs { .. } => "TypeOfIs",
         OxInst::NewObject { .. } | OxInst::NewExtern { .. } => "New",
-        OxInst::Predeclared { .. } | OxInst::PredeclaredExtern { .. } => "Predeclared",
+        OxInst::Predeclared { .. }
+        | OxInst::PredeclaredExtern { .. }
+        | OxInst::PredeclaredSet { .. }
+        | OxInst::PredeclaredExternSet { .. } => "Predeclared",
         OxInst::NewRecord { .. } => "NewRecord",
         OxInst::FieldGet { .. } | OxInst::FieldSet { .. } => "object field access",
         OxInst::RecordGet { .. }

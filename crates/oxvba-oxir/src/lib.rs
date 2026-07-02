@@ -64,7 +64,10 @@ mod tests {
         let entry = OxBlock {
             id: BlockId(0),
             instrs: vec![
-                OxInst::StmtBoundary { stmt: 0 },
+                OxInst::StmtBoundary {
+                    stmt: 0,
+                    clear_temps_from: 0,
+                },
                 OxInst::Arith {
                     dst: OxPlace::Temp(t0),
                     op: ArithOp::Add,
@@ -221,7 +224,10 @@ mod tests {
         let entry = OxBlock {
             id: BlockId(0),
             instrs: vec![
-                OxInst::StmtBoundary { stmt: 0 },
+                OxInst::StmtBoundary {
+                    stmt: 0,
+                    clear_temps_from: 0,
+                },
                 OxInst::ComCallEarly {
                     dst: Some(OxPlace::Local(result)),
                     method: ComMethodRef {

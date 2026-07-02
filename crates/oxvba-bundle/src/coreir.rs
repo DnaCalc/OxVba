@@ -177,6 +177,15 @@ pub enum CorePlace {
         owner: Box<CoreValue>,
         binding: i32,
     },
+    /// A `VB_PredeclaredId` class name used as an assignable default-instance slot.
+    Predeclared {
+        class: ClassId,
+    },
+    /// A referenced project's `VB_PredeclaredId` class name used as an assignable
+    /// default-instance slot in that owning project.
+    PredeclaredExtern {
+        import: usize,
+    },
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────

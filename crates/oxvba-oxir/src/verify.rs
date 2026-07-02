@@ -353,6 +353,7 @@ fn verify_inst_refs(
         OxInst::CallExtern { import, .. }
         | OxInst::NewExtern { import, .. }
         | OxInst::PredeclaredExtern { import, .. }
+        | OxInst::PredeclaredExternSet { import, .. }
             if import.0 >= imports =>
         {
             errors.push(VerifyError::BadImportRef {
@@ -363,7 +364,9 @@ fn verify_inst_refs(
                 imports,
             })
         }
-        OxInst::NewObject { class, .. } | OxInst::Predeclared { class, .. }
+        OxInst::NewObject { class, .. }
+        | OxInst::Predeclared { class, .. }
+        | OxInst::PredeclaredSet { class, .. }
             if class.0 >= classes =>
         {
             errors.push(VerifyError::BadClassRef {

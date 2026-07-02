@@ -542,7 +542,9 @@ impl<'a> Lowerer<'a> {
         // Enter the first statement's start block.
         let first = self.stmt_start_block(&stmts[0]);
         self.finish_to(OxTerminator::Jump(first), first);
+        let mut prev_stmt_temp_floor = None;
         for (i, stmt) in stmts.iter().enumerate() {
+            let stmt_temp_floor = self.next_temp;
             let s_start = self.cur;
             let pad = self.reserve();
             let s_next = match stmts.get(i + 1) {
@@ -550,9 +552,14 @@ impl<'a> Lowerer<'a> {
                 None => self.reserve(),
             };
             self.cur_fault = pad;
-            self.emit(OxInst::StmtBoundary { stmt: i as u32 });
+            let clear_temps_from = prev_stmt_temp_floor.unwrap_or(stmt_temp_floor);
+            self.emit(OxInst::StmtBoundary {
+                stmt: i as u32,
+                clear_temps_from,
+            });
             self.lower_stmt(stmt, s_next)?;
             self.build_pad(pad, s_start, s_next);
+            prev_stmt_temp_floor = Some(stmt_temp_floor);
         }
         Ok(())
     }
@@ -2184,6 +2191,23 @@ impl<'a> Lowerer<'a> {
                 // The sink holds an object reference.
                 Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
             }
+            coreir::CorePlace::Predeclared { class } => {
+                let t = self.new_temp();
+                let class = ClassId(class.0);
+                self.emit(OxInst::Predeclared {
+                    dst: OxPlace::Temp(t),
+                    class,
+                });
+                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Class(class))))
+            }
+            coreir::CorePlace::PredeclaredExtern { import } => {
+                let t = self.new_temp();
+                self.emit(OxInst::PredeclaredExtern {
+                    dst: OxPlace::Temp(t),
+                    import: ImportId(*import),
+                });
+                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
+            }
         }
     }
 
@@ -2286,6 +2310,18 @@ impl<'a> Lowerer<'a> {
                     value,
                 });
             }
+            coreir::CorePlace::Predeclared { class } => {
+                self.emit(OxInst::PredeclaredSet {
+                    class: ClassId(class.0),
+                    value,
+                });
+            }
+            coreir::CorePlace::PredeclaredExtern { import } => {
+                self.emit(OxInst::PredeclaredExternSet {
+                    import: ImportId(*import),
+                    value,
+                });
+            }
         }
         Ok(())
     }
@@ -2306,7 +2342,9 @@ impl<'a> Lowerer<'a> {
             coreir::CorePlace::Field { .. }
             | coreir::CorePlace::Index { .. }
             | coreir::CorePlace::RecordField { .. }
-            | coreir::CorePlace::WithEvents { .. } => Err(unimpl("compound place")),
+            | coreir::CorePlace::WithEvents { .. }
+            | coreir::CorePlace::Predeclared { .. }
+            | coreir::CorePlace::PredeclaredExtern { .. } => Err(unimpl("compound place")),
         }
     }
 

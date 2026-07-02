@@ -213,14 +213,19 @@ impl<'a> ProcLower<'a> {
     /// (registering a `Class` import). These are VBA's document/class predeclared
     /// instances — `ThisWorkbook`, `Sheet1`, `UserForm1`, … Returns `None` when `name`
     /// is not a predeclared class.
-    fn bind_predeclared_instance(&mut self, name: &str) -> Result<Option<Bound>, BindError> {
+    pub(crate) fn bind_predeclared_instance(
+        &mut self,
+        name: &str,
+    ) -> Result<Option<Bound>, BindError> {
         let folded = oxvba_symbol::model::fold_identifier(name);
         if let Some(&class_id) = self.g.ids.predeclared_class_of.get(&folded) {
             let class_name = self.g.ids.classes[class_id.0].name.clone();
-            return Ok(Some(value_bound(
-                CoreValue::Predeclared { class: class_id },
-                VarTypeRef::Object(class_name),
-            )));
+            let place = CorePlace::Predeclared { class: class_id };
+            return Ok(Some(Bound {
+                value: CoreValue::Predeclared { class: class_id },
+                ty: VarTypeRef::Object(class_name),
+                place: Some(place),
+            }));
         }
         if let Some((unit, class)) = self.g.env.resolve_extern_predeclared(name) {
             let import = self.g.intern_import(BundleImport {
@@ -229,10 +234,12 @@ impl<'a> ProcLower<'a> {
                     name: class.clone(),
                 },
             });
-            return Ok(Some(value_bound(
-                CoreValue::PredeclaredExtern { import },
-                VarTypeRef::Object(class),
-            )));
+            let place = CorePlace::PredeclaredExtern { import };
+            return Ok(Some(Bound {
+                value: CoreValue::PredeclaredExtern { import },
+                ty: VarTypeRef::Object(class),
+                place: Some(place),
+            }));
         }
         Ok(None)
     }

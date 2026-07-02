@@ -2393,3 +2393,61 @@
   crates/oxvba-vm3/src/lib.rs` still reports the known vm3 formatter backlog in
   unrelated default-member/error-help-file regions, so no broad vm3 reformat was
   mixed into this semantic change.
+
+## 2026-07-02 - Predeclared Singleton Reset And Resurrection (`bd-4ktq.55`)
+
+- Captured live Excel/VBA 7.1 behavior with an imported `.cls` file carrying
+  `Attribute VB_PredeclaredId = True`; the harness used VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling:
+  `docs/evidence/conformance/vm3_predeclared_singleton_oracle_20260702T080743Z/`.
+- Oracle findings:
+  - Repeated `ClassName.Member` access reuses the one default instance.
+  - Releasing an ordinary local object reference to the default instance does not
+    clear or reinitialize the default instance.
+  - `Set ClassName = Nothing` is valid VBA and clears the default-instance slot;
+    the next `ClassName.Member` access creates a fresh default instance.
+  - If no other reference holds the old default, `Class_Terminate` runs before
+    the next statement's observable access; if another reference holds it, the
+    old instance survives and the new default is separate.
+  - `Set ClassName = New ClassName` evaluates and initializes the new object
+    before replacing the default slot and releasing the old default.
+  - A referenced project's exposed predeclared class resets the owning project's
+    default-instance slot.
+- vm3 now binds predeclared class names as assignable l-values, lowers them to
+  active-project and referenced-project predeclared-slot store instructions, and
+  updates the owning `LoadedProgram.predeclared_singletons` cache on Set/Nothing
+  or Set/New.
+- OxIR statement boundaries now carry a temporary floor so vm3 releases
+  statement-local temporaries before running the statement-boundary
+  `Class_Terminate` drain. The floor preserves long-lived compound-statement
+  temps such as `For` limits/steps, `For Each` iterator state, and `With`
+  receivers while still dropping expression receiver temps at VBA statement
+  boundaries. Clearing a temp floor also prunes VM auxiliary state keyed by those
+  temps (`For Each` iterators and ParamArray alias metadata), so helper maps do
+  not keep stale per-statement state alive after the temp slot is released.
+- Added `crates/oxvba-differential/tests/predeclared_singleton_vm3.rs` to pin
+  persistence, local-reference release, `Set ClassName = Nothing`,
+  `Set ClassName = New ClassName`, held-old-reference survival, and referenced
+  predeclared-slot reset.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-predeclared-singleton-oracle.ps1`
+  - `cargo test -p oxvba-differential --test predeclared_singleton_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test for_counter_overflow_vm3 --test for_header_coercion_vm3 --test foreach_scalar_source_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test project_class_newenum_vm3 --test compound_place_vm3 --quiet`
+  - `cargo test -p oxvba-bind --test cross_project predeclared --quiet`
+  - `cargo check -p oxvba-bundle -p oxvba-bind -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `rustfmt --edition 2024 --check crates/oxvba-differential/tests/predeclared_singleton_vm3.rs`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
+    (completed non-blocking refresh: run_id `20260702T081142Z`,
+    obligations=383, failures/todos=63, skipped=16; first 360-second runner
+    attempt timed out, then completed with a longer timeout)
+- Non-blocking formatter note: direct rustfmt checks on touched legacy OxIR
+  files still report pre-existing repo formatter drift outside this bead's
+  hunks, so the committed formatter proof is scoped to the new regression test
+  and `git diff --check`.

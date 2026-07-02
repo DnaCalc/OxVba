@@ -23,14 +23,29 @@ impl<'a> ProcLower<'a> {
                 if let Some(rl) = self.return_target(name) {
                     return Ok((CorePlace::Local(rl), self.info.return_type.clone()));
                 }
-                let binding = self
-                    .resolve(name)
-                    .ok_or_else(|| self.unresolved(name, "assignment target"))?;
+                let binding = match self.resolve(name) {
+                    Some(binding) => binding,
+                    None => {
+                        if let Some(bound) = self.bind_predeclared_instance(name)?
+                            && let Some(place) = bound.place
+                        {
+                            return Ok((place, bound.ty));
+                        }
+                        return Err(self.unresolved(name, "assignment target"));
+                    }
+                };
                 match binding.symbol.and_then(|s| self.place_for_symbol(s)) {
                     Some(place_ty) => Ok(place_ty),
-                    None => Err(BindError::InvalidAssignment(format!(
-                        "`{name}` is not an assignable variable"
-                    ))),
+                    None => {
+                        if let Some(bound) = self.bind_predeclared_instance(name)?
+                            && let Some(place) = bound.place
+                        {
+                            return Ok((place, bound.ty));
+                        }
+                        Err(BindError::InvalidAssignment(format!(
+                            "`{name}` is not an assignable variable"
+                        )))
+                    }
                 }
             }
             SyntaxKind::IndexExpr => {
