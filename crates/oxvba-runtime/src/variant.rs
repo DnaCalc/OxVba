@@ -3,7 +3,7 @@ use crate::{
     bstr::{BStr, OwnedBStrCore},
     com_record::ComRecord,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
-    safe_array::{SafeArray, SafeArrayBound},
+    safe_array::{SafeArray, SafeArrayBound, VT_VARIANT_VALUE},
     vba_record::VbaRecord,
 };
 
@@ -239,6 +239,16 @@ impl Variant {
         Self::from_core(VariantCore::from_bytes(vtype, [0; 8]))
     }
 
+    pub fn unallocated_array(element_vartype: u16) -> Self {
+        let mut core = VariantCore::from_bytes(VarType::ArrayVariant, [0; 8]);
+        core.reserved1 = if element_vartype == 0 {
+            VT_VARIANT_VALUE
+        } else {
+            element_vartype
+        };
+        Self::from_core(core)
+    }
+
     pub fn vtype(&self) -> VarType {
         self.core.vtype
     }
@@ -268,6 +278,13 @@ impl Variant {
     }
 
     pub fn to_wire_bytes(&self) -> [u8; 16] {
+        if self.vtype() == VarType::ArrayVariant && self.safearray_bounds_len().is_none() {
+            let element_vartype = self.array_element_vartype().unwrap_or(VT_VARIANT_VALUE);
+            let mut out = [0u8; 16];
+            out[0..2].copy_from_slice(&(0x2000u16 | element_vartype).to_le_bytes());
+            out[8..16].copy_from_slice(&self.data_bytes());
+            return out;
+        }
         self.core.to_wire_bytes()
     }
 
@@ -320,10 +337,7 @@ impl Variant {
                 let ptr = bytes_to_raw_safearray(core.data_bytes());
                 // SAFETY: guaranteed by this unsafe fn's caller.
                 let Some(array) = (unsafe { SafeArray::clone_from_raw_safearray(ptr) }) else {
-                    return Ok(Self::from_core(VariantCore::from_bytes(
-                        VarType::ArrayVariant,
-                        [0; 8],
-                    )));
+                    return Ok(Self::from_core(core));
                 };
                 Ok(Self::from_safearray(array))
             }
@@ -671,6 +685,19 @@ impl Variant {
         unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
     }
 
+    pub fn array_element_vartype(&self) -> Option<u16> {
+        if self.vtype() != VarType::ArrayVariant {
+            return None;
+        }
+        match self.as_safearray() {
+            Some(array) => Some(array.element_vartype()),
+            None => Some(match self.reserved1() {
+                0 => VT_VARIANT_VALUE,
+                element_vartype => element_vartype,
+            }),
+        }
+    }
+
     pub fn set_safearray_element(&mut self, index: usize, value: &Variant) -> Result<(), String> {
         if self.vtype() != VarType::ArrayVariant {
             return Err(format!(
@@ -719,9 +746,7 @@ impl Variant {
         }
         // SAFETY: as in `safearray_element` — borrow the owned descriptor without
         // taking ownership.
-        unsafe {
-            SafeArray::raw_safearray_bounds_len(bytes_to_raw_safearray(self.data_bytes()))
-        }
+        unsafe { SafeArray::raw_safearray_bounds_len(bytes_to_raw_safearray(self.data_bytes())) }
     }
 
     pub fn from_com_record(value: ComRecord) -> Self {
@@ -1003,6 +1028,7 @@ mod tests {
 
     use crate::{
         Decimal96, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec, VbaRecordLayout, bstr::BStr,
+        safe_array::VT_I4_VALUE,
     };
 
     use super::{VarType, Variant, VariantCore, VariantData};
@@ -1150,6 +1176,16 @@ mod tests {
                 .and_then(|array| array.variant_elements()),
             Some(vec![Variant::from_i32(2)])
         );
+    }
+
+    #[test]
+    fn unallocated_array_marker_projects_typed_wire_tag_without_reserved_words() {
+        let value = Variant::unallocated_array(VT_I4_VALUE);
+        let wire = value.to_wire_bytes();
+
+        assert_eq!(u16::from_le_bytes([wire[0], wire[1]]), 0x2000 | VT_I4_VALUE);
+        assert_eq!(&wire[2..8], &[0, 0, 0, 0, 0, 0]);
+        assert_eq!(&wire[8..16], &[0; 8]);
     }
 
     unsafe fn clone_test_record(

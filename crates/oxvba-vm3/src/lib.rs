@@ -42,7 +42,7 @@ use std::collections::HashMap;
 use oxvba_bundle::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, NativeImplId, ProjectMemberKind,
     array_element_type_for_vartype, default_array_element, redim_safearray_from_elements,
-    vba_record_layout_for_fields,
+    safearray_vartype_for_element, vba_record_layout_for_fields,
 };
 use oxvba_com::{
     ComMemberToken, ComSubscriptionToken, DynamicCallArg, DynamicCallKind, DynamicCallRequest,
@@ -59,6 +59,7 @@ use oxvba_oxir::value::{
 };
 use oxvba_oxir::{
     BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
+    OxTy,
 };
 use oxvba_runtime::object_ref::{
     ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassDescriptor,
@@ -394,6 +395,38 @@ impl<'h> Vm3<'h> {
         self.programs[self.cur].program
     }
 
+    /// Initial slot value for a statically typed VBA variable. Dynamic array variables are
+    /// arrays before allocation for `IsArray`, but have no SAFEARRAY descriptor/bounds until
+    /// `ReDim`.
+    fn initial_value_for_type(ty: &OxTy) -> Variant {
+        match ty {
+            OxTy::Array(element, _) => {
+                let element = Self::array_element_type_for_ox_ty(element);
+                Variant::unallocated_array(safearray_vartype_for_element(&element))
+            }
+            _ => Variant::empty(),
+        }
+    }
+
+    fn array_element_type_for_ox_ty(ty: &OxTy) -> ArrayElementType {
+        match ty {
+            OxTy::Bool => ArrayElementType::Boolean,
+            OxTy::Byte => ArrayElementType::Byte,
+            OxTy::Integer => ArrayElementType::Integer,
+            OxTy::Long => ArrayElementType::Long,
+            OxTy::LongLong => ArrayElementType::LongLong,
+            OxTy::LongPtr => ArrayElementType::LongPtr,
+            OxTy::Single => ArrayElementType::Single,
+            OxTy::Double => ArrayElementType::Double,
+            OxTy::Currency => ArrayElementType::Currency,
+            OxTy::Date => ArrayElementType::Date,
+            OxTy::Str => ArrayElementType::String,
+            OxTy::FixedStr(len) => ArrayElementType::FixedString(*len as usize),
+            OxTy::Variant => ArrayElementType::Variant,
+            _ => ArrayElementType::Variant,
+        }
+    }
+
     /// Build a program's mutable runtime tables: one leaked `&'static` runtime descriptor per
     /// class (the shape `ObjectRef::from_project_instance` requires, as vm2's `LoadedBundle`
     /// leaks them; bounded by class count), the `(binding,event)→handler` route table, and the
@@ -415,7 +448,11 @@ impl<'h> Vm3<'h> {
         }
         LoadedProgram {
             program,
-            globals: vec![Variant::empty(); program.globals.len()],
+            globals: program
+                .globals
+                .iter()
+                .map(|global| Self::initial_value_for_type(&global.ty))
+                .collect(),
             class_descriptors,
             predeclared_singletons: HashMap::new(),
             event_routes,
@@ -713,7 +750,11 @@ impl<'h> Vm3<'h> {
             func,
             block: f.entry,
             ip: 0,
-            locals: vec![Variant::empty(); f.locals.len()],
+            locals: f
+                .locals
+                .iter()
+                .map(|local| Self::initial_value_for_type(&local.ty))
+                .collect(),
             temps: HashMap::new(),
             aliases: HashMap::new(),
             dst: None,
@@ -1535,6 +1576,10 @@ impl<'h> Vm3<'h> {
                 //   • dynamic (`Dim a()` + `ReDim`): free the storage (becomes
                 //     uninitialized; `UBound` raises until re-`ReDim`'d).
                 let cur = self.read(array)?;
+                let was_array = cur.vtype() == VarType::ArrayVariant;
+                let erased_element_vartype = cur
+                    .array_element_vartype()
+                    .unwrap_or_else(|| safearray_vartype_for_element(&ArrayElementType::Variant));
                 let reset = cur.as_safearray().filter(|a| a.is_fixed_size()).map(|arr| {
                     // Rebuild a fresh array of the SAME bounds + element type + fixed flag,
                     // default-initialized — i.e. a `ReDim`-to-current-bounds, which already
@@ -1564,6 +1609,9 @@ impl<'h> Vm3<'h> {
                     Some(built) => {
                         let array_value = built.map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                         self.store(array, Variant::from_safearray(array_value))?;
+                    }
+                    None if was_array => {
+                        self.store(array, Variant::unallocated_array(erased_element_vartype))?
                     }
                     None => self.store(array, Variant::empty())?,
                 }
@@ -1991,7 +2039,11 @@ impl<'h> Vm3<'h> {
             .ok_or_else(|| Vm3Error::Malformed(format!("call to unknown proc {}", proc.0)))?;
         // Resolve the destination + ByRef backings in the caller, before pushing.
         let dst_loc = dst.map(|p| self.resolve(&p));
-        let mut locals = vec![Variant::empty(); callee.locals.len()];
+        let mut locals: Vec<Variant> = callee
+            .locals
+            .iter()
+            .map(|local| Self::initial_value_for_type(&local.ty))
+            .collect();
         let mut aliases = HashMap::new();
         let frame_index = self.frames.len();
         let mut pending_param_array_aliases = Vec::new();
@@ -2404,9 +2456,19 @@ impl<'h> Vm3<'h> {
             .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "Expected array")))
     }
 
+    fn is_unallocated_array_value(value: &Variant) -> bool {
+        value.vtype() == VarType::ArrayVariant && value.safearray_bounds_len().is_none()
+    }
+
     /// The array (SAFEARRAY) value of an operand, else type mismatch (13).
+    /// A null array marker is still an array value in VBA, but has no descriptor/bounds;
+    /// indexing and bounds queries surface subscript out of range (9).
     fn array_of(&self, op: &OxOperand) -> Result<SafeArray, Vm3Error> {
-        self.operand(op)?
+        let value = self.operand(op)?;
+        if Self::is_unallocated_array_value(&value) {
+            return Err(Vm3Error::Fault(Fault::new(9, "array has no bounds")));
+        }
+        value
             .as_safearray()
             .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "expected an array")))
     }
@@ -2421,32 +2483,36 @@ impl<'h> Vm3<'h> {
         indices: &[OxOperand],
         dst: &OxPlace,
     ) -> Result<(), Vm3Error> {
-        if recv.as_safearray().is_none()
-            && let Some(obj) = recv.as_object_ref()
-        {
-            let argv = self.operands_to_values(indices)?;
-            let value = self.dispatch_default_member_values(
-                Variant::from_object_ref(obj),
-                TypeLibMemberInvokeKind::PropertyGet,
-                argv,
-            )?;
-            self.store(dst, value)
-        } else {
-            let arr = recv
-                .as_safearray()
-                .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "expected an array")))?;
-            let bounds = arr
-                .bounds()
-                .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
-            let flat = self.flat_index(indices, &bounds)?;
-            if flat >= arr.len() {
-                return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        let arr = match recv.as_safearray() {
+            Some(arr) => arr,
+            None if Self::is_unallocated_array_value(&recv) => {
+                return Err(Vm3Error::Fault(Fault::new(9, "array has no bounds")));
             }
-            let value = arr
-                .variant_element(flat)
-                .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
-            self.store(dst, value)
+            None => {
+                if let Some(obj) = recv.as_object_ref() {
+                    let argv = self.operands_to_values(indices)?;
+                    let value = self.dispatch_default_member_values(
+                        Variant::from_object_ref(obj),
+                        TypeLibMemberInvokeKind::PropertyGet,
+                        argv,
+                    )?;
+                    self.store(dst, value)?;
+                    return Ok(());
+                }
+                return Err(Vm3Error::Fault(Fault::new(13, "expected an array")));
+            }
+        };
+        let bounds = arr
+            .bounds()
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;
+        let flat = self.flat_index(indices, &bounds)?;
+        if flat >= arr.len() {
+            return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
         }
+        let value = arr
+            .variant_element(flat)
+            .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        self.store(dst, value)
     }
 
     /// Set one element of a received array VALUE `recv` and return the mutated array
@@ -2459,26 +2525,30 @@ impl<'h> Vm3<'h> {
         indices: &[OxOperand],
         value: &Variant,
     ) -> Result<Variant, Vm3Error> {
-        if recv.as_safearray().is_none()
-            && let Some(obj) = recv.as_object_ref()
-        {
-            let mut argv = self.operands_to_values(indices)?;
-            argv.push(value.clone());
-            let invoke_kind = if value.as_object_ref().is_some() {
-                TypeLibMemberInvokeKind::PropertyPutRef
-            } else {
-                TypeLibMemberInvokeKind::PropertyPut
-            };
-            self.dispatch_default_member_values(
-                Variant::from_object_ref(obj),
-                invoke_kind,
-                argv,
-            )?;
-            return Ok(recv);
-        }
-        let arr = recv
-            .as_safearray()
-            .ok_or_else(|| Vm3Error::Fault(Fault::new(13, "expected an array")))?;
+        let arr = match recv.as_safearray() {
+            Some(arr) => arr,
+            None if Self::is_unallocated_array_value(&recv) => {
+                return Err(Vm3Error::Fault(Fault::new(9, "array has no bounds")));
+            }
+            None => {
+                if let Some(obj) = recv.as_object_ref() {
+                    let mut argv = self.operands_to_values(indices)?;
+                    argv.push(value.clone());
+                    let invoke_kind = if value.as_object_ref().is_some() {
+                        TypeLibMemberInvokeKind::PropertyPutRef
+                    } else {
+                        TypeLibMemberInvokeKind::PropertyPut
+                    };
+                    self.dispatch_default_member_values(
+                        Variant::from_object_ref(obj),
+                        invoke_kind,
+                        argv,
+                    )?;
+                    return Ok(recv);
+                }
+                return Err(Vm3Error::Fault(Fault::new(13, "expected an array")));
+            }
+        };
         let bounds = arr
             .bounds()
             .ok_or_else(|| Vm3Error::Fault(Fault::new(9, "array has no bounds")))?;

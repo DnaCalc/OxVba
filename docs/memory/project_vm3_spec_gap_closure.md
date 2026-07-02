@@ -777,10 +777,11 @@
 
 - Closed stale inventory row `lbound-ubound-unallocated-error-13` for vm3 with
   regression evidence; no runtime code change was needed.
-- Added `crates/oxvba-differential/tests/array_bounds_unallocated_vm3.rs`,
-  which proves `LBound` and `UBound` on both never-allocated and erased dynamic
-  arrays raise run-time error 13, while allocated dynamic and fixed arrays still
-  return their declared bounds.
+- Added `crates/oxvba-differential/tests/array_bounds_unallocated_vm3.rs` for
+  the then-assumed unallocated-array bounds error. This was superseded by bead
+  `bd-4ktq.53`: live Excel/VBA evidence shows never-allocated and erased
+  dynamic arrays raise run-time error 9, not 13, while allocated dynamic and
+  fixed arrays still return their declared bounds.
 - Verification target:
   - `cargo test -p oxvba-differential --test array_bounds_unallocated_vm3`
   - `cargo test -p oxvba-vm3`
@@ -2281,3 +2282,64 @@
   snapshot contains `Item(1)=30` as `Integer` rather than the test's expected
   `Long`. This collection subtype expectation is outside the array ByVal/fixed-lhs
   scope and was not mixed into this bead.
+
+## 2026-07-02 - IsArray Unallocated Dynamic Array Parity (`bd-4ktq.53`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_isarray_unallocated_oracle_20260702T040452Z/`.
+- Oracle findings:
+  - Declared dynamic arrays return `IsArray=True` before `ReDim`, after
+    allocation, and after `Erase`.
+  - Fixed arrays return `IsArray=True` before and after `Erase`.
+  - Empty Variant returns `False`.
+  - Variant-held `Array(...)`, allocated dynamic arrays, copied unallocated
+    dynamic arrays, and erased Variant arrays return `True`.
+  - `LBound`/`UBound` on never-allocated dynamic arrays, erased dynamic arrays,
+    and erased Variant-held arrays raise run-time error 9.
+  - Typed unallocated `Long()` arrays report `VarType=8195` and
+    `TypeName=Long()`, including after `Erase` and when copied into a Variant;
+    erased `Array(...)` Variants report `8204`/`Variant()`.
+- Implemented vm3 slot initialization for statically array-typed locals/globals
+  as a typed null SAFEARRAY array marker, not `Empty`, so array identity and
+  element introspection match VBA before allocation and survive copying through
+  Variant.
+- Changed dynamic-array erasure of an already-array value to return to the same
+  typed null array marker. Fixed-size arrays still rebuild/reset their
+  SAFEARRAY, and ordinary Empty Variants still erase to Empty.
+- The internal marker projects as `VT_ARRAY | element_vartype` with zero
+  reserved words in `Variant::to_wire_bytes`, so marker metadata does not leak
+  through the COM-compatible wire layout.
+- Added `crates/oxvba-differential/tests/isarray_unallocated_vm3.rs` for the
+  oracle matrix. Updated `array_bounds_unallocated_vm3` proves the marker does
+  not give unallocated arrays fake bounds: `LBound`/`UBound` raise the
+  Excel/VBA run-time error 9.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-isarray-unallocated-oracle.ps1`
+  - `cargo test -p oxvba-differential --test isarray_unallocated_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test array_bounds_unallocated_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test array_introspection_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test fixed_array_erase_vm3 --quiet`
+  - `cargo test -p oxvba-runtime --quiet`
+  - `cargo test -p oxvba-lib --quiet`
+  - `cargo check -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
+    (completed non-blocking refresh: 304 pass, 16 skipped Kani obligations,
+    63 todo; a first shorter runner timeout was discarded and rerun with a
+    longer ceiling).
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `rustfmt --edition 2024 --check crates/oxvba-runtime/src/variant.rs crates/oxvba-lib/src/pure.rs crates/oxvba-differential/tests/array_bounds_unallocated_vm3.rs crates/oxvba-differential/tests/isarray_unallocated_vm3.rs`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Non-blocking formatter note: `cargo fmt --all -- --check` still reports the
+  repo-wide rustfmt backlog tracked by the formatter support lane. Direct
+  `rustfmt --edition 2024 --check` passed for the touched runtime/lib/test
+  files that are formatter-clean. Including `crates/oxvba-vm3/src/lib.rs`
+  still reports pre-existing formatter drift outside this bead's edits, so no
+  broad vm3 reformat was mixed into this semantic change.
+- Verification note: vm3 golden also needed the diagnostic-display refresh from
+  the immediately preceding array-copy bead (`Unresolved { ... }`/`Unsupported`
+  debug text to user-facing `Display` text). That snapshot refresh is
+  diagnostics-only and independent of the `IsArray` slot-marker behavior.

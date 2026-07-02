@@ -2552,8 +2552,8 @@ pub fn is_vtype(args: &[Variant], pred: impl Fn(VarType) -> bool) -> LibResult<V
 
 pub fn var_type(args: &[Variant]) -> LibResult<Variant> {
     let value = need(args, 0)?;
-    let code = match value.as_safearray() {
-        Some(array) => 0x2000 | i32::from(array.element_vartype()),
+    let code = match value.array_element_vartype() {
+        Some(element_vartype) => 0x2000 | i32::from(element_vartype),
         None => value.vtype() as i32,
     };
     Ok(vi32(code))
@@ -2561,10 +2561,10 @@ pub fn var_type(args: &[Variant]) -> LibResult<Variant> {
 
 pub fn type_name(args: &[Variant]) -> LibResult<Variant> {
     let value = need(args, 0)?;
-    if let Some(array) = value.as_safearray() {
+    if let Some(element_vartype) = value.array_element_vartype() {
         return Ok(vstr(format!(
             "{}()",
-            type_name_for_vartype(array.element_vartype())
+            type_name_for_vartype(element_vartype)
         )));
     }
     let name = match value.vtype() {
