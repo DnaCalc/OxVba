@@ -2457,6 +2457,38 @@ fn run_multi_main_local0(modules: &[(&str, ModuleKind, &str)]) -> Option<f64> {
 }
 
 #[test]
+fn module_private_fixed_array_global_in_non_entry_module_is_allocated() {
+    let main = "Sub Main()\n    Dim r As Long\n    AddTopic 7\n    r = TopicTotal()\nEnd Sub\n";
+    let helper = "Private gTopicIds(1 To 2) As Long\nPrivate gTopicCount As Long\n\n\
+                  Public Sub AddTopic(ByVal topicId As Long)\n    gTopicCount = gTopicCount + 1\n    gTopicIds(gTopicCount) = topicId\nEnd Sub\n\n\
+                  Public Function TopicTotal() As Long\n    TopicTotal = gTopicIds(1)\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("RtdTimer", ModuleKind::Procedural, helper),
+        ]),
+        Some(7.0)
+    );
+}
+
+#[test]
+fn module_private_fixed_array_global_in_procedureless_module_is_initialized() {
+    let program = bind_program(
+        &multi_manifest(&[(
+            "Globals",
+            ModuleKind::Procedural,
+            "Private gTopicIds(1 To 2) As Long\n",
+        )]),
+        &NullTypeLibs,
+    )
+    .expect("bind procedureless module global");
+    assert!(
+        program.global_initializer.is_some(),
+        "fixed-size module array should allocate even when the project has no procedures"
+    );
+}
+
+#[test]
 fn withevents_raise_event_routes_to_handler() {
     // `Set k.Watched = s` subscribes the sink; `s.Fire` raises the event, which
     // routes to `Watched_Fired` (run with the sink's Me) and sets `k.Got`.

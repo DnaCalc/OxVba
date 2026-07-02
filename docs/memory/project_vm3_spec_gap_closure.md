@@ -2836,3 +2836,29 @@
 - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
   now gets past the previous clippy gates. The remaining meta-check failure is
   the wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.
+
+## 2026-07-02 - Wrapped COM Server gTopicIds Gate (`bd-4ktq.61`)
+
+- Root cause: module-global fixed-array initialization lowered every standard
+  module's `Dim` declarations through an entry-procedure context. That made a
+  helper module's `Private gTopicIds(1 To 32) As Long` invisible while building
+  the wrapped COM server package, even though VBA resolves that declaration in
+  its declaring module scope.
+- Fix: module-global initializer lowering now uses an explicit module context
+  for each standard module. The old entry-procedure fallback was removed rather
+  than kept as a compatibility path, and projects with fixed-size module arrays
+  but no procedures can still emit the hidden global initializer.
+- Regression coverage:
+  - `module_private_fixed_array_global_in_non_entry_module_is_allocated`
+  - `module_private_fixed_array_global_in_procedureless_module_is_initialized`
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-bind --all-targets -- -D warnings`
+  - `cargo test -p oxvba-bind module_private_fixed_array_global_in_non_entry_module_is_allocated -- --exact`
+  - `cargo test -p oxvba-bind module_private_fixed_array_global_in_procedureless_module_is_initialized -- --exact`
+  - `cargo test -p oxvba-build wrapped_com_server_build_emits_package_descriptor_and_idl`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the wrapped COM server `gTopicIds` failure. The next surfaced
+  meta-check failure is the deterministic
+  `oxvba-differential::tests::vm3_runs_collection_methods` collection item
+  subtype expectation, now tracked as `bd-x5q1`.

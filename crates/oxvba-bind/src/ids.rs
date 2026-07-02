@@ -699,7 +699,7 @@ fn parse_user_mem_id_value(value: &str) -> Option<i32> {
 /// The module's `Option Compare` mode (`Text` makes string comparisons
 /// case-insensitive); `Binary` is the default. `Text` lexes as an `Ident` after
 /// the `Compare` keyword.
-fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
+pub(crate) fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
     for node in module.child_nodes() {
         if node.kind() != SyntaxKind::OptionStmt {
             continue;
@@ -720,7 +720,7 @@ fn module_compare_mode(module: SyntaxNode<'_>) -> StringCompareMode {
 /// dimension declared with only an upper bound, and of the `Array()` result.
 /// `Option Base 1` sets 1; absent (or `Option Base 0`) it is 0. VBA permits
 /// only 0 or 1 — any other literal is read as 1 only when it is exactly `1`.
-fn module_option_base(module: SyntaxNode<'_>) -> i32 {
+pub(crate) fn module_option_base(module: SyntaxNode<'_>) -> i32 {
     for node in module.child_nodes() {
         if node.kind() != SyntaxKind::OptionStmt {
             continue;

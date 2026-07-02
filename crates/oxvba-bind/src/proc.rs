@@ -10,11 +10,11 @@ use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::error::BindError;
-use crate::ids::ProcInfo;
-use crate::{Lower, ProcLower};
+use crate::ids::{ProcInfo, module_compare_mode, module_option_base};
+use crate::{Lower, LowerContext, ProcLower};
 
 impl<'a> Lower<'a> {
-    fn proc_lower(&'a self, info: &'a ProcInfo) -> ProcLower<'a> {
+    fn lower_with(&'a self, info: LowerContext) -> ProcLower<'a> {
         ProcLower {
             g: self,
             info,
@@ -28,27 +28,34 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn proc_lower(&'a self, info: &ProcInfo) -> ProcLower<'a> {
+        self.lower_with(LowerContext::from_proc(info))
+    }
+
     /// Allocations for module-level **fixed-size array globals** (`Dim g(1 To 3)` at
-    /// module scope), run once at program entry before the entry body. Resolved in the
-    /// entry proc's frame (globals are visible from any proc); a dynamic `Dim g()` global
-    /// is skipped. Only the active project's modules contribute.
-    pub(crate) fn module_global_array_inits(
-        &'a self,
-        entry_info: &'a ProcInfo,
-    ) -> Result<Vec<CoreStmt>, BindError> {
-        let mut pl = self.proc_lower(entry_info);
+    /// module scope), run once per VM session before user code. Each declaration is
+    /// resolved in its declaring module's scope, so `Private` globals are visible
+    /// exactly where VBA makes them visible. A dynamic `Dim g()` global is skipped.
+    /// Only the active project's modules contribute.
+    pub(crate) fn module_global_array_inits(&'a self) -> Result<Vec<CoreStmt>, BindError> {
         let mut out = Vec::new();
         for module in self.env.modules() {
             // Class-module declarations are per-instance *fields*, not bundle
             // globals: a `Private p As SomeUdt` resolves only through `Me` (a
-            // `CorePlace::Field`), which the entry proc's frame can't reach
-            // (`me_local = None`). Binding them here against the entry context
-            // would fault `"… is not a variable"`. Each class field's default
-            // record-init is emitted per-instance into its `Class_Initialize`
-            // prologue instead (see `class_field_record_inits`).
+            // `CorePlace::Field`), which a module initializer cannot reach
+            // (`me_local = None`). Each class field's default record-init is
+            // emitted per-instance into its `Class_Initialize` prologue instead
+            // (see `class_field_record_inits`).
             if module.module_kind == ModuleKind::Class {
                 continue;
             }
+            let module_info = LowerContext::from_module(
+                module.module_name,
+                module.module_scope,
+                module_compare_mode(module.syntax),
+                module_option_base(module.syntax),
+            );
+            let mut pl = self.lower_with(module_info);
             for node in module.syntax.child_nodes() {
                 if node.kind() == SyntaxKind::DimStmt {
                     out.extend(pl.bind_dim(node)?);

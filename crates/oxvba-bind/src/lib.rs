@@ -26,7 +26,7 @@ use oxvba_bundle::coreir::{
 };
 use oxvba_bundle::{
     BundleExport, BundleImport, ComClassExport, EventRoute, ExportTarget, ExportToken,
-    ExternalCallDescriptor, ProcedureKind,
+    ExternalCallDescriptor, ProcedureKind, StringCompareMode,
 };
 use oxvba_bundle::{coreir::CoreCallee, native::NativeImplId};
 use oxvba_runtime::DynLinkSymbol;
@@ -152,29 +152,22 @@ fn bind_one(
     // locals are allocated once per VM session. Keep them in a hidden initializer
     // proc rather than splicing into `Main`, because COM activation-style hosts can
     // enter directly through class members without running the top-level entry proc.
-    let init_context = ids
-        .entry()
-        .or_else(|| (!ids.procs.is_empty()).then_some(ProcId(0)));
-    let global_initializer = if let Some(entry_id) = init_context {
-        let mut inits = lower.module_global_array_inits(&ids.procs[entry_id.0])?;
-        inits.extend(lower.static_local_inits(&decls)?);
-        if inits.is_empty() {
-            None
-        } else {
-            let proc = ProcId(procs.len());
-            procs.push(CoreProc {
-                name: "__vba_global_initialize".to_string(),
-                kind: ProcedureKind::Sub,
-                params: Vec::new(),
-                locals: Vec::new(),
-                return_local: None,
-                label_lines: Vec::new(),
-                body: inits,
-            });
-            Some(proc)
-        }
-    } else {
+    let mut inits = lower.module_global_array_inits()?;
+    inits.extend(lower.static_local_inits(&decls)?);
+    let global_initializer = if inits.is_empty() {
         None
+    } else {
+        let proc = ProcId(procs.len());
+        procs.push(CoreProc {
+            name: "__vba_global_initialize".to_string(),
+            kind: ProcedureKind::Sub,
+            params: Vec::new(),
+            locals: Vec::new(),
+            return_local: None,
+            label_lines: Vec::new(),
+            body: inits,
+        });
+        Some(proc)
     };
 
     let mut classes = ids.classes.clone();
@@ -704,7 +697,7 @@ impl Lower<'_> {
 /// Per-procedure mutable lowering state.
 struct ProcLower<'a> {
     g: &'a Lower<'a>,
-    info: &'a ProcInfo,
+    info: LowerContext,
     /// Active `With` receivers (for leading-dot member access).
     with_stack: Vec<Bound>,
     /// Source-level loop nesting used to validate `Exit For` / `Exit Do`.
@@ -722,6 +715,57 @@ struct ProcLower<'a> {
     /// Numeric-line metadata parallel to `label_order`: `Some(n)` for a label
     /// definition whose source token is an integer line number.
     label_lines: Vec<Option<i32>>,
+}
+
+struct LowerContext {
+    name: String,
+    /// The symbol-model scope used for unqualified name resolution. Procedure
+    /// bodies use their procedure scope; module-level declarations use the
+    /// declaring module scope so `Private` globals resolve exactly as they do in
+    /// VBA.
+    proc_scope: ScopeId,
+    local_of: HashMap<SymbolId, LocalId>,
+    return_local: Option<LocalId>,
+    return_type: VarTypeRef,
+    class_name: Option<String>,
+    me_local: Option<LocalId>,
+    compare_mode: StringCompareMode,
+    option_base: i32,
+}
+
+impl LowerContext {
+    fn from_proc(info: &ProcInfo) -> Self {
+        Self {
+            name: info.name.clone(),
+            proc_scope: info.proc_scope,
+            local_of: info.local_of.clone(),
+            return_local: info.return_local,
+            return_type: info.return_type.clone(),
+            class_name: info.class_name.clone(),
+            me_local: info.me_local,
+            compare_mode: info.compare_mode,
+            option_base: info.option_base,
+        }
+    }
+
+    fn from_module(
+        module_name: &str,
+        module_scope: ScopeId,
+        compare_mode: StringCompareMode,
+        option_base: i32,
+    ) -> Self {
+        Self {
+            name: module_name.to_string(),
+            proc_scope: module_scope,
+            local_of: HashMap::new(),
+            return_local: None,
+            return_type: VarTypeRef::Variant,
+            class_name: None,
+            me_local: None,
+            compare_mode,
+            option_base,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
