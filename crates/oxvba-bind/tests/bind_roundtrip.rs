@@ -3611,6 +3611,93 @@ fn typed_com_default_member_put_before_get_preserves_accessor_descriptors() {
 }
 
 #[test]
+fn typed_com_default_member_binary_expression_lowers_operands_to_early_com() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim s As String\n    Dim w As Widget\n    Dim w2 As Widget\n    r = w + w2\n    s = \"x=\" & w\n    If w Is w2 Then r = r + 1\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Widget".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: None,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &DefaultValueTypeLibs).expect("bind_program");
+    let callees = all_value_callees(&program);
+    let default_get_count = callees
+        .iter()
+        .filter(|c| {
+            matches!(
+                c,
+                CoreCallee::EarlyCom {
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                    member,
+                    ..
+                } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyGet
+            )
+        })
+        .count();
+    assert_eq!(
+        default_get_count, 3,
+        "`w + w2` should default both operands and `\"x=\" & w` should default w once: {callees:?}"
+    );
+}
+
+#[test]
+fn host_injected_default_member_binary_expression_lowers_operands_to_early_com() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim s As String\n    Dim w As Widget\n    Dim w2 As Widget\n    r = w + w2\n    s = \"x=\" & w\n    If w Is w2 Then r = r + 1\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Widget".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &DefaultValueTypeLibs).expect("bind_program");
+    let callees = all_value_callees(&program);
+    let default_get_count = callees
+        .iter()
+        .filter(|c| {
+            matches!(
+                c,
+                CoreCallee::EarlyCom {
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                    member,
+                    ..
+                } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyGet
+            )
+        })
+        .count();
+    assert_eq!(
+        default_get_count, 3,
+        "host-injected `w + w2` should default both operands and `\"x=\" & w` should default w once: {callees:?}"
+    );
+}
+
+#[test]
 fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Dim w2 As Widget\n    w = 10\n    Set w2 = w\n    r = w2\nEnd Sub\n";
     let manifest = SymbolProjectManifest {
@@ -3995,6 +4082,70 @@ fn top_level_callees(program: &CoreProgram) -> Vec<&CoreCallee> {
             };
             if let Some(callee) = value.and_then(callee_of) {
                 out.push(callee);
+            }
+        }
+    }
+    out
+}
+
+fn collect_arg_callees<'a>(arg: &'a CoreArg, out: &mut Vec<&'a CoreCallee>) {
+    match arg {
+        CoreArg::ByVal(value) | CoreArg::Named { value, .. } => collect_value_callees(value, out),
+        CoreArg::ByRef(_) | CoreArg::Omitted => {}
+    }
+}
+
+fn collect_value_callees<'a>(value: &'a CoreValue, out: &mut Vec<&'a CoreCallee>) {
+    match value {
+        CoreValue::Unary { expr, .. } | CoreValue::Coerce { value: expr, .. } => {
+            collect_value_callees(expr, out);
+        }
+        CoreValue::Binary { lhs, rhs, .. } => {
+            collect_value_callees(lhs, out);
+            collect_value_callees(rhs, out);
+        }
+        CoreValue::Call { callee, args } => {
+            out.push(callee);
+            for arg in args {
+                collect_arg_callees(arg, out);
+            }
+        }
+        CoreValue::TypeOfIs { object, .. } | CoreValue::Ptr { value: object, .. } => {
+            collect_value_callees(object, out);
+        }
+        CoreValue::ArrayLiteral { elems, .. } => {
+            for elem in elems {
+                collect_value_callees(elem, out);
+            }
+        }
+        CoreValue::Bound { dimension, .. } => {
+            if let Some(dimension) = dimension {
+                collect_value_callees(dimension, out);
+            }
+        }
+        CoreValue::Const(_)
+        | CoreValue::Load(_)
+        | CoreValue::WithTemp(_)
+        | CoreValue::New(_)
+        | CoreValue::NewRecord { .. }
+        | CoreValue::ErrField(_)
+        | CoreValue::Erl
+        | CoreValue::AddressOf(_)
+        | CoreValue::NewExtern { .. }
+        | CoreValue::Predeclared { .. }
+        | CoreValue::PredeclaredExtern { .. } => {}
+    }
+}
+
+fn all_value_callees(program: &CoreProgram) -> Vec<&CoreCallee> {
+    let mut out = Vec::new();
+    for proc in &program.procs {
+        for stmt in &proc.body {
+            match stmt {
+                CoreStmt::Assign { value, .. } | CoreStmt::Eval(value) => {
+                    collect_value_callees(value, &mut out);
+                }
+                _ => {}
             }
         }
     }

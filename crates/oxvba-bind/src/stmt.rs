@@ -321,7 +321,7 @@ impl<'a> ProcLower<'a> {
         }]))
     }
 
-    fn bind_default_member_value_context(
+    pub(crate) fn bind_default_member_value_context(
         &mut self,
         mut val: crate::Bound,
         label: &str,

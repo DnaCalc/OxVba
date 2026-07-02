@@ -313,14 +313,18 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("binary without operator".into()))?;
         let op = core_binop(op_tok.kind)
             .ok_or_else(|| BindError::Unsupported(format!("operator {:?}", op_tok.kind)))?;
-        let lhs = self.bind_expr(
-            node.binary_lhs()
-                .ok_or_else(|| BindError::Malformed("binary lhs".into()))?,
-        )?;
-        let rhs = self.bind_expr(
-            node.binary_rhs()
-                .ok_or_else(|| BindError::Malformed("binary rhs".into()))?,
-        )?;
+        let lhs_node = node
+            .binary_lhs()
+            .ok_or_else(|| BindError::Malformed("binary lhs".into()))?;
+        let rhs_node = node
+            .binary_rhs()
+            .ok_or_else(|| BindError::Malformed("binary rhs".into()))?;
+        let mut lhs = self.bind_expr(lhs_node)?;
+        let mut rhs = self.bind_expr(rhs_node)?;
+        if op != CoreBinOp::Is {
+            lhs = self.bind_default_member_value_context(lhs, lhs_node.text().trim())?;
+            rhs = self.bind_default_member_value_context(rhs, rhs_node.text().trim())?;
+        }
         if op == CoreBinOp::Is && (!is_object_is_operand(&lhs.ty) || !is_object_is_operand(&rhs.ty))
         {
             return Err(BindError::TypeMismatch);
