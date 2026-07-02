@@ -824,6 +824,35 @@ fn cross_project_default_member_bare_let_get_preserves_object_reference() {
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(9));
 }
 
+#[test]
+fn cross_project_property_let_does_not_fallback_to_getter() {
+    let widget = || {
+        class_module(
+            "Widget",
+            "Public Property Get Value() As Long\nValue = 1\nEnd Property\n",
+            true,
+        )
+    };
+    let lib = project("Lib", vec![widget()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Sub Main()\n\
+             \x20   Dim w As Widget\n\
+             \x20   Set w = New Lib.Widget\n\
+             \x20   w.Value = 10\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![widget()])],
+    );
+    let err = bind_projects_error(&[lib, app]);
+    assert!(
+        err.contains("Value") || err.contains("PropertyLet"),
+        "get-only cross-project property assignment should not bind through the getter: {err}"
+    );
+}
+
 // ── Multi-level chain + diamond ──────────────────────────────────────────────
 
 #[test]

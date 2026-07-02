@@ -771,7 +771,12 @@ Required newly explicit delivery beads:
   typelib/reference-project activation, early-bound COM member/property calls, and reference
   precedence through descriptor-backed front-end symbols. Partial work already done: reference kind
   indexing, imported/member dispatch classification, and basic Declare PtrSafe external call
-  lowering.
+  lowering. A 2026-07-02 continuation
+  (`docs/evidence/frontend_rework/COM_ACCESSOR_DESCRIPTOR_SELECTION_2026-07-02.md`) makes
+  imported/host-injected COM member and default-member descriptor selection accessor-specific and
+  order-independent, and blocks the previous missing-accessor late-binding path for statically known
+  COM/reference object types. Broader imported COM activation/member breadth remains open under
+  `bd-aprs.8.8`.
 - FE-9.7 Broad matrix/corpus route audit: extend the route audit from selected fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
   and selected Excel oracle lanes. Partial work already done: the selected route-audit fixture set
@@ -1500,6 +1505,10 @@ Candidate bead units:
   the Excel Range default-member Let/Get oracle probe. FE-7.3.a is therefore no longer open on
   rewrite-carrier retirement; broader COM/host activation and member breadth remains in
   FE-7.6.a / `bd-aprs.8.8`, and FE-8.5.c owns any remaining lowering-specific expansion.
+  A 2026-07-02 FE-7.6.a hardening slice adds descriptor-order regression coverage for imported and
+  host-injected COM default members: read contexts select `PropertyGet`/`Method` descriptors only,
+  write contexts require `PropertyLet`/`PropertySet`, and cross-project get-only property assignment
+  no longer binds through a late setter fallback.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
   `ReDim` parity through HIR, with project/class field-array carrier retirement split explicitly
   to FE-8.5.h.

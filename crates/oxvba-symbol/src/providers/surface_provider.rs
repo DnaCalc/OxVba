@@ -62,18 +62,43 @@ impl SurfaceProvider {
     ) -> Option<&'a SurfaceMember> {
         let folded = fold_identifier(name);
         let bindable = |m: &&SurfaceMember| Self::is_bindable_cross_project(m);
-        // Prefer a member whose kind matches `want`; otherwise the first by name
-        // (Get precedes Let/Set in synthesis order, so a read context picks Get).
-        ty.members
-            .iter()
-            .filter(bindable)
-            .find(|m| fold_identifier(&m.name) == folded && want.is_none_or(|k| k == m.member_kind))
-            .or_else(|| {
-                ty.members
-                    .iter()
-                    .filter(bindable)
-                    .find(|m| fold_identifier(&m.name) == folded)
-            })
+        match want {
+            Some(kind) => ty
+                .members
+                .iter()
+                .filter(bindable)
+                .find(|m| fold_identifier(&m.name) == folded && m.member_kind == kind),
+            None => ty
+                .members
+                .iter()
+                .filter(bindable)
+                .filter(|m| fold_identifier(&m.name) == folded)
+                .filter_map(|m| read_member_rank(m).map(|rank| (rank, m)))
+                .min_by_key(|(rank, _)| *rank)
+                .map(|(_, m)| m),
+        }
+    }
+
+    fn find_default_member(
+        ty: &SurfaceType,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<&SurfaceMember> {
+        let bindable = |m: &&SurfaceMember| Self::is_bindable_cross_project(m);
+        match want {
+            Some(kind) => ty
+                .members
+                .iter()
+                .filter(bindable)
+                .find(|m| m.is_default && m.member_kind == kind),
+            None => ty
+                .members
+                .iter()
+                .filter(bindable)
+                .filter(|m| m.is_default)
+                .filter_map(|m| read_member_rank(m).map(|rank| (rank, m)))
+                .min_by_key(|(rank, _)| *rank)
+                .map(|(_, m)| m),
+        }
     }
 
     /// A field-backed surface member (a `Public` module variable, or a class field
@@ -242,10 +267,24 @@ impl Provider for SurfaceProvider {
             return None;
         };
         let ty = self.type_by_name(type_name)?;
-        ty.members
-            .iter()
-            .find(|m| m.is_default && Self::is_bindable_cross_project(m))
-            .map(|m| self.member_binding(ty, m))
+        Self::find_default_member(ty, None).map(|m| self.member_binding(ty, m))
+    }
+
+    fn resolve_default_member_kind(
+        &self,
+        recv: &VarTypeRef,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        let VarTypeRef::Object(type_name) = recv else {
+            return None;
+        };
+        let ty = self.type_by_name(type_name)?;
+        Self::find_default_member(ty, want).map(|m| self.member_binding(ty, m))
+    }
+
+    fn is_known_object_type(&self, type_name: &str) -> bool {
+        self.type_by_name(type_name)
+            .is_some_and(|ty| matches!(ty.kind, SurfaceTypeKind::Coclass { .. }))
     }
 
     fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
@@ -282,5 +321,13 @@ impl Provider for SurfaceProvider {
             }
             _ => None,
         }
+    }
+}
+
+fn read_member_rank(member: &SurfaceMember) -> Option<u8> {
+    match member.member_kind {
+        ProjectMemberKind::PropertyGet => Some(0),
+        ProjectMemberKind::Method => Some(1),
+        ProjectMemberKind::PropertyLet | ProjectMemberKind::PropertySet => None,
     }
 }

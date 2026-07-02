@@ -1026,7 +1026,7 @@ impl<'a> ProcLower<'a> {
         if let DispatchRoute::Value = binding.route
             && let Some(sym) = binding.symbol
             && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
-            && let Some(default_binding) = self.g.env.resolve_default_member(&ty)
+            && let Some(default_binding) = self.g.env.resolve_default_member_kind(&ty, Some(kind))
         {
             return self.bind_default_member_indexed_property_let(
                 name,
@@ -2464,13 +2464,17 @@ impl<'a> ProcLower<'a> {
     }
 
     /// True if a receiver should fall back to late binding when a member doesn't
-    /// resolve: an untyped `Variant`, or an `Object` that isn't a project class
-    /// (a foreign/COM object). A missing member on a *known* project class stays
-    /// an error.
+    /// resolve: an untyped `Variant`, or a plain `Object`. A missing member on a
+    /// known project, referenced-project, host, or COM type stays an error.
     pub(crate) fn is_late_bound_receiver(&self, ty: &VarTypeRef) -> bool {
         match ty {
             VarTypeRef::Variant => true,
-            VarTypeRef::Object(name) => !self.g.ids.class_of.contains_key(&fold_identifier(name)),
+            VarTypeRef::Object(name) => {
+                let folded = fold_identifier(name);
+                folded == "object"
+                    || (!self.g.ids.class_of.contains_key(&folded)
+                        && !self.g.env.is_known_object_type(name))
+            }
             _ => false,
         }
     }

@@ -47,4 +47,20 @@ impl Provider for HostProvider {
             .iter()
             .find_map(|blob| blob.resolve_default_member(recv))
     }
+
+    fn resolve_default_member_kind(
+        &self,
+        recv: &VarTypeRef,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        self.blobs
+            .iter()
+            .find_map(|blob| blob.resolve_default_member_kind(recv, want))
+    }
+
+    fn is_known_object_type(&self, type_name: &str) -> bool {
+        self.blobs
+            .iter()
+            .any(|blob| blob.is_known_object_type(type_name))
+    }
 }

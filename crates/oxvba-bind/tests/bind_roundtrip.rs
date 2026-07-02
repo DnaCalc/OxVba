@@ -1693,6 +1693,15 @@ fn standard_module_property_let_roundtrip() {
 }
 
 #[test]
+fn write_only_standard_module_property_let_roundtrip() {
+    let src = "Private mV As Long\n\n\
+               Public Property Let Value(ByVal v As Long)\n    mV = v\nEnd Property\n\n\
+               Public Function GetValue() As Long\n    GetValue = mV\nEnd Function\n\n\
+               Public Sub Main()\n    Dim r As Long\n    Value = 17\n    r = GetValue()\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(17.0));
+}
+
+#[test]
 fn standard_module_property_let_updates_global_udt_field() {
     let src = "Private Type State\n    Value As Single\nEnd Type\n\
                Private s As State\n\n\
@@ -3045,6 +3054,18 @@ impl TypeLibResolver for DefaultValueTypeLibs {
     }
 }
 
+struct DefaultValuePutFirstTypeLibs;
+impl TypeLibResolver for DefaultValuePutFirstTypeLibs {
+    fn resolve(
+        &self,
+        request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        let mut blob = DefaultValueTypeLibs.resolve(request)?;
+        blob.members.reverse();
+        Some(blob)
+    }
+}
+
 struct ApplicationTypeLibs;
 impl TypeLibResolver for ApplicationTypeLibs {
     fn resolve(
@@ -3191,6 +3212,7 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
                     member,
                     ..
                 } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyPut
             ))
             .count(),
         1,
@@ -3206,10 +3228,72 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
                     member,
                     ..
                 } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyGet
             ))
             .count(),
         1,
         "bare `r = w2` should be one early-bound default PropertyGet, while `Set w2 = w` stays object assignment: {callees:?}"
+    );
+}
+
+#[test]
+fn typed_com_default_member_put_before_get_preserves_accessor_descriptors() {
+    let main =
+        "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    w = 10\n    r = w\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Widget".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: None,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &DefaultValuePutFirstTypeLibs).expect("bind_program");
+    let callees = top_level_callees(&program);
+    assert_eq!(
+        callees
+            .iter()
+            .filter(|c| matches!(
+                c,
+                CoreCallee::EarlyCom {
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                    member,
+                    ..
+                } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyPut
+            ))
+            .count(),
+        1,
+        "put-before-get metadata should still carry the PropertyPut descriptor for `w = 10`: {callees:?}"
+    );
+    assert_eq!(
+        callees
+            .iter()
+            .filter(|c| matches!(
+                c,
+                CoreCallee::EarlyCom {
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                    member,
+                    ..
+                } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyGet
+            ))
+            .count(),
+        1,
+        "put-before-get metadata should still carry the PropertyGet descriptor for `r = w`: {callees:?}"
     );
 }
 
@@ -3244,6 +3328,7 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
                     member,
                     ..
                 } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyPut
             ))
             .count(),
         1,
@@ -3259,6 +3344,7 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
                     member,
                     ..
                 } if member.token == 0
+                    && member.invoke_kind == oxvba_com::TypeLibMemberInvokeKind::PropertyGet
             ))
             .count(),
         1,

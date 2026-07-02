@@ -75,6 +75,28 @@ pub trait Provider {
         let _ = recv;
         None
     }
+    /// Resolve the default member of `recv`'s type for a specific call-site
+    /// accessor. `None` is a read-context lookup and should not pick a write-only
+    /// descriptor when a provider can distinguish accessors.
+    fn resolve_default_member_kind(
+        &self,
+        recv: &VarTypeRef,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        let binding = self.resolve_default_member(recv)?;
+        match (want, &binding.route) {
+            (None, _) => Some(binding),
+            (Some(kind), crate::binding::DispatchRoute::ProjectMember { kind: have })
+            | (Some(kind), crate::binding::DispatchRoute::ExternMember { kind: have, .. })
+            | (
+                Some(kind),
+                crate::binding::DispatchRoute::ComMember {
+                    member_kind: have, ..
+                },
+            ) if kind == *have => Some(binding),
+            _ => None,
+        }
+    }
     /// Enumerate the source events of `recv`'s type, if this provider owns it, as
     /// `(folded event name, event token/dispid)`. The token is the value the
     /// runtime keys subscriptions on (it is what `subscribe_event` is called with),
@@ -90,6 +112,13 @@ pub trait Provider {
     fn resolve_coclass(&self, name: &str) -> Option<String> {
         let _ = name;
         None
+    }
+    /// True when `type_name` is a statically known object type owned by this
+    /// provider. A missing member on such a type is an error surface, not an
+    /// untyped late-bound dispatch fallback.
+    fn is_known_object_type(&self, type_name: &str) -> bool {
+        let _ = type_name;
+        false
     }
     /// If `name` is a creatable coclass published by a *referenced project*, return
     /// its `(unit, class)` names so `New Lib.Widget` (or bare `New Widget`) lowers
@@ -231,6 +260,12 @@ impl ResolutionEnvironment {
             .find_map(|provider| provider.resolve_coclass(name))
     }
 
+    pub fn is_known_object_type(&self, type_name: &str) -> bool {
+        self.providers
+            .iter()
+            .any(|provider| provider.is_known_object_type(type_name))
+    }
+
     /// The `(unit, class)` of a creatable coclass published by a referenced project
     /// (for `New Lib.Widget` / bare `New Widget` → a cross-bundle `NewExtern`).
     pub fn resolve_extern_coclass(&self, name: &str) -> Option<(String, String)> {
@@ -272,6 +307,17 @@ impl ResolutionEnvironment {
         self.providers
             .iter()
             .find_map(|provider| provider.resolve_default_member(recv))
+    }
+
+    /// Resolve the default member for a specific accessor. `None` is read context.
+    pub fn resolve_default_member_kind(
+        &self,
+        recv: &VarTypeRef,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        self.providers
+            .iter()
+            .find_map(|provider| provider.resolve_default_member_kind(recv, want))
     }
 
     /// Enumerate the source events of a COM coclass named `source_name` (the

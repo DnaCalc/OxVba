@@ -11,7 +11,7 @@ use oxvba_com::{
     TypeLibWireType,
 };
 
-use crate::binding::{DispatchRoute, SpecialForm};
+use crate::binding::{Binding, DispatchRoute, SpecialForm};
 use crate::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference, SymbolProjectManifest,
 };
@@ -21,6 +21,7 @@ use crate::model::{
 use crate::predeclared::predeclared_object;
 use crate::provider::{Provider, ResolutionContext, TypeLibResolver, build_resolution_environment};
 use crate::providers::com::ComTypeLibProvider;
+use crate::providers::host::HostProvider;
 use crate::providers::vba_library::VbaLibraryProvider;
 use crate::signature::{BuiltinType, DefaultValue, VarTypeRef};
 
@@ -562,6 +563,54 @@ fn widget_blob() -> TypeLibMetadataBlob {
     }
 }
 
+fn widget_put_before_get_default_blob() -> TypeLibMetadataBlob {
+    let mut blob = widget_blob();
+    let getter = blob
+        .members
+        .iter()
+        .find(|member| {
+            member.name == "Item" && member.invoke_kind == TypeLibMemberInvokeKind::PropertyGet
+        })
+        .expect("Item property get")
+        .clone();
+    let mut putter = getter.clone();
+    putter.invoke_kind = TypeLibMemberInvokeKind::PropertyPut;
+    putter.requires_argument = true;
+    putter.parameter_names = vec!["Index".into(), "Value".into()];
+    putter.parameter_optional = vec![false, false];
+    putter.parameter_optional_defaults = Vec::new();
+    putter.parameter_types = vec![TypeLibParamType::Long, TypeLibParamType::Variant];
+    putter.parameter_wire_types = vec![
+        TypeLibWireType::Automation(TypeLibParamType::Long),
+        TypeLibWireType::Automation(TypeLibParamType::Variant),
+    ];
+    putter.parameter_iids = vec![None, None];
+    putter.return_type = None;
+    putter.return_wire_type = None;
+    blob.members = vec![putter, getter];
+    blob
+}
+
+fn assert_com_accessor(
+    binding: Binding,
+    expected_kind: ProjectMemberKind,
+    expected_invoke: TypeLibMemberInvokeKind,
+) {
+    match binding.route {
+        DispatchRoute::ComMember {
+            member_kind,
+            invoke_kind,
+            member,
+            ..
+        } => {
+            assert_eq!(member_kind, expected_kind);
+            assert_eq!(invoke_kind, expected_invoke);
+            assert_eq!(member.invoke_kind, expected_invoke);
+        }
+        other => panic!("expected ComMember, got {other:?}"),
+    }
+}
+
 #[test]
 fn com_member_resolves_for_typed_receiver_with_both_dispid_and_name() {
     let provider = ComTypeLibProvider::new(widget_blob());
@@ -587,6 +636,49 @@ fn com_member_resolves_for_typed_receiver_with_both_dispid_and_name() {
         }
         other => panic!("expected ComMember, got {other:?}"),
     }
+}
+
+#[test]
+fn com_default_member_accessor_selection_ignores_typelib_order() {
+    let typed = VarTypeRef::Object("Widget".into());
+    let provider = ComTypeLibProvider::new(widget_put_before_get_default_blob());
+
+    assert_com_accessor(
+        provider
+            .resolve_member(&typed, "Item", None)
+            .expect("read lookup"),
+        ProjectMemberKind::PropertyGet,
+        TypeLibMemberInvokeKind::PropertyGet,
+    );
+    assert_com_accessor(
+        provider
+            .resolve_member(&typed, "Item", Some(ProjectMemberKind::PropertyLet))
+            .expect("write lookup"),
+        ProjectMemberKind::PropertyLet,
+        TypeLibMemberInvokeKind::PropertyPut,
+    );
+    assert_com_accessor(
+        provider
+            .resolve_default_member(&typed)
+            .expect("default read lookup"),
+        ProjectMemberKind::PropertyGet,
+        TypeLibMemberInvokeKind::PropertyGet,
+    );
+    assert_com_accessor(
+        provider
+            .resolve_default_member_kind(&typed, Some(ProjectMemberKind::PropertyLet))
+            .expect("default write lookup"),
+        ProjectMemberKind::PropertyLet,
+        TypeLibMemberInvokeKind::PropertyPut,
+    );
+
+    let host = HostProvider::new(vec![widget_put_before_get_default_blob()]);
+    assert_com_accessor(
+        host.resolve_default_member_kind(&typed, Some(ProjectMemberKind::PropertyLet))
+            .expect("host default write lookup"),
+        ProjectMemberKind::PropertyLet,
+        TypeLibMemberInvokeKind::PropertyPut,
+    );
 }
 
 #[test]

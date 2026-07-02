@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use oxvba_bundle::ProjectMemberKind;
 
 use crate::binding::{Binding, DispatchRoute};
-use crate::model::{SymbolId, SymbolKind, Visibility, fold_identifier};
+use crate::model::{SymbolId, SymbolImpl, SymbolKind, SymbolTable, Visibility, fold_identifier};
 use crate::provider::Provider;
 use crate::scanner::ModuleScan;
 use crate::signature::VarTypeRef;
@@ -19,6 +19,14 @@ struct MemberEntry {
     owner: SymbolId,
     kind: SymbolKind,
     visibility: Visibility,
+    accessors: PropertyAccessors,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PropertyAccessors {
+    get: bool,
+    let_: bool,
+    set: bool,
 }
 
 #[derive(Default)]
@@ -38,7 +46,7 @@ pub struct ProjectProvider {
 impl ProjectProvider {
     pub fn build(
         project_name: &str,
-        _symbols: &crate::model::SymbolTable,
+        symbols: &SymbolTable,
         active: &[ModuleScan],
         referenced: &[ModuleScan],
     ) -> Self {
@@ -55,6 +63,7 @@ impl ProjectProvider {
                     owner: scan.module_symbol,
                     kind: member.kind,
                     visibility: member.visibility,
+                    accessors: property_accessors(symbols, member.symbol, member.kind),
                 };
                 module_entry
                     .entry(member.name_folded.clone())
@@ -91,26 +100,20 @@ impl ProjectProvider {
     pub fn resolve_qualified(&self, parts: &[&str]) -> Option<Binding> {
         match parts {
             [member] => self.resolve(member),
-            [owner, member] => self.resolve_public_owner_member(owner, member),
+            [owner, member] => self.resolve_public_owner_member(owner, member, None),
             [project, owner, member] if fold_identifier(project) == self.project_folded => {
-                self.resolve_public_owner_member(owner, member)
+                self.resolve_public_owner_member(owner, member, None)
             }
             _ => None,
         }
     }
 
-    fn resolve_owner_member(&self, owner: &str, member: &str) -> Option<Binding> {
-        let owner = fold_identifier(owner);
-        let member = fold_identifier(member);
-        let candidates = self
-            .modules
-            .get(&owner)
-            .and_then(|module| module.get(&member))
-            .or_else(|| self.enums.get(&owner).and_then(|enum_| enum_.get(&member)))?;
-        candidates.first().map(|entry| binding_for(*entry))
-    }
-
-    fn resolve_public_owner_member(&self, owner: &str, member: &str) -> Option<Binding> {
+    fn resolve_owner_member(
+        &self,
+        owner: &str,
+        member: &str,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
         let owner = fold_identifier(owner);
         let member = fold_identifier(member);
         let candidates = self
@@ -121,8 +124,28 @@ impl ProjectProvider {
         candidates
             .iter()
             .copied()
-            .find(|entry| is_project_public_member(*entry))
-            .map(binding_for)
+            .find(|entry| supports_want(*entry, want))
+            .map(|entry| binding_for_want(entry, want))
+    }
+
+    fn resolve_public_owner_member(
+        &self,
+        owner: &str,
+        member: &str,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        let owner = fold_identifier(owner);
+        let member = fold_identifier(member);
+        let candidates = self
+            .modules
+            .get(&owner)
+            .and_then(|module| module.get(&member))
+            .or_else(|| self.enums.get(&owner).and_then(|enum_| enum_.get(&member)))?;
+        candidates
+            .iter()
+            .copied()
+            .find(|entry| is_project_public_member(*entry) && supports_want(*entry, want))
+            .map(|entry| binding_for_want(entry, want))
     }
 }
 
@@ -132,7 +155,11 @@ impl Provider for ProjectProvider {
         if has_competing_owners(candidates) {
             return None;
         }
-        candidates.first().map(|entry| binding_for(*entry))
+        candidates
+            .iter()
+            .copied()
+            .find(|entry| supports_want(*entry, None))
+            .map(|entry| binding_for_want(entry, None))
     }
 
     fn has_ambiguous_unqualified_name(&self, name: &str) -> bool {
@@ -149,21 +176,32 @@ impl Provider for ProjectProvider {
         &self,
         recv: &VarTypeRef,
         name: &str,
-        _want: Option<ProjectMemberKind>,
+        want: Option<ProjectMemberKind>,
     ) -> Option<Binding> {
         // A typed project-class/module receiver: resolve `recv.member`.
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        self.resolve_owner_member(type_name, name)
+        self.resolve_owner_member(type_name, name, want)
     }
 
     fn resolve_default_member(&self, recv: &VarTypeRef) -> Option<Binding> {
+        self.resolve_default_member_kind(recv, None)
+    }
+
+    fn resolve_default_member_kind(
+        &self,
+        recv: &VarTypeRef,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        let entry = self.default_members.get(&fold_identifier(type_name))?;
-        let mut binding = binding_for(*entry);
+        let entry = *self.default_members.get(&fold_identifier(type_name))?;
+        if !supports_want(entry, want) {
+            return None;
+        }
+        let mut binding = binding_for_want(entry, want);
         binding.is_default = true;
         Some(binding)
     }
@@ -213,4 +251,46 @@ fn binding_for(entry: MemberEntry) -> Binding {
         _ => DispatchRoute::Value,
     };
     Binding::new(Some(entry.symbol), route)
+}
+
+fn binding_for_want(entry: MemberEntry, want: Option<ProjectMemberKind>) -> Binding {
+    let mut binding = binding_for(entry);
+    if entry.kind == SymbolKind::Property
+        && let Some(kind) = want
+        && let DispatchRoute::ProjectMember { kind: have } = &mut binding.route
+    {
+        *have = kind;
+    }
+    binding
+}
+
+fn supports_want(entry: MemberEntry, want: Option<ProjectMemberKind>) -> bool {
+    match (entry.kind, want) {
+        (SymbolKind::Property, None) => {
+            entry.accessors.get || entry.accessors.let_ || entry.accessors.set
+        }
+        (SymbolKind::Property, Some(ProjectMemberKind::PropertyGet)) => entry.accessors.get,
+        (SymbolKind::Property, Some(ProjectMemberKind::PropertyLet)) => entry.accessors.let_,
+        (SymbolKind::Property, Some(ProjectMemberKind::PropertySet)) => entry.accessors.set,
+        (SymbolKind::Property, Some(ProjectMemberKind::Method)) => false,
+        (_, _) => true,
+    }
+}
+
+fn property_accessors(
+    symbols: &SymbolTable,
+    symbol: SymbolId,
+    kind: SymbolKind,
+) -> PropertyAccessors {
+    if kind != SymbolKind::Property {
+        return PropertyAccessors::default();
+    }
+    match symbols.symbol(symbol).map(|sym| &sym.imp) {
+        Some(SymbolImpl::Property(group)) => PropertyAccessors {
+            get: group.get.is_some(),
+            let_: group.let_.is_some(),
+            set: group.set.is_some(),
+        },
+        _ => PropertyAccessors::default(),
+    }
 }

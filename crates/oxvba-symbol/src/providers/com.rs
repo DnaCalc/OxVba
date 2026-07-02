@@ -4,7 +4,7 @@
 //! binder picks early vs late by the receiver's static type.
 
 use oxvba_bundle::ProjectMemberKind;
-use oxvba_com::TypeLibMetadataBlob;
+use oxvba_com::{TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibMetadataBlob};
 
 use crate::binding::{Binding, DispatchRoute, member_kind_from_invoke};
 use crate::model::fold_identifier;
@@ -114,6 +114,43 @@ impl ComTypeLibProvider {
             }
         })
     }
+
+    fn member_by_name(
+        &self,
+        name: &str,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<&TypeLibMemberMetadata> {
+        match want {
+            Some(kind) => self.blob.members.iter().find(|member| {
+                member.name.eq_ignore_ascii_case(name)
+                    && member_kind_from_invoke(member.invoke_kind) == kind
+            }),
+            None => self
+                .blob
+                .members
+                .iter()
+                .filter(|member| member.name.eq_ignore_ascii_case(name))
+                .filter_map(|member| read_member_rank(member).map(|rank| (rank, member)))
+                .min_by_key(|(rank, _)| *rank)
+                .map(|(_, member)| member),
+        }
+    }
+
+    fn default_member(&self, want: Option<ProjectMemberKind>) -> Option<&TypeLibMemberMetadata> {
+        match want {
+            Some(kind) => self.blob.members.iter().find(|member| {
+                member.is_default_member && member_kind_from_invoke(member.invoke_kind) == kind
+            }),
+            None => self
+                .blob
+                .members
+                .iter()
+                .filter(|member| member.is_default_member)
+                .filter_map(|member| read_member_rank(member).map(|rank| (rank, member)))
+                .min_by_key(|(rank, _)| *rank)
+                .map(|(_, member)| member),
+        }
+    }
 }
 
 impl Provider for ComTypeLibProvider {
@@ -130,10 +167,7 @@ impl Provider for ComTypeLibProvider {
             return None;
         }
 
-        if let Some(member) = self.blob.members.iter().find(|member| {
-            member.name.eq_ignore_ascii_case(name)
-                && want.is_none_or(|kind| member_kind_from_invoke(member.invoke_kind) == kind)
-        }) {
+        if let Some(member) = self.member_by_name(name, want) {
             return Some(com_member_binding(member, type_name));
         }
 
@@ -166,10 +200,22 @@ impl Provider for ComTypeLibProvider {
         if !self.owns(type_name) {
             return None;
         }
-        self.blob
-            .members
-            .iter()
-            .find(|member| member.is_default_member)
+        self.default_member(None)
+            .map(|member| com_member_binding(member, type_name))
+    }
+
+    fn resolve_default_member_kind(
+        &self,
+        recv: &VarTypeRef,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        let VarTypeRef::Object(type_name) = recv else {
+            return None;
+        };
+        if !self.owns(type_name) {
+            return None;
+        }
+        self.default_member(want)
             .map(|member| com_member_binding(member, type_name))
     }
 
@@ -179,6 +225,10 @@ impl Provider for ComTypeLibProvider {
         }
         self.coclass_prog_id_for_name(name)
             .or_else(|| self.activation_prog_id().map(str::to_string))
+    }
+
+    fn is_known_object_type(&self, type_name: &str) -> bool {
+        self.owns(type_name)
     }
 
     fn source_events(&self, recv: &VarTypeRef) -> Option<Vec<(String, i32)>> {
@@ -221,6 +271,14 @@ impl Provider for ComTypeLibProvider {
             );
         }
         Some(scoped)
+    }
+}
+
+fn read_member_rank(member: &TypeLibMemberMetadata) -> Option<u8> {
+    match member.invoke_kind {
+        TypeLibMemberInvokeKind::PropertyGet => Some(0),
+        TypeLibMemberInvokeKind::Method => Some(1),
+        TypeLibMemberInvokeKind::PropertyPut | TypeLibMemberInvokeKind::PropertyPutRef => None,
     }
 }
 

@@ -375,7 +375,8 @@ impl<'a> ProcLower<'a> {
                     && matches!(&binding.route, DispatchRoute::Value)
                     && let Some(sym) = binding.symbol
                     && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
-                    && let Some(default_binding) = self.g.env.resolve_default_member(&ty)
+                    && let Some(default_binding) =
+                        self.g.env.resolve_default_member_kind(&ty, Some(kind))
                 {
                     return self.bind_default_member_property_let(name, &ty, default_binding, &rhs);
                 }
