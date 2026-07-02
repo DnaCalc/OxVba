@@ -3176,6 +3176,122 @@ impl TypeLibResolver for ApplicationTypeLibs {
     }
 }
 
+fn test_tlb_property_get(
+    name: &str,
+    token: i32,
+    return_type: Option<oxvba_com::TypeLibParamType>,
+    return_wire_type: Option<oxvba_com::TypeLibWireType>,
+    is_default_member: bool,
+) -> oxvba_com::TypeLibMemberMetadata {
+    oxvba_com::TypeLibMemberMetadata {
+        name: name.into(),
+        token,
+        vtable_slot: None,
+        requires_argument: false,
+        invoke_kind: oxvba_com::TypeLibMemberInvokeKind::PropertyGet,
+        parameter_names: Vec::new(),
+        parameter_optional: Vec::new(),
+        parameter_optional_defaults: Vec::new(),
+        is_default_member,
+        parameter_types: Vec::new(),
+        parameter_wire_types: Vec::new(),
+        parameter_iids: Vec::new(),
+        return_type,
+        return_wire_type,
+        callconv_is_stdcall: false,
+        is_dual: true,
+        interface_iid: None,
+        source_typekind: Some(oxvba_com::SourceTypeKind::Dispatch),
+        vtable_slot_bound: None,
+    }
+}
+
+struct ChainedComTypeLibs;
+impl TypeLibResolver for ChainedComTypeLibs {
+    fn resolve(
+        &self,
+        request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        if request.reference_name.eq_ignore_ascii_case("Excel") {
+            return Some(oxvba_com::TypeLibMetadataBlob {
+                identity: oxvba_com::TypeLibResolvedIdentity {
+                    reference_name: "Excel".into(),
+                    requested_coclass: request.requested_coclass.clone(),
+                    importlib: "excel".into(),
+                    libid: None,
+                    major_version: 1,
+                    minor_version: 0,
+                    lcid: None,
+                    cache_key: "excel-application-chaining-test".into(),
+                },
+                activation_prog_id: Some("Excel.Application".into()),
+                member_name_to_token: vec![("Workbooks".into(), 20), ("DynamicThing".into(), 22)],
+                members: vec![
+                    test_tlb_property_get(
+                        "Workbooks",
+                        20,
+                        Some(oxvba_com::TypeLibParamType::Object),
+                        Some(oxvba_com::TypeLibWireType::InterfacePointer {
+                            name: "Workbooks".into(),
+                        }),
+                        false,
+                    ),
+                    test_tlb_property_get(
+                        "DynamicThing",
+                        22,
+                        Some(oxvba_com::TypeLibParamType::Object),
+                        Some(oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Object,
+                        )),
+                        false,
+                    ),
+                ],
+                events: Vec::new(),
+                coclass_names: vec!["Application".into()],
+            });
+        }
+        if request.reference_name.eq_ignore_ascii_case("Workbooks") {
+            return Some(oxvba_com::TypeLibMetadataBlob {
+                identity: oxvba_com::TypeLibResolvedIdentity {
+                    reference_name: "Workbooks".into(),
+                    requested_coclass: None,
+                    importlib: "excel".into(),
+                    libid: None,
+                    major_version: 1,
+                    minor_version: 0,
+                    lcid: None,
+                    cache_key: "excel-workbooks-chaining-test".into(),
+                },
+                activation_prog_id: None,
+                member_name_to_token: vec![("Item".into(), 0), ("Count".into(), 21)],
+                members: vec![
+                    test_tlb_property_get(
+                        "Item",
+                        0,
+                        Some(oxvba_com::TypeLibParamType::Long),
+                        Some(oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Long,
+                        )),
+                        true,
+                    ),
+                    test_tlb_property_get(
+                        "Count",
+                        21,
+                        Some(oxvba_com::TypeLibParamType::Long),
+                        Some(oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Long,
+                        )),
+                        false,
+                    ),
+                ],
+                events: Vec::new(),
+                coclass_names: vec!["Workbooks".into()],
+            });
+        }
+        None
+    }
+}
+
 #[test]
 fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Dim w2 As Widget\n    w = 10\n    Set w2 = w\n    r = w2\nEnd Sub\n";
@@ -3503,6 +3619,114 @@ fn typed_com_receiver_named_args_bind_to_typelib_order() {
 }
 
 #[test]
+fn typed_com_return_interface_pointer_chains_to_early_com() {
+    let main = "Sub Main()\n    Dim n As Long\n    Dim app As Application\n    n = app.Workbooks.Count\n    n = app.Workbooks\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![
+            ProjectReference::TypeLibrary {
+                name: "Excel".into(),
+                guid: None,
+                version_major: Some(1),
+                version_minor: Some(0),
+                lcid: None,
+                import_lib: None,
+            },
+            ProjectReference::TypeLibrary {
+                name: "Workbooks".into(),
+                guid: None,
+                version_major: Some(1),
+                version_minor: Some(0),
+                lcid: None,
+                import_lib: None,
+            },
+        ],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &ChainedComTypeLibs).expect("bind_program");
+    let count_args = early_com_args(&program, 21);
+    assert_receiver_early_com_token(count_args, 20);
+    let item_args = early_com_args(&program, 0);
+    assert_receiver_early_com_token(item_args, 20);
+}
+
+#[test]
+fn host_injected_com_return_interface_pointer_chains_to_early_com() {
+    let main = "Sub Main()\n    Dim n As Long\n    n = Application.Workbooks.Count\n    n = Application.Workbooks\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![
+            ProjectReference::HostInjected {
+                referenced_project_name: "Excel.Application".into(),
+            },
+            ProjectReference::TypeLibrary {
+                name: "Workbooks".into(),
+                guid: None,
+                version_major: Some(1),
+                version_minor: Some(0),
+                lcid: None,
+                import_lib: None,
+            },
+        ],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &ChainedComTypeLibs).expect("bind_program");
+    let count_args = early_com_args(&program, 21);
+    assert_receiver_early_com_token(count_args, 20);
+    let item_args = early_com_args(&program, 0);
+    assert_receiver_early_com_token(item_args, 20);
+}
+
+#[test]
+fn generic_com_object_return_stays_late_bound() {
+    let main =
+        "Sub Main()\n    Dim n As Variant\n    n = Application.DynamicThing.Count\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Excel.Application".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &ChainedComTypeLibs).expect("bind_program");
+    assert!(
+        top_level_callees(&program).iter().any(|c| matches!(
+            c,
+            CoreCallee::LateDispatch { name, .. } if name.eq_ignore_ascii_case("Count")
+        )),
+        "generic Object return should remain late-bound for .Count: {:?}",
+        top_level_callees(&program)
+    );
+}
+
+#[test]
 fn typed_com_named_argument_errors_are_bind_time_diagnostics() {
     let manifest_for = |source: &str| SymbolProjectManifest {
         project_name: "Proj".into(),
@@ -3603,6 +3827,19 @@ fn early_com_args(program: &CoreProgram, token: i32) -> &[CoreArg] {
     panic!(
         "no EarlyCom call with token {token}: {:?}",
         top_level_callees(program)
+    );
+}
+
+fn assert_receiver_early_com_token(args: &[CoreArg], token: i32) {
+    let Some(CoreArg::ByVal(receiver)) = args.first() else {
+        panic!("expected early-COM receiver arg, got {args:?}");
+    };
+    let Some((CoreCallee::EarlyCom { member, .. }, _)) = call_of(receiver) else {
+        panic!("expected nested early-COM receiver, got {receiver:?}");
+    };
+    assert_eq!(
+        member.token, token,
+        "expected receiver to come from early-COM token {token}, got {member:?}"
     );
 }
 

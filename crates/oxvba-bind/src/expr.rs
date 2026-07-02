@@ -10,6 +10,7 @@ use oxvba_symbol::model::SymbolKind;
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
 use oxvba_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
+use crate::call::com_member_return_type;
 use crate::error::BindError;
 use crate::types;
 use crate::{Bound, ProcLower};
@@ -440,7 +441,7 @@ impl<'a> ProcLower<'a> {
                                 recv,
                                 args,
                             ),
-                            VarTypeRef::Variant,
+                            com_member_return_type(com_member),
                         ));
                     }
                     DispatchRoute::ExternMember {

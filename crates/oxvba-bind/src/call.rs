@@ -9,7 +9,7 @@ use oxvba_bundle::coreir::{
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind, StringCompareMode};
-use oxvba_com::{OptionalParamDefault, TypeLibMemberMetadata, TypeLibParamType};
+use oxvba_com::{OptionalParamDefault, TypeLibMemberMetadata, TypeLibParamType, TypeLibWireType};
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{
     PredeclaredObjectId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
@@ -1437,7 +1437,7 @@ impl<'a> ProcLower<'a> {
                         receiver_value,
                         args,
                     ),
-                    VarTypeRef::Variant,
+                    com_member_return_type(com_member),
                 )))
             }
             DispatchRoute::ExternMember { member, kind, .. } => {
@@ -2200,7 +2200,7 @@ impl<'a> ProcLower<'a> {
                             recv.value,
                             args,
                         ),
-                        VarTypeRef::Variant,
+                        com_member_return_type(com_member),
                     ))
                 }
                 // A referenced coclass member: dispatch by name on the receiver,
@@ -2407,7 +2407,7 @@ impl<'a> ProcLower<'a> {
                             recv.value,
                             method_args,
                         ),
-                        VarTypeRef::Variant,
+                        com_member_return_type(com_member),
                     ))
                 }
                 // A referenced coclass member call: coerce args to the published
@@ -2769,10 +2769,10 @@ fn scalar_ptr_writeback_kind(ty: &VarTypeRef) -> Option<PtrWritebackKind> {
     }
 }
 
-/// Map a published typelib parameter type to the `VarTypeRef` used for ByVal
-/// argument coercion. Only the scalar value types matter (those drive a narrowing
-/// `Coerce`); `ByRef*` params never coerce, and object/variant/decimal map to
-/// `Variant` (no coercion node).
+/// Map a published typelib Automation type to the binder's `VarTypeRef`.
+/// Scalars drive narrowing `Coerce` nodes for ByVal arguments; generic COM
+/// object returns stay `Object`, which remains true late binding unless wire
+/// metadata gives a specific interface name.
 fn tlb_param_to_vartype(p: &TypeLibParamType) -> VarTypeRef {
     use TypeLibParamType as T;
     match p {
@@ -2790,6 +2790,19 @@ fn tlb_param_to_vartype(p: &TypeLibParamType) -> VarTypeRef {
         T::Object | T::ByRefObject => VarTypeRef::Object("Object".to_string()),
         _ => VarTypeRef::Variant,
     }
+}
+
+pub(crate) fn com_member_return_type(member: &TypeLibMemberMetadata) -> VarTypeRef {
+    if let Some(TypeLibWireType::InterfacePointer { name }) = &member.return_wire_type
+        && !name.is_empty()
+    {
+        return VarTypeRef::Object(name.clone());
+    }
+    member
+        .return_type
+        .as_ref()
+        .map(tlb_param_to_vartype)
+        .unwrap_or(VarTypeRef::Variant)
 }
 
 fn visible_com_param_indices(member: &TypeLibMemberMetadata) -> Vec<usize> {
