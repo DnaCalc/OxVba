@@ -653,7 +653,11 @@ impl ScanCtx<'_> {
                 parameter_name_token(node).and_then(|token| self.default_types.type_for(token.text))
             })
             .unwrap_or(VarTypeRef::Variant);
-        fixed_string_refine(base, node)
+        let element = fixed_string_refine(base, node);
+        if node.array_bounds().is_some() {
+            return VarTypeRef::Array(Box::new(element));
+        }
+        element
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1314,11 +1318,12 @@ fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {
 
 /// A declarator's declared type, refining `As String * N` to a fixed-length string,
 /// and wrapping an **array** declarator (`x()` or `x(1 To 3)`) in [`VarTypeRef::Array`]
-/// of its element type. The array wrap matters because the binder distinguishes a
-/// whole-array assignment (`x = arr`, no scalar coercion) from a scalar store, and
-/// reads the element type back through `Array(..)` for `ReDim`/`Erase`/frame layout —
-/// without it a `Dim x() As Byte` would be typed as a scalar `Byte` and a whole-array
-/// assignment would wrongly coerce the array to that scalar.
+/// or [`VarTypeRef::FixedArray`] of its element type. The array wrap matters because
+/// the binder distinguishes a whole-array assignment (`x = arr`, no scalar coercion)
+/// from a scalar store, and reads the element type back through the array wrapper for
+/// `ReDim`/`Erase`/frame layout — without it a `Dim x() As Byte` would be typed as a
+/// scalar `Byte` and a whole-array assignment would wrongly coerce the array to that
+/// scalar.
 fn declared_var_type(declarator: SyntaxNode<'_>) -> VarTypeRef {
     declared_var_type_with_default(declarator, &DefaultTypeTable::default(), false)
 }
@@ -1340,7 +1345,13 @@ fn declared_var_type_with_default(
         })
         .unwrap_or(VarTypeRef::Variant);
     let element = fixed_string_refine(base, declarator);
-    if declarator.array_bounds().is_some() {
+    if let Some(bounds) = declarator.array_bounds() {
+        if let Some(len) = fixed_array_len_from_bounds(bounds) {
+            return VarTypeRef::FixedArray {
+                element: Box::new(element),
+                len,
+            };
+        }
         return VarTypeRef::Array(Box::new(element));
     }
     element
@@ -1477,14 +1488,7 @@ fn collect_udt_fields_in(
 }
 
 fn declared_udt_field_type(field: SyntaxNode<'_>) -> VarTypeRef {
-    let ty = declared_var_type(field);
-    let Some(len) = field.array_bounds().and_then(fixed_array_len_from_bounds) else {
-        return ty;
-    };
-    match ty {
-        VarTypeRef::Array(element) => VarTypeRef::FixedArray { element, len },
-        other => other,
-    }
+    declared_var_type(field)
 }
 
 fn fixed_array_len_from_bounds(bounds: SyntaxNode<'_>) -> Option<usize> {

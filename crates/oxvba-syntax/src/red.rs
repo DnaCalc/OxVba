@@ -1008,6 +1008,10 @@ mod tests {
         let pl = sub_decl.param_list().expect("expected ParamList");
         let params = pl.params();
         assert_eq!(params.len(), 3, "expected 3 params, got {}", params.len());
+        assert!(
+            params[2].array_bounds().is_some(),
+            "expected ParamArray parameter array bounds"
+        );
     }
 
     // ── Expression / control-flow accessor tests ─────────────

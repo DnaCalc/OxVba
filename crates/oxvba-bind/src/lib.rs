@@ -520,6 +520,9 @@ impl Lower<'_> {
                 element: Box::new(self.resolve_udt_type(*element)),
                 len,
             },
+            VarTypeRef::Array(element) => {
+                VarTypeRef::Array(Box::new(self.resolve_udt_type(*element)))
+            }
             other => other,
         }
     }

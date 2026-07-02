@@ -2510,10 +2510,9 @@ fn canonical_byref_type(ty: VarTypeRef) -> VarTypeRef {
     match ty {
         VarTypeRef::FixedString(_) => VarTypeRef::Builtin(BuiltinType::String),
         VarTypeRef::Array(inner) => VarTypeRef::Array(Box::new(canonical_byref_type(*inner))),
-        VarTypeRef::FixedArray { element, len } => VarTypeRef::FixedArray {
-            element: Box::new(canonical_byref_type(*element)),
-            len,
-        },
+        VarTypeRef::FixedArray { element, .. } => {
+            VarTypeRef::Array(Box::new(canonical_byref_type(*element)))
+        }
         other => other,
     }
 }

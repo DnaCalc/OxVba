@@ -138,6 +138,9 @@ impl<'a> ProcLower<'a> {
             return Ok(stmts);
         }
         let (place, target_ty) = self.bind_place(target_node)?;
+        if matches!(target_ty, VarTypeRef::FixedArray { .. }) {
+            return Err(BindError::CantAssignToArray);
+        }
         if intent == AssignmentIntent::Let && !types::is_object(&target_ty) {
             val = self.bind_default_member_value_context(val, value_label)?;
         }

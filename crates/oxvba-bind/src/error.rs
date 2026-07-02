@@ -29,6 +29,12 @@ pub enum BindError {
     /// An assignment target/intent is invalid (e.g. `Set` on a scalar).
     #[error("invalid assignment: {0}")]
     InvalidAssignment(String),
+    /// A parameter declared as an array cannot be explicitly `ByVal` in VBA.
+    #[error("Array argument must be ByRef")]
+    ArrayArgumentMustBeByRef,
+    /// A fixed-size array cannot be assigned as a whole-array lhs (`dst = src`).
+    #[error("Can't assign to array")]
+    CantAssignToArray,
     /// A ByRef argument l-value has a different declared type than its parameter.
     #[error("ByRef argument type mismatch: expected {expected}, got {actual}")]
     ByRefTypeMismatch { expected: String, actual: String },
@@ -111,6 +117,18 @@ impl BindError {
                 format!("invalid assignment: {message}"),
             )
             .with_help("Check whether the target is assignable and whether Set/Let semantics match the value."),
+            BindError::ArrayArgumentMustBeByRef => Diagnostic::error(
+                "BIND-E-ARRAY-ARGUMENT-MUST-BYREF",
+                DiagnosticPhase::Bind,
+                "Array argument must be ByRef",
+            )
+            .with_help("Remove ByVal from the array parameter declaration."),
+            BindError::CantAssignToArray => Diagnostic::error(
+                "BIND-E-CANT-ASSIGN-TO-ARRAY",
+                DiagnosticPhase::Bind,
+                "Can't assign to array",
+            )
+            .with_help("Assign into a dynamic array target or copy elements individually."),
             BindError::ByRefTypeMismatch { expected, actual } => Diagnostic::error(
                 "BIND-E-BYREF-TYPE-MISMATCH",
                 DiagnosticPhase::Bind,

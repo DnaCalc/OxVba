@@ -1582,6 +1582,12 @@ impl<'a> Parser<'a> {
                 self.bump();
             }
 
+            self.eat_whitespace();
+            if self.at(SyntaxKind::LParen) {
+                self.parse_array_bounds();
+                self.eat_whitespace();
+            }
+
             // As Type
             self.eat_whitespace();
             if self.at(SyntaxKind::KwAs) {

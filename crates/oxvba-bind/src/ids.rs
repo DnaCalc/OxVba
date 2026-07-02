@@ -367,7 +367,7 @@ impl IdAllocator {
             kind,
             &logical,
             is_class_member,
-        );
+        )?;
 
         // `Static` locals persist across calls: allocate one zero-initialized
         // bundle global per static local (mangled by proc so display names stay
@@ -427,6 +427,13 @@ fn normalize_declared_type(env: &ResolutionEnvironment, ty: VarTypeRef) -> VarTy
         VarTypeRef::Object(name) if env.is_enum_type(&name) => {
             VarTypeRef::Builtin(BuiltinType::Long)
         }
+        VarTypeRef::Array(element) => {
+            VarTypeRef::Array(Box::new(normalize_declared_type(env, *element)))
+        }
+        VarTypeRef::FixedArray { element, len } => VarTypeRef::FixedArray {
+            element: Box::new(normalize_declared_type(env, *element)),
+            len,
+        },
         other => other,
     }
 }
@@ -471,7 +478,7 @@ fn build_frame(
     kind: ProcedureKind,
     logical: &str,
     is_class_member: bool,
-) -> Frame {
+) -> Result<Frame, BindError> {
     let symbols = &env.symbols;
     let scope_syms = symbols.symbols_in_scope(proc_scope).unwrap_or_default();
     let mut params = Vec::new();
@@ -504,6 +511,15 @@ fn build_frame(
         if sym.namespace == SymbolNamespace::Parameter {
             let sig_param = signature.and_then(|s| s.params.get(param_index));
             let variadic = sig_param.map(|p| p.param_array).unwrap_or(false);
+            let ty = sig_param
+                .map(|p| normalize_declared_type(env, p.ty.clone()))
+                .unwrap_or(VarTypeRef::Variant);
+            if !variadic
+                && sig_param.is_some_and(|p| p.mode == PassingMode::ByVal)
+                && matches!(ty, VarTypeRef::Array(_) | VarTypeRef::FixedArray { .. })
+            {
+                return Err(BindError::ArrayArgumentMustBeByRef);
+            }
             // A ParamArray is a fresh local array, never an alias — force ByVal.
             let by_ref = !variadic
                 && sig_param
@@ -511,9 +527,7 @@ fn build_frame(
                     .unwrap_or(true);
             params.push(CoreParam {
                 name: alloc_name(env, sym.name),
-                ty: sig_param
-                    .map(|p| p.ty.clone())
-                    .unwrap_or(VarTypeRef::Variant),
+                ty,
                 by_ref,
                 variadic,
             });
@@ -539,7 +553,7 @@ fn build_frame(
             };
             locals.push(CoreLocal {
                 name: alloc_name(env, sym.name),
-                ty: declared_var_type(&sym.imp),
+                ty: normalize_declared_type(env, declared_var_type(&sym.imp)),
                 array_element,
             });
             local_of.insert(sym_id, LocalId(next));
@@ -554,6 +568,7 @@ fn build_frame(
             name: logical.to_string(),
             ty: signature
                 .and_then(|s| s.return_type.clone())
+                .map(|ty| normalize_declared_type(env, ty))
                 .unwrap_or(VarTypeRef::Variant),
             array_element: None,
         });
@@ -562,13 +577,13 @@ fn build_frame(
         None
     };
 
-    Frame {
+    Ok(Frame {
         params,
         locals,
         return_local,
         local_of,
         me_local,
-    }
+    })
 }
 
 fn proc_signature(

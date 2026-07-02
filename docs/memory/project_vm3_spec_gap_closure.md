@@ -2220,3 +2220,64 @@
   - `scripts/check-governance.ps1`
   - `br dep cycles --json`
   - `git diff --check`
+
+## 2026-07-02 - Array ByVal/Copy And Fixed-Lhs Assignment (`bd-4ktq.52`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_array_copy_assignment_oracle_20260702T025158Z/`.
+- Oracle findings:
+  - `Private Sub Touch(ByVal a() As Long)` raises compile error
+    `Array argument must be ByRef`.
+  - A typed array passed to `ByVal v As Variant` is copied before element
+    mutation; caller values and bounds remain unchanged.
+  - A typed array passed to `ByRef v As Variant` aliases caller storage and
+    element mutation writes through.
+  - Whole-array assignment between dynamic arrays copies values and bounds, and
+    the copy stays independent across later `ReDim Preserve` on the source.
+  - Dynamic lhs from fixed rhs is legal and copies values/bounds.
+  - Fixed-size array lhs whole assignment from either dynamic or fixed rhs raises
+    compile error `Can't assign to array`.
+- Implemented parser support for parameter array markers (`a() As T`) so
+  signatures carry array type information instead of falling back to Variant.
+- Top-level fixed-size array declarators now carry `VarTypeRef::FixedArray`,
+  enabling the binder to reject fixed-lhs whole-array assignment at compile time
+  while preserving legal fixed-array element access and ReDim/Erase allocation
+  behavior.
+- Added binder diagnostics `ArrayArgumentMustBeByRef` and `CantAssignToArray`
+  with VBA-shaped diagnostic messages. ByRef compatibility canonicalizes
+  fixed-array actuals to ordinary array shape, preserving legal fixed-array calls.
+- Fresh-eyes review tightened the regression checks to assert the VBA-shaped
+  diagnostic text and changed vm3 host bind-failure formatting from Rust debug
+  variants to `Display`, so rejected compile shapes surface messages like
+  `Array argument must be ByRef` and `Can't assign to array`.
+- Added `crates/oxvba-differential/tests/array_copy_assignment_vm3.rs` for the
+  oracle-backed dynamic/fixed carriers, ByVal/ByRef Variant array behavior,
+  dynamic copy independence, dynamic-from-fixed assignment, and invalid fixed-lhs
+  diagnostics. Updated the existing ParamArray baseline to expect a typed Long
+  return now that `ParamArray xs() As Variant` is parsed as an array parameter.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-array-copy-assignment-oracle.ps1`
+  - `cargo test -p oxvba-syntax typed_accessor_params_from_paramlist --quiet`
+  - `cargo test -p oxvba-syntax --quiet`
+  - `cargo test -p oxvba-symbol --quiet`
+  - `cargo test -p oxvba-bind --quiet`
+  - `cargo check -p oxvba-syntax -p oxvba-symbol -p oxvba-bind -p oxvba-differential`
+  - `cargo test -p oxvba-differential --test array_copy_assignment_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test fixed_array_erase_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test redim_implicit_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test array_bounds_unallocated_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test array_introspection_vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo check -p oxvba-host --quiet`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
+    (current non-blocking formal evidence: 304 pass, 16 skipped Kani
+    obligations, 63 todo; legacy `oxvba-compiler` obligations remain invalid
+    because that package is not present, and sampled host obligations pass when
+    invoked directly).
+- Broader `cargo test -p oxvba-differential --quiet` was also attempted; it
+  still fails in the existing `vm3_runs_collection_methods` lib test because the
+  snapshot contains `Item(1)=30` as `Integer` rather than the test's expected
+  `Long`. This collection subtype expectation is outside the array ByVal/fixed-lhs
+  scope and was not mixed into this bead.

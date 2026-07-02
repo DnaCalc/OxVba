@@ -637,7 +637,7 @@ impl Engine {
             .collect();
         let programs = match oxvba_bind::bind_projects(&closure, &*self.typelib_resolver) {
             Ok(p) => p,
-            Err(e) => return Vm3Snapshot::Failed(format!("bind: {e:?}")),
+            Err(e) => return Vm3Snapshot::Failed(format!("bind: {e}")),
         };
         let mut ox_programs = Vec::with_capacity(programs.len());
         for program in &programs {
@@ -792,7 +792,7 @@ impl Engine {
         let manifest = self.manifest_with_runtime_conditional_target(manifest);
         let program = match oxvba_bind::bind_program(&manifest, &*self.typelib_resolver) {
             Ok(p) => p,
-            Err(e) => return Vm3Snapshot::Failed(format!("bind: {e:?}")),
+            Err(e) => return Vm3Snapshot::Failed(format!("bind: {e}")),
         };
         let oxp = match oxvba_oxir::elaborate::elaborate(&program) {
             Ok(o) => o,
@@ -835,7 +835,7 @@ impl Engine {
         let manifest = self.manifest_with_runtime_conditional_target(manifest);
         let program = match oxvba_bind::bind_program(&manifest, &*self.typelib_resolver) {
             Ok(p) => p,
-            Err(e) => return SnapshotOutcome::Failed(format!("bind: {e:?}")),
+            Err(e) => return SnapshotOutcome::Failed(format!("bind: {e}")),
         };
         let oxp = match oxvba_oxir::elaborate::elaborate(&program) {
             Ok(o) => o,
