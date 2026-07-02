@@ -1,0 +1,11 @@
+2026-07-03T00:20:27.2922620+02:00 start excel_pid=29224 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_w10_pending_20260702\vba_dialog_handler.stop
+2026-07-03T00:20:42.1057787+02:00 deadline exceeded — killing excel pid=29224
+2026-07-03T00:20:42.1184778+02:00 exit
+2026-07-03T00:20:45.7475382+02:00 start excel_pid=35688 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_w10_pending_20260702\vba_dialog_handler.stop
+2026-07-03T00:20:48.6441411+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T00:20:49.1652802+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T00:20:50.8389504+02:00 stop file observed
+2026-07-03T00:20:50.8529943+02:00 exit
+2026-07-03T00:20:53.2951784+02:00 start excel_pid=6412 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_w10_pending_20260702\vba_dialog_handler.stop
+2026-07-03T00:20:54.7898244+02:00 stop file observed
+2026-07-03T00:20:54.8020056+02:00 exit

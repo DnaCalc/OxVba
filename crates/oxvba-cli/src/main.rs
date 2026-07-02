@@ -619,9 +619,10 @@ fn format_variant_value(value: &Variant) -> String {
         VarType::UnsignedInt => format!("uint:{}", value.as_u32().unwrap_or(0)),
         VarType::LongLong => format!("i64:{}", value.as_i64().unwrap_or(0)),
         VarType::UnsignedLongLong => format!("u64:{}", value.as_u64().unwrap_or(0)),
-        VarType::Single | VarType::Double | VarType::Date => {
+        VarType::Single | VarType::Double => {
             format!("f64:{}", value.as_f64().unwrap_or(0.0))
         }
+        VarType::Date => format!("f64:{}", value.as_date_f64().unwrap_or(0.0)),
         VarType::Decimal => match value.as_decimal96() {
             Some(value) => format!("decimal:{value}"),
             None => "decimal:<invalid>".to_string(),
@@ -781,6 +782,12 @@ mod tests {
             "--profile".to_string(),
         ];
         assert!(parse_run_args_from(args).is_none());
+    }
+
+    #[test]
+    fn format_variant_value_preserves_date_payloads() {
+        let value = Variant::from_date_f64(46_081.0);
+        assert_eq!(format_variant_value(&value), "f64:46081");
     }
 
     #[test]

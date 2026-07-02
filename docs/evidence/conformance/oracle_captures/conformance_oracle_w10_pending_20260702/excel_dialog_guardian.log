@@ -1,0 +1,9 @@
+2026-07-03T00:20:26.734+02:00 start excel_pid=29224 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_w10_pending_20260702\excel_dialog_guardian.stop
+2026-07-03T00:20:42.393+02:00 excel process exited; guardian stopping
+2026-07-03T00:20:42.402+02:00 exit
+2026-07-03T00:20:45.179+02:00 start excel_pid=35688 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_w10_pending_20260702\excel_dialog_guardian.stop
+2026-07-03T00:20:50.570+02:00 stop file observed; exiting
+2026-07-03T00:20:50.583+02:00 exit
+2026-07-03T00:20:52.573+02:00 start excel_pid=6412 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_w10_pending_20260702\excel_dialog_guardian.stop
+2026-07-03T00:20:54.663+02:00 stop file observed; exiting
+2026-07-03T00:20:54.674+02:00 exit
