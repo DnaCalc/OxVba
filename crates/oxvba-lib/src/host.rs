@@ -10,6 +10,7 @@ use crate::{LibError, LibResult, as_f64, as_i32, as_str, need, opt, vunit};
 use oxvba_com::{ComCallbackToken, ComMemberToken, ComSubscriptionToken};
 use oxvba_hal::HostServices;
 use oxvba_runtime::Variant;
+use oxvba_runtime::coerce::coerce_to;
 use oxvba_runtime::object_ref::ObjectRef;
 use oxvba_runtime::variant::VarType;
 
@@ -30,6 +31,14 @@ fn optional_string_arg(args: &[Variant], index: usize) -> LibResult<Variant> {
         Some(value) if matches!(value.vtype(), VarType::Empty) => Ok(Variant::empty()),
         Some(value) => Ok(Variant::from_string(as_str(value)?)),
         None => Ok(Variant::empty()),
+    }
+}
+
+fn optional_bool_arg(args: &[Variant], index: usize) -> LibResult<Variant> {
+    match opt(args, index) {
+        Some(value) if matches!(value.vtype(), VarType::Empty) => Ok(Variant::from_bool(false)),
+        Some(value) => Ok(coerce_to(value, VarType::Boolean)?),
+        None => Ok(Variant::from_bool(false)),
     }
 }
 
@@ -421,6 +430,16 @@ pub fn beep(_host: &dyn HostServices) -> LibResult<Variant> {
 }
 pub fn do_events(host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host.events().do_events_variant()?)
+}
+pub fn send_keys(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host
+        .ui()
+        .send_keys_variant(string_arg(args, 0)?, optional_bool_arg(args, 1)?)?)
+}
+pub fn app_activate(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
+    Ok(host
+        .ui()
+        .app_activate_variant(req(args, 0)?, optional_bool_arg(args, 1)?)?)
 }
 pub fn shell(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     Ok(host

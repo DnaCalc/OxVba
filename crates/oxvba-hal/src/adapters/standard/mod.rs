@@ -76,10 +76,14 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, MB_OK, MSG, MessageBoxW, PM_REMOVE, PeekMessageW, TranslateMessage,
+    DispatchMessageW, EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsWindowVisible, MB_OK, MSG, MessageBoxW, PM_REMOVE, PeekMessageW, SetForegroundWindow,
+    TranslateMessage,
 };
 
 #[cfg(target_os = "windows")]
@@ -1007,6 +1011,109 @@ impl StandardHostServices {
     #[cfg(not(target_os = "windows"))]
     fn native_windows_msg_box_text(&self, _text: &str, _style: i32) -> HalResult<i32> {
         Ok(1)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn native_windows_app_activate(&self, title: &Variant) -> HalResult<bool> {
+        struct AppActivateSearch {
+            title_prefix: Option<String>,
+            process_id: Option<u32>,
+            hwnd: HWND,
+        }
+
+        unsafe fn window_title_lower(hwnd: HWND) -> String {
+            // SAFETY: `hwnd` is supplied by EnumWindows and is used only for a
+            // read-only title-length query.
+            let len = unsafe { GetWindowTextLengthW(hwnd) };
+            if len <= 0 {
+                return String::new();
+            }
+            let mut buffer = vec![0u16; len as usize + 1];
+            // SAFETY: `buffer` is sized to the reported title length plus the
+            // trailing NUL, and its pointer stays valid for the call.
+            let copied = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+            if copied <= 0 {
+                return String::new();
+            }
+            String::from_utf16_lossy(&buffer[..copied as usize]).to_ascii_lowercase()
+        }
+
+        unsafe extern "system" fn enum_app_activate_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            // SAFETY: `lparam` is the pointer to `AppActivateSearch` passed by
+            // `native_windows_app_activate` to this synchronous EnumWindows call.
+            let search = unsafe { &mut *(lparam as *mut AppActivateSearch) };
+            // SAFETY: `hwnd` is provided by EnumWindows and queried only for
+            // visibility.
+            if unsafe { IsWindowVisible(hwnd) } == 0 {
+                return 1;
+            }
+            if let Some(target_pid) = search.process_id {
+                let mut window_pid = 0u32;
+                // SAFETY: `window_pid` is a valid out-parameter for the duration of
+                // the call and `hwnd` came from EnumWindows.
+                unsafe { GetWindowThreadProcessId(hwnd, &mut window_pid) };
+                if window_pid == target_pid {
+                    search.hwnd = hwnd;
+                    return 0;
+                }
+            }
+            if let Some(target_title) = &search.title_prefix {
+                // SAFETY: `hwnd` came from EnumWindows; the helper only reads the
+                // window title into an owned buffer.
+                let window_title = unsafe { window_title_lower(hwnd) };
+                if !window_title.is_empty()
+                    && (window_title == *target_title || window_title.starts_with(target_title))
+                {
+                    search.hwnd = hwnd;
+                    return 0;
+                }
+            }
+            1
+        }
+
+        let capability = CapabilityId::UiInteraction;
+        let op = "app_activate";
+        let (title_prefix, process_id) = if title.vtype() == VarType::String {
+            let text = title
+                .as_bstr()
+                .map(|value| value.as_str().to_ascii_lowercase())
+                .unwrap_or_default();
+            if text.is_empty() {
+                return Ok(false);
+            }
+            (Some(text), None)
+        } else {
+            let pid = self.variant_to_i32(title, capability, op, "title")?;
+            if pid <= 0 {
+                return Ok(false);
+            }
+            (None, Some(pid as u32))
+        };
+
+        let mut search = AppActivateSearch {
+            title_prefix,
+            process_id,
+            hwnd: std::ptr::null_mut(),
+        };
+        // SAFETY: The callback is synchronous and receives a pointer to `search`,
+        // which remains alive until EnumWindows returns.
+        unsafe {
+            EnumWindows(
+                Some(enum_app_activate_window),
+                (&mut search as *mut AppActivateSearch) as LPARAM,
+            );
+        }
+        if search.hwnd.is_null() {
+            return Ok(false);
+        }
+        // SAFETY: `search.hwnd` was returned by EnumWindows during the search and
+        // has not been dereferenced by Rust; SetForegroundWindow owns validation.
+        Ok(unsafe { SetForegroundWindow(search.hwnd) } != 0)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn native_windows_app_activate(&self, _title: &Variant) -> HalResult<bool> {
+        Ok(false)
     }
 
     #[cfg(target_os = "windows")]
@@ -2474,6 +2581,34 @@ mod tests {
             .input_box_variant(rv(9), rv(1))
             .expect_err("input_box should be denied");
         assert_eq!(err.kind, HalErrorKind::PolicyDenied);
+    }
+
+    #[test]
+    fn send_keys_empty_is_noop_but_nonempty_remains_gated() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        assert_eq!(
+            host.send_keys_variant(Variant::from_string(BStr::from("")), rv(0))
+                .expect("empty SendKeys should be a no-op"),
+            Variant::empty()
+        );
+        let err = host
+            .send_keys_variant(Variant::from_string(BStr::from("x")), rv(0))
+            .expect_err("non-empty SendKeys is a real UI effect and must be gated");
+        assert_eq!(err.kind, HalErrorKind::PolicyDenied);
+    }
+
+    #[test]
+    fn app_activate_missing_window_reports_vba_error_five() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let err = host
+            .app_activate_variant(
+                Variant::from_string(BStr::from("__OXVBA_NO_SUCH_WINDOW_20260702__")),
+                rv(0),
+            )
+            .expect_err("missing window title should raise VBA error 5");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+        assert_eq!(err.host_error_code, Some(5));
+        assert_eq!(err.message, "Invalid procedure call or argument");
     }
 
     #[test]

@@ -435,6 +435,8 @@ pub fn invoke(
         InputBox => host::input_box(args, host),
         Beep => host::beep(host),
         DoEvents => host::do_events(host),
+        SendKeys => host::send_keys(args, host),
+        AppActivate => host::app_activate(args, host),
         Shell => host::shell(args, host),
         Environ => host::environ(args, host),
         Dir => host::dir(args, host),

@@ -2939,3 +2939,35 @@
   - `cargo test -p oxvba-bind -- --nocapture`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot -- --nocapture`
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\meta-check.ps1 -Fast -NoArtifacts`
+
+## 2026-07-02 - SendKeys/AppActivate Interaction Surface (`bd-wwwd`)
+
+- Excel/VBA oracle evidence lives in
+  `docs/evidence/conformance/vm3_sendkeys_appactivate_oracle_20260702T144333Z/`.
+  The runner made the VBE visible, invoked Debug -> Compile VBAProject through
+  command ID 578, captured compile/runtime modals and selected token/line with
+  PID-scoped UI Automation, dismissed only owned dialogs, and stopped only owned
+  Excel PIDs.
+- Oracle result: `SendKeys "", False` compiles/runs with `Err.Number=0`;
+  `AppActivate "__OXVBA_NO_SUCH_WINDOW_20260702__", False` compiles and raises
+  run-time error 5 `Invalid procedure call or argument`; value-expression use
+  of either intrinsic compiles as `Expected Function or variable` with the
+  intrinsic name selected in the VBE.
+- Fix: `SendKeys` and `AppActivate` now resolve through the VBA `Interaction`
+  library surface as statement-shaped members and execute through
+  `UiInteractionHal`. vm3 rejects value-context use with the normal VBA
+  diagnostic, treats empty `SendKeys` as a no-op, and surfaces missing
+  `AppActivate` windows as VBA error 5. Windows interactive hosts can activate
+  visible top-level windows by exact/prefix title or Shell task id. Non-empty
+  key injection remains an explicit host UI-automation boundary, not a fake
+  compatibility implementation.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo test -p oxvba-symbol catalog -- --nocapture`
+  - `cargo test -p oxvba-bundle vba_library -- --nocapture`
+  - `cargo test -p oxvba-hal send_keys_empty_is_noop_but_nonempty_remains_gated -- --nocapture`
+  - `cargo test -p oxvba-hal app_activate_missing_window_reports_vba_error_five -- --nocapture`
+  - `cargo test -p oxvba-differential --test sendkeys_appactivate_vm3 -- --nocapture`
+  - `cargo clippy -p oxvba-bundle -p oxvba-symbol -p oxvba-bind -p oxvba-hal -p oxvba-lib -p oxvba-differential --all-targets -- -D warnings`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot -- --nocapture`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\meta-check.ps1 -Fast -NoArtifacts`

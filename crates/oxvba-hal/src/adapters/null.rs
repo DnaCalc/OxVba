@@ -120,6 +120,14 @@ impl UiInteractionHal for NullHostServices {
     fn input_box_variant(&self, _prompt: Variant, _default_value: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::UiInteraction, "input_box"))
     }
+
+    fn send_keys_variant(&self, _keys: Variant, _wait: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::UiInteraction, "send_keys"))
+    }
+
+    fn app_activate_variant(&self, _title: Variant, _wait: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::UiInteraction, "app_activate"))
+    }
 }
 
 impl EventPumpHal for NullHostServices {

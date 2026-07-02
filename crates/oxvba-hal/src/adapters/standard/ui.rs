@@ -1,9 +1,9 @@
 use crate::{
-    error::HalResult,
+    error::{HalError, HalResult},
     model::{CapabilityId, HalProfileId, HalRuntimeClass, UiVirtualizationMode},
     traits::UiInteractionHal,
 };
-use oxvba_runtime::Variant;
+use oxvba_runtime::{VarType, Variant};
 
 use super::StandardHostServices;
 
@@ -93,4 +93,54 @@ impl UiInteractionHal for StandardHostServices {
             UiVirtualizationMode::Disabled => Ok(prompt),
         }
     }
+
+    fn send_keys_variant(&self, keys: Variant, _wait: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::UiInteraction;
+        let op = "send_keys";
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, op));
+        }
+        let key_text = self.variant_to_display_text(&keys);
+        if key_text.is_empty() {
+            return Ok(Variant::empty());
+        }
+        if !self.policy.allow_interaction {
+            return Err(self.denied(capability, op));
+        }
+        Err(HalError::unsupported_profile(self.profile, capability, op).with_host_error_code(5))
+    }
+
+    fn app_activate_variant(&self, title: Variant, _wait: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::UiInteraction;
+        let op = "app_activate";
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, op));
+        }
+        if self.native_mode_enabled()
+            && self.profile == HalProfileId::Windows
+            && self.policy.ui_virtualization == UiVirtualizationMode::Disabled
+        {
+            if !self.policy.allow_interaction {
+                return Err(self.denied(capability, op));
+            }
+            if self.native_windows_app_activate(&title)? {
+                return Ok(Variant::empty());
+            }
+            return Err(app_activate_not_found(self.profile));
+        }
+        if matches!(title.vtype(), VarType::Empty | VarType::Null) {
+            return Err(app_activate_not_found(self.profile));
+        }
+        Err(app_activate_not_found(self.profile))
+    }
+}
+
+fn app_activate_not_found(profile: HalProfileId) -> HalError {
+    HalError::adapter_fault(
+        profile,
+        CapabilityId::UiInteraction,
+        "app_activate",
+        "Invalid procedure call or argument",
+    )
+    .with_host_error_code(5)
 }

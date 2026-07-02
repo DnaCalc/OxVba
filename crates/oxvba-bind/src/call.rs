@@ -276,6 +276,11 @@ impl<'a> ProcLower<'a> {
     }
 
     fn reject_sub_in_value_context(&self, name: &str, binding: &Binding) -> Result<(), BindError> {
+        if self.is_statement_only_vba_library_member(binding) {
+            return Err(BindError::ExpectedFunctionOrVariable {
+                name: name.to_string(),
+            });
+        }
         if matches!(
             binding.route,
             DispatchRoute::ProjectMember {
@@ -291,6 +296,22 @@ impl<'a> ProcLower<'a> {
             });
         }
         Ok(())
+    }
+
+    fn is_statement_only_vba_library_member(&self, binding: &Binding) -> bool {
+        matches!(
+            &binding.route,
+            DispatchRoute::ExternMember {
+                unit,
+                owner,
+                member,
+                kind: ProjectMemberKind::Method,
+                has_receiver: false,
+                ..
+            } if fold_identifier(unit) == "vba"
+                && fold_identifier(owner) == "interaction"
+                && matches!(fold_identifier(member).as_str(), "sendkeys" | "appactivate")
+        )
     }
 
     fn bind_native_args(

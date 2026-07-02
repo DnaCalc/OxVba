@@ -147,6 +147,14 @@ pub trait UiInteractionHal: Send + Sync {
     fn input_box_variant(&self, _prompt: Variant, _default_value: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::UiInteraction, "input_box_variant")
     }
+    /// Sends keystrokes to the active application when a real UI host supports it.
+    fn send_keys_variant(&self, _keys: Variant, _wait: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::UiInteraction, "send_keys_variant")
+    }
+    /// Activates a top-level application window by title or Shell task id.
+    fn app_activate_variant(&self, _title: Variant, _wait: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::UiInteraction, "app_activate_variant")
+    }
 }
 
 pub trait EventPumpHal: Send + Sync {

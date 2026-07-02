@@ -352,6 +352,20 @@ pub const fn intrinsic_entry(id: NativeImplId) -> IntrinsicEntry {
         InputBox => e(InputBox, &["InputBox"], sig(1, 7), Ordinary),
         Beep => e(Beep, &["Beep"], sig(0, 0), Ordinary),
         DoEvents => e(DoEvents, &["DoEvents"], sig(0, 0), Ordinary),
+        SendKeys => e_params(
+            SendKeys,
+            &["SendKeys"],
+            sig(1, 2),
+            &["String", "Wait"],
+            FileStatement,
+        ),
+        AppActivate => e_params(
+            AppActivate,
+            &["AppActivate"],
+            sig(1, 2),
+            &["Title", "Wait"],
+            FileStatement,
+        ),
         Shell => e(Shell, &["Shell"], sig(1, 2), Ordinary),
         Environ => e(Environ, &["Environ", "Environ$"], sig(1, 1), Ordinary),
         Dir => e(Dir, &["Dir", "Dir$"], sig(0, 2), Ordinary),
@@ -456,6 +470,14 @@ mod tests {
         );
         assert_eq!(
             intrinsic_entry(NativeImplId::FilePrint).call_shape,
+            CallShape::FileStatement
+        );
+        assert_eq!(
+            intrinsic_entry(NativeImplId::SendKeys).call_shape,
+            CallShape::FileStatement
+        );
+        assert_eq!(
+            intrinsic_entry(NativeImplId::AppActivate).call_shape,
             CallShape::FileStatement
         );
         assert_eq!(

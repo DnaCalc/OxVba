@@ -297,6 +297,8 @@ mod tests {
                     | InputBox
                     | Beep
                     | DoEvents
+                    | SendKeys
+                    | AppActivate
                     | Shell
                     | Environ
                     | Dir

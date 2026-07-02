@@ -223,6 +223,8 @@ native_impl_ids! {
     InputBox,
     Beep,
     DoEvents,
+    SendKeys,
+    AppActivate,
     Shell,
     Environ,
     Dir,
@@ -296,6 +298,8 @@ impl NativeImplId {
             | InputBox
             | Beep
             | DoEvents
+            | SendKeys
+            | AppActivate
             | Shell
             | Environ
             | Dir
@@ -335,7 +339,8 @@ impl NativeImplId {
     ///   `None`;
     /// - the `Interaction` by-name functions (`Partition` plus the host functions
     ///   `Command`/`GetSetting`/`GetAllSettings`/`SaveSetting`/`DeleteSetting`/
-    ///   `MsgBox`/`InputBox`/`Beep`/`DoEvents`/`Shell`/`Environ`/`Dir`). The host
+    ///   `MsgBox`/`InputBox`/`Beep`/`DoEvents`/`SendKeys`/`AppActivate`/`Shell`/
+    ///   `Environ`/`Dir`). The host
     ///   functions still reach host services through `invoke_native_lib`;
     ///   `Partition` is deterministic but shares the same VBA typelib module. Their
     ///   `Interaction`-module siblings `CreateObject` (object activation / `New`
@@ -505,6 +510,8 @@ impl NativeImplId {
             InputBox => "InputBox",
             Beep => "Beep",
             DoEvents => "DoEvents",
+            SendKeys => "SendKeys",
+            AppActivate => "AppActivate",
             Shell => "Shell",
             Environ => "Environ",
             Dir => "Dir",
@@ -685,7 +692,7 @@ impl NativeImplId {
             DeleteSetting => 3,
             GetSetting | SaveSetting | Partition => 4,
             Environ => 1,
-            Shell | Dir => 2,
+            SendKeys | AppActivate | Shell | Dir => 2,
             MsgBox => 5,
             InputBox => 7,
             // ── FileSystem by-name members ──
@@ -784,6 +791,8 @@ impl NativeImplId {
                 | NativeImplId::InputBox
                 | NativeImplId::Beep
                 | NativeImplId::DoEvents
+                | NativeImplId::SendKeys
+                | NativeImplId::AppActivate
                 | NativeImplId::Shell
                 | NativeImplId::Environ
                 | NativeImplId::Dir
