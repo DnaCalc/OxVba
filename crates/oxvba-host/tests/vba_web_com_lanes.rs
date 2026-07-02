@@ -71,7 +71,7 @@ fn app_member(
             .collect(),
         parameter_iids: vec![None; parameter_types.len()],
         parameter_types,
-        return_wire_type: return_type.clone().map(TypeLibWireType::Automation),
+        return_wire_type: return_type.map(TypeLibWireType::Automation),
         return_type,
         callconv_is_stdcall: false,
         is_dual: true,

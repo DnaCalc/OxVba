@@ -2823,3 +2823,16 @@
   now gets past the previous `oxvba-bind` clippy gate. It surfaces the next
   `oxvba-host` test clippy gate, now tracked as `bd-4ktq.67`, and the existing
   wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.
+
+## 2026-07-02 - oxvba-host Test Clone Clippy Gate (`bd-4ktq.67`)
+
+- Repaired the `clone_on_copy` clippy denials in the VBA-Web host tests by
+  removing redundant `clone()` calls from `Option<TypeLibParamType>` test
+  metadata construction. This is a test-only semantic no-op.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-host --all-targets -- -D warnings`
+  - `cargo test -p oxvba-host --test vba_web_com_lanes --test vba_web_external_corpus`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the previous clippy gates. The remaining meta-check failure is
+  the wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.
