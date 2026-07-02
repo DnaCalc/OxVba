@@ -447,9 +447,8 @@ impl<'a> ProcLower<'a> {
                 let recv = CoreValue::Load(self.place_by_name(tok.text)?);
                 let args = self.bind_extern_args(node.index_arg_list(), &[])?;
                 return Ok(value_bound(
-                    self.late_member_call(
-                        "Item",
-                        oxvba_bundle::ProjectMemberKind::Method,
+                    self.late_default_member_call(
+                        oxvba_bundle::ProjectMemberKind::PropertyGet,
                         recv,
                         args,
                     ),
@@ -472,9 +471,8 @@ impl<'a> ProcLower<'a> {
                     .ok_or_else(|| BindError::Malformed("default member index".into()))?,
             )?;
             return Ok(value_bound(
-                self.late_member_call(
-                    "Item",
-                    oxvba_bundle::ProjectMemberKind::Method,
+                self.late_default_member_call(
+                    oxvba_bundle::ProjectMemberKind::PropertyGet,
                     recv.value,
                     args.into_iter().map(CoreArg::ByVal).collect(),
                 ),

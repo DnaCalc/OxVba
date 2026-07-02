@@ -557,10 +557,12 @@ pub enum CoreCallee {
         /// The full canonical typed member descriptor (boxed to keep `CoreCallee` small).
         member: Box<TypeLibMemberMetadata>,
     },
-    /// Late-bound COM dispatch (`Object`/`Variant` receiver, by name).
+    /// Late-bound COM dispatch (`Object`/`Variant` receiver), either by member
+    /// name or by the receiver's default member (`obj(...)` / dispid 0).
     LateDispatch {
         name: String,
         kind: Option<ProjectMemberKind>,
+        default_member: bool,
     },
     /// A `Declare Lib` external call (descriptor in `CoreProgram::external_calls`).
     /// `ptr_writebacks` carries the pointer-helper arguments whose pinned buffer is

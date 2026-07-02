@@ -3222,6 +3222,23 @@ fn late_bound_member_call_on_object() {
 }
 
 #[test]
+fn late_bound_object_index_lowers_to_default_member_get() {
+    let src = "Sub Main()\n    Dim o As Object\n    Dim r\n    r = o(1)\nEnd Sub\n";
+    let program = bind(src);
+    assert!(
+        top_level_callees(&program).iter().any(|c| matches!(
+            c,
+            CoreCallee::LateDispatch {
+                default_member: true,
+                kind: Some(oxvba_bundle::ProjectMemberKind::PropertyGet),
+                ..
+            }
+        )),
+        "expected Object index read to lower to default-member PropertyGet"
+    );
+}
+
+#[test]
 fn late_bound_property_put_on_object() {
     // `o.Value = 5` on an untyped Object becomes a late-bound Property Let put.
     let src = "Sub Main()\n    Dim o As Object\n    o.Value = 5\nEnd Sub\n";
@@ -3229,10 +3246,31 @@ fn late_bound_property_put_on_object() {
     assert!(
         top_level_callees(&program).iter().any(|c| matches!(
             c,
-            CoreCallee::LateDispatch { name, kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet) }
+            CoreCallee::LateDispatch {
+                name,
+                kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                default_member: false,
+            }
                 if name.eq_ignore_ascii_case("Value")
         )),
         "expected a late PropertyLet put to Value"
+    );
+}
+
+#[test]
+fn late_bound_object_index_assignment_lowers_to_default_member_put() {
+    let src = "Sub Main()\n    Dim o As Object\n    o(1) = 5\nEnd Sub\n";
+    let program = bind(src);
+    assert!(
+        top_level_callees(&program).iter().any(|c| matches!(
+            c,
+            CoreCallee::LateDispatch {
+                default_member: true,
+                kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                ..
+            }
+        )),
+        "expected Object index assignment to lower to default-member PropertyLet"
     );
 }
 

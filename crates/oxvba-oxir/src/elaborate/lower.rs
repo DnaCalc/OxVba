@@ -1858,12 +1858,17 @@ impl<'a> Lowerer<'a> {
                 self.emit_arg_writebacks(writebacks)?;
             }
             // Late-bound, by-name COM dispatch (the one dynamic COM path) — Variant args.
-            coreir::CoreCallee::LateDispatch { name, kind } => {
+            coreir::CoreCallee::LateDispatch {
+                name,
+                kind,
+                default_member,
+            } => {
                 let (recv, args, writebacks) = self.lower_com_receiver_and_args(args)?;
                 self.emit(OxInst::ComCallLate {
                     dst,
                     recv,
                     name: name.clone(),
+                    default_member: *default_member,
                     invoke_kind: invoke_kind_from_member_kind(*kind),
                     args,
                 });
@@ -2640,6 +2645,7 @@ mod tests {
                 callee: CoreCallee::LateDispatch {
                     name: "DoThing".to_string(),
                     kind: Some(ProjectMemberKind::PropertyLet),
+                    default_member: false,
                 },
                 args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(CoreLocalId(0))))],
             })],
@@ -2654,13 +2660,17 @@ mod tests {
             .flat_map(|b| &b.instrs)
             .find_map(|i| match i {
                 OxInst::ComCallLate {
-                    name, invoke_kind, ..
-                } => Some((name.clone(), *invoke_kind)),
+                    name,
+                    invoke_kind,
+                    default_member,
+                    ..
+                } => Some((name.clone(), *invoke_kind, *default_member)),
                 _ => None,
             })
             .expect("a ComCallLate");
         assert_eq!(late.0, "DoThing");
         assert_eq!(late.1, TypeLibMemberInvokeKind::PropertyPut);
+        assert!(!late.2);
     }
 
     #[test]

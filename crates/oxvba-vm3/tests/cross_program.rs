@@ -266,8 +266,11 @@ fn lib_apply_program() -> CoreProgram {
                 callee: CoreCallee::LateDispatch {
                     name: "GetVal".into(),
                     kind: Some(ProjectMemberKind::Method),
+                    default_member: false,
                 },
-                args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(0))))],
+                args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(
+                    0,
+                ))))],
             },
             "Apply",
         )],
@@ -408,6 +411,7 @@ fn lib_apply_global_arg_program() -> CoreProgram {
                     callee: CoreCallee::LateDispatch {
                         name: "Echo".into(),
                         kind: Some(ProjectMemberKind::Method),
+                        default_member: false,
                     },
                     args: vec![
                         CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(0)))),
@@ -614,8 +618,11 @@ fn app_new_extern_program() -> CoreProgram {
                     callee: CoreCallee::LateDispatch {
                         name: "Val".into(),
                         kind: Some(ProjectMemberKind::Method),
+                        default_member: false,
                     },
-                    args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(0))))],
+                    args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(LocalId(
+                        0,
+                    ))))],
                 },
                 "result",
             ),
@@ -656,6 +663,7 @@ fn app_predeclared_extern_program() -> CoreProgram {
                 callee: CoreCallee::LateDispatch {
                     name: "Val".into(),
                     kind: Some(ProjectMemberKind::Method),
+                    default_member: false,
                 },
                 args: vec![CoreArg::ByVal(CoreValue::PredeclaredExtern { import: 0 })],
             },

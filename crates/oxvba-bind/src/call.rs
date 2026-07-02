@@ -1010,7 +1010,7 @@ impl<'a> ProcLower<'a> {
             args.push(CoreArg::ByVal(rhs.clone()));
             let recv = CoreValue::Load(self.place_by_name(name)?);
             return Ok(Some(vec![CoreStmt::Eval(
-                self.late_member_call("Item", kind, recv, args),
+                self.late_default_member_call(kind, recv, args),
             )]));
         }
         if !matches!(
@@ -2339,6 +2339,26 @@ impl<'a> ProcLower<'a> {
             callee: CoreCallee::LateDispatch {
                 name: name.to_string(),
                 kind: Some(kind),
+                default_member: false,
+            },
+            args,
+        }
+    }
+
+    /// Build a default-member dispatch (`recv(args)`), receiver as `args[0]`.
+    pub(crate) fn late_default_member_call(
+        &self,
+        kind: ProjectMemberKind,
+        recv: CoreValue,
+        mut method_args: Vec<CoreArg>,
+    ) -> CoreValue {
+        let mut args = vec![CoreArg::ByVal(recv)];
+        args.append(&mut method_args);
+        CoreValue::Call {
+            callee: CoreCallee::LateDispatch {
+                name: String::new(),
+                kind: Some(kind),
+                default_member: true,
             },
             args,
         }

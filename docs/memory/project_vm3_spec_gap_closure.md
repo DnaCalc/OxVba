@@ -1694,6 +1694,46 @@
     project constant isolation, the vm3 import helper guard, manifest-field
     repair sites, docs, and staged scope.
 
+## 2026-07-02 - Object Default-Member Indexed Get/Set (`bd-4ktq.48`)
+
+- Replaced the untyped-object `obj(index)` lowering shortcut that guessed a
+  literal `"Item"` member with an explicit CoreIR/OxIR default-member dispatch
+  selector.
+- vm3 now dispatches that selector through project-class `VB_UserMemId = 0`
+  metadata, built-in `Collection.Item`, or COM `DISPID_VALUE` as appropriate.
+- `Variant`-held object values that reach the array-index fallback now invoke the
+  object's default member instead of reporting unsupported object indexing.
+  Scalar RHS values route as `PropertyLet`; object RHS values route as
+  `PropertySet`.
+- Project-class default-member calls share the existing project dispatch frame
+  runner and now reorder named arguments by callee parameter name for the covered
+  indexed property shape.
+- Verification completed:
+  - `cargo check -p oxvba-bundle -p oxvba-bind -p oxvba-oxir -p oxvba-vm3 -p oxvba-host -p oxvba-differential`
+  - `cargo test -p oxvba-bind --test bind_roundtrip default_member --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip late_bound_object_index --quiet`
+  - `cargo test -p oxvba-oxir late_bound_com_call_lowers_to_com_call_late --quiet`
+  - `cargo test -p oxvba-vm3 --test cross_program --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --test default_member_index_vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-host --test com_matrix_properties --quiet`
+    (compiled; live COM cases ignored in this environment)
+  - `cargo test -p oxvba-bind --tests --no-run`
+  - `cargo test -p oxvba-oxir --tests --no-run`
+  - `cargo test -p oxvba-vm3 --tests --no-run`
+  - `cargo test -p oxvba-differential --tests --no-run`
+  - `rustfmt --edition 2024 --check crates/oxvba-bundle/src/coreir.rs crates/oxvba-bind/src/call.rs crates/oxvba-bind/src/expr.rs crates/oxvba-bind/tests/bind_roundtrip.rs crates/oxvba-vm3/tests/cross_program.rs crates/oxvba-differential/tests/default_member_index_vm3.rs`
+  - Broad `rustfmt --check` over `oxvba-oxir` and `oxvba-vm3/src/lib.rs`
+    still reports pre-existing repository formatting drift; this bead kept
+    formatting changes scoped and manually inspected the touched OxIR/vm3 hunks.
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Fresh-eyes review rechecked the selector modeling, literal-`Item` removal,
+  Set/Let routing for Variant-held object fallback, named-argument reorder path,
+  docs, and staged-scope boundaries.
+
 ## 2026-07-01 - Statement Parser/Error-Model Slice (`bd-4ktq.39.6`)
 
 - Closed the focused statement/parser residual subset:

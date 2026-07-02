@@ -1911,11 +1911,16 @@ impl<'h> Vm3<'h> {
                 dst,
                 recv,
                 name,
+                default_member,
                 invoke_kind,
                 args,
             } => {
                 let recv_v = self.operand(recv)?;
-                let ret = self.dispatch_member_by_name(recv_v, name, *invoke_kind, args)?;
+                let ret = if *default_member {
+                    self.dispatch_default_member(recv_v, *invoke_kind, args)?
+                } else {
+                    self.dispatch_member_by_name(recv_v, name, *invoke_kind, args)?
+                };
                 if let Some(dst) = dst {
                     self.store(dst, ret)?;
                 }
@@ -2363,24 +2368,13 @@ impl<'h> Vm3<'h> {
         if recv.as_safearray().is_none()
             && let Some(obj) = recv.as_object_ref()
         {
-            // A built-in `Collection`'s default member is `Item` — route `c(i)` to the
-            // shared keyed dispatch. Other objects' default members (project class or COM
-            // late-bound) remain a deferred residual.
-            if obj.route_key() == VBA_COLLECTION_ROUTE_KEY {
-                let argv = self.operands_to_values(indices)?;
-                let value = obj
-                    .with_native_collection(|d| {
-                        dispatch_collection(CollectionMethod::Item, d, &argv)
-                    })
-                    .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?
-                    .map_err(Self::collection_fault)
-                    .map_err(Vm3Error::Fault)?;
-                self.store(dst, value)
-            } else {
-                Err(Vm3Error::Unimplemented {
-                    what: "array-index default-member call on an object",
-                })
-            }
+            let argv = self.operands_to_values(indices)?;
+            let value = self.dispatch_default_member_values(
+                Variant::from_object_ref(obj),
+                TypeLibMemberInvokeKind::PropertyGet,
+                argv,
+            )?;
+            self.store(dst, value)
         } else {
             let arr = recv
                 .as_safearray()
@@ -2409,10 +2403,22 @@ impl<'h> Vm3<'h> {
         indices: &[OxOperand],
         value: &Variant,
     ) -> Result<Variant, Vm3Error> {
-        if recv.as_safearray().is_none() && recv.as_object_ref().is_some() {
-            return Err(Vm3Error::Unimplemented {
-                what: "array-index default-member assignment on an object",
-            });
+        if recv.as_safearray().is_none()
+            && let Some(obj) = recv.as_object_ref()
+        {
+            let mut argv = self.operands_to_values(indices)?;
+            argv.push(value.clone());
+            let invoke_kind = if value.as_object_ref().is_some() {
+                TypeLibMemberInvokeKind::PropertyPutRef
+            } else {
+                TypeLibMemberInvokeKind::PropertyPut
+            };
+            self.dispatch_default_member_values(
+                Variant::from_object_ref(obj),
+                invoke_kind,
+                argv,
+            )?;
+            return Ok(recv);
         }
         let arr = recv
             .as_safearray()
@@ -3061,6 +3067,142 @@ impl<'h> Vm3<'h> {
             .flatten()
     }
 
+    fn project_call_args(
+        &self,
+        target_prog: usize,
+        proc: FuncId,
+        args: &[OxCallArg],
+    ) -> Result<Vec<OxArg>, Vm3Error> {
+        let callee = self
+            .programs
+            .get(target_prog)
+            .and_then(|lp| lp.program.funcs.get(proc.0))
+            .ok_or_else(|| Vm3Error::Malformed(format!("call to unknown proc {}", proc.0)))?;
+        let param_names: Vec<String> = callee
+            .locals
+            .iter()
+            .take(callee.param_count)
+            .skip(1)
+            .map(|local| local.name.to_ascii_lowercase())
+            .collect();
+        let mut ordered: Vec<Option<OxArg>> = Vec::new();
+        let mut next_positional = 0usize;
+        for arg in args {
+            let lowered = match arg {
+                OxCallArg::ByRef(place) => OxArg::ByRef(*place),
+                OxCallArg::Operand(op) => OxArg::ByVal(op.clone()),
+                OxCallArg::Named { value, .. } => OxArg::ByVal(value.clone()),
+                OxCallArg::Omitted => OxArg::Omitted,
+                OxCallArg::Const(_) => {
+                    return Err(Vm3Error::Malformed(
+                        "a Const argument in a project method call".into(),
+                    ));
+                }
+            };
+            if let OxCallArg::Named { name, .. } = arg {
+                let folded = name.to_ascii_lowercase();
+                let Some(index) = param_names.iter().position(|param| param == &folded) else {
+                    return Err(Vm3Error::Fault(Fault::new(
+                        448,
+                        format!("Named argument not found: {name}"),
+                    )));
+                };
+                if ordered.len() <= index {
+                    ordered.resize_with(index + 1, || None);
+                }
+                if ordered[index].is_some() {
+                    return Err(Vm3Error::Fault(Fault::new(
+                        448,
+                        format!("Named argument not found: {name}"),
+                    )));
+                }
+                ordered[index] = Some(lowered);
+            } else {
+                while ordered.get(next_positional).is_some_and(Option::is_some) {
+                    next_positional += 1;
+                }
+                if ordered.len() <= next_positional {
+                    ordered.resize_with(next_positional + 1, || None);
+                }
+                ordered[next_positional] = Some(lowered);
+                next_positional += 1;
+            }
+        }
+        Ok(ordered
+            .into_iter()
+            .map(|slot| slot.unwrap_or(OxArg::Omitted))
+            .collect())
+    }
+
+    fn project_default_member_proc(
+        &self,
+        obj_bundle: usize,
+        class_idx: usize,
+        kind: ProjectMemberKind,
+    ) -> Result<FuncId, Vm3Error> {
+        let program = self
+            .programs
+            .get(obj_bundle)
+            .map(|lp| lp.program)
+            .ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+            })?;
+        let class = program.classes.get(class_idx).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+        })?;
+        let exact = class
+            .methods
+            .iter()
+            .find(|m| m.is_default_member && m.kind == kind);
+        let member = exact.or_else(|| {
+            if kind == ProjectMemberKind::PropertyGet {
+                class
+                    .methods
+                    .iter()
+                    .find(|m| m.is_default_member && m.kind == ProjectMemberKind::Method)
+            } else if kind == ProjectMemberKind::Method {
+                class
+                    .methods
+                    .iter()
+                    .find(|m| m.is_default_member && m.kind == ProjectMemberKind::PropertyGet)
+            } else {
+                None
+            }
+        });
+        member
+            .map(|m| m.proc)
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, "Object doesn't support default member")))
+    }
+
+    fn dispatch_project_default_member(
+        &mut self,
+        object: ObjectRef,
+        me: Variant,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: &[OxCallArg],
+    ) -> Result<Variant, Vm3Error> {
+        let kind = project_member_kind(invoke_kind);
+        let class_idx = object.route_key() as usize;
+        let obj_bundle = object.bundle_id() as usize;
+        let proc = self.project_default_member_proc(obj_bundle, class_idx, kind)?;
+        let proc_args = self.project_call_args(obj_bundle, proc, args)?;
+        self.run_proc_with_me(obj_bundle, proc, me, &proc_args, false)
+    }
+
+    fn dispatch_project_default_member_values(
+        &mut self,
+        object: ObjectRef,
+        me: Variant,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: Vec<Variant>,
+    ) -> Result<Variant, Vm3Error> {
+        let kind = project_member_kind(invoke_kind);
+        let class_idx = object.route_key() as usize;
+        let obj_bundle = object.bundle_id() as usize;
+        let proc = self.project_default_member_proc(obj_bundle, class_idx, kind)?;
+        self.run_proc_with_values(obj_bundle, proc, me, args, false)
+    }
+
     /// Late-bound dispatch on a project instance: resolve the class member by name + accessor
     /// kind (with vm2's get↔method fallback) to its proc, then run it with `me` + the args and
     /// return the function result. Mirrors vm2's `dispatch_project_method` Name path
@@ -3118,20 +3260,9 @@ impl<'h> Vm3<'h> {
         let proc = member.map(|m| m.proc).ok_or_else(|| {
             Vm3Error::Fault(Fault::new(438, format!("Object doesn't support '{name}'")))
         })?;
-        // ByRef args alias the caller's place (write-back); ByVal/Named copy in. A `Const` arg
-        // only arises for library built-ins, never a project method.
-        let proc_args: Vec<OxArg> = args
-            .iter()
-            .map(|a| match a {
-                OxCallArg::ByRef(place) => Ok(OxArg::ByRef(*place)),
-                OxCallArg::Operand(op) => Ok(OxArg::ByVal(op.clone())),
-                OxCallArg::Named { value, .. } => Ok(OxArg::ByVal(value.clone())),
-                OxCallArg::Omitted => Ok(OxArg::Omitted),
-                OxCallArg::Const(_) => Err(Vm3Error::Malformed(
-                    "a Const argument in a project method call".into(),
-                )),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        // ByRef args alias the caller's place (write-back); named arguments reorder by
+        // the callee parameter names before the frame is seeded.
+        let proc_args = self.project_call_args(obj_bundle, proc, args)?;
         // Run the method body in the object's program (target_prog = obj_bundle). The args +
         // result dst are resolved by run_proc_with_me in THIS caller's program (cur unchanged),
         // so a method argument naming a caller global reads/writes the CALLER's global (vm2's
@@ -3345,6 +3476,77 @@ impl<'h> Vm3<'h> {
     /// project-instance receiver dispatches internally ([`Self::dispatch_project_method`]);
     /// a genuine `Object`/`Variant` (COM/foreign) receiver goes to the host's COM facet
     /// ([`Self::dispatch_com_method`]).
+    fn dispatch_default_member(
+        &mut self,
+        recv_v: Variant,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: &[OxCallArg],
+    ) -> Result<Variant, Vm3Error> {
+        let object = variant_to_object(&recv_v)?;
+        if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return self.dispatch_collection_method(&object, "Item", args);
+        }
+        if object.is_project_instance() {
+            self.dispatch_project_default_member(object, recv_v, invoke_kind, args)
+        } else {
+            self.dispatch_com_method(
+                object,
+                DynamicMemberSelector::DefaultMember,
+                invoke_kind,
+                args,
+            )
+        }
+    }
+
+    fn dispatch_default_member_values(
+        &mut self,
+        recv_v: Variant,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: Vec<Variant>,
+    ) -> Result<Variant, Vm3Error> {
+        let object = variant_to_object(&recv_v)?;
+        if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return self.dispatch_collection_values(&object, "Item", args);
+        }
+        if object.is_project_instance() {
+            self.dispatch_project_default_member_values(object, recv_v, invoke_kind, args)
+        } else {
+            self.dispatch_com_method_values(
+                object,
+                DynamicMemberSelector::DefaultMember,
+                invoke_kind,
+                args,
+            )
+        }
+    }
+
+    fn dispatch_com_method_values(
+        &mut self,
+        object: ObjectRef,
+        member: DynamicMemberSelector,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: Vec<Variant>,
+    ) -> Result<Variant, Vm3Error> {
+        let request = DynamicCallRequest {
+            object,
+            member,
+            args: args
+                .into_iter()
+                .map(|value| DynamicCallArg {
+                    value: Some(DynamicValue::from_variant(value)),
+                    name: None,
+                })
+                .collect(),
+            call_kind_hint: Some(invoke_kind_to_dynamic(invoke_kind)),
+        };
+        let (ret, _) = self
+            .host
+            .com()
+            .dispatch_invoke_dynamic_variant_with_writebacks(&request)
+            .map_err(|e| Vm3Error::Fault(Fault::from_hal(e)))?;
+        Ok(ret)
+    }
+
     fn dispatch_member_by_name(
         &mut self,
         recv_v: Variant,

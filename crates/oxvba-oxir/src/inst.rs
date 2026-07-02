@@ -229,14 +229,17 @@ pub enum OxInst {
         recv: OxOperand,
         args: Vec<OxCallArg>,
     },
-    /// **Late-bound, by-name COM call** — the *only* dynamic COM path: a genuinely
-    /// `Object`/`Variant` receiver dispatched by member `name` with Variant `args`
-    /// (correct VBA late-binding semantics, not erasure). `invoke_kind` selects
-    /// method / property-get / -put / -putref. Fallible like [`OxInst::ComCallEarly`].
+    /// **Late-bound COM call** — a genuinely `Object`/`Variant` receiver dispatched by
+    /// member `name`, or by the receiver's default member when `default_member` is true,
+    /// with Variant `args` (correct VBA late-binding semantics, not erasure).
+    /// `invoke_kind` selects method / property-get / -put / -putref. Fallible like
+    /// [`OxInst::ComCallEarly`].
     ComCallLate {
         dst: Option<OxPlace>,
         recv: OxOperand,
         name: String,
+        #[serde(default)]
+        default_member: bool,
         invoke_kind: TypeLibMemberInvokeKind,
         args: Vec<OxCallArg>,
     },
