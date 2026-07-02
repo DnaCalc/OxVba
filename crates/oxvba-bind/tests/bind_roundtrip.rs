@@ -2930,6 +2930,166 @@ fn withevents_com_source_without_handler_emits_no_route() {
     );
 }
 
+struct ScopedEventTypeLibs;
+impl TypeLibResolver for ScopedEventTypeLibs {
+    fn resolve(
+        &self,
+        request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        Some(oxvba_com::TypeLibMetadataBlob {
+            identity: oxvba_com::TypeLibResolvedIdentity {
+                reference_name: "Excel".into(),
+                requested_coclass: request.requested_coclass.clone(),
+                importlib: "excel.tlb".into(),
+                libid: None,
+                major_version: 1,
+                minor_version: 0,
+                lcid: None,
+                cache_key: format!(
+                    "excel:{}",
+                    request.requested_coclass.as_deref().unwrap_or("")
+                ),
+            },
+            activation_prog_id: None,
+            member_name_to_token: Vec::new(),
+            members: Vec::new(),
+            events: vec![oxvba_com::TypeLibEventMetadata {
+                name: "NewWorkbook".into(),
+                token: 1565,
+                callback_arity: 1,
+                dispatch_path: oxvba_com::TypeLibEventDispatchPath::Dispatch,
+                connection_point_iid: Some("{app-events}".into()),
+                dispatch_member_id: Some(1565),
+                coclass: Some("Application".into()),
+            }],
+            coclass_names: vec!["Application".into(), "Workbook".into()],
+        })
+    }
+}
+
+#[test]
+fn withevents_com_source_ignores_events_from_other_coclasses() {
+    // A library-wide typelib can expose events from many coclasses. A `Workbook`
+    // sink must not receive `Application` events just because both live in Excel.
+    let main = "Private WithEvents wb As Excel.Workbook\n\n\
+                Private Sub wb_NewWorkbook(ByVal value As Object)\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Sink".into(),
+            module_kind: ModuleKind::Class,
+            attributes: ModuleAttributes::named("Sink"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Excel".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("excel.tlb".into()),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &ScopedEventTypeLibs).expect("bind_program");
+
+    assert!(
+        program.event_routes.is_empty(),
+        "Workbook sink must not synthesize Application event routes: {:?}",
+        program.event_routes
+    );
+}
+
+struct ScopedWorkbookEventTypeLibs;
+impl TypeLibResolver for ScopedWorkbookEventTypeLibs {
+    fn resolve(
+        &self,
+        request: &oxvba_com::TypeLibResolveRequest,
+    ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        let events = if request.requested_coclass.as_deref() == Some("Workbook") {
+            vec![oxvba_com::TypeLibEventMetadata {
+                name: "BeforeClose".into(),
+                token: 42,
+                callback_arity: 0,
+                dispatch_path: oxvba_com::TypeLibEventDispatchPath::Dispatch,
+                connection_point_iid: Some("{workbook-events}".into()),
+                dispatch_member_id: Some(42),
+                coclass: Some("Workbook".into()),
+            }]
+        } else {
+            Vec::new()
+        };
+        Some(oxvba_com::TypeLibMetadataBlob {
+            identity: oxvba_com::TypeLibResolvedIdentity {
+                reference_name: "Excel".into(),
+                requested_coclass: request.requested_coclass.clone(),
+                importlib: "excel.tlb".into(),
+                libid: None,
+                major_version: 1,
+                minor_version: 0,
+                lcid: None,
+                cache_key: format!(
+                    "excel:{}",
+                    request.requested_coclass.as_deref().unwrap_or("")
+                ),
+            },
+            activation_prog_id: None,
+            member_name_to_token: Vec::new(),
+            members: Vec::new(),
+            events,
+            coclass_names: vec!["Application".into(), "Workbook".into()],
+        })
+    }
+}
+
+#[test]
+fn withevents_com_source_uses_later_scoped_provider_after_empty_library_provider() {
+    // The library provider may only establish known coclass names while a follow-up
+    // scoped provider carries the receiver's events. An empty broad result must not
+    // mask the later scoped provider.
+    let main = "Private WithEvents wb As Excel.Workbook\n\n\
+                Private Sub wb_BeforeClose()\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Sink".into(),
+            module_kind: ModuleKind::Class,
+            attributes: ModuleAttributes::named("Sink"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Excel".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("excel.tlb".into()),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &ScopedWorkbookEventTypeLibs).expect("bind_program");
+
+    assert_eq!(
+        program.event_routes.len(),
+        1,
+        "Workbook scoped provider should produce one event route: {:?}",
+        program.event_routes
+    );
+    assert_eq!(program.event_routes[0].event, 42);
+    let handler = &program.procs[program.event_routes[0].handler];
+    assert!(
+        handler.name.eq_ignore_ascii_case("wb_BeforeClose"),
+        "route targets the wb_BeforeClose handler, got: {}",
+        handler.name
+    );
+}
+
 // ── COM early binding: typed receiver lowers a member call to EarlyCom{dispid} ──
 
 #[test]

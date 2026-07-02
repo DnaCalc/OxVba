@@ -173,6 +173,26 @@ impl ComTypeLibProvider {
                 .map(|(_, member)| member),
         }
     }
+
+    fn scoped_source_events(
+        &self,
+        type_name: &str,
+    ) -> Option<Vec<&oxvba_com::TypeLibEventMetadata>> {
+        if !self.owns_coclass_source(type_name) {
+            return None;
+        }
+        let want = self.matched_coclass(type_name);
+        Some(
+            self.blob
+                .events
+                .iter()
+                .filter(|event| match (&want, &event.coclass) {
+                    (Some(want), Some(have)) => fold_identifier(have) == *want,
+                    _ => true,
+                })
+                .collect(),
+        )
+    }
 }
 
 impl Provider for ComTypeLibProvider {
@@ -191,11 +211,9 @@ impl Provider for ComTypeLibProvider {
             return Some(com_member_binding(member, type_name));
         }
 
-        if self.owns_coclass_source(type_name)
-            && let Some(event) = self
-                .blob
-                .events
-                .iter()
+        if let Some(events) = self.scoped_source_events(type_name)
+            && let Some(event) = events
+                .into_iter()
                 .find(|event| event.name.eq_ignore_ascii_case(name))
         {
             return Some(Binding::new(
@@ -256,9 +274,6 @@ impl Provider for ComTypeLibProvider {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        if !self.owns_coclass_source(type_name) {
-            return None;
-        }
         // The event `token` is the value the runtime keys subscriptions on (it is what
         // `subscribe_event` is passed), so the route built from this list routes a delivered
         // callback for that dispid back to the handler.
@@ -267,31 +282,14 @@ impl Provider for ComTypeLibProvider {
         // WithEvents field is typed as (e.g. `Excel.Worksheet` -> only Worksheet's events)
         // so the binder stops synthesizing phantom routes for unrelated coclasses (which the
         // runtime would then re-recover per subscribe and reject). Events with no recovered
-        // coclass tag, or a coclass we cannot derive, are kept (safe fallback).
-        let want = self.matched_coclass(type_name);
-        let scoped: Vec<(String, i32)> = self
-            .blob
-            .events
-            .iter()
-            .filter(|event| match (&want, &event.coclass) {
-                (Some(want), Some(have)) => fold_identifier(have) == *want,
-                _ => true,
-            })
-            .map(|event| (fold_identifier(&event.name), event.token))
-            .collect();
-        // Never strand the field with zero events: if scoping eliminated everything (a
-        // coclass-name mismatch, or untagged events), fall back to the full unscoped set so
-        // this change can only ever NARROW phantom routes, never drop a real one.
-        if scoped.is_empty() && !self.blob.events.is_empty() {
-            return Some(
-                self.blob
-                    .events
-                    .iter()
-                    .map(|event| (fold_identifier(&event.name), event.token))
-                    .collect(),
-            );
-        }
-        Some(scoped)
+        // coclass tag, or a coclass we cannot derive, are kept because the metadata gives no
+        // receiver-specific basis for excluding them.
+        self.scoped_source_events(type_name).map(|events| {
+            events
+                .into_iter()
+                .map(|event| (fold_identifier(&event.name), event.token))
+                .collect()
+        })
     }
 }
 

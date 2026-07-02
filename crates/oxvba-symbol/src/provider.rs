@@ -327,9 +327,17 @@ impl ResolutionEnvironment {
     /// an active/referenced project class, handled by the binder's own branches).
     pub fn com_source_events(&self, source_name: &str) -> Option<Vec<(String, i32)>> {
         let recv = VarTypeRef::Object(source_name.to_string());
-        self.providers
-            .iter()
-            .find_map(|provider| provider.source_events(&recv))
+        let mut saw_owner = false;
+        for provider in &self.providers {
+            let Some(events) = provider.source_events(&recv) else {
+                continue;
+            };
+            saw_owner = true;
+            if !events.is_empty() {
+                return Some(events);
+            }
+        }
+        saw_owner.then(Vec::new)
     }
 
     pub fn push_provider(&mut self, provider: Box<dyn Provider>) {

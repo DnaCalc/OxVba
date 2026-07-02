@@ -809,6 +809,39 @@ fn com_event_resolves_for_with_events_source_type() {
     }
 }
 
+#[test]
+fn com_events_scope_to_receiver_coclass_without_library_fallback() {
+    let mut blob = widget_blob();
+    blob.identity.reference_name = "Excel".into();
+    blob.identity.requested_coclass = None;
+    blob.activation_prog_id = None;
+    blob.coclass_names = vec!["Application".into(), "Workbook".into()];
+    blob.events = vec![TypeLibEventMetadata {
+        name: "NewWorkbook".into(),
+        token: 1565,
+        callback_arity: 1,
+        dispatch_path: TypeLibEventDispatchPath::Dispatch,
+        connection_point_iid: Some("{app-events}".into()),
+        dispatch_member_id: Some(1565),
+        coclass: Some("Application".into()),
+    }];
+    let provider = ComTypeLibProvider::new(blob);
+    let app = VarTypeRef::Object("Excel.Application".into());
+    let workbook = VarTypeRef::Object("Excel.Workbook".into());
+
+    assert_eq!(
+        provider.source_events(&app),
+        Some(vec![("newworkbook".into(), 1565)])
+    );
+    assert_eq!(provider.source_events(&workbook), Some(Vec::new()));
+    assert!(
+        provider
+            .resolve_member(&workbook, "NewWorkbook", None)
+            .is_none(),
+        "Workbook must not inherit Application events through the library-wide event list"
+    );
+}
+
 // ── Full environment: cross-module + declare extraction ──────────────────────
 
 #[test]
