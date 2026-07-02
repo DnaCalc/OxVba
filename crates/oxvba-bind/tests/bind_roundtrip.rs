@@ -3212,6 +3212,49 @@ impl TypeLibResolver for ChainedComTypeLibs {
         &self,
         request: &oxvba_com::TypeLibResolveRequest,
     ) -> Option<oxvba_com::TypeLibMetadataBlob> {
+        if request.reference_name.eq_ignore_ascii_case("Excel")
+            && request
+                .requested_coclass
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("Workbooks"))
+        {
+            return Some(oxvba_com::TypeLibMetadataBlob {
+                identity: oxvba_com::TypeLibResolvedIdentity {
+                    reference_name: "Excel".into(),
+                    requested_coclass: Some("Workbooks".into()),
+                    importlib: "excel".into(),
+                    libid: None,
+                    major_version: 1,
+                    minor_version: 0,
+                    lcid: None,
+                    cache_key: "excel-workbooks-chaining-test".into(),
+                },
+                activation_prog_id: None,
+                member_name_to_token: vec![("Item".into(), 0), ("Count".into(), 21)],
+                members: vec![
+                    test_tlb_property_get(
+                        "Item",
+                        0,
+                        Some(oxvba_com::TypeLibParamType::Long),
+                        Some(oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Long,
+                        )),
+                        true,
+                    ),
+                    test_tlb_property_get(
+                        "Count",
+                        21,
+                        Some(oxvba_com::TypeLibParamType::Long),
+                        Some(oxvba_com::TypeLibWireType::Automation(
+                            oxvba_com::TypeLibParamType::Long,
+                        )),
+                        false,
+                    ),
+                ],
+                events: Vec::new(),
+                coclass_names: vec!["Workbooks".into()],
+            });
+        }
         if request.reference_name.eq_ignore_ascii_case("Excel") {
             return Some(oxvba_com::TypeLibMetadataBlob {
                 identity: oxvba_com::TypeLibResolvedIdentity {
@@ -3248,44 +3291,6 @@ impl TypeLibResolver for ChainedComTypeLibs {
                 ],
                 events: Vec::new(),
                 coclass_names: vec!["Application".into()],
-            });
-        }
-        if request.reference_name.eq_ignore_ascii_case("Workbooks") {
-            return Some(oxvba_com::TypeLibMetadataBlob {
-                identity: oxvba_com::TypeLibResolvedIdentity {
-                    reference_name: "Workbooks".into(),
-                    requested_coclass: None,
-                    importlib: "excel".into(),
-                    libid: None,
-                    major_version: 1,
-                    minor_version: 0,
-                    lcid: None,
-                    cache_key: "excel-workbooks-chaining-test".into(),
-                },
-                activation_prog_id: None,
-                member_name_to_token: vec![("Item".into(), 0), ("Count".into(), 21)],
-                members: vec![
-                    test_tlb_property_get(
-                        "Item",
-                        0,
-                        Some(oxvba_com::TypeLibParamType::Long),
-                        Some(oxvba_com::TypeLibWireType::Automation(
-                            oxvba_com::TypeLibParamType::Long,
-                        )),
-                        true,
-                    ),
-                    test_tlb_property_get(
-                        "Count",
-                        21,
-                        Some(oxvba_com::TypeLibParamType::Long),
-                        Some(oxvba_com::TypeLibWireType::Automation(
-                            oxvba_com::TypeLibParamType::Long,
-                        )),
-                        false,
-                    ),
-                ],
-                events: Vec::new(),
-                coclass_names: vec!["Workbooks".into()],
             });
         }
         None
@@ -3630,24 +3635,14 @@ fn typed_com_return_interface_pointer_chains_to_early_com() {
             attributes: ModuleAttributes::named("Main"),
             source: main.into(),
         }],
-        references: vec![
-            ProjectReference::TypeLibrary {
-                name: "Excel".into(),
-                guid: None,
-                version_major: Some(1),
-                version_minor: Some(0),
-                lcid: None,
-                import_lib: None,
-            },
-            ProjectReference::TypeLibrary {
-                name: "Workbooks".into(),
-                guid: None,
-                version_major: Some(1),
-                version_minor: Some(0),
-                lcid: None,
-                import_lib: None,
-            },
-        ],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Excel".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: None,
+        }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
         conditional_compilation_target: Default::default(),
@@ -3671,19 +3666,9 @@ fn host_injected_com_return_interface_pointer_chains_to_early_com() {
             attributes: ModuleAttributes::named("Main"),
             source: main.into(),
         }],
-        references: vec![
-            ProjectReference::HostInjected {
-                referenced_project_name: "Excel.Application".into(),
-            },
-            ProjectReference::TypeLibrary {
-                name: "Workbooks".into(),
-                guid: None,
-                version_major: Some(1),
-                version_minor: Some(0),
-                lcid: None,
-                import_lib: None,
-            },
-        ],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Excel.Application".into(),
+        }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
         conditional_compilation_target: Default::default(),

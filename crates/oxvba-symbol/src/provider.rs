@@ -4,7 +4,7 @@
 //! branches on source kind.
 
 use oxvba_bundle::ProjectMemberKind;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode};
 
@@ -13,7 +13,7 @@ use crate::cond_comp;
 use crate::manifest::{ModuleKind, ProjectReference, SymbolProjectManifest};
 use crate::model::{
     ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace,
-    SymbolTable, Visibility,
+    SymbolTable, Visibility, fold_identifier,
 };
 use crate::providers::com::ComTypeLibProvider;
 use crate::providers::host::HostProvider;
@@ -506,6 +506,74 @@ fn request_from(reference: &ProjectReference) -> Option<oxvba_com::TypeLibResolv
     }
 }
 
+fn resolve_typelib_provider_closure(
+    typelibs: &dyn TypeLibResolver,
+    request: oxvba_com::TypeLibResolveRequest,
+) -> Vec<oxvba_com::TypeLibMetadataBlob> {
+    // VBA sees a referenced typelib's returned interfaces as part of the same
+    // referenced library. Follow named object-return descriptors so a chain like
+    // `Application.Workbooks.Count` does not need a second synthetic reference.
+    let mut blobs = Vec::new();
+    let mut queue = VecDeque::from([request]);
+    let mut seen: HashSet<(String, Option<String>)> = HashSet::new();
+
+    while let Some(request) = queue.pop_front() {
+        let key = (
+            fold_identifier(&request.reference_name),
+            request
+                .requested_coclass
+                .as_ref()
+                .map(|name| fold_identifier(name)),
+        );
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let Some(blob) = typelibs.resolve(&request) else {
+            continue;
+        };
+
+        let reference_name = blob.identity.reference_name.clone();
+        let importlib_hint = request.importlib_hint.clone();
+        let libid_hint = request.libid_hint.clone();
+        let major_version_hint = request.major_version_hint;
+        let minor_version_hint = request.minor_version_hint;
+        let lcid_hint = request.lcid_hint;
+
+        for interface_name in returned_interface_names(&blob) {
+            queue.push_back(oxvba_com::TypeLibResolveRequest {
+                reference_name: reference_name.clone(),
+                requested_coclass: Some(interface_name),
+                importlib_hint: importlib_hint.clone(),
+                libid_hint: libid_hint.clone(),
+                major_version_hint,
+                minor_version_hint,
+                lcid_hint,
+            });
+        }
+
+        blobs.push(blob);
+    }
+
+    blobs
+}
+
+fn returned_interface_names(blob: &oxvba_com::TypeLibMetadataBlob) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    for member in &blob.members {
+        if let Some(oxvba_com::TypeLibWireType::InterfacePointer { name }) =
+            &member.return_wire_type
+        {
+            let trimmed = name.trim();
+            if !trimmed.is_empty() && seen.insert(fold_identifier(trimmed)) {
+                names.push(trimmed.to_string());
+            }
+        }
+    }
+    names
+}
+
 #[derive(Default)]
 struct TypeNameIndex {
     udt_fields: HashMap<String, Vec<(String, VarTypeRef)>>,
@@ -821,10 +889,12 @@ pub fn build_resolution_environment(
     let mut com_providers: Vec<ComTypeLibProvider> = Vec::new();
     let mut host_blobs: Vec<oxvba_com::TypeLibMetadataBlob> = Vec::new();
     for reference in &manifest.references {
-        if let Some(request) = request_from(reference)
-            && let Some(blob) = typelibs.resolve(&request)
-        {
-            com_providers.push(ComTypeLibProvider::new(blob));
+        if let Some(request) = request_from(reference) {
+            com_providers.extend(
+                resolve_typelib_provider_closure(typelibs, request)
+                    .into_iter()
+                    .map(ComTypeLibProvider::new),
+            );
         }
         if let ProjectReference::HostInjected {
             referenced_project_name,
@@ -845,9 +915,7 @@ pub fn build_resolution_environment(
                 minor_version_hint: None,
                 lcid_hint: None,
             };
-            if let Some(blob) = typelibs.resolve(&request) {
-                host_blobs.push(blob);
-            }
+            host_blobs.extend(resolve_typelib_provider_closure(typelibs, request));
         }
     }
 
