@@ -12,7 +12,7 @@
 //! backend rely on.
 
 use crate::com::{ComInterface, ComMethodRef};
-use crate::inst::{ErrorHandler, OxInst, terminator_successors};
+use crate::inst::{ErrorHandler, OxAsNew, OxInst, terminator_successors};
 use crate::program::{OxFunc, OxProgram};
 
 /// A single structural defect found by [`verify_program`].
@@ -386,6 +386,26 @@ fn verify_inst_refs(
                 blocks,
             })
         }
+        OxInst::AsNew {
+            binding: OxAsNew::ExternClass { import },
+            ..
+        } if import.0 >= imports => errors.push(VerifyError::BadImportRef {
+            func: fi,
+            block: bi,
+            inst: ii,
+            import: import.0,
+            imports,
+        }),
+        OxInst::AsNew {
+            binding: OxAsNew::ProjectClass { class },
+            ..
+        } if class.0 >= classes => errors.push(VerifyError::BadClassRef {
+            func: fi,
+            block: bi,
+            inst: ii,
+            class: class.0,
+            classes,
+        }),
         OxInst::ComCallEarly { method, .. } => {
             check_com_call_early(fi, bi, ii, *method, com_interfaces, errors);
         }

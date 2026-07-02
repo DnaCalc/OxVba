@@ -1,0 +1,156 @@
+﻿[
+    {
+        "id":  "LOCAL-DIM-ONLY",
+        "purpose":  "A local As New declaration alone does not instantiate.",
+        "ownedExcelPid":  20372,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "0|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "LOCAL-FIRST-MEMBER",
+        "purpose":  "The first member access lazily creates the object.",
+        "ownedExcelPid":  22540,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "11|I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "LOCAL-IS-NOTHING",
+        "purpose":  "Is Nothing against an As New local.",
+        "ownedExcelPid":  25776,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "False|I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "LOCAL-SET-NOTHING-BEFORE-ACCESS",
+        "purpose":  "Assigning Nothing before any read/member access does not create the object.",
+        "ownedExcelPid":  6140,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "0|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "LOCAL-SET-NOTHING-RESURRECT",
+        "purpose":  "Set Nothing clears the slot; the next access resurrects a fresh object.",
+        "ownedExcelPid":  2584,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "10|I;T11;I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "GLOBAL-DIM-ONLY",
+        "purpose":  "A module-level As New variable is also lazy.",
+        "ownedExcelPid":  10068,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "0|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    },
+    {
+        "id":  "GLOBAL-SET-NOTHING-RESURRECT",
+        "purpose":  "A module-level As New variable resurrects after Set Nothing.",
+        "ownedExcelPid":  32928,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "10|I;T11;I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter"
+                    ]
+    }
+]

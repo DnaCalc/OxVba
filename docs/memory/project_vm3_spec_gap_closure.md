@@ -2451,3 +2451,60 @@
   files still report pre-existing repo formatter drift outside this bead's
   hunks, so the committed formatter proof is scoped to the new regression test
   and `git diff --check`.
+
+## 2026-07-02 - Class Termination And Dim As New Resurrection (`bd-4ktq.56`)
+
+- Reused the existing class-termination timing oracle
+  `docs/evidence/conformance/CLASS_TERMINATE_TIMING_ORACLE_2026-05-31.md`
+  for statement-boundary `Class_Terminate` rules, and captured fresh live
+  Excel/VBA 7.1 `Dim As New` evidence with VBE Debug -> Compile plus
+  PID-scoped UI Automation modal handling:
+  `docs/evidence/conformance/vm3_dim_as_new_oracle_20260702T084234Z/`.
+- Oracle findings:
+  - Local `Dim c As New Counter` and module-level `Private g As New Counter`
+    declarations do not instantiate by themselves.
+  - First member access instantiates and runs `Class_Initialize`.
+  - `c Is Nothing` instantiates the `As New` local and returns `False`.
+  - `Set c = Nothing` before any access does not instantiate.
+  - `Set c/g = Nothing` after access clears the slot; the next read creates a
+    fresh object. When no other reference holds the old object,
+    `Class_Terminate` runs before the next statement observes the fresh object.
+- The previous pinned entry-frame residual for `Set w = Nothing` was already
+  corrected by the statement-temporary lifetime work: vm3 now returns the VBA
+  value `101` for `Class_Terminate` before the next statement. The regression was
+  renamed to protect that behavior instead of preserving the old `100` result.
+- vm3 no longer treats `Dim x As New T` as an eager `Set x = New T`. The binder
+  emits an explicit `CoreStmt::AsNew` slot registration for project classes,
+  referenced classes such as `VBA.Collection`, and COM coclasses with resolved
+  ProgIDs. OxIR carries this as `OxInst::AsNew`.
+- The vm3 runtime records resolved `As New` local/global slots, lazily
+  instantiates on operand reads when the slot is `Empty`/`Nothing`, writes the
+  fresh object back to the slot, and prunes per-frame registrations when frames
+  return or unwind. Operand-reading instructions are conservatively considered
+  fallible because lazy instantiation can run user `Class_Initialize`.
+- Added `crates/oxvba-differential/tests/dim_as_new_vm3.rs` for the oracle
+  matrix: local laziness, first access, `Is Nothing`, pre-access `Set Nothing`,
+  post-access resurrection, module-level laziness, and module-level resurrection.
+- Fresh-eyes review caught one important residual: class-module fields such as
+  `Private child As New Counter` need per-object `As New` slot semantics and were
+  not covered by this oracle or implementation slice. That residual is not a
+  legacy compatibility target; it is split to delivery bead `bd-4ktq.59`. The
+  broad inventory row remains `IN-PROGRESS` until that field behavior matches
+  real VBA compile/runtime behavior.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-dim-as-new-oracle.ps1`
+  - `cargo check -p oxvba-bundle -p oxvba-bind -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-differential --test dim_as_new_vm3 --quiet`
+  - `cargo test -p oxvba-differential vm3_set_nothing_at_main_scope_runs_class_terminate --quiet`
+  - `cargo test -p oxvba-bind as_new_auto_instantiates_a_user_class --quiet`
+  - `cargo test -p oxvba-differential --test project_class_newenum_vm3 --test predeclared_singleton_vm3 --test raiseevent_fanout_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3 --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip as_new --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `rustfmt --edition 2024 --check crates/oxvba-differential/tests/dim_as_new_vm3.rs crates/oxvba-bundle/src/coreir.rs crates/oxvba-bind/src/stmt.rs`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet` completed in non-blocking mode with run `20260702T081142Z`: 383 obligations, 63 failures/TODOs, 16 skipped.

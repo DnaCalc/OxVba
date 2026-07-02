@@ -46,8 +46,8 @@
 use std::collections::HashMap;
 
 use oxvba_bundle::coreir::{
-    self, CoreArg, CoreBinOp, CoreClass, CoreConst, CoreProc, CoreProgram, CoreStmt, CoreUnOp,
-    CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
+    self, CoreArg, CoreAsNew, CoreBinOp, CoreClass, CoreConst, CoreProc, CoreProgram, CoreStmt,
+    CoreUnOp, CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
 };
 use oxvba_bundle::{
     AssignmentIntent, AssignmentTargetKind, NumericCoerceTarget, NumericMode, ProjectMemberKind,
@@ -58,7 +58,7 @@ use oxvba_com::{TypeLibInterfaceMetadata, TypeLibMemberInvokeKind, TypeLibMember
 use crate::com::{ComInterface, ComMethodRef};
 use crate::elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
 use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
-use crate::inst::{ErrorHandler, OxBlock, OxInst, OxTerminator};
+use crate::inst::{ErrorHandler, OxAsNew, OxBlock, OxInst, OxTerminator};
 use crate::program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
 use crate::ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy};
 use crate::value::{
@@ -168,6 +168,20 @@ fn lower_class(c: &CoreClass) -> OxClass {
             })
             .collect(),
         implements: c.implements.clone(),
+    }
+}
+
+fn lower_as_new(binding: &CoreAsNew) -> OxAsNew {
+    match binding {
+        CoreAsNew::ProjectClass { class } => OxAsNew::ProjectClass {
+            class: ClassId(class.0),
+        },
+        CoreAsNew::ExternClass { import } => OxAsNew::ExternClass {
+            import: ImportId(*import),
+        },
+        CoreAsNew::ComClass { prog_id } => OxAsNew::ComClass {
+            prog_id: prog_id.clone(),
+        },
     }
 }
 
@@ -568,6 +582,15 @@ impl<'a> Lowerer<'a> {
     /// start block, or the enclosing continuation).
     fn lower_stmt(&mut self, stmt: &CoreStmt, s_next: BlockId) -> Result<()> {
         match stmt {
+            CoreStmt::AsNew { place, binding } => {
+                let place = self.simple_place(place)?;
+                self.emit(OxInst::AsNew {
+                    place,
+                    binding: lower_as_new(binding),
+                });
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+                Ok(())
+            }
             CoreStmt::Assign {
                 place,
                 value,

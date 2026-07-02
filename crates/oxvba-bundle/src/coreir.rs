@@ -126,6 +126,19 @@ pub struct CoreLocal {
     pub array_element: Option<ArrayElementType>,
 }
 
+/// Auto-instantiation metadata for an `As New` object slot. VBA does not execute
+/// `Dim x As New C` as an eager `Set`; it marks `x` so the first later read creates
+/// an instance, and a later `Set x = Nothing` lets the next read create another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoreAsNew {
+    /// `Dim x As New <project class>`.
+    ProjectClass { class: ClassId },
+    /// `Dim x As New <referenced project/library class>`.
+    ExternClass { import: usize },
+    /// `Dim x As New <COM coclass>`, resolved by the binder to a ProgID.
+    ComClass { prog_id: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreClass {
     pub name: String,
@@ -696,6 +709,13 @@ pub struct CoreCaseBlock {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoreStmt {
+    /// Register an `As New` object slot. The statement itself does not instantiate
+    /// or mutate the slot; reads through the VM create an object only when the slot
+    /// is currently uninitialized/Nothing.
+    AsNew {
+        place: CorePlace,
+        binding: CoreAsNew,
+    },
     /// `Let`/`Set`/implicit assignment. Carries the `ValidateAssignment` metadata.
     Assign {
         place: CorePlace,

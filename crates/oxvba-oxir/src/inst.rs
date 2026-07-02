@@ -33,6 +33,14 @@ use crate::value::{
     OxNativeCallee, OxOperand, OxPlace, PtrKind,
 };
 
+/// Auto-instantiation target for a VBA `As New` slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OxAsNew {
+    ProjectClass { class: ClassId },
+    ExternClass { import: ImportId },
+    ComClass { prog_id: String },
+}
+
 /// How an `On Error` statement sets the active handler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorHandler {
@@ -53,6 +61,12 @@ pub enum ErrorHandler {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OxInst {
     // ── Moves / representation ───────────────────────────────────────────────
+    /// Mark a local/global object slot as `As New`; reads lazily instantiate it
+    /// when the stored value is Empty/Nothing.
+    AsNew {
+        place: OxPlace,
+        binding: OxAsNew,
+    },
     /// `dst := value` (a typed copy / load of a constant or place).
     Assign { dst: OxPlace, value: OxOperand },
     /// `dst := box(value : from)` — a pure typed→Variant representation change.
@@ -486,20 +500,14 @@ impl OxInst {
     pub fn is_fallible(&self) -> bool {
         match self {
             // Provably pure — cannot raise a VBA run-time error.
-            OxInst::Assign { .. }
-            | OxInst::Box { .. }
+            OxInst::AsNew { .. }
             | OxInst::LoadProcRef { .. }
-            | OxInst::VariantChanged { .. }
-            | OxInst::CompareObjectIs { .. }
-            | OxInst::TypeOfIs { .. }
             | OxInst::ErrFieldGet { .. }
             | OxInst::ErlGet { .. }
             | OxInst::SetErrorHandler(_)
             | OxInst::ClearErr
             | OxInst::StmtBoundary { .. }
             | OxInst::SetLineNumber { .. }
-            | OxInst::Ptr { .. }
-            | OxInst::AddRef { .. }
             // `Release` only enqueues; the user code in `Class_Terminate` runs at
             // `DrainTerminations`, whose error handling is bespoke (not the fault
             // edge), so neither routes through `fault_target`.
@@ -509,6 +517,16 @@ impl OxInst {
             | OxInst::WithEventsClearOwner { .. }
             | OxInst::WithEventsFirstOwner { .. }
             | OxInst::WithEventsNextOwner { .. } => false,
+
+            // These are pure for ordinary operands, but an operand read may lazily
+            // instantiate an `As New` slot and run user `Class_Initialize`.
+            OxInst::Assign { .. }
+            | OxInst::Box { .. }
+            | OxInst::VariantChanged { .. }
+            | OxInst::CompareObjectIs { .. }
+            | OxInst::TypeOfIs { .. }
+            | OxInst::Ptr { .. }
+            | OxInst::AddRef { .. } => true,
 
             // `Unbox` is fallible only when it re-checks the tag.
             OxInst::Unbox { checked, .. } => *checked,

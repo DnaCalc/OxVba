@@ -4,8 +4,8 @@
 //! `ExternProc` calls into the synthetic `VBA` bundle's `FileSystem` module).
 
 use oxvba_bundle::coreir::{
-    CaseClause, CoreArg, CoreBinOp, CoreBound, CoreCallee, CoreCaseBlock, CoreConst, CoreIfArm,
-    CorePlace, CoreStmt, CoreUnOp, CoreValue, ErrorOp, ExitKind, LocalId,
+    CaseClause, CoreArg, CoreAsNew, CoreBinOp, CoreBound, CoreCallee, CoreCaseBlock, CoreConst,
+    CoreIfArm, CorePlace, CoreStmt, CoreUnOp, CoreValue, ErrorOp, ExitKind, LocalId,
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
@@ -1251,24 +1251,18 @@ impl<'a> ProcLower<'a> {
             if self.is_static_local(name.text) != want_static {
                 continue;
             }
-            // `Dim x As New Foo` auto-instantiates `x` before use: hoist a `Set x =
-            // New Foo` to scope entry. (The rare re-instantiate-after-`Set x =
-            // Nothing` case is an accepted documented residual.) The declared type
-            // carries the class name; a non-object declared type is not As-New.
+            // `Dim x As New Foo` is a slot property, not an eager `Set x = New Foo`.
+            // Register the slot here; the VM lazily instantiates on reads and repeats
+            // that behavior after `Set x = Nothing`, matching Excel/VBA.
             if declarator.is_new()
                 && let Some(sym) = self.resolve(name.text).and_then(|b| b.symbol)
                 && let oxvba_symbol::signature::VarTypeRef::Object(type_name) =
                     self.symbol_type(sym)
             {
-                let (value, _ty) = self.new_value_for_type(&type_name)?;
                 let place = self.place_by_name(name.text)?;
-                out.push(CoreStmt::Assign {
+                out.push(CoreStmt::AsNew {
                     place,
-                    value,
-                    intent: AssignmentIntent::Set,
-                    target_kind: oxvba_bundle::AssignmentTargetKind::Object,
-                    target_name: name.text.to_string(),
-                    target_type_name: type_name,
+                    binding: self.as_new_binding_for_type(&type_name)?,
                 });
                 continue; // an As-New object is neither an array nor a UDT value.
             }
@@ -1317,6 +1311,28 @@ impl<'a> ProcLower<'a> {
             .and_then(|s| self.g.env.symbols.symbol(s))
             .map(|s| s.kind == oxvba_symbol::model::SymbolKind::StaticLocal)
             .unwrap_or(false)
+    }
+
+    fn as_new_binding_for_type(&mut self, type_name: &str) -> Result<CoreAsNew, BindError> {
+        let (value, _ty) = self.new_value_for_type(type_name)?;
+        match value {
+            CoreValue::New(class) => Ok(CoreAsNew::ProjectClass { class }),
+            CoreValue::NewExtern { import } => Ok(CoreAsNew::ExternClass { import }),
+            CoreValue::Call { callee, args } => match (callee, args.as_slice()) {
+                (
+                    CoreCallee::Native(NativeImplId::CreateObject),
+                    [CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))],
+                ) => Ok(CoreAsNew::ComClass {
+                    prog_id: prog_id.clone(),
+                }),
+                _ => Err(BindError::Unsupported(format!(
+                    "As New {type_name} (unsupported activation path)"
+                ))),
+            },
+            _ => Err(BindError::Unsupported(format!(
+                "As New {type_name} (unsupported activation path)"
+            ))),
+        }
     }
 
     /// Default-record allocation statements if `name` is a UDT-typed variable: a

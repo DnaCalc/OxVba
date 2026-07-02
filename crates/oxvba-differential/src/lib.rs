@@ -443,19 +443,11 @@ mod tests {
         assert_eq!(snap.first(), Some(&canon(&Variant::from_i32(42))), "{snap:?}");
     }
 
-    /// `Set w = Nothing` in the entry `Main` does NOT drain `Class_Terminate` in the current
-    /// implementation: the entry frame is never popped (it holds the result snapshot), so the
-    /// Widget's last reference is never released to zero and `Class_Terminate` (`gTerm + 1`)
-    /// does not run before the snapshot is read. This test PINS that current, known-divergent
-    /// Set=Nothing-at-Main-scope behaviour: the residual `gTerm` (global 0) is 100 — only the
-    /// `+100` store landed, NOT 101. This is a PRE-EXISTING behaviour (vm3 here matched the now-
-    /// retired vm2 exactly; it is not a W12 regression). Correct VBA drains the terminate at the
-    /// `Set = Nothing` boundary → 101; FOLLOW-UP: drain at `Set <local> = Nothing` even inside
-    /// the never-popped entry frame, then flip this assertion to 101 and rename to
-    /// `..._runs_class_terminate`. (Terminate timing IS exercised correctly in a *called* proc by
-    /// `vm3_cross_proc_object_terminates_on_caught_fault`, where the frame is popped.)
+    /// `Set w = Nothing` releases the local's object reference at the statement boundary, so
+    /// `Class_Terminate` runs before the following statement even for the entry frame that is
+    /// retained for the post-run snapshot.
     #[test]
-    fn vm3_set_nothing_at_main_scope_does_not_yet_drain_terminate() {
+    fn vm3_set_nothing_at_main_scope_runs_class_terminate() {
         use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
         let snap = run_obj_ok(&[
             (
@@ -471,8 +463,8 @@ mod tests {
         ]);
         assert_eq!(
             snap.first(),
-            Some(&canon(&Variant::from_i32(100))),
-            "Set=Nothing at Main scope does not drain Class_Terminate (pinned known behaviour): {snap:?}"
+            Some(&canon(&Variant::from_i32(101))),
+            "Set=Nothing at Main scope should drain Class_Terminate before the next statement: {snap:?}"
         );
     }
 

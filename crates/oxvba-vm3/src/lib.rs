@@ -53,6 +53,7 @@ use oxvba_eval::collection::{CollectionError, CollectionMethod, dispatch_collect
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_lib::LibContext;
+use oxvba_oxir::inst::OxAsNew;
 use oxvba_oxir::value::{
     ArithOp, BoundWhich, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
     OxNativeCallee, OxOperand, OxPlace, PtrKind, PtrWritebackKind,
@@ -367,6 +368,9 @@ pub struct Vm3<'h> {
     /// ParamArray packs whose elements alias caller slots. Keyed by the resolved
     /// location that currently stores the ParamArray SAFEARRAY.
     param_array_aliases: HashMap<Loc, Vec<Option<Loc>>>,
+    /// `As New` object slots, keyed by the resolved storage location. A read of
+    /// one of these slots creates a fresh instance when the slot is Empty/Nothing.
+    as_new_slots: HashMap<Loc, OxAsNew>,
     /// Monotonic project-instance id counter (starts at [`INSTANCE_ID_BASE`]).
     next_instance_id: i32,
     /// Re-entrancy guard for [`Vm3::maybe_drain`] (a `Class_Terminate` can itself drop the
@@ -537,6 +541,7 @@ impl<'h> Vm3<'h> {
             pending_fault: None,
             for_each: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            as_new_slots: HashMap::new(),
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
             withevents: HashMap::new(),
@@ -1133,6 +1138,10 @@ impl<'h> Vm3<'h> {
     /// Execute one straight-line instruction against the top frame.
     fn exec(&mut self, inst: &OxInst) -> Result<(), Vm3Error> {
         match inst {
+            OxInst::AsNew { place, binding } => {
+                let loc = self.resolve(place);
+                self.as_new_slots.insert(loc, binding.clone());
+            }
             OxInst::Assign { dst, value } => {
                 let v = self.operand(value)?;
                 self.store(dst, v)?;
@@ -2230,7 +2239,7 @@ impl<'h> Vm3<'h> {
     /// Marshal a cross-bundle library call's arguments to plain values: a native library
     /// body reads positional values (a ByRef argument by its *value*), and an omitted
     /// optional is `Empty` — matching vm2's `extern_native_args`.
-    fn extern_args(&self, args: &[OxArg]) -> Result<Vec<Variant>, Vm3Error> {
+    fn extern_args(&mut self, args: &[OxArg]) -> Result<Vec<Variant>, Vm3Error> {
         args.iter()
             .map(|a| match a {
                 OxArg::ByVal(op) => self.operand(op),
@@ -2245,7 +2254,7 @@ impl<'h> Vm3<'h> {
     /// `u32::MAX` elements → out of memory (7), so a garbage bound raises a VBA error instead
     /// of attempting an unbounded host allocation that would abort the process.
     fn build_bounds(
-        &self,
+        &mut self,
         upper_bounds: &[OxOperand],
         lower_bounds: &[OxOperand],
     ) -> Result<Vec<SafeArrayBound>, Vm3Error> {
@@ -2283,7 +2292,7 @@ impl<'h> Vm3<'h> {
     /// Flat element index from VBA (absolute) subscript operands, C-order (first dimension
     /// outermost), bounds-checked → subscript out of range (9).
     fn flat_index(
-        &self,
+        &mut self,
         indices: &[OxOperand],
         bounds: &[SafeArrayBound],
     ) -> Result<usize, Vm3Error> {
@@ -2314,7 +2323,7 @@ impl<'h> Vm3<'h> {
     /// an unwritten `Temp`, an object default-member receiver, …), so the caller runs
     /// the general path.
     fn array_get_fast(
-        &self,
+        &mut self,
         array: &OxOperand,
         indices: &[OxOperand],
     ) -> Result<Option<Variant>, Vm3Error> {
@@ -2329,12 +2338,13 @@ impl<'h> Vm3<'h> {
         let Some((bounds, len)) = arr.safearray_bounds_len() else {
             return Ok(None);
         };
-        // `flat_index` re-borrows `self` immutably to read the index operands — this
-        // coexists with the immutable `arr` borrow held here (both shared).
         let flat = self.flat_index(indices, &bounds)?;
         if flat >= len {
             return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
         }
+        let Some(arr) = self.read_loc_ref(loc)? else {
+            return Ok(None);
+        };
         let value = arr
             .safearray_element(flat)
             .expect("safearray_bounds_len already proved this is an array")
@@ -2417,10 +2427,12 @@ impl<'h> Vm3<'h> {
                     .flatten()
                     .all(|alias| alias.frame_index().is_none_or(|frame| frame < depth))
         });
+        self.as_new_slots
+            .retain(|loc, _| loc.frame_index().is_none_or(|frame| frame < depth));
     }
 
     fn record_array_get(
-        &self,
+        &mut self,
         record: &OxOperand,
         index: usize,
         indices: &[OxOperand],
@@ -2445,6 +2457,9 @@ impl<'h> Vm3<'h> {
         if flat >= len {
             return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
         }
+        let Some(record) = self.read_loc_ref(loc)? else {
+            return Err(Vm3Error::Fault(Fault::new(13, "expected Record Variant")));
+        };
         record
             .record_array_field_element(index, flat)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?
@@ -2488,7 +2503,7 @@ impl<'h> Vm3<'h> {
     /// The array (SAFEARRAY) value of an operand, else type mismatch (13).
     /// A null array marker is still an array value in VBA, but has no descriptor/bounds;
     /// indexing and bounds queries surface subscript out of range (9).
-    fn array_of(&self, op: &OxOperand) -> Result<SafeArray, Vm3Error> {
+    fn array_of(&mut self, op: &OxOperand) -> Result<SafeArray, Vm3Error> {
         let value = self.operand(op)?;
         if Self::is_unallocated_array_value(&value) {
             return Err(Vm3Error::Fault(Fault::new(9, "array has no bounds")));
@@ -2589,7 +2604,7 @@ impl<'h> Vm3<'h> {
     /// The 0-based dimension index for `LBound`/`UBound` from an optional dimension operand
     /// (default dimension 1), validated against the array's rank → subscript out of range (9).
     fn array_bound_index(
-        &self,
+        &mut self,
         dimension: Option<&OxOperand>,
         bounds: &[SafeArrayBound],
     ) -> Result<usize, Vm3Error> {
@@ -2708,7 +2723,7 @@ impl<'h> Vm3<'h> {
     /// instance can exist, every Set-of-object is a COM/`Nothing` value, which vm2 also
     /// passes — so falling through to `Ok` here is behaviorally exact.
     fn validate_assignment(
-        &self,
+        &mut self,
         src: &OxOperand,
         intent: AssignmentIntent,
         target_kind: AssignmentTargetKind,
@@ -3198,7 +3213,7 @@ impl<'h> Vm3<'h> {
     /// `TypeOf <object> Is <Type>`: for a project instance, match the bare type name against
     /// the instance's class name or any `Implements`ed interface; for a foreign/COM object,
     /// delegate to the host (unreachable until `CreateObject` lands in M3-8, but mirrors vm2).
-    fn type_of_is(&self, object: &OxOperand, type_name: &str) -> Result<bool, Vm3Error> {
+    fn type_of_is(&mut self, object: &OxOperand, type_name: &str) -> Result<bool, Vm3Error> {
         let v = self.operand(object)?;
         // `TypeOf Nothing Is X` is False, not an error — and so is the same test on an unset
         // or `Set …= Nothing` object variable (a null Object Variant) and on `Empty`/`Null`.
@@ -3623,7 +3638,7 @@ impl<'h> Vm3<'h> {
     /// Marshal a Collection member's call args to by-value `Variant`s (omitted → `MISSING_ARG`,
     /// the sentinel the shared dispatcher recognises). The built-in Collection never writes
     /// back, so a ByRef arg is read by value.
-    fn collection_args(&self, args: &[OxCallArg]) -> Result<Vec<Variant>, Vm3Error> {
+    fn collection_args(&mut self, args: &[OxCallArg]) -> Result<Vec<Variant>, Vm3Error> {
         args.iter()
             .map(|a| match a {
                 OxCallArg::Operand(op) => self.operand(op),
@@ -3639,7 +3654,7 @@ impl<'h> Vm3<'h> {
 
     /// Evaluate a list of index operands to by-value `Variant`s (a Collection default-member
     /// `c(i)` call's indices are plain operands, not `OxCallArg`s).
-    fn operands_to_values(&self, ops: &[OxOperand]) -> Result<Vec<Variant>, Vm3Error> {
+    fn operands_to_values(&mut self, ops: &[OxOperand]) -> Result<Vec<Variant>, Vm3Error> {
         ops.iter().map(|op| self.operand(op)).collect()
     }
 
@@ -3966,7 +3981,7 @@ impl<'h> Vm3<'h> {
     /// Marshal a native built-in's arguments to plain values — a built-in reads the
     /// *value* of a ByRef argument (matching vm2's `native_args`), and an omitted one is
     /// `Empty`.
-    fn native_args(&self, args: &[OxCallArg]) -> Result<Vec<Variant>, Vm3Error> {
+    fn native_args(&mut self, args: &[OxCallArg]) -> Result<Vec<Variant>, Vm3Error> {
         args.iter()
             .map(|a| match a {
                 OxCallArg::Operand(op) => self.operand(op),
@@ -4304,11 +4319,36 @@ impl<'h> Vm3<'h> {
         self.write_loc(loc, v)
     }
 
-    fn read(&self, place: &OxPlace) -> Result<Variant, Vm3Error> {
-        self.read_loc(self.resolve(place))
+    fn read(&mut self, place: &OxPlace) -> Result<Variant, Vm3Error> {
+        let loc = self.resolve(place);
+        self.read_loc_as_new(loc)
     }
 
-    fn operand(&self, op: &OxOperand) -> Result<Variant, Vm3Error> {
+    fn read_loc_as_new(&mut self, loc: Loc) -> Result<Variant, Vm3Error> {
+        let value = self.read_loc(loc)?;
+        let Some(binding) = self.as_new_slots.get(&loc).cloned() else {
+            return Ok(value);
+        };
+        if !is_nothing(&value) {
+            return Ok(value);
+        }
+        let object = self.instantiate_as_new(binding)?;
+        self.write_loc(loc, object.clone())?;
+        Ok(object)
+    }
+
+    fn instantiate_as_new(&mut self, binding: OxAsNew) -> Result<Variant, Vm3Error> {
+        match binding {
+            OxAsNew::ProjectClass { class } => self.new_project_instance(class.0),
+            OxAsNew::ExternClass { import } => self.new_extern_instance(import),
+            OxAsNew::ComClass { prog_id } => self.invoke_native_lib(
+                NativeImplId::CreateObject,
+                &[Variant::from_string(prog_id)],
+            ),
+        }
+    }
+
+    fn operand(&mut self, op: &OxOperand) -> Result<Variant, Vm3Error> {
         match op {
             OxOperand::Const(c) => Ok(const_variant(c)),
             OxOperand::Use(p) => self.read(p),
