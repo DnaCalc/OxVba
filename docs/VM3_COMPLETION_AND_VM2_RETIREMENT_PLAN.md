@@ -64,6 +64,7 @@
 ### W6 — G4 `GetObject` (net-new; vm2 also lacks it → superset-for-free)
 - **Beads:** front-end — `NativeImplId::GetObject` + symbol-catalog entry (SpecialForm, both args optional) + binder lowering mirroring `CreateObject`; HAL/host/com — `ComHal::get_object_variant(pathname, class)` (default = capability error) + standard-adapter impl + `oxvba-com activate_dispatch_get_object` (`GetActiveObject`/ROT for running instance; `CoGetObject`/`MkParseDisplayName`+`BindMoniker` for file/moniker) + `oxvba-lib host::get_object`; 1-arg no-instance → clean `Err 429`; moniker form reuses the M3-8 rich HRESULT→Err machinery; null/wasm/replay decline cleanly.
 - **Verify:** `catalog_covers_every_native_impl_id` passes; live `GetObject(,"Excel.Application")` / `GetObject("c:\book.xlsx")`; null adapter returns a clean error not a panic. **Depends on:** W5 (can run beside W3/W4/W5 — only feeds W8)
+- **Evidence 2026-07-02 (`bd-9sed.7`):** W6 is green on vm3. See `docs/evidence/com/VM3_W6_GETOBJECT_2026-07-02.md` for exact commands and live GetObject coverage. Unsupported Null/Replay COM activation now declines via the normal capability-unavailable path, not the generic variant-companion fallback.
 
 ### W7 — Session API Ph1/Ph2 + host vm3-backed `ProjectRuntimeSession`
 - **Closes:** PM-2 run-glue parity.

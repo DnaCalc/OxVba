@@ -323,6 +323,9 @@ impl ComHal for ReplayHostServices {
     fn create_object_variant(&self, _prog_id: Variant) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
+    fn get_object_variant(&self, _pathname: Variant, _class: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "get_object"))
+    }
     fn release_object_variant(&self, _object: ObjectRef) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
@@ -438,7 +441,7 @@ mod tests {
         error::HalErrorKind,
         journal::{HalJournal, HalJournalEntry},
         traits::{
-            DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, ProcessEnvHal,
+            ComHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal, ProcessEnvHal,
             TimeLocaleHal, UiInteractionHal,
         },
     };
@@ -545,6 +548,12 @@ mod tests {
         assert_eq!(
             host.invoke_symbol_variant(1.into(), &Variant::null())
                 .expect_err("dynamic-link unsupported")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.get_object_variant(Variant::empty(), Variant::from_string("Excel.Application"))
+                .expect_err("get_object unsupported")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );

@@ -246,6 +246,10 @@ impl ComHal for NullHostServices {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "create_object"))
     }
 
+    fn get_object_variant(&self, _pathname: Variant, _class: Variant) -> HalResult<Variant> {
+        Err(self.unsupported(CapabilityId::ComActivationDispatch, "get_object"))
+    }
+
     fn release_object_variant(&self, _object: ObjectRef) -> HalResult<Variant> {
         Err(self.unsupported(CapabilityId::ComActivationDispatch, "release_object"))
     }
@@ -458,6 +462,12 @@ mod tests {
         assert_eq!(
             host.release_event_callback_variant(1.into())
                 .expect_err("release_event_callback")
+                .kind,
+            HalErrorKind::CapabilityUnavailable
+        );
+        assert_eq!(
+            host.get_object_variant(Variant::empty(), Variant::from_string("Excel.Application"),)
+                .expect_err("get_object")
                 .kind,
             HalErrorKind::CapabilityUnavailable
         );
