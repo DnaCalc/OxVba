@@ -1,0 +1,15 @@
+{
+  "id": "SHELL-RETURNS-BEFORE-EXIT",
+  "purpose": "Excel/VBA Shell returns a task id before a delayed child process exits.",
+  "ownedExcelPid": 29476,
+  "compileStatus": "ok",
+  "dialogWindow": null,
+  "dialogText": null,
+  "dialogButtons": null,
+  "selectedText": null,
+  "selectedLine": null,
+  "vbeWindow": null,
+  "runStatus": "ok",
+  "runValue": "5|True|0.016",
+  "errorMessage": null
+}
