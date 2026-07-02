@@ -485,9 +485,12 @@ pub enum CoreValue {
     /// A `Variant` array materialized from element values (VBA's `Array()` and
     /// `ParamArray` boxing). `lower_bound` is the array's first index: the
     /// module's `Option Base` for `Array()`, always 0 for a `ParamArray`.
+    /// `aliases` is populated only for `ParamArray` elements that VBA treats as
+    /// caller-backed slots; ordinary `Array()` literals leave it empty.
     ArrayLiteral {
         elems: Vec<CoreValue>,
         lower_bound: i32,
+        aliases: Vec<Option<CorePlace>>,
     },
     Bound {
         which: BoundWhich,

@@ -309,6 +309,8 @@ pub enum OxInst {
     ArrayLiteral {
         dst: OxPlace,
         values: Vec<OxOperand>,
+        #[serde(default)]
+        aliases: Vec<Option<OxPlace>>,
         /// The array's first index (its `LBound`): `Option Base` for `Array()`,
         /// 0 for `ParamArray` boxing.
         lower_bound: i32,

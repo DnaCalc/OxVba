@@ -224,6 +224,15 @@ enum Loc {
     Temp(usize, usize),
 }
 
+impl Loc {
+    fn frame_index(self) -> Option<usize> {
+        match self {
+            Loc::Global(_, _) => None,
+            Loc::Local(frame, _) | Loc::Temp(frame, _) => Some(frame),
+        }
+    }
+}
+
 /// `For Each` iterator state: the snapshot of source elements (taken at loop entry,
 /// matching vm2) and the current position. Keyed in [`Vm3::for_each`] by the loop
 /// variable's resolved [`Loc`], so concurrent/reentrant loops never alias.
@@ -347,6 +356,9 @@ pub struct Vm3<'h> {
     /// reentrant/nested loops that reuse a slot number never alias) — mirrors vm2's
     /// `for_each` map.
     for_each: HashMap<Loc, ForEachState>,
+    /// ParamArray packs whose elements alias caller slots. Keyed by the resolved
+    /// location that currently stores the ParamArray SAFEARRAY.
+    param_array_aliases: HashMap<Loc, Vec<Option<Loc>>>,
     /// Monotonic project-instance id counter (starts at [`INSTANCE_ID_BASE`]).
     next_instance_id: i32,
     /// Re-entrancy guard for [`Vm3::maybe_drain`] (a `Class_Terminate` can itself drop the
@@ -477,6 +489,7 @@ impl<'h> Vm3<'h> {
             last_dll_error: 0,
             pending_fault: None,
             for_each: HashMap::new(),
+            param_array_aliases: HashMap::new(),
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
             withevents: HashMap::new(),
@@ -498,6 +511,7 @@ impl<'h> Vm3<'h> {
                 let r = vm.run_loop(0);
                 // The initializer writes module globals; its own frame is discarded.
                 vm.frames.pop();
+                vm.prune_param_array_aliases_from_depth(vm.frames.len());
                 r?;
             }
         }
@@ -779,6 +793,7 @@ impl<'h> Vm3<'h> {
                 // stays on the stack to back the snapshot) and end the run.
                 OxTerminator::Halt => {
                     self.frames.truncate(base + 1);
+                    self.prune_param_array_aliases_from_depth(self.frames.len());
                     // Re-derive `cur` to the surviving (base/entry) frame's program: `End` may
                     // fire inside a cross-program callee, and the post-run snapshot reader
                     // (`slot`) reads `programs[cur]`'s globals — which must be the entry
@@ -983,6 +998,7 @@ impl<'h> Vm3<'h> {
         let callee = self.frames.pop().expect("frame to unwind");
         self.error_mode = callee.saved_error_mode;
         self.active_error = callee.saved_active_error;
+        self.prune_param_array_aliases_from_depth(self.frames.len());
         // The caller's `CallProc` faulted: route to *its* block's fault pad.
         self.route_fault(fault)
     }
@@ -1001,6 +1017,7 @@ impl<'h> Vm3<'h> {
         // Proc epilogue: drop the callee frame (releasing the objects its locals held) and then
         // run any parked `Class_Terminate`s — vm2's epilogue drain timing.
         drop(callee);
+        self.prune_param_array_aliases_from_depth(self.frames.len());
         self.maybe_drain();
         Ok(())
     }
@@ -1344,12 +1361,17 @@ impl<'h> Vm3<'h> {
             OxInst::ArrayLiteral {
                 dst,
                 values,
+                aliases,
                 lower_bound,
             } => {
                 let elems = values
                     .iter()
                     .map(|v| self.operand(v))
                     .collect::<Result<Vec<_>, _>>()?;
+                let alias_locs = aliases
+                    .iter()
+                    .map(|alias| alias.as_ref().map(|place| self.resolve(place)))
+                    .collect::<Vec<_>>();
                 // `Array()` is based at the module's `Option Base` (0 or 1); a
                 // `ParamArray` always at 0. A non-zero base needs explicit bounds.
                 let array = if *lower_bound == 0 {
@@ -1362,6 +1384,10 @@ impl<'h> Vm3<'h> {
                     SafeArray::from_variants_nd(bounds, elems)
                 };
                 self.store(dst, Variant::from_safearray(array))?;
+                if alias_locs.iter().any(Option::is_some) {
+                    let dst_loc = self.resolve(dst);
+                    self.param_array_aliases.insert(dst_loc, alias_locs);
+                }
             }
             OxInst::ArrayAppend { dst, array, item } => {
                 let mut elems = match self.operand(array)?.as_safearray() {
@@ -1967,12 +1993,19 @@ impl<'h> Vm3<'h> {
         let dst_loc = dst.map(|p| self.resolve(&p));
         let mut locals = vec![Variant::empty(); callee.locals.len()];
         let mut aliases = HashMap::new();
+        let frame_index = self.frames.len();
+        let mut pending_param_array_aliases = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             match arg {
                 OxArg::ByVal(op) => {
+                    let param_array_aliases = self.param_array_aliases_for_operand(op);
                     let v = self.operand(op)?;
                     if let Some(slot) = locals.get_mut(i) {
                         *slot = v;
+                    }
+                    if let Some(param_array_aliases) = param_array_aliases {
+                        pending_param_array_aliases
+                            .push((Loc::Local(frame_index, i), param_array_aliases));
                     }
                 }
                 OxArg::ByRef(place) => {
@@ -2008,6 +2041,9 @@ impl<'h> Vm3<'h> {
             saved_active_error: self.active_error,
             gosub_stack: Vec::new(),
         });
+        for (loc, aliases) in pending_param_array_aliases {
+            self.param_array_aliases.insert(loc, aliases);
+        }
         // Each procedure starts with no handler and no active error (restored on return).
         self.error_mode = ErrorMode::None;
         self.active_error = None;
@@ -2259,7 +2295,51 @@ impl<'h> Vm3<'h> {
             .expect("location borrowed immutably just above is still present");
         arr.set_safearray_element(flat, value)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+        self.mirror_param_array_element_write(loc, flat, value)?;
         Ok(true)
+    }
+
+    fn param_array_aliases_for_operand(&self, op: &OxOperand) -> Option<Vec<Option<Loc>>> {
+        match op {
+            OxOperand::Use(place) => self.param_array_aliases.get(&self.resolve(place)).cloned(),
+            _ => None,
+        }
+    }
+
+    fn mirror_param_array_element_write(
+        &mut self,
+        array_loc: Loc,
+        flat: usize,
+        value: &Variant,
+    ) -> Result<(), Vm3Error> {
+        let Some(aliases) = self.param_array_aliases.get(&array_loc).cloned() else {
+            return Ok(());
+        };
+        let Some(Some(target)) = aliases.get(flat).copied() else {
+            return Ok(());
+        };
+
+        self.write_loc(target, value.clone())?;
+
+        if let Some(arr) = self.read_loc_mut(array_loc)? {
+            for (idx, alias) in aliases.iter().enumerate() {
+                if idx != flat && *alias == Some(target) {
+                    arr.set_safearray_element(idx, value)
+                        .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn prune_param_array_aliases_from_depth(&mut self, depth: usize) {
+        self.param_array_aliases.retain(|loc, aliases| {
+            loc.frame_index().is_none_or(|frame| frame < depth)
+                && aliases
+                    .iter()
+                    .flatten()
+                    .all(|alias| alias.frame_index().is_none_or(|frame| frame < depth))
+        });
     }
 
     fn record_array_get(
@@ -2714,15 +2794,21 @@ impl<'h> Vm3<'h> {
         if let Some(slot) = frame.locals.get_mut(0) {
             *slot = me;
         }
+        let mut pending_param_array_aliases = Vec::new();
         // Event-handler args follow `me` at locals 1.. (vm2's `run_proc_core` layout),
         // resolved against the CALLER (the still-current top frame) before the push.
         for (i, arg) in args.iter().enumerate() {
             let li = i + 1;
             match arg {
                 OxArg::ByVal(op) => {
+                    let param_array_aliases = self.param_array_aliases_for_operand(op);
                     let v = self.operand(op)?;
                     if let Some(slot) = frame.locals.get_mut(li) {
                         *slot = v;
+                    }
+                    if let Some(param_array_aliases) = param_array_aliases {
+                        pending_param_array_aliases
+                            .push((Loc::Local(base, li), param_array_aliases));
                     }
                 }
                 OxArg::ByRef(place) => {
@@ -2739,6 +2825,9 @@ impl<'h> Vm3<'h> {
         frame.saved_error_mode = self.error_mode;
         frame.saved_active_error = self.active_error;
         self.frames.push(frame);
+        for (loc, aliases) in pending_param_array_aliases {
+            self.param_array_aliases.insert(loc, aliases);
+        }
         self.error_mode = ErrorMode::None;
         self.active_error = None;
         let result = self.run_loop(base);
@@ -2754,6 +2843,7 @@ impl<'h> Vm3<'h> {
             self.active_error = fr.saved_active_error;
         }
         self.frames.truncate(base);
+        self.prune_param_array_aliases_from_depth(self.frames.len());
         self.cur = saved_cur;
         // Truncating released the lifecycle frame's object locals (and any an uncaught fault
         // left parked as it unwound) — run their `Class_Terminate`s now, the nested-epilogue /
@@ -2820,6 +2910,7 @@ impl<'h> Vm3<'h> {
             self.active_error = fr.saved_active_error;
         }
         self.frames.truncate(base);
+        self.prune_param_array_aliases_from_depth(self.frames.len());
         self.cur = saved_cur;
         self.maybe_drain();
         match result {
@@ -3990,6 +4081,7 @@ impl<'h> Vm3<'h> {
 
     /// Write a resolved location (same dense/sparse contract as [`Self::read_loc`]).
     fn write_loc(&mut self, loc: Loc, v: Variant) -> Result<(), Vm3Error> {
+        self.param_array_aliases.remove(&loc);
         match loc {
             Loc::Global(p, g) => {
                 *self.programs[p].globals.get_mut(g).ok_or_else(|| {

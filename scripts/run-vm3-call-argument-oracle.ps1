@@ -427,6 +427,111 @@ Private Function SumAll(ParamArray xs() As Variant) As Long
 End Function
 "@
         )
+    },
+    [pscustomobject]@{
+        id = "CALL-PARAMARRAY-SCALAR-ELEMENT-ALIASES-CALLER"
+        purpose = "Assigning a ParamArray element sourced from a scalar variable writes back to the caller in real VBA."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Public Function RunProbe() As Variant
+    Dim x As Long
+    x = 5
+    Touch x
+    RunProbe = x
+End Function
+
+Private Sub Touch(ParamArray xs() As Variant)
+    xs(0) = 99
+End Sub
+"@
+        )
+    },
+    [pscustomobject]@{
+        id = "CALL-PARAMARRAY-VARIANT-ELEMENT-ALIASES-CALLER"
+        purpose = "Assigning a ParamArray element sourced from a Variant variable writes back to the caller in real VBA."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Public Function RunProbe() As Variant
+    Dim v As Variant
+    v = 5
+    Touch v
+    RunProbe = v
+End Function
+
+Private Sub Touch(ParamArray xs() As Variant)
+    xs(0) = 99
+End Sub
+"@
+        )
+    },
+    [pscustomobject]@{
+        id = "CALL-PARAMARRAY-ARRAY-ELEMENT-LVALUE-ALIASES-CALLER"
+        purpose = "Assigning a ParamArray element sourced from an array-element l-value writes back to the caller in real VBA."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Public Function RunProbe() As Variant
+    Dim a(0 To 0) As Long
+    a(0) = 5
+    Touch a(0)
+    RunProbe = a(0)
+End Function
+
+Private Sub Touch(ParamArray xs() As Variant)
+    xs(0) = 99
+End Sub
+"@
+        )
+    },
+    [pscustomobject]@{
+        id = "CALL-PARAMARRAY-OBJECT-ELEMENT-REBIND-ALIASES-CALLER"
+        purpose = "ParamArray object element mutation/rebinding affects the caller in real VBA."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Public Function RunProbe() As Variant
+    Dim box As Object
+    Set box = CreateObject("Scripting.Dictionary")
+    box("Value") = 5
+    On Error GoTo Failed
+    Touch box
+    RunProbe = "ok:" & CStr(box("Value"))
+    Exit Function
+Failed:
+    RunProbe = "err:" & CStr(Err.Number) & ":" & Err.Description
+End Function
+
+Private Sub Touch(ParamArray xs() As Variant)
+    xs(0)("Value") = xs(0)("Value") + 10
+    Set xs(0) = Nothing
+End Sub
+"@
+        )
+    },
+    [pscustomobject]@{
+        id = "CALL-PARAMARRAY-VARIANT-ARRAY-ELEMENT-MUTATION-ALIASES-CALLER"
+        purpose = "Mutating an array stored inside a ParamArray element affects the caller in real VBA."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Public Function RunProbe() As Variant
+    Dim v As Variant
+    v = Array(5)
+    On Error GoTo Failed
+    Touch v
+    RunProbe = "ok:" & CStr(v(0))
+    Exit Function
+Failed:
+    RunProbe = "err:" & CStr(Err.Number) & ":" & Err.Description
+End Function
+
+Private Sub Touch(ParamArray xs() As Variant)
+    xs(0)(0) = 99
+End Sub
+"@
+        )
     }
 )
 

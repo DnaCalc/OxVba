@@ -1600,6 +1600,63 @@
   - `br dep cycles --json`
   - `git diff --check`
 
+## 2026-07-02 - ParamArray Element Caller Aliasing (`bd-4ktq.50`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_call_argument_oracle_bd4ktq50_20260702T0218Z/`.
+- Oracle findings:
+  - Assigning `xs(0) = 99` inside `Sub Touch(ParamArray xs() As Variant)`
+    writes back to caller scalar variables, Variant variables, and array-element
+    l-values.
+  - Rebinding an object ParamArray element with `Set xs(0) = Nothing` rebinds
+    the caller object slot; the probe then raises runtime error 91 when reading
+    the caller variable.
+  - Mutating an array stored in a Variant ParamArray element (`xs(0)(0) = 99`)
+    mutates the caller's Variant-held array payload.
+  - This refutes the stale "ByVal isolation" gap wording; the compatibility
+    target is caller aliasing for these l-value shapes.
+- Implemented ParamArray alias metadata on CoreIR/OxIR `ArrayLiteral`.
+  The binder records caller l-value aliases for ParamArray tail arguments while
+  preserving forced-ByVal cases such as parenthesized arguments and explicit
+  call-site `ByVal`.
+- vm3 now tracks ParamArray packs by their resolved storage location, propagates
+  alias metadata into callee frames, mirrors ParamArray element writes to caller
+  storage, keeps duplicate element aliases in sync, and prunes alias metadata
+  when frames are popped/truncated or a whole slot is overwritten.
+- OxIR lowering now reuses the existing compound ByRef copy-out path for
+  compound ParamArray aliases, so array-element l-values are copied into an
+  addressable temp, mirrored during the call, and written back after the call
+  only if changed.
+- Added active vm3 coverage in
+  `crates/oxvba-differential/tests/call_argument_binding_vm3.rs` for scalar,
+  Variant, array-element l-value, object rebind, and Variant-held array mutation
+  ParamArray caller-aliasing cases.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-call-argument-oracle.ps1 -RunId vm3_call_argument_oracle_bd4ktq50_20260702T0218Z`
+  - `cargo check -p oxvba-bundle -p oxvba-bind -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3 --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip paramarray --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1`
+  - `rustfmt --edition 2024 --check crates/oxvba-bind/src/call.rs crates/oxvba-bundle/src/coreir.rs crates/oxvba-differential/tests/call_argument_binding_vm3.rs`
+  - `git diff --check`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `br dep cycles --json`
+- The default formal runner refreshed `docs/evidence/formal/latest_run.*`.
+  Remaining Kani skips and unrelated profile/event TODO obligations are
+  non-blocking under the current ladder policy and are unchanged by this
+  ParamArray bead.
+- A broader `rustfmt --check` including the touched OxIR files was attempted
+  and still reports pre-existing OxIR-wide formatting drift; no broad formatter
+  sweep was mixed into this semantic change.
+- Fresh-eyes review caught the initial direct-slot-only implementation and
+  extended it to compound l-values using the existing ByRef copy-out mechanism;
+  the final implementation removes the legacy copied-element assumption for the
+  scoped VBA-observed ParamArray element write-back behavior.
+
 ## 2026-07-02 - Compatibility Objective Reinforcement
 
 - User clarified that the goal should always be to match real VBA compile-time

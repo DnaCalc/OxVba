@@ -1,7 +1,8 @@
 //! Call/argument binding fixtures for the `bd-4ktq.10` batch.
 //!
 //! Live Excel/VBA 7.1 oracle evidence is captured in:
-//! `docs/evidence/conformance/vm3_call_argument_oracle_20260701T1040Z/`.
+//! `docs/evidence/conformance/vm3_call_argument_oracle_20260701T1040Z/` and
+//! `docs/evidence/conformance/vm3_call_argument_oracle_bd4ktq50_20260702T0218Z/`.
 //! The passing tests pin legal baseline shapes. Ignored tests encode the
 //! oracle-backed statement-parentheses and compile-time rejection gaps that
 //! follow-on call-argument beads are expected to unignore and satisfy.
@@ -33,6 +34,10 @@ fn assert_compile_rejected(outcome: RunOutcome) {
         outcome.unsupported.is_some() || outcome.result.is_err() || outcome.raised,
         "expected compile/bind rejection or failure, got {outcome:?}"
     );
+}
+
+fn canon_string(text: &str) -> Canon {
+    canon(&Variant::from_string(text.to_string()))
 }
 
 #[test]
@@ -143,6 +148,106 @@ fn paramarray_accepts_extra_positional_arguments() {
              End Function\n",
         ),
         canon(&Variant::from_f64(6.0)),
+    );
+}
+
+#[test]
+fn paramarray_scalar_element_assignment_writes_back_to_caller() {
+    assert_snapshot_contains(
+        run_call_case(
+            "Public result As Variant\n\
+             Sub Main()\n\
+             Dim x As Long\n\
+             x = 5\n\
+             Touch x\n\
+             result = CStr(x)\n\
+             End Sub\n\n\
+             Private Sub Touch(ParamArray xs() As Variant)\n\
+             xs(0) = 99\n\
+             End Sub\n",
+        ),
+        canon_string("99"),
+    );
+}
+
+#[test]
+fn paramarray_variant_element_assignment_writes_back_to_caller() {
+    assert_snapshot_contains(
+        run_call_case(
+            "Public result As Variant\n\
+             Sub Main()\n\
+             Dim v As Variant\n\
+             v = 5\n\
+             Touch v\n\
+             result = CStr(v)\n\
+             End Sub\n\n\
+             Private Sub Touch(ParamArray xs() As Variant)\n\
+             xs(0) = 99\n\
+             End Sub\n",
+        ),
+        canon_string("99"),
+    );
+}
+
+#[test]
+fn paramarray_array_element_assignment_writes_back_to_caller() {
+    assert_snapshot_contains(
+        run_call_case(
+            "Public result As Variant\n\
+             Sub Main()\n\
+             Dim a(0 To 0) As Long\n\
+             a(0) = 5\n\
+             Touch a(0)\n\
+             result = CStr(a(0))\n\
+             End Sub\n\n\
+             Private Sub Touch(ParamArray xs() As Variant)\n\
+             xs(0) = 99\n\
+             End Sub\n",
+        ),
+        canon_string("99"),
+    );
+}
+
+#[test]
+fn paramarray_object_element_assignment_rebinds_caller_slot() {
+    assert_snapshot_contains(
+        run_call_case(
+            "Public result As Variant\n\
+             Sub Main()\n\
+             Dim box As Object\n\
+             Set box = New VBA.Collection\n\
+             box.Add 5\n\
+             On Error GoTo Failed\n\
+             Touch box\n\
+             result = box.Count\n\
+             Exit Sub\n\
+Failed:\n\
+             result = Err.Number\n\
+             End Sub\n\n\
+             Private Sub Touch(ParamArray xs() As Variant)\n\
+             Set xs(0) = Nothing\n\
+             End Sub\n",
+        ),
+        canon(&Variant::from_i32(91)),
+    );
+}
+
+#[test]
+fn paramarray_variant_array_element_mutation_writes_back_to_caller() {
+    assert_snapshot_contains(
+        run_call_case(
+            "Public result As Variant\n\
+             Sub Main()\n\
+             Dim v As Variant\n\
+             v = Array(5)\n\
+             Touch v\n\
+             result = CStr(v(0))\n\
+             End Sub\n\n\
+             Private Sub Touch(ParamArray xs() As Variant)\n\
+             xs(0)(0) = 99\n\
+             End Sub\n",
+        ),
+        canon_string("99"),
     );
 }
 

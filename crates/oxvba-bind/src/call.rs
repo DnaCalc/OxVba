@@ -158,6 +158,7 @@ impl<'a> ProcLower<'a> {
                     CoreValue::ArrayLiteral {
                         elems: items,
                         lower_bound: self.info.option_base,
+                        aliases: Vec::new(),
                     },
                     VarTypeRef::Variant,
                 ))
@@ -482,6 +483,20 @@ impl<'a> ProcLower<'a> {
             None => bound.value,
         };
         Ok(CoreArg::ByVal(value))
+    }
+
+    fn paramarray_alias_place(
+        &mut self,
+        expr: SyntaxNode<'_>,
+        passing: CallSitePassing,
+    ) -> Option<CorePlace> {
+        if passing == CallSitePassing::ByVal
+            || expr.kind() == SyntaxKind::ParenExpr
+            || self.is_object_default_member_index_expr(expr)
+        {
+            return None;
+        }
+        self.bind_place(expr).map(|(place, _)| place).ok()
     }
 
     fn ensure_byref_type_compatible(
@@ -1440,7 +1455,7 @@ impl<'a> ProcLower<'a> {
             .filter(|&i| i < fixed_count)
             .unwrap_or(fixed_count);
         let mut slots: Vec<Option<CoreArg>> = (0..fixed_count).map(|_| None).collect();
-        let mut tail: Vec<CoreArg> = Vec::new();
+        let mut tail: Vec<(CoreArg, Option<CorePlace>)> = Vec::new();
         let mut pos = 0usize;
         let mut seen_named = false;
         for item in items {
@@ -1457,7 +1472,8 @@ impl<'a> ProcLower<'a> {
                     } else if variadic_index.is_some() {
                         // Variadic-tail (ParamArray) element — bound ByVal, no
                         // fixed signature param.
-                        tail.push(self.bind_one_arg(expr, None, passing)?);
+                        let alias = self.paramarray_alias_place(expr, passing);
+                        tail.push((self.bind_one_arg(expr, None, passing)?, alias));
                     } else {
                         return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
@@ -1472,7 +1488,7 @@ impl<'a> ProcLower<'a> {
                     if pos < bindable_fixed_count {
                         slots[pos] = Some(CoreArg::Omitted);
                     } else if variadic_index.is_some() {
-                        tail.push(CoreArg::Omitted);
+                        tail.push((CoreArg::Omitted, None));
                     } else {
                         return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
@@ -1551,14 +1567,20 @@ impl<'a> ProcLower<'a> {
             // — which has the signature — keeps the call vector one-arg-per-param, so
             // free procs and methods need no downstream variadic handling.
             Some(_) => {
-                let elems: Vec<CoreValue> = tail.into_iter().map(paramarray_element).collect();
+                let mut elems = Vec::with_capacity(tail.len());
+                let mut aliases = Vec::with_capacity(tail.len());
+                for (arg, alias) in tail {
+                    elems.push(paramarray_element(arg));
+                    aliases.push(alias);
+                }
                 // A `ParamArray` slot is always 0-based, regardless of `Option Base`.
                 args.push(CoreArg::ByVal(CoreValue::ArrayLiteral {
                     elems,
                     lower_bound: 0,
+                    aliases,
                 }));
             }
-            None => args.extend(tail),
+            None => args.extend(tail.into_iter().map(|(arg, _)| arg)),
         }
         Ok(args)
     }

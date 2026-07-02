@@ -1517,20 +1517,20 @@ impl<'a> Lowerer<'a> {
                 });
                 Ok((OxOperand::temp(t), OxTy::Bool))
             }
-            CoreValue::ArrayLiteral { elems, lower_bound } => {
-                let mut ops = Vec::with_capacity(elems.len());
-                for v in elems {
-                    ops.push(self.lower_value(v)?.0);
+            CoreValue::ArrayLiteral {
+                elems,
+                lower_bound,
+                aliases,
+            } => {
+                let (op, writebacks) = self.lower_array_literal(elems, *lower_bound, aliases)?;
+                if !writebacks.is_empty() {
+                    return Err(ElaborateError::Malformed(
+                        "ParamArray compound alias escaped its call boundary".into(),
+                    ));
                 }
-                let t = self.new_temp();
-                self.emit(OxInst::ArrayLiteral {
-                    dst: OxPlace::Temp(t),
-                    values: ops,
-                    lower_bound: *lower_bound,
-                });
                 // `Array(…)` yields a dynamic Variant array based at `Option Base`.
                 Ok((
-                    OxOperand::temp(t),
+                    op,
                     OxTy::Array(Box::new(OxTy::Variant), ArrayShape::Dynamic),
                 ))
             }
@@ -1934,6 +1934,19 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn lower_byval_arg(&mut self, value: &CoreValue) -> Result<(OxOperand, Vec<ArgWriteback>)> {
+        match value {
+            CoreValue::ArrayLiteral {
+                elems,
+                lower_bound,
+                aliases,
+            } if aliases.iter().any(Option::is_some) => {
+                self.lower_array_literal(elems, *lower_bound, aliases)
+            }
+            _ => Ok((self.lower_value(value)?.0, Vec::new())),
+        }
+    }
+
     /// Lower arguments for a compiled VBA / cross-bundle procedure call (`OxArg`), plus the
     /// copy-out write-backs for any compound `ByRef` argument (see [`Self::lower_byref_place`]).
     fn lower_proc_args(&mut self, args: &[CoreArg]) -> Result<(Vec<OxArg>, Vec<ArgWriteback>)> {
@@ -1941,7 +1954,11 @@ impl<'a> Lowerer<'a> {
         let mut writebacks = Vec::new();
         for arg in args {
             out.push(match arg {
-                CoreArg::ByVal(v) => OxArg::ByVal(self.lower_value(v)?.0),
+                CoreArg::ByVal(v) => {
+                    let (value, wb) = self.lower_byval_arg(v)?;
+                    writebacks.extend(wb);
+                    OxArg::ByVal(value)
+                }
                 CoreArg::ByRef(place) => {
                     let (p, wb) = self.lower_byref_place(place)?;
                     writebacks.extend(wb);
@@ -1967,7 +1984,11 @@ impl<'a> Lowerer<'a> {
         let mut writebacks = Vec::new();
         for arg in args {
             out.push(match arg {
-                CoreArg::ByVal(v) => OxCallArg::Operand(self.lower_value(v)?.0),
+                CoreArg::ByVal(v) => {
+                    let (value, wb) = self.lower_byval_arg(v)?;
+                    writebacks.extend(wb);
+                    OxCallArg::Operand(value)
+                }
                 CoreArg::ByRef(place) => {
                     let (p, wb) = self.lower_byref_place(place)?;
                     writebacks.extend(wb);
@@ -2024,6 +2045,38 @@ impl<'a> Lowerer<'a> {
                 "expected a positional value operand".into(),
             )),
         }
+    }
+
+    fn lower_array_literal(
+        &mut self,
+        elems: &[CoreValue],
+        lower_bound: i32,
+        aliases: &[Option<coreir::CorePlace>],
+    ) -> Result<(OxOperand, Vec<ArgWriteback>)> {
+        let mut ops = Vec::with_capacity(elems.len());
+        for v in elems {
+            ops.push(self.lower_value(v)?.0);
+        }
+        let mut lowered_aliases = Vec::with_capacity(aliases.len());
+        let mut writebacks = Vec::new();
+        for alias in aliases {
+            match alias {
+                Some(place) => {
+                    let (lowered, writeback) = self.lower_byref_place(place)?;
+                    lowered_aliases.push(Some(lowered));
+                    writebacks.extend(writeback);
+                }
+                None => lowered_aliases.push(None),
+            }
+        }
+        let t = self.new_temp();
+        self.emit(OxInst::ArrayLiteral {
+            dst: OxPlace::Temp(t),
+            values: ops,
+            aliases: lowered_aliases,
+            lower_bound,
+        });
+        Ok((OxOperand::temp(t), writebacks))
     }
 
     // ── Places ───────────────────────────────────────────────────────────────
