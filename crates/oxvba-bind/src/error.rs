@@ -50,6 +50,10 @@ pub enum BindError {
     /// A required argument was omitted.
     #[error("Argument not optional: {parameter}")]
     ArgumentNotOptional { parameter: String },
+    /// VBA's compile diagnostic for a named argument that is not present in the
+    /// statically known target signature.
+    #[error("Named argument not found: {name}")]
+    NamedArgumentNotFound { name: String },
     /// A statement-only Sub was used where a value-producing expression is required.
     #[error("Expected Function or variable: {name}")]
     ExpectedFunctionOrVariable { name: String },
@@ -167,6 +171,12 @@ impl BindError {
                 format!("Argument not optional: {parameter}"),
             )
             .with_help("Supply the required argument, or mark the parameter Optional."),
+            BindError::NamedArgumentNotFound { name } => Diagnostic::error(
+                "BIND-E-NAMED-ARGUMENT-NOT-FOUND",
+                DiagnosticPhase::Bind,
+                format!("Named argument not found: {name}"),
+            )
+            .with_help("Use one of the parameter names declared by the target signature."),
             BindError::ExpectedFunctionOrVariable { name } => Diagnostic::error(
                 "BIND-E-EXPECTED-FUNCTION-OR-VARIABLE",
                 DiagnosticPhase::Bind,
@@ -294,6 +304,20 @@ mod tests {
         .to_diagnostic();
         assert_eq!(diagnostic.code.as_str(), "BIND-E-ARGUMENT-NOT-OPTIONAL");
         assert!(diagnostic.message.contains("Argument not optional: b"));
+    }
+
+    #[test]
+    fn named_argument_not_found_has_stable_code() {
+        let diagnostic = BindError::NamedArgumentNotFound {
+            name: "NotAParam".to_string(),
+        }
+        .to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "BIND-E-NAMED-ARGUMENT-NOT-FOUND");
+        assert!(
+            diagnostic
+                .message
+                .contains("Named argument not found: NotAParam")
+        );
     }
 
     #[test]

@@ -417,7 +417,6 @@ impl<'a> ProcLower<'a> {
                     DispatchRoute::ComMember {
                         member_name,
                         member_kind,
-                        param_by_ref,
                         interface_name,
                         member: com_member,
                         ..
@@ -430,9 +429,8 @@ impl<'a> ProcLower<'a> {
                             ProjectMemberKind::Method => ProjectMemberKind::Method,
                             _ => ProjectMemberKind::PropertyGet,
                         };
-                        let by_ref = param_by_ref.clone();
                         let recv = CoreValue::Load(self.place_by_name(tok.text)?);
-                        let args = self.bind_args_byref(node.index_arg_list(), &by_ref)?;
+                        let args = self.bind_com_args(node.index_arg_list(), com_member)?;
                         return Ok(value_bound(
                             self.early_com_call(
                                 member_name,

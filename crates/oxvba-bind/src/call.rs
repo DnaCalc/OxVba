@@ -9,7 +9,7 @@ use oxvba_bundle::coreir::{
 };
 use oxvba_bundle::native::NativeImplId;
 use oxvba_bundle::{BundleImport, ExportToken, ProjectMemberKind, StringCompareMode};
-use oxvba_com::{TypeLibMemberMetadata, TypeLibParamType};
+use oxvba_com::{OptionalParamDefault, TypeLibMemberMetadata, TypeLibParamType};
 use oxvba_symbol::binding::{Binding, DispatchRoute, SpecialForm};
 use oxvba_symbol::model::{
     PredeclaredObjectId, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, fold_identifier,
@@ -574,40 +574,149 @@ impl<'a> ProcLower<'a> {
             .unwrap_or(false)
     }
 
-    /// Arguments for a COM / `Declare` callee whose per-parameter by-ref directions
-    /// are known as a `Vec<bool>` (positional). Named args stay `ByVal`.
-    pub(crate) fn bind_args_byref(
+    /// Arguments for an early-bound COM call. Unlike a genuinely late-bound
+    /// `Object` dispatch, a typed COM receiver has a typelib descriptor at bind
+    /// time, so named arguments are validated and reordered into descriptor order.
+    pub(crate) fn bind_com_args(
         &mut self,
         arglist: Option<SyntaxNode<'_>>,
-        param_by_ref: &[bool],
+        member: &TypeLibMemberMetadata,
+    ) -> Result<Vec<CoreArg>, BindError> {
+        self.bind_com_args_inner(arglist, member, None)
+    }
+
+    /// Arguments for a COM `Property Let`/`Set` assignment. The indexed arguments
+    /// bind against the visible parameters before the trailing `[propput]` value,
+    /// which is supplied separately from the assignment RHS.
+    fn bind_com_property_put_index_args(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        member: &TypeLibMemberMetadata,
+    ) -> Result<Vec<CoreArg>, BindError> {
+        self.bind_com_args_inner(arglist, member, Some(1))
+    }
+
+    fn bind_com_args_inner(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        member: &TypeLibMemberMetadata,
+        reserved_visible_tail: Option<usize>,
     ) -> Result<Vec<CoreArg>, BindError> {
         let items = match arglist {
             Some(a) => a.arg_items(),
             None => Vec::new(),
         };
-        let mut args = Vec::with_capacity(items.len());
-        for (i, item) in items.into_iter().enumerate() {
+        let visible = visible_com_param_indices(member);
+        let bindable_count = visible
+            .len()
+            .saturating_sub(reserved_visible_tail.unwrap_or(0));
+        let mut slots: Vec<Option<CoreArg>> = (0..bindable_count).map(|_| None).collect();
+        let mut pos = 0usize;
+        let mut seen_named = false;
+        for item in items {
             match item {
-                ArgItem::Omitted => args.push(CoreArg::Omitted),
-                ArgItem::Named { name, value } => {
-                    args.push(CoreArg::Named {
-                        name: name.text.to_string(),
-                        value: self.bind_expr(value)?.value,
-                    });
-                }
                 ArgItem::Positional(expr, passing) => {
-                    args.push(self.bind_arg_byref(
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
+                    if pos >= bindable_count {
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+                    }
+                    let param_index = visible[pos];
+                    slots[pos] = Some(self.bind_com_one(
                         expr,
-                        param_by_ref.get(i).copied().unwrap_or(false),
+                        member.parameter_types.get(param_index),
                         passing,
                     )?);
+                    pos += 1;
+                }
+                ArgItem::Omitted => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
+                    if pos >= bindable_count {
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+                    }
+                    slots[pos] = Some(CoreArg::Omitted);
+                    pos += 1;
+                }
+                ArgItem::Named { name, value } => {
+                    seen_named = true;
+                    let folded = fold_identifier(name.text);
+                    let Some(slot_index) = visible[..bindable_count].iter().position(|&i| {
+                        member
+                            .parameter_names
+                            .get(i)
+                            .is_some_and(|p| fold_identifier(p) == folded)
+                    }) else {
+                        return Err(BindError::NamedArgumentNotFound {
+                            name: name.text.to_string(),
+                        });
+                    };
+                    if slots[slot_index].is_some() {
+                        let param_name = member
+                            .parameter_names
+                            .get(visible[slot_index])
+                            .map(String::as_str)
+                            .unwrap_or(name.text);
+                        return Err(BindError::Unsupported(format!(
+                            "duplicate argument for parameter {param_name}"
+                        )));
+                    }
+                    let param_index = visible[slot_index];
+                    slots[slot_index] = Some(self.bind_com_one(
+                        value,
+                        member.parameter_types.get(param_index),
+                        CallSitePassing::Default,
+                    )?);
+                }
+            }
+        }
+
+        let Some(last_supplied) = slots.iter().rposition(Option::is_some) else {
+            self.require_no_missing_com_required(member, &visible[..bindable_count])?;
+            return Ok(Vec::new());
+        };
+        self.require_no_missing_com_required(member, &visible[last_supplied + 1..bindable_count])?;
+        let mut args = Vec::with_capacity(last_supplied + 1);
+        for (slot_index, slot) in slots.into_iter().take(last_supplied + 1).enumerate() {
+            match slot {
+                Some(arg) => args.push(arg),
+                None => {
+                    let param_index = visible[slot_index];
+                    if com_param_is_optional(member, param_index) {
+                        args.push(CoreArg::Omitted);
+                    } else {
+                        return Err(BindError::ArgumentNotOptional {
+                            parameter: com_param_display_name(member, param_index),
+                        });
+                    }
                 }
             }
         }
         Ok(args)
     }
 
-    /// Bind `Declare` arguments (ByRef-aware, like [`Self::bind_args_byref`]) and
+    fn require_no_missing_com_required(
+        &self,
+        member: &TypeLibMemberMetadata,
+        indices: &[usize],
+    ) -> Result<(), BindError> {
+        for &param_index in indices {
+            if !com_param_is_optional(member, param_index) {
+                return Err(BindError::ArgumentNotOptional {
+                    parameter: com_param_display_name(member, param_index),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Bind `Declare` arguments (ByRef-aware, like [`Self::bind_arg_byref`]) and
     /// collect pointer-helper write-backs: a positional `StrPtr(x)` / `VarPtr(x)`
     /// over a simple-variable l-value records a [`PtrWriteback`] so the VM reads the
     /// pinned buffer back into `x` after the call (VBA's expression-shape-driven
@@ -802,6 +911,15 @@ impl<'a> ProcLower<'a> {
             None => bound.value,
         };
         Ok(CoreArg::ByVal(value))
+    }
+
+    fn bind_com_one(
+        &mut self,
+        expr: SyntaxNode<'_>,
+        param: Option<&TypeLibParamType>,
+        passing: CallSitePassing,
+    ) -> Result<CoreArg, BindError> {
+        self.bind_extern_one(expr, param, passing)
     }
 
     /// Arguments for a cross-bundle **coclass member** (`LateDispatch` on a receiver):
@@ -1126,14 +1244,13 @@ impl<'a> ProcLower<'a> {
             Some(Binding {
                 route:
                     DispatchRoute::ComMember {
-                        param_by_ref,
                         interface_name,
                         member: com_member,
                         ..
                     },
                 ..
             }) => {
-                let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
+                let mut args = self.bind_com_property_put_index_args(arglist, &com_member)?;
                 args.push(CoreArg::ByVal(rhs.clone()));
                 Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
                     member,
@@ -1208,13 +1325,12 @@ impl<'a> ProcLower<'a> {
                     .resolve_member(receiver_ty, member_name, Some(kind))
                     .unwrap_or_else(|| default_binding.clone());
                 if let DispatchRoute::ComMember {
-                    param_by_ref,
                     interface_name,
                     member: com_member,
                     ..
                 } = writer.route
                 {
-                    let mut args = self.bind_args_byref(arglist, &param_by_ref)?;
+                    let mut args = self.bind_com_property_put_index_args(arglist, &com_member)?;
                     args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
                         member_name,
@@ -1311,6 +1427,7 @@ impl<'a> ProcLower<'a> {
                     ProjectMemberKind::Method => ProjectMemberKind::Method,
                     _ => ProjectMemberKind::PropertyGet,
                 };
+                let args = self.bind_com_args(None, com_member)?;
                 Ok(Some(value_bound(
                     self.early_com_call(
                         receiver_label,
@@ -1318,7 +1435,7 @@ impl<'a> ProcLower<'a> {
                         interface_name,
                         com_member,
                         receiver_value,
-                        Vec::new(),
+                        args,
                     ),
                     VarTypeRef::Variant,
                 )))
@@ -1383,13 +1500,12 @@ impl<'a> ProcLower<'a> {
                     )
                     .unwrap_or_else(|| default_binding.clone());
                 if let DispatchRoute::ComMember {
-                    param_by_ref,
                     interface_name,
                     member: com_member,
                     ..
                 } = writer.route
                 {
-                    let mut args = self.bind_args_byref(None, &param_by_ref)?;
+                    let mut args = self.bind_com_property_put_index_args(None, &com_member)?;
                     args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(self.early_com_call(
                         member_name,
@@ -2074,6 +2190,7 @@ impl<'a> ProcLower<'a> {
                         ProjectMemberKind::Method => ProjectMemberKind::Method,
                         _ => ProjectMemberKind::PropertyGet,
                     };
+                    let args = self.bind_com_args(None, com_member)?;
                     Ok(value_bound(
                         self.early_com_call(
                             member,
@@ -2081,7 +2198,7 @@ impl<'a> ProcLower<'a> {
                             interface_name,
                             com_member,
                             recv.value,
-                            Vec::new(),
+                            args,
                         ),
                         VarTypeRef::Variant,
                     ))
@@ -2264,7 +2381,6 @@ impl<'a> ProcLower<'a> {
                 }
                 DispatchRoute::ComMember {
                     member_kind,
-                    param_by_ref,
                     interface_name,
                     member: com_member,
                     ..
@@ -2278,9 +2394,10 @@ impl<'a> ProcLower<'a> {
                         ProjectMemberKind::Method => ProjectMemberKind::Method,
                         _ => ProjectMemberKind::PropertyGet,
                     };
-                    // Emit ByRef for the typelib's [out]/[in,out] params.
-                    let by_ref = param_by_ref.clone();
-                    let method_args = self.bind_args_byref(arglist, &by_ref)?;
+                    // Emit descriptor-ordered args; typed COM named args are
+                    // validated/reordered here, while ByRef still aliases from the
+                    // typelib's [out]/[in,out] parameter type.
+                    let method_args = self.bind_com_args(arglist, com_member)?;
                     Ok(value_bound(
                         self.early_com_call(
                             member,
@@ -2673,6 +2790,51 @@ fn tlb_param_to_vartype(p: &TypeLibParamType) -> VarTypeRef {
         T::Object | T::ByRefObject => VarTypeRef::Object("Object".to_string()),
         _ => VarTypeRef::Variant,
     }
+}
+
+fn visible_com_param_indices(member: &TypeLibMemberMetadata) -> Vec<usize> {
+    (0..member.parameter_types.len())
+        .filter(|&i| !com_param_is_lcid(member, i))
+        .collect()
+}
+
+fn com_param_is_lcid(member: &TypeLibMemberMetadata, index: usize) -> bool {
+    member.parameter_optional_defaults.len() == member.parameter_types.len()
+        && matches!(
+            member.parameter_optional_defaults.get(index),
+            Some(OptionalParamDefault::Lcid)
+        )
+}
+
+fn com_param_is_optional(member: &TypeLibMemberMetadata, index: usize) -> bool {
+    if member
+        .parameter_optional
+        .get(index)
+        .copied()
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if member.parameter_optional_defaults.len() != member.parameter_types.len() {
+        return false;
+    }
+    matches!(
+        member.parameter_optional_defaults.get(index),
+        Some(
+            OptionalParamDefault::HasDefault(_)
+                | OptionalParamDefault::OptionalVariant
+                | OptionalParamDefault::OptionalNoDefault
+        )
+    )
+}
+
+fn com_param_display_name(member: &TypeLibMemberMetadata, index: usize) -> String {
+    member
+        .parameter_names
+        .get(index)
+        .filter(|name| !name.is_empty())
+        .cloned()
+        .unwrap_or_else(|| format!("arg{}", index + 1))
 }
 
 /// The `ErrField` (and its type) for an `Err.<member>` read.

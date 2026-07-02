@@ -775,8 +775,12 @@ Required newly explicit delivery beads:
   (`docs/evidence/frontend_rework/COM_ACCESSOR_DESCRIPTOR_SELECTION_2026-07-02.md`) makes
   imported/host-injected COM member and default-member descriptor selection accessor-specific and
   order-independent, and blocks the previous missing-accessor late-binding path for statically known
-  COM/reference object types. Broader imported COM activation/member breadth remains open under
-  `bd-aprs.8.8`.
+  COM/reference object types. A follow-up 2026-07-02 continuation
+  (`docs/evidence/frontend_rework/COM_NAMED_ARGUMENT_BINDING_2026-07-02.md`) makes early-bound
+  imported/host-injected COM named arguments descriptor-bound: supplied names validate at bind time,
+  lower in typelib parameter order, preserve omitted optional gaps, and no longer rely on dynamic
+  named dispatch except for true `Object`/`Variant` late binding. Broader imported COM
+  activation/member breadth remains open under `bd-aprs.8.8`.
 - FE-9.7 Broad matrix/corpus route audit: extend the route audit from selected fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
   and selected Excel oracle lanes. Partial work already done: the selected route-audit fixture set
@@ -1508,7 +1512,9 @@ Candidate bead units:
   A 2026-07-02 FE-7.6.a hardening slice adds descriptor-order regression coverage for imported and
   host-injected COM default members: read contexts select `PropertyGet`/`Method` descriptors only,
   write contexts require `PropertyLet`/`PropertySet`, and cross-project get-only property assignment
-  no longer binds through a late setter fallback.
+  no longer binds through a late setter fallback. A sibling 2026-07-02 slice adds descriptor-backed
+  early-COM named-argument binding for host-injected and typed COM receivers, including bind-time
+  unknown/duplicate-name diagnostics and descriptor-order lowering.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
   `ReDim` parity through HIR, with project/class field-array carrier retirement split explicitly
   to FE-8.5.h.

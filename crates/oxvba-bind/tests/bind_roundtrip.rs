@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use oxvba_bind::bind_program;
 use oxvba_bundle::DeclareParamType;
-use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreProgram, CoreStmt, CoreValue};
+use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreConst, CoreProgram, CoreStmt, CoreValue};
 use oxvba_bundle::native::NativeImplId;
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -3431,6 +3431,113 @@ fn host_injected_application_run_and_ontime_lower_through_com_metadata() {
     );
 }
 
+#[test]
+fn host_injected_application_named_args_bind_to_typelib_order() {
+    let main = "Sub Main()\n    Dim r As Variant\n    r = Application.Run(Arg1:=1, Macro:=\"MacroName\")\n    Application.OnTime Schedule:=False, Procedure:=\"MacroName\", EarliestTime:=0\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Excel".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &ApplicationTypeLibs).expect("bind_program");
+    let run_args = early_com_args(&program, 10);
+    assert_eq!(run_args.len(), 3, "receiver + Macro + Arg1: {run_args:?}");
+    assert_core_arg_str(&run_args[1], "MacroName");
+    assert_core_arg_i16(&run_args[2], 1);
+    assert_no_named_args(&run_args[1..]);
+
+    let ontime_args = early_com_args(&program, 11);
+    assert_eq!(
+        ontime_args.len(),
+        5,
+        "receiver + EarliestTime + Procedure + LatestTime omitted + Schedule: {ontime_args:?}"
+    );
+    assert_core_arg_i16(&ontime_args[1], 0);
+    assert_core_arg_str(&ontime_args[2], "MacroName");
+    assert!(matches!(ontime_args[3], CoreArg::Omitted));
+    assert_core_arg_bool(&ontime_args[4], false);
+    assert_no_named_args(&ontime_args[1..]);
+}
+
+#[test]
+fn typed_com_receiver_named_args_bind_to_typelib_order() {
+    let main = "Sub Main()\n    Dim r As Variant\n    Dim app As Application\n    r = app.Run(Arg1:=1, Macro:=\"MacroName\")\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Excel".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: None,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &ApplicationTypeLibs).expect("bind_program");
+    let run_args = early_com_args(&program, 10);
+    assert_eq!(run_args.len(), 3, "receiver + Macro + Arg1: {run_args:?}");
+    assert_core_arg_str(&run_args[1], "MacroName");
+    assert_core_arg_i16(&run_args[2], 1);
+    assert_no_named_args(&run_args[1..]);
+}
+
+#[test]
+fn typed_com_named_argument_errors_are_bind_time_diagnostics() {
+    let manifest_for = |source: &str| SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: source.into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Excel".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let unknown = "Sub Main()\n    Dim r As Variant\n    r = Application.Run(NotAParam:=\"MacroName\")\nEnd Sub\n";
+    let unknown_err = bind_program(&manifest_for(unknown), &ApplicationTypeLibs)
+        .expect_err("unknown COM named arg should fail")
+        .to_string();
+    assert!(
+        unknown_err.contains("Named argument not found") && unknown_err.contains("NotAParam"),
+        "unexpected unknown-name error: {unknown_err}"
+    );
+
+    let duplicate = "Sub Main()\n    Dim r As Variant\n    r = Application.Run(Macro:=\"A\", Macro:=\"B\")\nEnd Sub\n";
+    let duplicate_err = bind_program(&manifest_for(duplicate), &ApplicationTypeLibs)
+        .expect_err("duplicate COM named arg should fail");
+    assert!(
+        format!("{duplicate_err:?}").contains("duplicate argument for parameter Macro"),
+        "unexpected duplicate-name error: {duplicate_err:?}"
+    );
+}
+
 // ── COM late dispatch + Declare (structural — emit-correct, not run) ─────────
 
 /// The callee of a value, unwrapping a `Coerce` wrapper (an assignment to a typed
@@ -3459,6 +3566,87 @@ fn top_level_callees(program: &CoreProgram) -> Vec<&CoreCallee> {
         }
     }
     out
+}
+
+fn call_of(value: &CoreValue) -> Option<(&CoreCallee, &[CoreArg])> {
+    match value {
+        CoreValue::Call { callee, args } => Some((callee, args)),
+        CoreValue::Coerce { value, .. } => call_of(value),
+        _ => None,
+    }
+}
+
+/// The top-level `Assign`/`Eval` calls in every procedure, including their args.
+fn top_level_calls(program: &CoreProgram) -> Vec<(&CoreCallee, &[CoreArg])> {
+    let mut out = Vec::new();
+    for proc in &program.procs {
+        for stmt in &proc.body {
+            let value = match stmt {
+                CoreStmt::Assign { value, .. } => Some(value),
+                CoreStmt::Eval(value) => Some(value),
+                _ => None,
+            };
+            if let Some(call) = value.and_then(call_of) {
+                out.push(call);
+            }
+        }
+    }
+    out
+}
+
+fn early_com_args(program: &CoreProgram, token: i32) -> &[CoreArg] {
+    for (callee, args) in top_level_calls(program) {
+        if matches!(callee, CoreCallee::EarlyCom { member, .. } if member.token == token) {
+            return args;
+        }
+    }
+    panic!(
+        "no EarlyCom call with token {token}: {:?}",
+        top_level_callees(program)
+    );
+}
+
+fn core_arg_const(arg: &CoreArg) -> Option<&CoreConst> {
+    match arg {
+        CoreArg::ByVal(value) => core_value_const(value),
+        _ => None,
+    }
+}
+
+fn core_value_const(value: &CoreValue) -> Option<&CoreConst> {
+    match value {
+        CoreValue::Const(c) => Some(c),
+        CoreValue::Coerce { value, .. } => core_value_const(value),
+        _ => None,
+    }
+}
+
+fn assert_core_arg_str(arg: &CoreArg, expected: &str) {
+    assert!(
+        matches!(core_arg_const(arg), Some(CoreConst::Str(s)) if s == expected),
+        "expected string constant {expected:?}, got {arg:?}"
+    );
+}
+
+fn assert_core_arg_i16(arg: &CoreArg, expected: i16) {
+    assert!(
+        matches!(core_arg_const(arg), Some(CoreConst::I16(n)) if *n == expected),
+        "expected i16 constant {expected}, got {arg:?}"
+    );
+}
+
+fn assert_core_arg_bool(arg: &CoreArg, expected: bool) {
+    assert!(
+        matches!(core_arg_const(arg), Some(CoreConst::Bool(b)) if *b == expected),
+        "expected bool constant {expected}, got {arg:?}"
+    );
+}
+
+fn assert_no_named_args(args: &[CoreArg]) {
+    assert!(
+        !args.iter().any(|arg| matches!(arg, CoreArg::Named { .. })),
+        "early-bound COM args must be descriptor-ordered, not dynamic named args: {args:?}"
+    );
 }
 
 #[test]
@@ -3567,7 +3755,7 @@ fn declare_function_type_suffix_emits_external_return_type() {
 #[test]
 fn declare_byref_arg_emits_byref() {
     // A ByRef `Declare` param called with an l-value lowers to CoreArg::ByRef (the
-    // write-back target). Exercises bind_args_byref — the same path COM uses.
+    // write-back target). This guards the Declare-specific ByRef argument path.
     let src = "Declare Sub Bump Lib \"k\" (ByRef n As Long)\n\n\
                Sub Main()\n    Dim r As Long\n    r = 5\n    Bump r\nEnd Sub\n";
     let program = bind(src);
