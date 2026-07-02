@@ -60,6 +60,20 @@ two additional typed scalar rows to move into `basic-language`:
 - `financial_algorithm_rate_nper_subset.bas`
 - `stdlib_time_serial_value.bas`
 
+Five pending fixtures were then reshaped so `Main` retains only scalar
+observables and helper procedures keep array/object locals out of the retained
+value dump. Live Excel recapture:
+
+- `docs/evidence/conformance/oracle_captures/conformance_oracle_w10_reshaped_scalar_20260702/`
+
+These rows now match vm3 exactly and were promoted:
+
+- `object_identity_is_nothing.bas`
+- `object_identity_is_same_and_different.bas`
+- `stdlib_array_introspection_bounds.bas`
+- `stdlib_array_introspection_types.bas`
+- `string_join_array_tag_count.bas`
+
 W5/W6 fresh-host COM evidence already exists and remains part of the W10
 regression-net story:
 
@@ -90,13 +104,8 @@ Open items:
 - The remaining pending rows need typed live-Excel recapture, vm3 fixes, or an
   explicit split:
   `financial_algorithm_npv_irr_mirr_subset.bas`,
-  `object_identity_is_nothing.bas`,
-  `object_identity_is_same_and_different.bas`,
-  `stdlib_array_introspection_bounds.bas`,
-  `stdlib_array_introspection_types.bas`,
   `stdlib_random_financial_expansion.bas`,
-  `stdlib_rnd_isolated.bas`,
-  `string_join_array_tag_count.bas`.
+  and `stdlib_rnd_isolated.bas`.
 
 ## Checks
 
@@ -111,6 +120,8 @@ Open items:
   - Passed: `conformance run: ok (4 files, backend=vm, suite=basic-language)`.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <2 f64-tolerant promoted rows>`
   - Passed: `conformance run: ok (2 files, backend=vm, suite=basic-language)`.
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <5 reshaped scalar promoted rows>`
+  - Passed: `conformance run: ok (5 files, backend=vm, suite=basic-language)`.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern conversion_cint_basic.bas`
   - Expected current state: fails, proving the pre-existing typed retained-value
     baseline drift that `bd-9sed.18` must resolve.
@@ -121,7 +132,6 @@ Open items:
 ## Fresh-Eyes Review
 
 Reviewed the promoted set against the raw Excel captures and scratch vm3 output.
-Rows with array/object dumps, compile-vs-runtime error-shape differences,
-float-format or algorithm tolerance questions, and random-number divergence were
-left pending. This avoids turning the older OxVBA comparison shape into a VBA
-compatibility claim.
+Rows with compile-vs-runtime error-shape differences and random-number
+divergence were left pending. This avoids turning the older OxVBA comparison
+shape into a VBA compatibility claim.

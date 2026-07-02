@@ -1,0 +1,6 @@
+"file","oracle_status","oracle_values","golden_status","golden_values","match","notes"
+"object_identity_is_nothing.bas","ok","bool:true|bool:true","","","",""
+"object_identity_is_same_and_different.bas","ok","bool:true|bool:false","","","",""
+"stdlib_array_introspection_bounds.bas","ok","i32:0|i32:2","","","",""
+"stdlib_array_introspection_types.bas","ok","i32:8204|string:""Variant()""","","","",""
+"string_join_array_tag_count.bas","ok","string:""10203""","","","",""
