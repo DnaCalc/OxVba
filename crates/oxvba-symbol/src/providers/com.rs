@@ -16,18 +16,29 @@ pub struct ComTypeLibProvider {
     /// Folded names this blob answers to (its reference name, requested coclass,
     /// activation ProgID, and library-level coclasses).
     type_names: Vec<String>,
+    /// Folded names whose members are scoped by this blob's member list. A
+    /// library-wide blob knows every coclass type name, but its flat member list
+    /// must not make one coclass see another coclass's members.
+    member_type_names: Vec<String>,
 }
 
 impl ComTypeLibProvider {
     pub fn new(blob: TypeLibMetadataBlob) -> Self {
-        let mut type_names = vec![fold_identifier(&blob.identity.reference_name)];
+        let reference = fold_identifier(&blob.identity.reference_name);
+        let mut type_names = vec![reference.clone()];
+        let mut member_type_names = vec![reference.clone()];
         if let Some(coclass) = &blob.identity.requested_coclass {
-            type_names.push(fold_identifier(coclass));
+            let folded = fold_identifier(coclass);
+            type_names.push(folded.clone());
+            type_names.push(format!("{reference}.{folded}"));
+            member_type_names.push(folded.clone());
+            member_type_names.push(format!("{reference}.{folded}"));
         }
         if let Some(prog_id) = &blob.activation_prog_id {
-            type_names.push(fold_identifier(prog_id));
+            let folded = fold_identifier(prog_id);
+            type_names.push(folded.clone());
+            member_type_names.push(folded);
         }
-        let reference = fold_identifier(&blob.identity.reference_name);
         for coclass in &blob.coclass_names {
             let folded = fold_identifier(coclass);
             type_names.push(folded.clone());
@@ -35,12 +46,23 @@ impl ComTypeLibProvider {
         }
         type_names.sort();
         type_names.dedup();
-        Self { blob, type_names }
+        member_type_names.sort();
+        member_type_names.dedup();
+        Self {
+            blob,
+            type_names,
+            member_type_names,
+        }
     }
 
     fn owns(&self, type_name: &str) -> bool {
         let folded = fold_identifier(type_name);
         self.type_names.contains(&folded)
+    }
+
+    fn owns_members(&self, type_name: &str) -> bool {
+        let folded = fold_identifier(type_name);
+        self.member_type_names.contains(&folded)
     }
 
     /// Whether this typelib's library reference defines a coclass `<reference>.<coclass>`
@@ -163,19 +185,18 @@ impl Provider for ComTypeLibProvider {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        if !self.owns(type_name) {
-            return None;
-        }
-
-        if let Some(member) = self.member_by_name(name, want) {
+        if self.owns_members(type_name)
+            && let Some(member) = self.member_by_name(name, want)
+        {
             return Some(com_member_binding(member, type_name));
         }
 
-        if let Some(event) = self
-            .blob
-            .events
-            .iter()
-            .find(|event| event.name.eq_ignore_ascii_case(name))
+        if self.owns_coclass_source(type_name)
+            && let Some(event) = self
+                .blob
+                .events
+                .iter()
+                .find(|event| event.name.eq_ignore_ascii_case(name))
         {
             return Some(Binding::new(
                 None,
@@ -197,7 +218,7 @@ impl Provider for ComTypeLibProvider {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        if !self.owns(type_name) {
+        if !self.owns_members(type_name) {
             return None;
         }
         self.default_member(None)
@@ -212,7 +233,7 @@ impl Provider for ComTypeLibProvider {
         let VarTypeRef::Object(type_name) = recv else {
             return None;
         };
-        if !self.owns(type_name) {
+        if !self.owns_members(type_name) {
             return None;
         }
         self.default_member(want)

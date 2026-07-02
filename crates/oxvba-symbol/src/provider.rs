@@ -509,6 +509,7 @@ fn request_from(reference: &ProjectReference) -> Option<oxvba_com::TypeLibResolv
 fn resolve_typelib_provider_closure(
     typelibs: &dyn TypeLibResolver,
     request: oxvba_com::TypeLibResolveRequest,
+    used_type_names: &HashSet<String>,
 ) -> Vec<oxvba_com::TypeLibMetadataBlob> {
     // VBA sees a referenced typelib's returned interfaces as part of the same
     // referenced library. Follow named object-return descriptors so a chain like
@@ -540,7 +541,10 @@ fn resolve_typelib_provider_closure(
         let minor_version_hint = request.minor_version_hint;
         let lcid_hint = request.lcid_hint;
 
-        for interface_name in returned_interface_names(&blob) {
+        for interface_name in returned_interface_names(&blob)
+            .into_iter()
+            .chain(used_coclass_names(&blob, used_type_names))
+        {
             queue.push_back(oxvba_com::TypeLibResolveRequest {
                 reference_name: reference_name.clone(),
                 requested_coclass: Some(interface_name),
@@ -569,6 +573,25 @@ fn returned_interface_names(blob: &oxvba_com::TypeLibMetadataBlob) -> Vec<String
             if !trimmed.is_empty() && seen.insert(fold_identifier(trimmed)) {
                 names.push(trimmed.to_string());
             }
+        }
+    }
+    names
+}
+
+fn used_coclass_names(
+    blob: &oxvba_com::TypeLibMetadataBlob,
+    used_type_names: &HashSet<String>,
+) -> Vec<String> {
+    let reference = fold_identifier(&blob.identity.reference_name);
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    for coclass in &blob.coclass_names {
+        let folded = fold_identifier(coclass);
+        if (used_type_names.contains(&folded)
+            || used_type_names.contains(&format!("{reference}.{folded}")))
+            && seen.insert(folded)
+        {
+            names.push(coclass.clone());
         }
     }
     names
@@ -673,6 +696,26 @@ fn validate_type_refs(
         }
     }
     Ok(())
+}
+
+fn collect_type_ref_names(modules: &[ModuleCst]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for module in modules {
+        collect_type_ref_names_in(module.parse.syntax(), &mut names);
+    }
+    names
+}
+
+fn collect_type_ref_names_in(node: SyntaxNode<'_>, names: &mut HashSet<String>) {
+    if node.kind() == SyntaxKind::TypeRef {
+        let name = type_ref_name(node);
+        if !name.is_empty() {
+            names.insert(fold_identifier(&name));
+        }
+    }
+    for child in node.child_nodes() {
+        collect_type_ref_names_in(child, names);
+    }
 }
 
 fn validate_type_refs_in(
@@ -848,6 +891,7 @@ pub fn build_resolution_environment(
     drop(roots);
     let ambiguous_type_names = type_index.ambiguous_type_names();
     validate_type_refs(&module_csts, &ambiguous_type_names)?;
+    let used_type_names = collect_type_ref_names(&module_csts);
 
     // Each referenced project's public surface — a referencing call binds through
     // the same COM contract a compiled component would present.
@@ -891,7 +935,7 @@ pub fn build_resolution_environment(
     for reference in &manifest.references {
         if let Some(request) = request_from(reference) {
             com_providers.extend(
-                resolve_typelib_provider_closure(typelibs, request)
+                resolve_typelib_provider_closure(typelibs, request, &used_type_names)
                     .into_iter()
                     .map(ComTypeLibProvider::new),
             );
@@ -915,7 +959,11 @@ pub fn build_resolution_environment(
                 minor_version_hint: None,
                 lcid_hint: None,
             };
-            host_blobs.extend(resolve_typelib_provider_closure(typelibs, request));
+            host_blobs.extend(resolve_typelib_provider_closure(
+                typelibs,
+                request,
+                &used_type_names,
+            ));
         }
     }
 

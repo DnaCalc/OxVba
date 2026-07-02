@@ -3255,6 +3255,38 @@ impl TypeLibResolver for ChainedComTypeLibs {
                 coclass_names: vec!["Workbooks".into()],
             });
         }
+        if request.reference_name.eq_ignore_ascii_case("Excel")
+            && request
+                .requested_coclass
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("Workbook"))
+        {
+            return Some(oxvba_com::TypeLibMetadataBlob {
+                identity: oxvba_com::TypeLibResolvedIdentity {
+                    reference_name: "Excel".into(),
+                    requested_coclass: Some("Workbook".into()),
+                    importlib: "excel".into(),
+                    libid: None,
+                    major_version: 1,
+                    minor_version: 0,
+                    lcid: None,
+                    cache_key: "excel-workbook-scoping-test".into(),
+                },
+                activation_prog_id: None,
+                member_name_to_token: vec![("Name".into(), 23)],
+                members: vec![test_tlb_property_get(
+                    "Name",
+                    23,
+                    Some(oxvba_com::TypeLibParamType::String),
+                    Some(oxvba_com::TypeLibWireType::Automation(
+                        oxvba_com::TypeLibParamType::String,
+                    )),
+                    false,
+                )],
+                events: Vec::new(),
+                coclass_names: vec!["Workbook".into()],
+            });
+        }
         if request.reference_name.eq_ignore_ascii_case("Excel") {
             return Some(oxvba_com::TypeLibMetadataBlob {
                 identity: oxvba_com::TypeLibResolvedIdentity {
@@ -3290,7 +3322,7 @@ impl TypeLibResolver for ChainedComTypeLibs {
                     ),
                 ],
                 events: Vec::new(),
-                coclass_names: vec!["Application".into()],
+                coclass_names: vec!["Application".into(), "Workbook".into()],
             });
         }
         None
@@ -3708,6 +3740,38 @@ fn generic_com_object_return_stays_late_bound() {
         )),
         "generic Object return should remain late-bound for .Count: {:?}",
         top_level_callees(&program)
+    );
+}
+
+#[test]
+fn library_wide_com_member_lookup_is_scoped_to_receiver_type() {
+    let main = "Sub Main()\n    Dim n As Variant\n    Dim wb As Workbook\n    n = wb.Workbooks.Count\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "Excel".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: None,
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let err = bind_program(&manifest, &ChainedComTypeLibs)
+        .expect_err("Workbook must not inherit Application.Workbooks from the flat library blob");
+    assert!(
+        format!("{err:?}").contains("Workbooks"),
+        "unexpected scoped COM lookup error: {err:?}"
     );
 }
 

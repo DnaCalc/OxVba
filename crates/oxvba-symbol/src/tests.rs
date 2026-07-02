@@ -715,6 +715,9 @@ fn library_level_coclass_resolves_bare_and_qualified_names() {
         provider.resolve_coclass("Scripting.Dictionary").as_deref(),
         Some("Scripting.Dictionary")
     );
+    // A flat library-level member list is not scoped enough to answer members for
+    // a specific coclass. The full environment adds scoped providers for used COM
+    // types before member binding.
     assert!(
         provider
             .resolve_member(
@@ -722,7 +725,7 @@ fn library_level_coclass_resolves_bare_and_qualified_names() {
                 "DoThing",
                 Some(ProjectMemberKind::Method),
             )
-            .is_some()
+            .is_none()
     );
     assert!(
         provider
@@ -731,7 +734,7 @@ fn library_level_coclass_resolves_bare_and_qualified_names() {
                 "DoThing",
                 Some(ProjectMemberKind::Method),
             )
-            .is_some()
+            .is_none()
     );
     assert_eq!(provider.resolve_coclass("Scripting.Nope"), None);
 }

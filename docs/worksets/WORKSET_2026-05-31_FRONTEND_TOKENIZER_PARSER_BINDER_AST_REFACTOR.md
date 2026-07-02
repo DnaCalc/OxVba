@@ -786,8 +786,11 @@ Required newly explicit delivery beads:
   dynamic late-bound. A follow-up continuation
   (`docs/evidence/frontend_rework/COM_INTERFACE_RETURN_PROVIDER_EXPANSION_2026-07-02.md`) resolves
   those named return interfaces through the same typelib/provider request, so the object-return chain
-  no longer needs a separate fake reference for the returned interface. Broader imported COM
-  activation/member breadth remains open under `bd-aprs.8.8`.
+  no longer needs a separate fake reference for the returned interface. A subsequent
+  (`docs/evidence/frontend_rework/COM_LIBRARY_MEMBER_SCOPING_2026-07-02.md`) slice separates
+  library-wide known-type/activation ownership from member-scoped provider ownership, so one
+  coclass/interface no longer sees another coclass/interface's members through a flat typelib blob.
+  Broader imported COM activation/member breadth remains open under `bd-aprs.8.8`.
 - FE-9.7 Broad matrix/corpus route audit: extend the route audit from selected fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
   and selected Excel oracle lanes. Partial work already done: the selected route-audit fixture set
