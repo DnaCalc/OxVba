@@ -16,7 +16,9 @@ use oxvba_bundle::coreir::{CoreBinOp, CoreConst};
 use oxvba_runtime::CurrencyValue;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::model::{ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolNamespace, SymbolTable};
+use crate::model::{
+    ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, SymbolTable, Visibility,
+};
 use crate::providers::vba_library;
 use crate::scanner::parameter_name_token;
 use crate::signature::{BuiltinType, VarTypeRef};
@@ -503,7 +505,8 @@ fn eval_resolved_const(
 ///
 /// The provider chain is not available while constants are folded, so this mirrors
 /// the active-project qualified-member rule against the symbol table: the module
-/// qualifier is looked up among siblings of the declaring module's project scope.
+/// qualifier is looked up among siblings of the declaring module's project scope,
+/// preserving VBA visibility (Private constants are module-local).
 /// Referenced projects fold in their own parent scope; cross-project publication
 /// still flows through export surfaces after this pass.
 fn resolve_qualified_const_symbol(
@@ -533,10 +536,26 @@ fn resolve_qualified_const_symbol(
         _ => return None,
     };
     let target_module = sibling_module_scope(symbols, project_scope, module_name)?;
-    symbols
+    let sym = symbols
         .find_in_scope(target_module, SymbolNamespace::Local, member_name)
         .ok()
-        .flatten()
+        .flatten()?;
+    qualified_const_visible(symbols, module_scope, target_module, sym).then_some(sym)
+}
+
+fn qualified_const_visible(
+    symbols: &SymbolTable,
+    declaring_module: ScopeId,
+    target_module: ScopeId,
+    sym: SymbolId,
+) -> bool {
+    let Some(symbol) = symbols.symbol(sym) else {
+        return false;
+    };
+    if !matches!(symbol.kind, SymbolKind::Const | SymbolKind::EnumMember) {
+        return false;
+    }
+    target_module == declaring_module || symbol.visibility == Some(Visibility::Public)
 }
 
 fn enum_member_symbol(

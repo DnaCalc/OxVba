@@ -386,6 +386,8 @@ impl ScanCtx<'_> {
                         provenance(self.module_name, name_token),
                         SymbolImpl::Property(group),
                     )?;
+                    self.symbols
+                        .update_visibility(symbol, module_level.then_some(visibility));
                     if module_level {
                         self.scan.members.push(ScannedMember {
                             name_folded: fold_identifier(&logical),
@@ -417,6 +419,8 @@ impl ScanCtx<'_> {
             provenance(self.module_name, name_token),
             SymbolImpl::Signature(sig),
         )?;
+        self.symbols
+            .update_visibility(symbol, module_level.then_some(visibility));
         if module_level {
             self.scan.members.push(ScannedMember {
                 name_folded: fold_identifier(&logical),
@@ -682,6 +686,8 @@ impl ScanCtx<'_> {
             provenance(self.module_name, token),
             imp,
         )?;
+        self.symbols
+            .update_visibility(symbol, module_level.then_some(visibility));
         if module_level {
             self.scan.members.push(ScannedMember {
                 name_folded: fold_identifier(name),

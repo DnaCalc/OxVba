@@ -420,6 +420,42 @@ fn module_qualified_const_values_fold_across_modules() {
 }
 
 #[test]
+fn module_qualified_const_values_honor_private_module_scope() {
+    let m = manifest(
+        "Proj",
+        vec![
+            module(
+                "ModA",
+                "Const Secret As Long = 7\n\
+                 Private Const ExplicitSecret As Long = 9\n\
+                 Public Const SameModule As Long = ModA.Secret + 1\n\
+                 Public Const SameExplicit As Long = ModA.ExplicitSecret + 1\n",
+            ),
+            module(
+                "ModB",
+                "Public Const FromPrivate As Long = ModA.Secret + 1\n\
+                 Public Const FromProjectPrivate As Long = Proj.ModA.Secret + 2\n\
+                 Public Const FromExplicitPrivate As Long = ModA.ExplicitSecret + 3\n",
+            ),
+        ],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let val = |module: &str, name: &str| -> Option<CoreConst> {
+        let b = env.resolve_qualified(&[module, name])?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("ModA", "SameModule"), Some(CoreConst::I32(8)));
+    assert_eq!(val("ModA", "SameExplicit"), Some(CoreConst::I32(10)));
+    assert_eq!(val("ModB", "FromPrivate"), None);
+    assert_eq!(val("ModB", "FromProjectPrivate"), None);
+    assert_eq!(val("ModB", "FromExplicitPrivate"), None);
+    assert!(
+        env.resolve_qualified(&["ModA", "Secret"]).is_none(),
+        "Private Const should not publish through module-qualified lookup"
+    );
+}
+
+#[test]
 fn typed_const_values_preserve_exact_type_system_carriers() {
     let m = manifest(
         "Proj",

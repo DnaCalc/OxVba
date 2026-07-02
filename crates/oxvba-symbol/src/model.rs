@@ -177,6 +177,7 @@ pub struct Symbol {
     pub kind: SymbolKind,
     pub namespace: SymbolNamespace,
     pub scope: ScopeId,
+    pub visibility: Option<Visibility>,
     pub provenance: SourceProvenance,
     pub imp: SymbolImpl,
 }
@@ -427,6 +428,7 @@ impl SymbolTable {
             kind,
             namespace,
             scope,
+            visibility: None,
             provenance,
             imp,
         });
@@ -443,6 +445,12 @@ impl SymbolTable {
     pub fn update_impl(&mut self, id: SymbolId, imp: SymbolImpl) {
         if let Some(symbol) = self.symbols.get_mut(id.0 as usize) {
             symbol.imp = imp;
+        }
+    }
+
+    pub fn update_visibility(&mut self, id: SymbolId, visibility: Option<Visibility>) {
+        if let Some(symbol) = self.symbols.get_mut(id.0 as usize) {
+            symbol.visibility = visibility;
         }
     }
 

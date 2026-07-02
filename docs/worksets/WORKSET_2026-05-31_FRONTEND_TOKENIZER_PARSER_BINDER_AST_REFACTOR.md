@@ -758,7 +758,9 @@ Required newly explicit delivery beads:
   unambiguous numeric month/day Date literals such as `#2/28/2026#`, with ambiguous numeric Date
   literals such as `#2/3/2026#` rejected by the canonical parser rather than silently interpreted
   through a culture-specific order, plus same-project module-/project-qualified constants such as
-  `Const X As Long = ModA.K + 1` through the compile-time constant evaluator.
+  `Const X As Long = ModA.K + 1` through the compile-time constant evaluator, with scanner-owned
+  declaration visibility now preventing default-Private or explicit `Private Const` values from
+  leaking across sibling modules while still allowing same-module qualification.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
@@ -1334,7 +1336,10 @@ Candidate bead units:
   Access-collation diagnostic pending Access collation semantics.
   Later same-project qualified-name work folds `Module.Const` and `Project.Module.Const` references
   in constant expressions before binding while preserving local/parameter module-qualifier
-  shadowing.
+  shadowing. Follow-up visibility hardening carries declared member visibility on symbols so
+  qualified constant folding matches VBA module scope: private constants remain visible within
+  their declaring module and public constants remain foldable from sibling modules, but
+  `Mod.PrivateConst` no longer leaks across module boundaries.
   Twenty-fifth reopened continuation adds one-dimensional dynamic-array runtime `ReDim` /
   `ReDim Preserve` lowering from CST-preserved bound expressions through HIR and runtime array
   metadata; later route-audit corrections add explicit two-dimensional dynamic-array
