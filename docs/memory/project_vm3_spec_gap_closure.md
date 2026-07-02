@@ -2862,3 +2862,22 @@
   meta-check failure is the deterministic
   `oxvba-differential::tests::vm3_runs_collection_methods` collection item
   subtype expectation, now tracked as `bd-x5q1`.
+
+## 2026-07-02 - Collection Item Subtype Meta-Check Gate (`bd-x5q1`)
+
+- Excel/VBA oracle evidence for `Collection.Add` with untyped small numeric
+  literals showed:
+  `lit10=2:10;lit20=2:20;lit30=2:30;item1=2:30;itemKey=2:20;count=3:3`.
+  The run used a PID-scoped UI Automation watcher for owned Visual Basic
+  compile/runtime modals; no modal appeared.
+- Fix: updated `vm3_runs_collection_methods` to assert `Integer` (`VT_I2`)
+  variants for `Item(1)` and `Item("k")`, while keeping `Count` as `Long`
+  (`VT_I4`). This aligns the differential test with real VBA behavior instead
+  of widening the collection item values to Long for convenience.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo test -p oxvba-differential vm3_runs_collection_methods`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the Collection subtype failure. The next surfaced meta-check
+  failure is `hex_oct_literal_sign_vm3::conversion_of_hex_string_applies_the_sign_rule`,
+  now tracked as `bd-wh8r`.

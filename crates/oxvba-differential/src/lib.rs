@@ -368,6 +368,8 @@ mod tests {
              End Sub\n",
         );
         // After Add 10; Add 20,"k"; Add 30,,before:=1 the collection is [30, 10, 20(key "k")].
+        // Excel/VBA returns the inserted small numeric literals as Integer variants
+        // (VarType = 2), while Count is Long (VarType = 3).
         // Snapshot = [c (Object), n=Count=3, a=Item(1)=30, b=Item("k")=20].
         assert_eq!(
             snap.first(),
@@ -379,11 +381,11 @@ mod tests {
             "Count==3: {snap:?}"
         );
         assert!(
-            snap.contains(&canon(&Variant::from_i32(30))),
+            snap.contains(&canon(&Variant::from_i16(30))),
             "Item(1)==30: {snap:?}"
         );
         assert!(
-            snap.contains(&canon(&Variant::from_i32(20))),
+            snap.contains(&canon(&Variant::from_i16(20))),
             "Item(\"k\")==20: {snap:?}"
         );
         assert!(
