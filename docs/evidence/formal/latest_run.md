@@ -1,7 +1,7 @@
 # Formal Run Report
 
 - Run ID: 20260702T015121Z
-- Timestamp (UTC): 2026-07-02T02:04:49Z
+- Timestamp (UTC): 2026-07-02T02:39:26Z
 - Profile scope: mvp-profile-v620
 - Overall mode: non-blocking
 - Kani required: false
@@ -371,7 +371,7 @@
 | FO-V185-001 | v185 | no | pass | cargo test -p oxvba-host formal_v185_release_candidate_gate_artifacts_exist | docs/evidence/profiles/v185/RC_GATE_SUMMARY.md |  |
 | FO-V185-002 | v185 | no | pass | cargo test -p oxvba-host formal_v185_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V185.md |  |
 | FO-V186-001 | v186 | no | pass | cargo test -p oxvba-host formal_v186_terminal_closure_artifacts_exist | docs/evidence/profiles/v186/BATCH2_CLOSURE.md |  |
-| FO-V186-002 | v186 | no | todo | cargo test -p oxvba-host formal_v186_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V186.md | command exited with code 101 |
+| FO-V186-002 | v186 | no | pass | cargo test -p oxvba-host formal_v186_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V186.md |  |
 | FO-V287-001 | v287 | no | skipped | cargo kani -p oxvba-host --harness pmr_typelib_resolution_transitions_typelib_refs_out_of_unbound | crates/oxvba-host/src/project.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V287-002 | v287 | no | skipped | cargo kani -p oxvba-host --harness pmr_active_resolution_prefers_local_symbol_before_reference_symbol | crates/oxvba-host/src/project.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V287-003 | v287 | no | skipped | cargo kani -p oxvba-hal --harness dynlink_contract_rejects_mismatched_selection_policy | crates/oxvba-hal/src/traits.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
@@ -383,16 +383,16 @@
 | FO-V466-002 | v466 | no | todo | cargo test -p oxvba-compiler compile_project_rejects_implements_missing_member_coverage | crates/oxvba-compiler/src/project.rs | command exited with code 101 |
 | FO-V466-003 | v466 | no | todo | cargo test -p oxvba-compiler compile_project_rejects_raiseevent_undeclared_event | crates/oxvba-compiler/src/project.rs | command exited with code 101 |
 | FO-V466-004 | v466 | no | todo | cargo test -p oxvba-compiler compile_project_allows_raiseevent_for_declared_event | crates/oxvba-compiler/src/project.rs | command exited with code 101 |
-| FO-V466-005 | v466 | no | todo | cargo test -p oxvba-host formal_v466_feature_obligation_coverage_index_is_uniform_and_deep | docs/evidence/formal/FEATURE_OBLIGATION_COVERAGE_V1.csv | command exited with code 101 |
-| FO-V466-006 | v466 | no | todo | cargo test -p oxvba-host formal_v466_event_docs_reflect_post_gate_semantics | docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md | command exited with code 101 |
-| FO-V466-007 | v466 | no | todo | cargo test -p oxvba-host formal_v466_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V466.md | command exited with code 101 |
-| FO-V466-008 | v466 | no | todo | cargo test -p oxvba-host formal_v466_project_integration_limits_use_post_gate_diagnostics | conformance/integration/catalog.psv | command exited with code 101 |
-| FO-V466-009 | v466 | no | todo | cargo test -p oxvba-host formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts | scripts/check-governance.ps1 | command exited with code 101 |
-| FO-V466-010 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_raiseevent_dispatches_to_withevents_handlers_in_stable_order | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-011 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_dispatch_host_event_returns_bound_handlers | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-012 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_implements_prefixed_member_executes_in_class_flow | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-013 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_raiseevent_forwards_single_event_arg | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-014 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_withevents_reassignment_rebinds_non_default_instances_deterministically | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-015 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_withevents_clear_then_rebind_updates_dispatch_membership | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-016 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_withevents_binding_intrinsics_roundtrip_state | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V620-001 | v620 | no | todo | cargo test -p oxvba-host formal_com_evt_b_source_interface_callback_ingress_maps_to_registered_handler_symbol | crates/oxvba-host/src/engine.rs | command exited with code 101 |
+| FO-V466-005 | v466 | no | pass | cargo test -p oxvba-host formal_v466_feature_obligation_coverage_index_is_uniform_and_deep | docs/evidence/formal/FEATURE_OBLIGATION_COVERAGE_V1.csv |  |
+| FO-V466-006 | v466 | no | pass | cargo test -p oxvba-host formal_v466_event_docs_reflect_post_gate_semantics | docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md |  |
+| FO-V466-007 | v466 | no | pass | cargo test -p oxvba-host formal_v466_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V466.md |  |
+| FO-V466-008 | v466 | no | pass | cargo test -p oxvba-host formal_v466_project_integration_limits_use_post_gate_diagnostics | conformance/integration/catalog.psv |  |
+| FO-V466-009 | v466 | no | pass | cargo test -p oxvba-host formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts | scripts/check-governance.ps1 |  |
+| FO-V466-010 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_raiseevent_dispatches_to_withevents_handlers_in_stable_order | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-011 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_dispatch_host_event_returns_bound_handlers | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-012 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_implements_prefixed_member_executes_in_class_flow | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-013 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_raiseevent_forwards_single_event_arg | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-014 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_withevents_reassignment_rebinds_non_default_instances_deterministically | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-015 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_withevents_clear_then_rebind_updates_dispatch_membership | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-016 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_withevents_binding_intrinsics_roundtrip_state | crates/oxvba-host/src/engine.rs |  |
+| FO-V620-001 | v620 | no | pass | cargo test -p oxvba-host formal_com_evt_b_source_interface_callback_ingress_maps_to_registered_handler_symbol | crates/oxvba-host/src/engine.rs |  |

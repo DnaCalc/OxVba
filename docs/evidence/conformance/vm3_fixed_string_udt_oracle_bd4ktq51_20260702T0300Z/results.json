@@ -1,0 +1,149 @@
+﻿[
+    {
+        "id":  "UDT-FIXED-DEFAULT",
+        "purpose":  "A fixed-string UDT field defaults to its declared width.",
+        "ownedExcelPid":  43952,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|\u0000\u0000\u0000\u0000\u0000|:0",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-SHORT",
+        "purpose":  "Assignment pads a short value stored in a fixed-string UDT field.",
+        "ownedExcelPid":  43832,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|ab   |:32",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-LONG",
+        "purpose":  "Assignment truncates a long value stored in a fixed-string UDT field.",
+        "ownedExcelPid":  55384,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|abcde|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-ARRAY-ELEMENT",
+        "purpose":  "Arrays of UDTs default and assign fixed-string fields per element.",
+        "ownedExcelPid":  56820,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|\u0000\u0000\u0000\u0000\u0000|;5:|xy   |",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-WHOLE-COPY",
+        "purpose":  "Whole-UDT assignment copies the padded fixed-string field value.",
+        "ownedExcelPid":  53444,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5:|ab   |",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-NULL",
+        "purpose":  "Null assignment error behavior for fixed-string UDT fields.",
+        "ownedExcelPid":  21420,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "err:94:Invalid use of Null:|\u0000\u0000\u0000\u0000\u0000|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-LEN-SIZE",
+        "purpose":  "Len and LenB classify fixed-string UDT field record sizing.",
+        "ownedExcelPid":  2328,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "8:14",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]
