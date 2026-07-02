@@ -1,0 +1,163 @@
+﻿[
+    {
+        "id":  "SAME-SINK-FIELDS-WIRE-FIRST-SECOND",
+        "purpose":  "Two WithEvents fields on one sink, wired in declaration order.",
+        "ownedExcelPid":  48484,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "first1;second11;|112",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Source",
+                        "DoubleSink"
+                    ]
+    },
+    {
+        "id":  "SAME-SINK-FIELDS-WIRE-SECOND-FIRST",
+        "purpose":  "Two WithEvents fields on one sink, wired opposite declaration order.",
+        "ownedExcelPid":  55912,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "second1;first12;|121",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Source",
+                        "DoubleSink"
+                    ]
+    },
+    {
+        "id":  "TWO-SINKS-CREATE-A-B-WIRE-B-A",
+        "purpose":  "Two sink instances, creation order differs from wire order.",
+        "ownedExcelPid":  53132,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "B1;A12;|121",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Source",
+                        "SingleSink"
+                    ]
+    },
+    {
+        "id":  "TWO-SINKS-CREATE-B-A-WIRE-A-B",
+        "purpose":  "Two sink instances, owner identity differs from wire order.",
+        "ownedExcelPid":  48260,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "A1;B11;|112",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Source",
+                        "SingleSink"
+                    ]
+    },
+    {
+        "id":  "REBIND-SAME-FIELD-MOVES-OR-PRESERVES",
+        "purpose":  "Rebinding an existing WithEvents field to the same source after another sink is wired.",
+        "ownedExcelPid":  37296,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "B1;A12;|121",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Source",
+                        "SingleSink"
+                    ]
+    },
+    {
+        "id":  "CLEAR-THEN-REWIRE-MOVES",
+        "purpose":  "Clearing a WithEvents field and wiring it again after another sink.",
+        "ownedExcelPid":  50576,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "B1;A12;|121",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Source",
+                        "SingleSink"
+                    ]
+    },
+    {
+        "id":  "REASSIGN-OLD-SOURCE-DETACHED",
+        "purpose":  "A WithEvents field reassigned to a second source no longer receives the first source.",
+        "ownedExcelPid":  5744,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "1;|1|17",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Source",
+                        "SourceSwitchSink"
+                    ]
+    }
+]

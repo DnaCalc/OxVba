@@ -2343,3 +2343,53 @@
   the immediately preceding array-copy bead (`Unresolved { ... }`/`Unsupported`
   debug text to user-facing `Display` text). That snapshot refresh is
   diagnostics-only and independent of the `IsArray` slot-marker behavior.
+
+## 2026-07-02 - RaiseEvent Fan-Out Subscription Order (`bd-4ktq.54`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_raiseevent_fanout_oracle_20260702T043855Z/`.
+  A failed intermediate harness run proved the modal capture path: the VBE
+  selected an illegal helper identifier and reported `Compile error: Syntax
+  error`; the helper was renamed and the failed evidence run was discarded.
+- Oracle findings:
+  - Project-source `RaiseEvent` dispatches `WithEvents` handlers in current
+    subscription order.
+  - Dispatch order is not declaration order, object creation order, or sink
+    identity order.
+  - Handler writes to ByRef event parameters are synchronous: each later handler
+    sees earlier mutations, and the raiser sees the final value.
+  - Rebinding an existing `WithEvents` field, even to the same source, moves that
+    subscription to the end.
+  - Clearing and rewiring moves the subscription to the end.
+  - Reassigning a field to a different source detaches the old source.
+- vm3 now stores a monotonic subscription sequence on each live `WithEvents`
+  binding. `WithEventsSet` refreshes that sequence for every non-`Nothing`
+  assignment after tearing down the old host subscription state. Project-source
+  `RaiseEvent` fan-out and the owner-iterator helper sort by this sequence.
+- Added `crates/oxvba-differential/tests/raiseevent_fanout_vm3.rs` to pin
+  subscription-order fan-out, owner-identity counterexamples, rebinding/clear
+  movement, old-source detach, and ByRef writeback order.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-raiseevent-fanout-oracle.ps1`
+  - `cargo test -p oxvba-differential --test raiseevent_fanout_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_project_event_fires_handler --quiet`
+  - `cargo check -p oxvba-vm3 -p oxvba-differential`
+  - `rustfmt --edition 2024 --check crates/oxvba-differential/tests/raiseevent_fanout_vm3.rs`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-host --test package_session_events --quiet`
+  - `cargo test -p oxvba-host --test com_matrix_events --quiet` (all 12 tests
+    ignored by default)
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
+    (completed non-blocking refresh: 304 pass, 16 skipped Kani obligations,
+    63 todo; first 180-second runner attempt timed out while waiting on cargo
+    locks, then completed with a longer timeout)
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Non-blocking formatter note: direct `rustfmt --edition 2024 --check
+  crates/oxvba-vm3/src/lib.rs` still reports the known vm3 formatter backlog in
+  unrelated default-member/error-help-file regions, so no broad vm3 reformat was
+  mixed into this semantic change.

@@ -177,9 +177,9 @@ Current executable subset (A2):
   - `formal_v54_class_terminate_runs_after_main`
 
 Remaining deferred portion:
-- runtime class-event dispatch ordering and subscription graph semantics beyond
-  the handler-prefix/source-visibility subset (`WithEvents` reassignment
-  ordering and broader `RaiseEvent` subscriber dispatch).
+- runtime class-event dispatch semantics beyond the now-proved project-source
+  subscription-order subset, especially full lifecycle cleanup and broader COM
+  event parity.
 
 ## Lane E: Storage and roundtrip
 

@@ -243,11 +243,14 @@ struct ForEachState {
 }
 
 /// A `WithEvents` binding: the sink instance that declared `WithEvents` (`owner`, the `me`
-/// a fired handler runs against) and the event-source object it currently holds (`source`).
+/// a fired handler runs against), the event-source object it currently holds (`source`), and
+/// the current subscription sequence (`order`). Reassigning the same field creates a fresh
+/// subscription order, matching VBA fan-out.
 /// Keyed in [`Vm3::withevents`] by `withevents_key(owner, binding-token)`.
 struct EventBinding {
     owner: Variant,
     source: Variant,
+    order: u64,
 }
 
 /// One procedure activation: its dispatch position, value slots, ByRef aliasing, and
@@ -367,6 +370,9 @@ pub struct Vm3<'h> {
     draining: bool,
     /// Live `WithEvents` bindings, keyed by `withevents_key(owner, binding-token)`.
     withevents: HashMap<i64, EventBinding>,
+    /// Monotonic sequence for live `WithEvents` project-source fan-out. VBA dispatches sinks in
+    /// current subscription order; rebinding a field moves that subscription to the end.
+    next_withevents_order: u64,
     /// Live host (COM) event subscriptions: subscription-token raw → sink handler (mirrors vm2's
     /// `com_subscriptions`). Populated when a `WithEvents` field binds a COM source.
     com_subscriptions: HashMap<i32, ComEventSink>,
@@ -530,6 +536,7 @@ impl<'h> Vm3<'h> {
             next_instance_id: INSTANCE_ID_BASE,
             draining: false,
             withevents: HashMap::new(),
+            next_withevents_order: 0,
             com_subscriptions: HashMap::new(),
             com_subscriptions_by_key: HashMap::new(),
             pumping: false,
@@ -1806,11 +1813,14 @@ impl<'h> Vm3<'h> {
                     {
                         self.subscribe_com_events(key, *binding, &owner_value, &source);
                     }
+                    let order = self.next_withevents_order;
+                    self.next_withevents_order = self.next_withevents_order.wrapping_add(1);
                     self.withevents.insert(
                         key,
                         EventBinding {
                             owner: owner_value,
                             source: v.clone(),
+                            order,
                         },
                     );
                 }
@@ -1830,18 +1840,19 @@ impl<'h> Vm3<'h> {
                 binding,
             } => {
                 let source = self.operand(source)?;
-                let mut owners: Vec<ObjectRef> = Vec::new();
+                let mut owners: Vec<(u64, ObjectRef)> = Vec::new();
                 if !is_nothing(&source) {
                     for (key, binding_data) in &self.withevents {
                         if withevents_binding(*key) == (*binding as i64 & 0xFFFF_FFFF)
                             && object_identity(&binding_data.source) == object_identity(&source)
                             && let Some(owner) = binding_data.owner.as_object_ref()
                         {
-                            owners.push(owner);
+                            owners.push((binding_data.order, owner));
                         }
                     }
                 }
-                owners.sort_unstable_by_key(ObjectRef::raw);
+                owners.sort_unstable_by_key(|(order, _)| *order);
+                let owners: Vec<ObjectRef> = owners.into_iter().map(|(_, owner)| owner).collect();
                 match owners.first().cloned() {
                     Some(first) => {
                         self.withevents_iters.push((owners, 1));
@@ -1875,9 +1886,9 @@ impl<'h> Vm3<'h> {
                 let source_id = source_object.raw();
                 let event_id = *event;
                 // Collect subscribers whose binding holds this source and routes this event,
-                // then run each handler in sink-identity order (vm2's order) with the sink as
-                // `me` and the event args; an unhandled error propagates to the raiser.
-                let mut targets: Vec<(i32, Variant, usize, usize)> = Vec::new();
+                // then run each handler in VBA subscription order with the sink as `me` and
+                // the event args; an unhandled error propagates to the raiser.
+                let mut targets: Vec<(u64, Variant, usize, usize)> = Vec::new();
                 for (key, binding) in &self.withevents {
                     if object_identity(&binding.source) != source_id {
                         continue;
@@ -1895,11 +1906,10 @@ impl<'h> Vm3<'h> {
                         .event_routes
                         .get(&(token, event_id))
                     {
-                        let sink_id = binding.owner.as_object_ref().map(|o| o.raw()).unwrap_or(0);
-                        targets.push((sink_id, binding.owner.clone(), handler, owner_bundle));
+                        targets.push((binding.order, binding.owner.clone(), handler, owner_bundle));
                     }
                 }
-                targets.sort_by_key(|(sink_id, ..)| *sink_id);
+                targets.sort_by_key(|(order, ..)| *order);
                 for (_, sink, handler, owner_bundle) in targets {
                     self.run_proc_with_me(owner_bundle, FuncId(handler), sink, args, false)?;
                 }
