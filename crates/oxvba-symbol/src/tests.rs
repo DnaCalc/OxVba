@@ -1498,6 +1498,35 @@ fn scanner_declares_enum_members() {
 }
 
 #[test]
+fn enum_initializers_do_not_auto_counter_invalid_explicit_values() {
+    let src = "Public Enum LongBits\r\n\
+                   AllBits = &HFFFFFFFF\r\n\
+                   AfterBits\r\n\
+               End Enum\r\n\
+               Public Enum Fractional\r\n\
+                   Bad = 1.5\r\n\
+                   AfterBad\r\n\
+               End Enum\r\n\
+               Public Enum Wide\r\n\
+                   TooWide = 5000000000^\r\n\
+               End Enum\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ctx, name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+
+    assert_eq!(val("AllBits"), Some(CoreConst::I32(-1)));
+    assert_eq!(val("AfterBits"), Some(CoreConst::I32(0)));
+    assert_eq!(val("Bad"), None);
+    assert_eq!(val("AfterBad"), None);
+    assert_eq!(val("TooWide"), None);
+}
+
+#[test]
 fn predeclared_objects_are_recognized() {
     assert!(predeclared_object("Err").is_some());
     assert!(predeclared_object("Debug").is_some());

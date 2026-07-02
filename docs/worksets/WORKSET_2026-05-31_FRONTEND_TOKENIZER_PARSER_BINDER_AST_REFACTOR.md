@@ -1646,6 +1646,9 @@ Candidate bead units:
   `Currency`, `Date`, `String`, Boolean, integer, `LongLong`, and `LongPtr` carriers before
   assignment coercion, string-to-declared-scalar `Const` coercion for covered Boolean, integer,
   floating, Currency, and deterministic Date text constants, and explicit
+  enum-member initializer folding now refuses non-`Long` explicit values instead of auto-countering
+  through invalid fractional or too-wide `LongLong` initializers, while retaining valid radix Long
+  bit-pattern behavior such as `&HFFFFFFFF`,
   `As Byte`/`As Integer`/`As Long`
   integer-expression overflow diagnostics for that covered subset, plus explicit i64 optional
   default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults,

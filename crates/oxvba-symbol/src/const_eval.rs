@@ -245,8 +245,11 @@ fn fold_enums(
             };
             let value = match member.first_expr_child() {
                 Some(init) => match eval_const_expr(symbols, module_scope, init, values, mode) {
-                    ConstEval::Value(c) => as_i32(&c).unwrap_or(next),
-                    _ => next,
+                    ConstEval::Value(c) => match as_i32(&c) {
+                        Some(value) => value,
+                        None => break,
+                    },
+                    _ => break,
                 },
                 None => next,
             };
@@ -263,10 +266,10 @@ fn as_i32(c: &CoreConst) -> Option<i32> {
     match c {
         CoreConst::I16(n) => Some(i32::from(*n)),
         CoreConst::I32(n) => Some(*n),
-        // An `Enum` member is a `Long`: a value outside i32's *signed* range (e.g.
-        // `&HFFFFFFFF`, folded as I64 4294967295) is the Long bit pattern (-1), so
-        // wrap rather than drop it (which would silently resume the auto-counter).
-        CoreConst::I64(n) => Some(*n as i32),
+        // An `Enum` member is a `Long`. Radix Long bit-pattern literals such as
+        // `&HFFFFFFFF` are already folded as signed `I32`; LongLong carriers are
+        // valid only when their numeric value still fits a VBA Long.
+        CoreConst::I64(n) => i32::try_from(*n).ok(),
         CoreConst::Bool(b) => Some(if *b { -1 } else { 0 }),
         _ => None,
     }
