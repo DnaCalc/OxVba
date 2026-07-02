@@ -1067,6 +1067,11 @@ pub fn round(args: &[Variant]) -> LibResult<Variant> {
         Some(v) => as_i32(v)?,
         None => 0,
     };
+    if digits < 0 {
+        return Err(LibError::invalid_call(
+            "Round numdecimalplaces must be non-negative",
+        ));
+    }
     let factor = 10f64.powi(digits);
     let scaled = x * factor;
     let rounded = scaled.round_ties_even();

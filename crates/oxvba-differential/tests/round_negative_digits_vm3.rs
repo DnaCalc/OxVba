@@ -1,12 +1,15 @@
-//! vm3 `Round` should accept negative decimal places and keep banker's
-//! rounding at the shifted place.
+//! vm3 `Round` should reject negative decimal-place counts with VBA error 5.
 
 use oxvba_differential::{Canon, Executor, canon, run};
 use oxvba_runtime::Variant;
 
-fn value(expr: &str) -> Canon {
+fn run_expr(expr: &str) -> oxvba_differential::RunOutcome {
     let source = format!("Public r As Variant\nSub Main()\n    r = {expr}\nEnd Sub\n");
-    let outcome = run(Executor::Vm3, &source);
+    run(Executor::Vm3, &source)
+}
+
+fn value(expr: &str) -> Canon {
+    let outcome = run_expr(expr);
     assert!(
         outcome.unsupported.is_none(),
         "unsupported: {:?}",
@@ -17,18 +20,19 @@ fn value(expr: &str) -> Canon {
 }
 
 #[test]
-fn round_accepts_negative_decimal_places() {
-    assert_eq!(value("Round(19, -1)"), canon(&Variant::from_f64(20.0)));
-    assert_eq!(
-        value("Round(1234.5, -2)"),
-        canon(&Variant::from_f64(1200.0))
+fn round_rejects_negative_decimal_places_with_error_5() {
+    let outcome = run_expr("Round(19, -1)");
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
     );
-}
-
-#[test]
-fn round_negative_places_still_uses_half_even() {
-    assert_eq!(value("Round(1250, -2)"), canon(&Variant::from_f64(1200.0)));
-    assert_eq!(value("Round(1350, -2)"), canon(&Variant::from_f64(1400.0)));
+    assert!(
+        outcome.raised,
+        "negative digits should raise a VBA error, got {:?}",
+        outcome.result
+    );
+    assert_eq!(outcome.err.number, 5);
 }
 
 #[test]
