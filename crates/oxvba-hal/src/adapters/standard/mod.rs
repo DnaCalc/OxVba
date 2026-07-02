@@ -3378,6 +3378,50 @@ mod tests {
     }
 
     #[test]
+    fn native_mode_width_tracks_vba_range_and_state() {
+        let Some(profile) = current_native_profile() else {
+            return;
+        };
+        let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
+        let handle = host.open_variant(rv(27182), rv(1)).expect("open output");
+
+        assert_eq!(
+            expect_i32(
+                host.print_width_variant(handle.clone())
+                    .expect("initial width")
+            ),
+            0
+        );
+        host.width_variant(handle.clone(), rv(5))
+            .expect("set width 5");
+        assert_eq!(
+            expect_i32(
+                host.print_width_variant(handle.clone())
+                    .expect("width after set")
+            ),
+            5
+        );
+        host.width_variant(handle.clone(), rv(255))
+            .expect("set width 255");
+        assert_eq!(
+            expect_i32(
+                host.print_width_variant(handle.clone())
+                    .expect("width after max")
+            ),
+            255
+        );
+
+        let low = host
+            .width_variant(handle.clone(), rv(-1))
+            .expect_err("negative width");
+        assert_eq!(low.host_error_code, Some(5));
+        let high = host
+            .width_variant(handle.clone(), rv(256))
+            .expect_err("width 256");
+        assert_eq!(high.host_error_code, Some(5));
+    }
+
+    #[test]
     fn native_mode_filesystem_seek_does_not_extend_length() {
         let Some(profile) = current_native_profile() else {
             return;

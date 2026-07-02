@@ -1551,6 +1551,64 @@
   column from EOF rather than the reported seek cursor. No remaining scoped
   `Print #` layout residual is open.
 
+## 2026-07-01 - Width # Output Wrapping (`bd-4ktq.45`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_width_oracle_20260702T0004Z/`.
+- Oracle findings:
+  - `Width #f, 0` disables wrapping; width values outside `0..=255` raise
+    runtime error 5, "Invalid procedure call or argument".
+  - Closing and reopening the file resets the width to unwrapped output.
+  - `Width #` affects `Print #` but not `Write #`.
+  - Ordinary string and numeric fields wrap before the next item if adding that
+    item would exceed the active width. A single long field is not split.
+  - Cross-statement `Print #` continuation after a trailing semicolon observes
+    the persisted file output column and wraps before the next item when needed.
+  - Comma print zones and bare `Tab` break to the next line when their next
+    14-column zone would exceed the width.
+  - `Spc(n)` and explicit `Tab(n)` use modulo-width positioning under an active
+    width; for example `Spc(6)` and `Tab(10)` at width 5 yield one and four
+    leading spaces respectively.
+- Implemented a `print_width_variant` HAL getter beside the existing
+  `print_column_variant`, kept `Width #` state per file handle, and enforced the
+  VBA `0..=255` range at the standard filesystem boundary with host error code
+  5 for out-of-range values.
+- `oxvba-lib` now assembles `Print #` records with the active width while
+  preserving existing field/control boundaries: value items wrap before
+  overflow, comma/bare-Tab zones break rather than padding past the width, and
+  `Spc`/explicit `Tab` use the Excel-observed modulo behavior. `Write #` remains
+  unchanged.
+- Added source-level host tests for the oracle-shaped output and invalid width
+  errors, low-level HAL state/range coverage, and `oxvba-lib` unit tests for the
+  wrapping primitives.
+- Verification completed:
+  - `scripts/run-vm3-width-oracle.ps1 -RunId vm3_width_oracle_20260702T0004Z`
+  - `cargo check -p oxvba-hal`
+  - `cargo check -p oxvba-lib`
+  - `cargo check -p oxvba-host`
+  - `cargo test -p oxvba-lib print_record --quiet`
+  - `cargo test -p oxvba-lib --quiet`
+  - `cargo test -p oxvba-host --test filesystem_statements width_hash --quiet`
+  - `cargo test -p oxvba-host --test filesystem_statements --quiet`
+  - `cargo test -p oxvba-hal native_mode_width_tracks_vba_range_and_state --quiet`
+  - `cargo test -p oxvba-hal native_mode_ --quiet`
+  - `cargo test -p oxvba-bind random_access_file_statements_bind_and_lower --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `rustfmt --edition 2024 --check crates/oxvba-lib/src/host.rs crates/oxvba-hal/src/traits.rs crates/oxvba-hal/src/adapters/recording.rs crates/oxvba-hal/src/adapters/standard/filesystem.rs`
+  - `scripts/check-governance.ps1`
+  - `br dep cycles --json`
+  - `git diff --check`
+- Known check caveat: broad rustfmt checks still surface the pre-existing
+  repo-wide formatting drift tracked in `bd-4ktq.58`, so this bead used the
+  targeted rustfmt lane above for files that do not pull in unrelated module
+  drift.
+- Fresh-eyes review re-read the oracle table, wrapping code, HAL range/state
+  changes, host tests, inventory wording, and bead acceptance text. The review
+  caught one omission before closure: close/reopen reset behavior was in the
+  bead acceptance text but not yet proved, so the oracle, host regression, and
+  docs were expanded to cover it. No remaining scoped Width # issue is open.
+
 ## 2026-07-01 - Statement Parser/Error-Model Slice (`bd-4ktq.39.6`)
 
 - Closed the focused statement/parser residual subset:

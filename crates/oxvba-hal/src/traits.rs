@@ -239,6 +239,10 @@ pub trait FileSystemHal: Send + Sync {
     fn print_column_variant(&self, _handle: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "print_column_variant")
     }
+    /// Current output line width for formatted sequential output (`0` disables wrapping).
+    fn print_width_variant(&self, _handle: Variant) -> HalResult<Variant> {
+        variant_companion_not_overridden(CapabilityId::FileSystemIo, "print_width_variant")
+    }
     /// Delimited field parsing from stream (VBA `Input #`).
     fn input_fields_variant(&self, _handle: Variant, _count: Variant) -> HalResult<Variant> {
         variant_companion_not_overridden(CapabilityId::FileSystemIo, "input_fields_variant")

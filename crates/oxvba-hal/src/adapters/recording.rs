@@ -256,6 +256,10 @@ impl FileSystemHal for RecordingHostServices {
         self.inner.fs().print_column_variant(handle)
     }
 
+    fn print_width_variant(&self, handle: Variant) -> HalResult<Variant> {
+        self.inner.fs().print_width_variant(handle)
+    }
+
     fn input_fields_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
         // Complex field data - delegate without recording.
         self.inner.fs().input_fields_variant(handle, count)

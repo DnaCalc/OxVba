@@ -420,6 +420,124 @@ fn print_hash_layout_residuals_match_vba_shape() {
     assert_eq!(text, expected);
 }
 
+#[test]
+fn width_hash_wraps_print_hash_like_vba() {
+    let dir = unique_temp_dir("widthprint");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("width.txt");
+    let source = format!(
+        "Sub Main()\n\
+         \u{20}   Dim f As Integer\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   Width #f, 5\n\
+         \u{20}   Print #f, \"ab\"; \"cd\"; \"ef\"\n\
+         \u{20}   Print #f, 12; 34\n\
+         \u{20}   Width #f, 10\n\
+         \u{20}   Print #f, \"a\", \"b\"\n\
+         \u{20}   Width #f, 5\n\
+         \u{20}   Print #f, \"A\"; Spc(3); \"B\"; Tab(3); \"C\"; Tab; \"D\"\n\
+         \u{20}   Print #f, Spc(6); \"A\"\n\
+         \u{20}   Print #f, Tab(10); \"A\"\n\
+         \u{20}   Width #f, 0\n\
+         \u{20}   Print #f, \"abcdef\"\n\
+         \u{20}   Write #f, \"abcdef\", 1\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    run_clean(&source).expect("Width # Print # wrapping should execute");
+    let text = std::fs::read_to_string(&file).expect("read printed file");
+    let _ = std::fs::remove_dir_all(&dir);
+    let expected = concat!(
+        "abcd\r\n",
+        "ef\r\n",
+        " 12 \r\n",
+        " 34 \r\n",
+        "a\r\n",
+        "b\r\n",
+        "A   B\r\n",
+        "  C\r\n",
+        "D\r\n",
+        " A\r\n",
+        "    A\r\n",
+        "abcdef\r\n",
+        "\"abcdef\",1\r\n"
+    );
+    assert_eq!(text, expected);
+}
+
+#[test]
+fn width_hash_rejects_values_outside_vba_range() {
+    let dir = unique_temp_dir("widthrange");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("range.txt");
+    let source = format!(
+        "Public negNum As Long\nPublic negDesc As String\n\
+         Public wideNum As Long\nPublic wideDesc As String\n\
+         Sub Main()\n\
+         \u{20}   Dim f As Integer\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   On Error Resume Next\n\
+         \u{20}   Width #f, -1\n\
+         \u{20}   negNum = Err.Number\n\
+         \u{20}   negDesc = Err.Description\n\
+         \u{20}   Err.Clear\n\
+         \u{20}   Width #f, 256\n\
+         \u{20}   wideNum = Err.Number\n\
+         \u{20}   wideDesc = Err.Description\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_host_policy(HostPolicy::interactive_dev());
+    let snap = engine.execute_source_with_variant_snapshot_clean(&source);
+    let _ = std::fs::remove_dir_all(&dir);
+    let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
+    assert_eq!(snap[0].as_i32(), Some(5), "negative width error: {snap:?}");
+    assert_eq!(
+        snap[1].as_bstr().map(|s| s.as_str().to_string()),
+        Some("Invalid procedure call or argument".to_string()),
+        "negative width description: {snap:?}"
+    );
+    assert_eq!(snap[2].as_i32(), Some(5), "width 256 error: {snap:?}");
+    assert_eq!(
+        snap[3].as_bstr().map(|s| s.as_str().to_string()),
+        Some("Invalid procedure call or argument".to_string()),
+        "width 256 description: {snap:?}"
+    );
+}
+
+#[test]
+fn width_hash_close_reopen_resets_width() {
+    let dir = unique_temp_dir("widthreset");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("seed dir");
+    let file = dir.join("reset.txt");
+    let source = format!(
+        "Sub Main()\n\
+         \u{20}   Dim f As Integer\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   Width #f, 5\n\
+         \u{20}   Close #f\n\
+         \u{20}   f = FreeFile\n\
+         \u{20}   Open \"{file}\" For Output As #f\n\
+         \u{20}   Print #f, \"ab\"; \"cd\"; \"ef\"\n\
+         \u{20}   Close #f\n\
+         End Sub\n",
+        file = vba_literal(&file),
+    );
+    run_clean(&source).expect("Width # should reset after close/reopen");
+    let text = std::fs::read_to_string(&file).expect("read printed file");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(text, "abcdef\r\n");
+}
+
 /// For sequential output `Loc(f)` is `byte position \ 128`. Writing 200 bytes
 /// gives Loc=1, 400 bytes gives Loc=3 and Seek=401. (Live-Excel verified:
 /// w200_loc=1 w400_loc=3 w400_seek=401.)

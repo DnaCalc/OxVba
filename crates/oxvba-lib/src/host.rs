@@ -108,11 +108,13 @@ pub fn file_read(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant
 pub fn file_print(args: &[Variant], host: &dyn HostServices) -> LibResult<Variant> {
     let handle = req(args, 0)?;
     let start_col = as_i32(&host.fs().print_column_variant(handle.clone())?)?.max(0) as usize;
+    let width = as_i32(&host.fs().print_width_variant(handle.clone())?)?.max(0) as usize;
     let record = assemble_print_record_with_column(
         &separator_spec(args),
         &print_item_spec(args),
         args.get(3..).unwrap_or(&[]),
         start_col,
+        width,
     )?;
     Ok(host
         .fs()
@@ -198,30 +200,73 @@ fn non_negative_count(value: &Variant, name: &str) -> LibResult<usize> {
     Ok(count as usize)
 }
 
-fn append_spaces(out: &mut String, col: &mut usize, count: usize) {
+fn active_width(width: usize) -> Option<usize> {
+    if width == 0 { None } else { Some(width) }
+}
+
+fn append_raw_spaces(out: &mut String, col: &mut usize, count: usize) {
     for _ in 0..count {
         out.push(' ');
         *col = col.saturating_add(1);
     }
 }
 
-fn append_tab(out: &mut String, col: &mut usize, value: &Variant) -> LibResult<()> {
+fn append_line_break(out: &mut String, col: &mut usize) {
+    out.push_str("\r\n");
+    *col = 0;
+}
+
+fn append_spaces(out: &mut String, col: &mut usize, count: usize, width: Option<usize>) {
+    let Some(width) = width else {
+        append_raw_spaces(out, col, count);
+        return;
+    };
+    let target_col = col.saturating_add(count) % width;
+    if target_col < *col {
+        append_line_break(out, col);
+    }
+    append_raw_spaces(out, col, target_col.saturating_sub(*col));
+}
+
+fn append_tab(
+    out: &mut String,
+    col: &mut usize,
+    value: &Variant,
+    width: Option<usize>,
+) -> LibResult<()> {
     let target = as_i32(value)?;
     if target < 1 {
         return Err(LibError::invalid_call("Tab requires a positive column"));
     }
-    let target_col = (target - 1) as usize;
-    if *col > target_col {
-        out.push_str("\r\n");
-        *col = 0;
+    let mut target_col = (target - 1) as usize;
+    if let Some(width) = width {
+        target_col %= width;
     }
-    append_spaces(out, col, target_col.saturating_sub(*col));
+    if *col > target_col {
+        append_line_break(out, col);
+    }
+    append_raw_spaces(out, col, target_col.saturating_sub(*col));
     Ok(())
 }
 
-fn append_next_print_zone(out: &mut String, col: &mut usize) {
+fn append_next_print_zone(out: &mut String, col: &mut usize, width: Option<usize>) {
     let next_zone = ((*col / PRINT_ZONE_WIDTH) + 1) * PRINT_ZONE_WIDTH;
-    append_spaces(out, col, next_zone.saturating_sub(*col));
+    if width.is_some_and(|width| next_zone >= width) {
+        append_line_break(out, col);
+        return;
+    }
+    append_raw_spaces(out, col, next_zone.saturating_sub(*col));
+}
+
+fn append_print_text(out: &mut String, col: &mut usize, text: &str, width: Option<usize>) {
+    let text_width = text.chars().count();
+    if let Some(width) = width {
+        if *col > 0 && col.saturating_add(text_width) > width {
+            append_line_break(out, col);
+        }
+    }
+    *col = col.saturating_add(text_width);
+    out.push_str(text);
 }
 
 #[cfg(test)]
@@ -235,7 +280,7 @@ fn default_print_item_spec(field_count: usize) -> String {
 #[cfg(test)]
 fn assemble_print_record(seps: &str, fields: &[Variant]) -> String {
     let kinds = default_print_item_spec(fields.len());
-    assemble_print_record_with_column(seps, &kinds, fields, 0).unwrap_or_default()
+    assemble_print_record_with_column(seps, &kinds, fields, 0, 0).unwrap_or_default()
 }
 
 fn assemble_print_record_with_column(
@@ -243,29 +288,34 @@ fn assemble_print_record_with_column(
     kinds: &str,
     fields: &[Variant],
     start_col: usize,
+    width: usize,
 ) -> LibResult<String> {
     let seps: Vec<char> = seps.chars().collect();
     let kinds: Vec<char> = kinds.chars().collect();
     let mut out = String::new();
     let mut col = start_col;
+    let width = active_width(width);
     for (index, field) in fields.iter().enumerate() {
         match kinds.get(index).copied().unwrap_or('v') {
             's' => {
                 let count = non_negative_count(field, "Spc")?;
-                append_spaces(&mut out, &mut col, count);
+                append_spaces(&mut out, &mut col, count, width);
             }
-            't' => append_tab(&mut out, &mut col, field)?,
-            'z' => append_next_print_zone(&mut out, &mut col),
+            't' => append_tab(&mut out, &mut col, field, width)?,
+            'z' => append_next_print_zone(&mut out, &mut col, width),
             _ => {
                 let text = print_field_text(field);
-                col = col.saturating_add(text.chars().count());
-                out.push_str(&text);
+                append_print_text(&mut out, &mut col, &text, width);
             }
         }
         if let Some(',') = seps.get(index).copied() {
             let target = ((col / PRINT_ZONE_WIDTH) + 1) * PRINT_ZONE_WIDTH;
-            let count = target.saturating_sub(col);
-            append_spaces(&mut out, &mut col, count);
+            if width.is_some_and(|width| target >= width) {
+                append_line_break(&mut out, &mut col);
+            } else {
+                let count = target.saturating_sub(col);
+                append_raw_spaces(&mut out, &mut col, count);
+            }
         }
     }
     if !matches!(seps.last().copied(), Some(',') | Some(';')) {
@@ -570,7 +620,7 @@ mod tests {
             Variant::from_string("D"),
         ];
         let record =
-            assemble_print_record_with_column(";;;;;;n", "vsvtvzv", &fields, 0).expect("record");
+            assemble_print_record_with_column(";;;;;;n", "vsvtvzv", &fields, 0, 0).expect("record");
         assert_eq!(
             record,
             format!(
@@ -585,14 +635,77 @@ mod tests {
     #[test]
     fn print_record_starts_comma_zones_from_existing_column() {
         let fields = [Variant::from_string("e"), Variant::from_string("z")];
-        let record = assemble_print_record_with_column(",n", "vv", &fields, 4).expect("record");
+        let record = assemble_print_record_with_column(",n", "vv", &fields, 4, 0).expect("record");
         assert_eq!(record, format!("e{}z\r\n", " ".repeat(9)));
     }
 
     #[test]
     fn print_record_rejects_nonpositive_tab_column() {
         let fields = [Variant::from_i32(0)];
-        assert!(assemble_print_record_with_column("n", "t", &fields, 0).is_err());
+        assert!(assemble_print_record_with_column("n", "t", &fields, 0, 0).is_err());
+    }
+
+    #[test]
+    fn print_record_width_wraps_before_next_overflowing_value() {
+        let fields = [
+            Variant::from_string("ab"),
+            Variant::from_string("cd"),
+            Variant::from_string("ef"),
+        ];
+        assert_eq!(
+            assemble_print_record_with_column(";;n", "vvv", &fields, 0, 5).expect("record"),
+            "abcd\r\nef\r\n"
+        );
+
+        let long_field = [Variant::from_string("abcdef")];
+        assert_eq!(
+            assemble_print_record_with_column("n", "v", &long_field, 0, 5).expect("record"),
+            "abcdef\r\n"
+        );
+    }
+
+    #[test]
+    fn print_record_width_wraps_numeric_fields_and_comma_zones() {
+        let numeric = [Variant::from_i32(12), Variant::from_i32(34)];
+        assert_eq!(
+            assemble_print_record_with_column(";n", "vv", &numeric, 0, 5).expect("record"),
+            " 12 \r\n 34 \r\n"
+        );
+
+        let comma = [Variant::from_string("a"), Variant::from_string("b")];
+        assert_eq!(
+            assemble_print_record_with_column(",n", "vv", &comma, 0, 10).expect("record"),
+            "a\r\nb\r\n"
+        );
+    }
+
+    #[test]
+    fn print_record_width_wraps_print_controls_like_vba() {
+        let fields = [
+            Variant::from_string("A"),
+            Variant::from_i32(3),
+            Variant::from_string("B"),
+            Variant::from_i32(3),
+            Variant::from_string("C"),
+            Variant::from_i32(0),
+            Variant::from_string("D"),
+        ];
+        assert_eq!(
+            assemble_print_record_with_column(";;;;;;n", "vsvtvzv", &fields, 0, 5).expect("record"),
+            "A   B\r\n  C\r\nD\r\n"
+        );
+
+        let spc_long = [Variant::from_i32(6), Variant::from_string("A")];
+        assert_eq!(
+            assemble_print_record_with_column(";n", "sv", &spc_long, 0, 5).expect("record"),
+            " A\r\n"
+        );
+
+        let tab_far = [Variant::from_i32(10), Variant::from_string("A")];
+        assert_eq!(
+            assemble_print_record_with_column(";n", "tv", &tab_far, 0, 5).expect("record"),
+            "    A\r\n"
+        );
     }
 
     #[test]

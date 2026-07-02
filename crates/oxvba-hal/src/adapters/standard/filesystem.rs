@@ -218,7 +218,7 @@ pub(super) struct FileHandleState {
     pub(super) len: i32,
     pub(super) host_path: Option<PathBuf>,
     pub(super) data: Vec<u8>,
-    /// Output line width set by `Width #n` (informational; affects `Print`).
+    /// Output line width set by `Width #n` (`0` disables wrapping).
     pub(super) width: i32,
     /// Zero-based print column for sequential formatted output.
     pub(super) print_column: i32,
@@ -1176,6 +1176,17 @@ impl FileSystemHal for StandardHostServices {
         Ok(Variant::from_i32(entry.print_column))
     }
 
+    fn print_width_variant(&self, handle: Variant) -> HalResult<Variant> {
+        let capability = CapabilityId::FileSystemIo;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "print_width"));
+        }
+        let handle_id = self.variant_to_i32(&handle, capability, "print_width", "handle")?;
+        let mut state = self.fs_lock(capability, "print_width")?;
+        let entry = self.fs_entry_mut(&mut state, handle_id, "print_width")?;
+        Ok(Variant::from_i32(entry.width))
+    }
+
     fn input_fields_variant(&self, handle: Variant, count: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::FileSystemIo;
         if !self.supports(capability) {
@@ -1424,9 +1435,18 @@ impl FileSystemHal for StandardHostServices {
         }
         let handle_id = self.variant_to_i32(&handle, capability, "width", "handle")?;
         let width = self.variant_to_i32(&width, capability, "width", "width")?;
+        if !(0..=255).contains(&width) {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "width",
+                "Invalid procedure call or argument",
+            )
+            .with_host_error_code(5));
+        }
         let mut state = self.fs_lock(capability, "width")?;
         let entry = self.fs_entry_mut(&mut state, handle_id, "width")?;
-        entry.width = width.max(0);
+        entry.width = width;
         Ok(Variant::empty())
     }
 
