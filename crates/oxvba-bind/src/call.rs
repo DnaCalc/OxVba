@@ -2500,6 +2500,9 @@ impl<'a> ProcLower<'a> {
         {
             return self.bind_call_route_statement(tok.text, &binding, node.index_arg_list());
         }
+        if base.kind() == SyntaxKind::MemberExpr {
+            return self.bind_member_call_statement(base, node.index_arg_list());
+        }
         self.bind_index_or_call(node)
     }
 }

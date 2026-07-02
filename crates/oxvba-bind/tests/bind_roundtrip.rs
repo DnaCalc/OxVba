@@ -1115,6 +1115,30 @@ fn redim_undeclared_simple_name_declares_dynamic_variant_array() {
 }
 
 #[test]
+fn call_keyword_module_qualified_sub_with_attached_parens_runs() {
+    let program = bind_program(
+        &manifest_modules(&[
+            (
+                "Startup",
+                ModuleKind::Procedural,
+                "Public Sub Main()\nCall Program.Run()\nEnd Sub\n",
+            ),
+            (
+                "Program",
+                ModuleKind::Procedural,
+                "Public result As Long\nPublic Sub Run()\nresult = 42\nEnd Sub\n",
+            ),
+        ]),
+        &NullTypeLibs,
+    )
+    .expect("module-qualified Call statement should bind");
+    let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let vm = oxvba_vm3::Vm3::run(&oxp, &host).expect("run");
+    assert_eq!(vm.slot(0).and_then(|value| value.as_i32()), Some(42));
+}
+
+#[test]
 fn redim_preserve_does_not_declare_undeclared_name() {
     let err = bind_error_display("Option Explicit\nSub Main()\n    ReDim Preserve a(1)\nEnd Sub\n");
     assert_eq!(err, "Variable not defined");
