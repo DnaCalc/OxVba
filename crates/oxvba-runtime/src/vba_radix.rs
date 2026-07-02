@@ -11,8 +11,9 @@
 //! `&HFFFF&`=65535 and `&H10000`=65536 (Long width),
 //! `&HFFFFFFFF`=-1 (Long), `&O37777777777`=-1 (Long, octal of 0xFFFFFFFF).
 //!
-//! The same rule governs `Val`/`CInt`/`CLng` of a `&H…`/`&O…` *string*, so the
-//! runtime string path shares these helpers.
+//! `Val` of a `&H…`/`&O…` *string* follows the same token rule. Explicit
+//! conversion functions use their target-width conversion rules; for example,
+//! `CLng("&HFFFF")` is `65535` while `CInt("&HFFFF")` is `-1`.
 
 /// Bit-width that fixes the two's-complement sign interpretation of a literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

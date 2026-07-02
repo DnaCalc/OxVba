@@ -2881,3 +2881,29 @@
   now gets past the Collection subtype failure. The next surfaced meta-check
   failure is `hex_oct_literal_sign_vm3::conversion_of_hex_string_applies_the_sign_rule`,
   now tracked as `bd-wh8r`.
+
+## 2026-07-02 - Hex/Octal String Conversion Gate (`bd-wh8r`)
+
+- Excel/VBA oracle evidence for radix strings showed the target behavior:
+  `CLng("&HFFFFFFFF")` returns Long `-1`, `CLng("&HFFFF")` returns Long
+  `65535`, `CInt("&HFFFF")` returns Integer `-1`, `CInt("&H10000")`
+  raises overflow 6, `CDbl("&HFFFF")` returns Double `65535`,
+  `CDbl("&HFFFFFFFF")` returns Double `-1`, `CLng("&HFFFF&")` raises
+  type mismatch 13, `IsNumeric("&HFFFF&")` is False, and `Val("&HFFFF")`
+  remains Double `-1`. The oracle runs used PID-scoped UI Automation
+  watchers for owned Visual Basic compile/runtime modals; no modal appeared.
+- Fix: conversion-string radix parsing now rejects trailing type suffixes and
+  applies Long-width signed behavior for the shared numeric conversion path,
+  while `CInt` applies the literal/Integer-width path before narrowing.
+  `Val` keeps the literal-token parser and still accepts suffixes where VBA
+  does.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo test -p oxvba-runtime parse_numeric_radix_strings_use_vba_conversion_rules`
+  - `cargo test -p oxvba-lib is_numeric_of_strings_and_values`
+  - `cargo test -p oxvba-differential --test hex_oct_literal_sign_vm3`
+  - `cargo test -p oxvba-bind numeric_conversion_intrinsics_accept_vba_radix_strings`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the hex/octal string conversion failure. The next surfaced
+  meta-check failure is the `oxvba-com` record typelib/IRecordInfo test batch,
+  now tracked as `bd-ow38`.

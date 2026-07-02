@@ -21,7 +21,8 @@ pub fn parse_bool_text(text: &str) -> Option<bool> {
 
 /// Parse the full VBA numeric-string grammar used by explicit conversions and
 /// implicit arithmetic coercion. This intentionally differs from Rust's
-/// `f64::parse`: VBA accepts Automation radix strings (`&HFF`, `&O17`) and rejects
+/// `f64::parse`: VBA accepts Automation radix strings (`&HFF`, `&O17`), rejects
+/// trailing type-suffix forms in conversion-string grammar (`&HFF&`), and rejects
 /// Rust-only spellings such as `NaN`/`inf`.
 pub fn parse_vba_numeric_string(s: &str) -> Option<f64> {
     let t = s.trim();
@@ -84,12 +85,21 @@ fn parse_vba_prefixed_integer_token(t: &str) -> Option<(i64, &str)> {
         return None;
     }
     let digits = &t[start..pos];
-    if matches!(bytes.get(pos), Some(b'&')) {
-        pos += 1;
+    if matches!(bytes.get(pos), Some(b'%' | b'&' | b'^')) {
+        return None;
     }
 
-    let parsed = i64::from_str_radix(digits, radix).ok()?;
-    Some((parsed.saturating_mul(sign), &t[pos..]))
+    let magnitude = u64::from_str_radix(digits, radix).ok()?;
+    let parsed = numeric_string_radix_value(magnitude);
+    Some((parsed.checked_mul(sign)?, &t[pos..]))
+}
+
+fn numeric_string_radix_value(magnitude: u64) -> i64 {
+    if magnitude <= u32::MAX as u64 {
+        (magnitude as u32) as i32 as i64
+    } else {
+        magnitude as i64
+    }
 }
 
 pub fn coerce_to(value: &Variant, target: VarType) -> Result<Variant, String> {
@@ -489,7 +499,7 @@ pub fn write_display_text(value: &Variant) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{coerce_to, parse_bool_text, variant_to_vba_string};
+    use super::{coerce_to, parse_bool_text, parse_vba_numeric_string, variant_to_vba_string};
     use crate::{VarType, Variant};
 
     #[test]
@@ -506,6 +516,19 @@ mod tests {
         assert_eq!(parse_bool_text("5"), None);
         assert_eq!(parse_bool_text("yes"), None);
         assert_eq!(parse_bool_text(""), None);
+    }
+
+    #[test]
+    fn parse_numeric_radix_strings_use_vba_conversion_rules() {
+        assert_eq!(parse_vba_numeric_string("&HFFFF"), Some(65_535.0));
+        assert_eq!(parse_vba_numeric_string("&HFFFFFFFF"), Some(-1.0));
+        assert_eq!(
+            parse_vba_numeric_string("&H80000000"),
+            Some(-2_147_483_648.0)
+        );
+        assert_eq!(parse_vba_numeric_string("&O37777777777"), Some(-1.0));
+        assert_eq!(parse_vba_numeric_string("+&H7F"), Some(127.0));
+        assert_eq!(parse_vba_numeric_string("&HFFFF&"), None);
     }
 
     #[test]

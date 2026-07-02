@@ -6,8 +6,9 @@
 //! legal unsuffixed literals use the narrowest of Integer/Long that holds the
 //! magnitude. So `&HFFFF` is -1 (Integer width), `&HFFFF&` is 65535 (Long),
 //! `&HFFFFFFFF` is -1 (Long), and `&O37777777777` is -1 (octal of 0xFFFFFFFF).
-//! Closes `vba-hex-oct-literal-sign`. The same sign rule also governs
-//! `Val`/`CLng` of `&H…`/`&O…` *strings*.
+//! Closes `vba-hex-oct-literal-sign`. `Val` keeps the literal sign rule for
+//! `&H…`/`&O…` *strings*; explicit conversion functions use their target-width
+//! conversion rules and reject trailing type suffixes.
 
 use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
@@ -34,6 +35,17 @@ fn assert_long(body: &str, expected: i32) {
 
 fn assert_integer(body: &str, expected: i16) {
     assert_value(body, &canon(&Variant::from_i16(expected)));
+}
+
+fn assert_error(body: &str, expected: &str) {
+    let outcome = run_main(body);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    let err = outcome.result.expect_err("run should fail");
+    assert!(err.contains(expected), "expected `{expected}` in `{err}`");
 }
 
 #[test]
@@ -68,12 +80,21 @@ fn octal_shares_the_rule() {
 
 #[test]
 fn conversion_of_hex_string_applies_the_sign_rule() {
-    // `CLng`/`CInt`/`CDbl` of a `&H…` string share the literal sign rule
-    // (`parse_vba_numeric_string`): `CLng("&HFFFFFFFF")` is -1, `CInt("&HFFFF")`
-    // is -1.
+    // Excel/VBA oracle: `CLng`/`CDbl` apply Long-width conversion to radix
+    // strings, while `CInt` applies Integer-width conversion.
     assert_long("    r = CLng(\"&HFFFFFFFF\")\n", -1);
-    assert_long("    r = CLng(\"&HFFFF\")\n", -1);
+    assert_long("    r = CLng(\"&HFFFF\")\n", 65_535);
+    assert_value(
+        "    r = CDbl(\"&HFFFFFFFF\")\n",
+        &canon(&Variant::from_f64(-1.0)),
+    );
+    assert_value(
+        "    r = CDbl(\"&HFFFF\")\n",
+        &canon(&Variant::from_f64(65_535.0)),
+    );
     assert_value("    r = CInt(\"&HFFFF\")\n", &canon(&Variant::from_i16(-1)));
+    assert_error("    r = CInt(\"&H10000\")\n", "VBA error 6");
+    assert_error("    r = CLng(\"&HFFFF&\")\n", "VBA error 13");
 }
 
 #[test]

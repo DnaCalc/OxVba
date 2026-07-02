@@ -1647,7 +1647,7 @@ pub fn val(args: &[Variant]) -> LibResult<Variant> {
         .map(char::from)
         .collect();
     let text = compact.as_str();
-    if let Some((value, _rest)) = parse_vba_prefixed_integer_token(text, true) {
+    if let Some((value, _rest)) = parse_vba_prefixed_integer_token(text, true, true) {
         return Ok(vf64(value as f64));
     }
     Ok(vf64(val_decimal_prefix(text).unwrap_or(0.0)))
@@ -1764,6 +1764,13 @@ fn conv_i64(value: &Variant) -> LibResult<i64> {
         return Ok(d.round_ties_even() as i64);
     }
     as_i64(value)
+}
+
+fn conv_literal_width_radix_i64(value: &Variant) -> LibResult<Option<i64>> {
+    if value.vtype() != VarType::String {
+        return Ok(None);
+    }
+    Ok(parse_vba_prefixed_integer(&as_str(value)?))
 }
 
 const DECIMAL96_MAX_MAGNITUDE: u128 = (1u128 << 96) - 1;
@@ -1995,7 +2002,11 @@ pub fn csng(args: &[Variant]) -> LibResult<Variant> {
 }
 /// `CInt` — to `Integer` (banker's rounding, range −32768..32767).
 pub fn cint(args: &[Variant]) -> LibResult<Variant> {
-    let value = conv_i64(need(args, 0)?)?;
+    let arg = need(args, 0)?;
+    let value = match conv_literal_width_radix_i64(arg)? {
+        Some(value) => value,
+        None => conv_i64(arg)?,
+    };
     let narrowed =
         i16::try_from(value).map_err(|_| LibError::overflow("value does not fit in Integer"))?;
     Ok(Variant::from_i16(narrowed))
@@ -2674,7 +2685,7 @@ fn parse_vba_numeric_string(s: &str) -> Option<f64> {
 }
 
 fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
-    let (value, rest) = parse_vba_prefixed_integer_token(t, false)?;
+    let (value, rest) = parse_vba_prefixed_integer_token(t, false, false)?;
     if rest.trim().is_empty() {
         Some(value)
     } else {
@@ -2684,7 +2695,11 @@ fn parse_vba_prefixed_integer(t: &str) -> Option<i64> {
 
 // `Val` reads a leading token and ignores spaces/tabs/newlines inside it; the
 // conversion functions and `IsNumeric` require the whole string to be numeric.
-fn parse_vba_prefixed_integer_token(t: &str, skip_embedded_space: bool) -> Option<(i64, &str)> {
+fn parse_vba_prefixed_integer_token(
+    t: &str,
+    skip_embedded_space: bool,
+    allow_suffix: bool,
+) -> Option<(i64, &str)> {
     let bytes = t.as_bytes();
     let mut pos = 0;
     let (sign, rest) = if let Some(rest) = t.strip_prefix('-') {
@@ -2696,8 +2711,7 @@ fn parse_vba_prefixed_integer_token(t: &str, skip_embedded_space: bool) -> Optio
     } else {
         (1_i64, t)
     };
-    // VBA hex (`&H…`) / octal (`&O…` or bare `&` + octal digits) integer literals,
-    // with an optional trailing `&` Long-type suffix.
+    // VBA hex (`&H…`) / octal (`&O…` or bare `&` + octal digits) integer literals.
     rest.strip_prefix('&')?;
     pos += 1;
     let (radix, digit_start) = match bytes.get(pos) {
@@ -2737,14 +2751,17 @@ fn parse_vba_prefixed_integer_token(t: &str, skip_embedded_space: bool) -> Optio
             pos += 1;
         }
     }
-    // The width-based two's-complement sign rule applies to `Val`/`CInt`/`CLng`
-    // of a `&H…`/`&O…` *string* exactly as to a literal — `Val("&HFFFF")` is -1
-    // (verified live). Honour an optional `%`/`&`/`^` type character too.
+    // `Val` applies the width-based two's-complement sign rule exactly as to a
+    // literal and honours an optional `%`/`&`/`^` type character. Conversion
+    // functions reject the suffix form (`CLng("&HFFFF&")` is type mismatch).
     let suffix = match bytes.get(pos) {
         Some(&b @ (b'%' | b'&' | b'^')) => Some(b),
         _ => None,
     };
     if suffix.is_some() {
+        if !allow_suffix {
+            return None;
+        }
         pos += 1;
     }
     let magnitude = u64::from_str_radix(&digits, radix).ok()?;
@@ -3158,7 +3175,7 @@ mod tests {
         assert!(isnum(vs(".5")));
         // VBA hex/octal literals.
         assert!(isnum(vs("&HFF")));
-        assert!(isnum(vs("&H1F&"))); // trailing Long-type suffix
+        assert!(!isnum(vs("&H1F&"))); // conversion grammar rejects type suffixes
         assert!(isnum(vs("&O17")));
         assert!(isnum(vs("&777"))); // bare-& octal
         // Non-numeric strings.
