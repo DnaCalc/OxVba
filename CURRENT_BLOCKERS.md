@@ -51,6 +51,26 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
+### BLK-COM-EVENT-BYREF-001: COM ByRef event writeback requires synchronous callback transport
+- Date: `2026-07-02`
+- Status: open; surfaced by `bd-aprs.8.8.9` / V11.
+- Impact:
+  - Blocks honest closure of the V11 `TestEventServer` ByRef COM event-argument writeback row.
+  - Blocks broad claims for Excel-style cancellable events such as `Workbook.BeforeClose(Cancel)` where the handler must mutate a ByRef argument before the event source continues.
+- Current state:
+  - By-value COM events are delivered through the existing native connection-point sink and later drained by `Vm3::pump_com_events`.
+  - The current callback queue stores owned value snapshots (`ComEventCallbackValue`) and returns `S_OK` from `IDispatch::Invoke` before the VBA handler runs.
+  - COM ByRef event writeback requires mutating the source-owned `VT_BYREF` argument during the active `Invoke` call. A later `DoEvents` drain cannot write back to the event source.
+  - Evidence: `docs/evidence/frontend_rework/COM_BYREF_EVENT_WRITEBACK_BLOCKER_2026-07-02.md`.
+- Exact unblocking steps:
+  - Extend event metadata to preserve per-parameter ByRef/value and wire-type shape.
+  - Add a synchronous, scoped dispatch-event callback path for supported ByRef scalar slots that runs the VBA handler before returning from native `IDispatch::Invoke`.
+  - Copy supported handler-side changes back to the raw `DISPPARAMS` `VT_BYREF` slots before returning to the COM event source.
+  - Explicitly reject or separately design cross-apartment/out-of-process event-thread cases where synchronous VM re-entry is not sound.
+- Suggestions/questions for the user:
+  - No product decision is needed: real VBA behavior remains the target.
+  - Treat this as a dedicated COM event transport bead rather than adding a fixture-only fake.
+
 ### BLK-COM-VTABLE-RECORD-ORACLE-001: Foreign SAFEARRAY(VT_RECORD) value oracle needs a side-effect-safe specimen
 - Status: resolved for deterministic repo-owned external oracle coverage; retained as third-party breadth residual for `docs/worksets/WORKSET_2026-06-19_GENERAL_COM_VTABLE_TYPELIB_INVOCATION.md`.
 - Impact:

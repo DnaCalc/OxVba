@@ -1542,7 +1542,10 @@ Candidate bead units:
   the bounded M13 TestEventServer ParamArray method row: the generated typelib's
   `FUNCDESC::cParamsOpt = -1` marker is preserved as COM metadata, early-bound binding boxes the
   positional tail into a zero-based SAFEARRAY(VARIANT), and metadata-known late-bound dispatch
-  packages the tail before `IDispatch::Invoke`.
+  packages the tail before `IDispatch::Invoke`. The V11 ByRef COM event writeback row remains
+  in-progress rather than being closed through a fake fixture-only path: current event callbacks are
+  queued as value snapshots and drained later, while real COM/VBA ByRef event writeback requires
+  synchronous handler execution and `VT_BYREF` mutation before native `IDispatch::Invoke` returns.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
   `ReDim` parity through HIR, with project/class field-array carrier retirement split explicitly
   to FE-8.5.h.
