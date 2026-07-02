@@ -320,6 +320,48 @@ Friend Function FriendValue() As Long
 End Function
 "@)
         )
+    },
+    [pscustomobject]@{
+        id = "SCOPING-CLASS-PRIVATE-INTERNAL"
+        purpose = "Private class members are callable from their declaring class."
+        run = "Main.RunProbe"
+        modules = @(
+            (New-ModuleSpec "Main" 1 @"
+Public Function RunProbe() As Variant
+    Dim w As Widget
+    Set w = New Widget
+    RunProbe = w.PublicProbe()
+End Function
+"@),
+            (New-ModuleSpec "Widget" 2 @"
+Private Function Secret() As Long
+    Secret = 23
+End Function
+
+Public Function PublicProbe() As Long
+    PublicProbe = Secret()
+End Function
+"@)
+        )
+    },
+    [pscustomobject]@{
+        id = "SCOPING-CLASS-PRIVATE-EXTERNAL"
+        purpose = "Private class members are not callable through a receiver from another module."
+        run = $null
+        modules = @(
+            (New-ModuleSpec "Main" 1 @"
+Public Function RunProbe() As Variant
+    Dim w As Widget
+    Set w = New Widget
+    RunProbe = w.Secret()
+End Function
+"@),
+            (New-ModuleSpec "Widget" 2 @"
+Private Function Secret() As Long
+    Secret = 29
+End Function
+"@)
+        )
     }
 )
 

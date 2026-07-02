@@ -2056,6 +2056,41 @@ fn method_mutates_instance_field_across_calls() {
 }
 
 #[test]
+fn private_class_method_is_not_accessible_from_other_module() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    r = w.Secret()\nEnd Sub\n";
+    let widget = "Private Function Secret() As Long\n    Secret = 29\nEnd Function\n";
+    assert!(
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).is_err(),
+        "external receiver calls must not bind Private class members"
+    );
+}
+
+#[test]
+fn private_class_field_is_not_accessible_from_other_module() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    r = w.secretValue\nEnd Sub\n";
+    let widget = "Private secretValue As Long\n";
+    assert!(
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).is_err(),
+        "external receiver reads must not bind Private class fields"
+    );
+}
+
+#[test]
+fn private_class_method_is_accessible_from_declaring_class() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    r = w.PublicProbe()\nEnd Sub\n";
+    let widget = "Private Function Secret() As Long\n    Secret = 23\nEnd Function\n\n\
+                  Public Function PublicProbe() As Long\n    PublicProbe = Me.Secret()\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(23.0));
+}
+
+#[test]
+fn friend_class_method_remains_accessible_inside_project() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    r = w.FriendValue()\nEnd Sub\n";
+    let widget = "Friend Function FriendValue() As Long\n    FriendValue = 19\nEnd Function\n";
+    assert_eq!(run_class_main_local0(main, "Widget", widget), Some(19.0));
+}
+
+#[test]
 fn project_method_byref_mutates_caller() {
     // o.Inc r passes r ByRef to a method; the method's write propagates back.
     // (The headline fix: method dispatch used to force ByVal.)

@@ -289,9 +289,27 @@ impl ResolutionEnvironment {
         name: &str,
         want: Option<ProjectMemberKind>,
     ) -> Option<Binding> {
-        self.providers
-            .iter()
-            .find_map(|provider| provider.resolve_member(recv, name, want))
+        self.providers.iter().find_map(|provider| {
+            provider
+                .resolve_member(recv, name, want)
+                .filter(|binding| self.binding_visible_without_source_context(binding))
+        })
+    }
+
+    /// Resolve `recv.name` from a source scope, applying source-project
+    /// visibility rules to project members returned by providers.
+    pub fn resolve_member_from_scope(
+        &self,
+        scope: ScopeId,
+        recv: &VarTypeRef,
+        name: &str,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        self.providers.iter().find_map(|provider| {
+            provider
+                .resolve_member(recv, name, want)
+                .filter(|binding| self.binding_visible_from_scope(scope, binding))
+        })
     }
 
     /// Resolve a qualified name (`Module.Member` / `Project.Module.Member`).
@@ -304,9 +322,23 @@ impl ResolutionEnvironment {
     /// Resolve the default member of `recv`'s type (for `obj` used in value
     /// context). COM: the `[id(0)]` member; project: the `VB_UserMemId = 0` member.
     pub fn resolve_default_member(&self, recv: &VarTypeRef) -> Option<Binding> {
-        self.providers
-            .iter()
-            .find_map(|provider| provider.resolve_default_member(recv))
+        self.providers.iter().find_map(|provider| {
+            provider
+                .resolve_default_member(recv)
+                .filter(|binding| self.binding_visible_without_source_context(binding))
+        })
+    }
+
+    pub fn resolve_default_member_from_scope(
+        &self,
+        scope: ScopeId,
+        recv: &VarTypeRef,
+    ) -> Option<Binding> {
+        self.providers.iter().find_map(|provider| {
+            provider
+                .resolve_default_member(recv)
+                .filter(|binding| self.binding_visible_from_scope(scope, binding))
+        })
     }
 
     /// Resolve the default member for a specific accessor. `None` is read context.
@@ -315,9 +347,24 @@ impl ResolutionEnvironment {
         recv: &VarTypeRef,
         want: Option<ProjectMemberKind>,
     ) -> Option<Binding> {
-        self.providers
-            .iter()
-            .find_map(|provider| provider.resolve_default_member_kind(recv, want))
+        self.providers.iter().find_map(|provider| {
+            provider
+                .resolve_default_member_kind(recv, want)
+                .filter(|binding| self.binding_visible_without_source_context(binding))
+        })
+    }
+
+    pub fn resolve_default_member_kind_from_scope(
+        &self,
+        scope: ScopeId,
+        recv: &VarTypeRef,
+        want: Option<ProjectMemberKind>,
+    ) -> Option<Binding> {
+        self.providers.iter().find_map(|provider| {
+            provider
+                .resolve_default_member_kind(recv, want)
+                .filter(|binding| self.binding_visible_from_scope(scope, binding))
+        })
     }
 
     /// Enumerate the source events of a COM coclass named `source_name` (the
@@ -489,6 +536,41 @@ impl ResolutionEnvironment {
             },
         };
         Binding::new(Some(id), route)
+    }
+
+    fn binding_visible_from_scope(&self, caller_scope: ScopeId, binding: &Binding) -> bool {
+        let Some(symbol) = binding.symbol.and_then(|id| self.symbols.symbol(id)) else {
+            return true;
+        };
+        if symbol.visibility != Some(Visibility::Private) {
+            return true;
+        }
+        let Some(caller_module) = self.enclosing_module_scope(caller_scope) else {
+            return false;
+        };
+        let Some(member_module) = self.enclosing_module_scope(symbol.scope) else {
+            return false;
+        };
+        caller_module == member_module
+    }
+
+    fn binding_visible_without_source_context(&self, binding: &Binding) -> bool {
+        binding
+            .symbol
+            .and_then(|id| self.symbols.symbol(id))
+            .is_none_or(|symbol| symbol.visibility != Some(Visibility::Private))
+    }
+
+    fn enclosing_module_scope(&self, scope: ScopeId) -> Option<ScopeId> {
+        let mut current = Some(scope);
+        while let Some(scope_id) = current {
+            let scope = self.symbols.scope(scope_id).ok()?;
+            if scope.kind == ScopeKind::Module {
+                return Some(scope_id);
+            }
+            current = scope.parent;
+        }
+        None
     }
 }
 

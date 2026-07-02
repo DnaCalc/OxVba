@@ -395,7 +395,7 @@ impl<'a> ProcLower<'a> {
             && let Some(sym) = self.resolve(tok.text).and_then(|b| b.symbol)
             && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
         {
-            if let Some(binding) = self.g.env.resolve_default_member(&ty) {
+            if let Some(binding) = self.resolve_default_member(&ty) {
                 match &binding.route {
                     DispatchRoute::ProjectMember { kind } => {
                         let sym = binding

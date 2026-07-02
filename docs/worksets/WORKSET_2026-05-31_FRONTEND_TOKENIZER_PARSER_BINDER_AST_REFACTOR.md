@@ -1682,6 +1682,10 @@ Candidate bead units:
     time instead of falling back to raw/default-zero behavior, with Excel/VBA compile oracle rows
     for `Long = "abc"` and too-wide `Long` defaults, while enum-typed defaults retain their
     underlying `Long` coercion and object `Nothing`/zero defaults remain accepted,
+  context-aware project class member lookup now rejects external receiver access to `Private`
+    class members while preserving same-class `Private` calls and same-project `Friend` calls,
+    with Excel/VBA compile oracle rows for `w.Secret()` rejection and internal/private plus
+    friend acceptance,
   optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
   optional `Boolean` defaults over bounded equality-based string `Like`,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,

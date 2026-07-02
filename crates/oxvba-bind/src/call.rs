@@ -1236,7 +1236,7 @@ impl<'a> ProcLower<'a> {
         if let DispatchRoute::Value = binding.route
             && let Some(sym) = binding.symbol
             && let ty @ VarTypeRef::Object(_) = self.symbol_type(sym)
-            && let Some(default_binding) = self.g.env.resolve_default_member_kind(&ty, Some(kind))
+            && let Some(default_binding) = self.resolve_default_member_kind(&ty, Some(kind))
         {
             return self.bind_default_member_indexed_property_let(
                 name,
@@ -1471,7 +1471,7 @@ impl<'a> ProcLower<'a> {
         let VarTypeRef::Object(_) = ty else {
             return Ok(None);
         };
-        let Some(default_binding) = self.g.env.resolve_default_member(&ty) else {
+        let Some(default_binding) = self.resolve_default_member(&ty) else {
             return Ok(None);
         };
         self.bind_resolved_default_member_value(

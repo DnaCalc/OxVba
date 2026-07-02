@@ -945,6 +945,50 @@ fn environment_resolves_unqualified_and_qualified_cross_module() {
 }
 
 #[test]
+fn context_member_resolution_honors_private_class_visibility() {
+    let m = manifest(
+        "Proj",
+        vec![
+            module("Main", "Sub Run()\r\nEnd Sub\r\n"),
+            ModuleUnit {
+                module_name: "Widget".into(),
+                module_kind: ModuleKind::Class,
+                attributes: ModuleAttributes::named("Widget"),
+                source: "Private Function Secret() As Long\r\nEnd Function\r\n\
+                         Friend Function FriendValue() As Long\r\nEnd Function\r\n\
+                         Public Function Pub() As Long\r\nEnd Function\r\n"
+                    .into(),
+            },
+        ],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let main_scope = env.module_scope("Main").expect("main scope");
+    let widget_scope = env.module_scope("Widget").expect("widget scope");
+    let recv = VarTypeRef::Object("Widget".to_string());
+
+    assert!(
+        env.resolve_member_from_scope(main_scope, &recv, "Secret", None)
+            .is_none(),
+        "Private class member must not bind from another module"
+    );
+    assert!(
+        env.resolve_member_from_scope(widget_scope, &recv, "Secret", None)
+            .is_some(),
+        "Private class member remains visible to its declaring class"
+    );
+    assert!(
+        env.resolve_member_from_scope(main_scope, &recv, "FriendValue", None)
+            .is_some(),
+        "Friend class members remain project-visible"
+    );
+    assert!(
+        env.resolve_member_from_scope(main_scope, &recv, "Pub", None)
+            .is_some(),
+        "Public class members remain project-visible"
+    );
+}
+
+#[test]
 fn duplicate_public_unqualified_members_are_ambiguous_before_library_fallback() {
     let m = manifest(
         "Proj",

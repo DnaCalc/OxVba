@@ -1526,6 +1526,17 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `invalid_literal_optional_default_does_not_publish_raw_metadata`;
   `optional_object_defaults_accept_nothing_and_zero`; `invalid_optional_default_is_bind_error`;
   `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind --quiet`.
+- Follow-up class-visibility work makes typed receiver member/default-member lookup source-context
+  aware: `Private` class members bind only from their declaring class, while same-project `Friend`
+  and `Public` members remain reachable. Excel/VBA oracle rows accept an internal private call and
+  same-project Friend call, and reject external `w.Secret()` with `Method or data member not
+  found`. Evidence:
+  `docs/evidence/frontend_rework/PRIVATE_CLASS_MEMBER_VISIBILITY_2026-07-02.md`;
+  `docs/evidence/conformance/vm3_scoping_visibility_private_class_20260702T1948Z/summary.md`;
+  `context_member_resolution_honors_private_class_visibility`; `private_class_method_is_not_accessible_from_other_module`;
+  `private_class_field_is_not_accessible_from_other_module`;
+  `private_class_method_is_accessible_from_declaring_class`;
+  `friend_class_method_remains_accessible_inside_project`.
 - Follow-up string constant-expression work evaluates string concatenation trees (`&`) over string
   literals and module constants into the existing explicit string optional-default carrier.
 - Follow-up scalar-concat default work reuses the same exact scalar-to-string operand formatting

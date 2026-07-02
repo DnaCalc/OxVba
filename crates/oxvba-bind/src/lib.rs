@@ -893,7 +893,25 @@ impl<'a> ProcLower<'a> {
         name: &str,
         want: Option<oxvba_bundle::ProjectMemberKind>,
     ) -> Option<Binding> {
-        self.g.env.resolve_member(recv, name, want)
+        self.g
+            .env
+            .resolve_member_from_scope(self.info.proc_scope, recv, name, want)
+    }
+
+    fn resolve_default_member(&self, recv: &VarTypeRef) -> Option<Binding> {
+        self.g
+            .env
+            .resolve_default_member_from_scope(self.info.proc_scope, recv)
+    }
+
+    fn resolve_default_member_kind(
+        &self,
+        recv: &VarTypeRef,
+        want: Option<oxvba_bundle::ProjectMemberKind>,
+    ) -> Option<Binding> {
+        self.g
+            .env
+            .resolve_default_member_kind_from_scope(self.info.proc_scope, recv, want)
     }
 
     /// The value of `Me` inside a class member — a `Load` of the implicit `Me`
