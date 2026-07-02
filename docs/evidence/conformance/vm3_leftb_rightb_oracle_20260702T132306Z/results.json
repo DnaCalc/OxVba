@@ -1,0 +1,54 @@
+{
+  "bead": "bd-4ktq.71",
+  "inventory_row": "leftb-rightb-byte-fns-absent",
+  "captured_at_utc": "2026-07-02T13:23:06Z",
+  "oracle": "Excel/VBA 7.1",
+  "modal_handling": {
+    "method": "VBE visible, Debug -> Compile VBAProject, PID-scoped UI Automation dialog capture/dismissal",
+    "initial_compile_error_exercised_modal_path": {
+      "dialog_title": "Microsoft Visual Basic for Applications",
+      "message": "Compile error: Duplicate declaration in current scope",
+      "selected_line": "Private Function v(ByVal v As Variant) As String",
+      "selected_token": "v"
+    }
+  },
+  "compile_after_helper_rename": "ok",
+  "run_after_compile": "ok",
+  "source_summary": "RunProbes assigned s = \"ABC\" and reported Len, LenB, and AscW-visible UTF-16 code units for LeftB/RightB byte counts 0, 1, 2, 3, 4, 5, 6, 7, and 99, plus Null and negative-length cases.",
+  "results": [
+    "L0=len=0;lenb=0;w=[]",
+    "L1=len=0;lenb=1;w=[]",
+    "L2=len=1;lenb=2;w=[65]",
+    "L3=len=1;lenb=3;w=[65]",
+    "L4=len=2;lenb=4;w=[65,66]",
+    "L5=len=2;lenb=5;w=[65,66]",
+    "L6=len=3;lenb=6;w=[65,66,67]",
+    "L7=len=3;lenb=6;w=[65,66,67]",
+    "L99=len=3;lenb=6;w=[65,66,67]",
+    "R0=len=0;lenb=0;w=[]",
+    "R1=len=0;lenb=1;w=[]",
+    "R2=len=1;lenb=2;w=[67]",
+    "R3=len=1;lenb=3;w=[17152]",
+    "R4=len=2;lenb=4;w=[66,67]",
+    "R5=len=2;lenb=5;w=[16896,17152]",
+    "R6=len=3;lenb=6;w=[65,66,67]",
+    "R7=len=3;lenb=6;w=[65,66,67]",
+    "R99=len=3;lenb=6;w=[65,66,67]",
+    "LNull=null",
+    "RNull=null",
+    "LNeg=5:Invalid procedure call or argument:len=0;lenb=0;w=[]",
+    "RNeg=5:Invalid procedure call or argument:len=0;lenb=0;w=[]"
+  ],
+  "decision": {
+    "leftb_rightb_slice_unit": "raw BSTR payload bytes, not UTF-16 code units",
+    "odd_byte_results": "preserve odd BSTR byte length; Len floors to whole UTF-16 code units while LenB reports exact bytes",
+    "over_length": "clamp to the whole source string",
+    "null": "unsuffixed functions propagate Null",
+    "negative_length": "raise run-time error 5"
+  },
+  "oxvba_tests": [
+    "cargo test -p oxvba-runtime bstr -- --nocapture",
+    "cargo test -p oxvba-lib leftb -- --nocapture",
+    "cargo test -p oxvba-differential --test leftb_rightb_vm3 -- --nocapture"
+  ]
+}
