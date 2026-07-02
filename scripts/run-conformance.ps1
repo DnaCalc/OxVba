@@ -48,6 +48,45 @@ try {
         throw "The JIT backend is disabled pending the JIT v2 design; use -Backend vm."
     }
 
+    function Test-F64TokenMatch {
+        param([string]$Expected, [string]$Actual)
+        if (-not $Expected.StartsWith("f64:") -or -not $Actual.StartsWith("f64:")) {
+            return $false
+        }
+        $culture = [System.Globalization.CultureInfo]::InvariantCulture
+        $styles = [System.Globalization.NumberStyles]::Float
+        try {
+            $e = [double]::Parse($Expected.Substring(4), $styles, $culture)
+            $a = [double]::Parse($Actual.Substring(4), $styles, $culture)
+        } catch {
+            return $false
+        }
+        $scale = [Math]::Max(1.0, [Math]::Max([Math]::Abs($e), [Math]::Abs($a)))
+        [Math]::Abs($e - $a) -le (1e-12 * $scale)
+    }
+
+    function Test-ValuesMatch {
+        param([string]$Expected, [string]$Actual)
+        if ($Expected -eq $Actual) {
+            return $true
+        }
+        $expectedParts = $Expected -split '\|'
+        $actualParts = $Actual -split '\|'
+        if ($expectedParts.Count -ne $actualParts.Count) {
+            return $false
+        }
+        for ($i = 0; $i -lt $expectedParts.Count; $i++) {
+            if ($expectedParts[$i] -eq $actualParts[$i]) {
+                continue
+            }
+            if (Test-F64TokenMatch -Expected $expectedParts[$i] -Actual $actualParts[$i]) {
+                continue
+            }
+            return $false
+        }
+        $true
+    }
+
     # Build once up front so the per-fixture timeout only measures execution.
     cargo build -q -p oxvba-cli
     if ($LASTEXITCODE -ne 0) {
@@ -134,7 +173,7 @@ try {
             continue
         }
 
-        if ($expected.values -and $expected.values -ne $r.values) {
+        if ($expected.values -and -not (Test-ValuesMatch -Expected $expected.values -Actual $r.values)) {
             $mismatches += "$($r.file): expected values $($expected.values), got $($r.values)"
         }
     }

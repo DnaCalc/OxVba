@@ -52,6 +52,14 @@ That pass promoted four more exact scalar rows:
 - `stdlib_financial_zero_rate.bas`
 - `stdlib_math_transcendental_identity.bas`
 
+The conformance runner now compares `f64:` tokens numerically with a tight
+tolerance, so Excel oracle values can keep their VBA-rendered decimal text
+without failing on harmless last-bit or decimal-format differences. That allowed
+two additional typed scalar rows to move into `basic-language`:
+
+- `financial_algorithm_rate_nper_subset.bas`
+- `stdlib_time_serial_value.bas`
+
 W5/W6 fresh-host COM evidence already exists and remains part of the W10
 regression-net story:
 
@@ -82,14 +90,12 @@ Open items:
 - The remaining pending rows need typed live-Excel recapture, vm3 fixes, or an
   explicit split:
   `financial_algorithm_npv_irr_mirr_subset.bas`,
-  `financial_algorithm_rate_nper_subset.bas`,
   `object_identity_is_nothing.bas`,
   `object_identity_is_same_and_different.bas`,
   `stdlib_array_introspection_bounds.bas`,
   `stdlib_array_introspection_types.bas`,
   `stdlib_random_financial_expansion.bas`,
   `stdlib_rnd_isolated.bas`,
-  `stdlib_time_serial_value.bas`, and
   `string_join_array_tag_count.bas`.
 
 ## Checks
@@ -103,6 +109,8 @@ Open items:
   - Passed: `conformance run: ok (15 files, backend=vm, suite=basic-language)`.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <4 typed scalar promoted rows>`
   - Passed: `conformance run: ok (4 files, backend=vm, suite=basic-language)`.
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <2 f64-tolerant promoted rows>`
+  - Passed: `conformance run: ok (2 files, backend=vm, suite=basic-language)`.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern conversion_cint_basic.bas`
   - Expected current state: fails, proving the pre-existing typed retained-value
     baseline drift that `bd-9sed.18` must resolve.

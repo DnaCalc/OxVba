@@ -82,7 +82,7 @@
 ### W10 — Regression-net: live-Excel ORACLE expansion *(with/before the golden freeze)*
 - **Beads:** capture oracle results for the ~254/308 corpus programs with no current capture (fresh host — heed the "wedged COM procs need reboot" hazard); commit captures; extend `oracle_conformance` to assert vm3 matched==total outside a strictly-shrinking allowlist; add fresh-host captures for the new W5/W6 COM/GetObject legs.
 - **Verify:** vm3 100% oracle-compliant in-scope on the enlarged corpus. **Depends on:** W9
-- **Progress 2026-07-02 (`bd-9sed.11`, `bd-9sed.18`):** pending fixtures were captured against live Excel and 19 safe rows were promoted to `basic-language`. See `docs/evidence/conformance/VM3_W10_ORACLE_EXPANSION_2026-07-02.md`. W10 remains in progress: typed retained-value oracle refresh and the remaining pending rows are tracked by `bd-9sed.18`, and the old retained-value encoder/golden drift is not a VBA compatibility target.
+- **Progress 2026-07-02 (`bd-9sed.11`, `bd-9sed.18`):** pending fixtures were captured against live Excel and 21 safe rows were promoted to `basic-language`. See `docs/evidence/conformance/VM3_W10_ORACLE_EXPANSION_2026-07-02.md`. W10 remains in progress: typed retained-value oracle refresh and the remaining pending rows are tracked by `bd-9sed.18`, and the old retained-value encoder/golden drift is not a VBA compatibility target.
 
 ### W11 — Regression-net: vm3 GOLDEN snapshot gate *(must land before deletion)*
 - **Beads:** freeze vm3's oracle-certified full-axis snapshot for every corpus program; add a standalone golden test that **replaces** `vm3_matches_vm2_across_the_corpus_subset`; prove the net bites (a deliberate one-op perturbation flips a golden).
