@@ -2808,3 +2808,18 @@
   `oxvba-bind` `alloc_proc` clippy gate, now tracked as `bd-4ktq.66`, and the
   existing wrapped COM server `gTopicIds` test failure tracked as
   `bd-4ktq.61`.
+
+## 2026-07-02 - oxvba-bind alloc_proc Clippy Gate (`bd-4ktq.66`)
+
+- Repaired the `too_many_arguments` clippy denial in `IdAllocator::alloc_proc`
+  by bundling the internal call inputs into a private `ProcAllocInput` struct.
+  This preserves the same procedure allocation facts and makes no VBA
+  compile/runtime behavior claim.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-bind --all-targets -- -D warnings`
+  - `cargo test -p oxvba-bind`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the previous `oxvba-bind` clippy gate. It surfaces the next
+  `oxvba-host` test clippy gate, now tracked as `bd-4ktq.67`, and the existing
+  wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.

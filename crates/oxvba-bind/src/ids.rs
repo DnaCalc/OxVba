@@ -90,6 +90,17 @@ pub struct IdAllocator {
     pub interfaces: HashSet<String>,
 }
 
+struct ProcAllocInput<'a> {
+    env: &'a ResolutionEnvironment,
+    module_scope: ScopeId,
+    module_syntax: SyntaxNode<'a>,
+    decl: SyntaxNode<'a>,
+    proc_scope: ScopeId,
+    class_name: Option<String>,
+    compare_mode: StringCompareMode,
+    option_base: i32,
+}
+
 impl IdAllocator {
     pub fn build(
         env: &ResolutionEnvironment,
@@ -192,16 +203,16 @@ impl IdAllocator {
                 )));
             }
             for (decl, &proc_scope) in decls.iter().zip(proc_scopes.iter()) {
-                alloc.alloc_proc(
+                alloc.alloc_proc(ProcAllocInput {
                     env,
-                    module.module_scope,
-                    module.syntax,
-                    *decl,
+                    module_scope: module.module_scope,
+                    module_syntax: module.syntax,
+                    decl: *decl,
                     proc_scope,
-                    class_name.clone(),
+                    class_name: class_name.clone(),
                     compare_mode,
                     option_base,
-                )?;
+                })?;
             }
         }
 
@@ -291,17 +302,17 @@ impl IdAllocator {
         Ok(alloc)
     }
 
-    fn alloc_proc(
-        &mut self,
-        env: &ResolutionEnvironment,
-        module_scope: ScopeId,
-        module_syntax: SyntaxNode<'_>,
-        decl: SyntaxNode<'_>,
-        proc_scope: ScopeId,
-        class_name: Option<String>,
-        compare_mode: StringCompareMode,
-        option_base: i32,
-    ) -> Result<(), BindError> {
+    fn alloc_proc(&mut self, input: ProcAllocInput<'_>) -> Result<(), BindError> {
+        let ProcAllocInput {
+            env,
+            module_scope,
+            module_syntax,
+            decl,
+            proc_scope,
+            class_name,
+            compare_mode,
+            option_base,
+        } = input;
         let symbols = &env.symbols;
         let proc_id = ProcId(self.procs.len());
         let logical = match decl.proc_name_token() {
