@@ -1,0 +1,302 @@
+﻿[
+    {
+        "id":  "CALL-BARE-BYREF-MUTATES",
+        "purpose":  "Unparenthesized statement-form ByRef argument writes back.",
+        "ownedExcelPid":  2860,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "105",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-BYVAL-PARAM-NO-MUTATE",
+        "purpose":  "ByVal parameter mutation does not write back.",
+        "ownedExcelPid":  14492,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-STMT-PAREN-BYVAL",
+        "purpose":  "Parenthesized statement-form l-value argument is forced ByVal.",
+        "ownedExcelPid":  27204,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "5",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-FORM-PARENS-BYREF",
+        "purpose":  "Call form with parentheses still passes the l-value ByRef.",
+        "ownedExcelPid":  37900,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "105",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-BYREF-TYPE-MISMATCH",
+        "purpose":  "ByRef argument with mismatched declared type is rejected.",
+        "ownedExcelPid":  56144,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nByRef argument type mismatch",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "x",
+        "selectedLine":  "TakeLong x",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-EXTRA-ARG",
+        "purpose":  "Extra procedure argument is rejected.",
+        "ownedExcelPid":  34884,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nWrong number of arguments or invalid property assignment",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "TakeOne",
+        "selectedLine":  "TakeOne 1, 2",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-MISSING-ARG",
+        "purpose":  "Missing required procedure argument is rejected.",
+        "ownedExcelPid":  25528,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nArgument not optional",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "TakeTwo",
+        "selectedLine":  "TakeTwo 1",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-OPTIONAL-MISSING-OK",
+        "purpose":  "Missing optional argument uses its default.",
+        "ownedExcelPid":  35188,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "12",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-PARAMARRAY-EXTRA-OK",
+        "purpose":  "ParamArray accepts extra positional arguments.",
+        "ownedExcelPid":  34680,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "6",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-PARAMARRAY-SCALAR-ELEMENT-ALIASES-CALLER",
+        "purpose":  "Assigning a ParamArray element sourced from a scalar variable writes back to the caller in real VBA.",
+        "ownedExcelPid":  55016,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "99",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-PARAMARRAY-VARIANT-ELEMENT-ALIASES-CALLER",
+        "purpose":  "Assigning a ParamArray element sourced from a Variant variable writes back to the caller in real VBA.",
+        "ownedExcelPid":  55656,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "99",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-PARAMARRAY-ARRAY-ELEMENT-LVALUE-ALIASES-CALLER",
+        "purpose":  "Assigning a ParamArray element sourced from an array-element l-value writes back to the caller in real VBA.",
+        "ownedExcelPid":  56352,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "99",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-PARAMARRAY-OBJECT-ELEMENT-REBIND-ALIASES-CALLER",
+        "purpose":  "ParamArray object element mutation/rebinding affects the caller in real VBA.",
+        "ownedExcelPid":  39264,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "err:91:Object variable or With block variable not set",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "CALL-PARAMARRAY-VARIANT-ARRAY-ELEMENT-MUTATION-ALIASES-CALLER",
+        "purpose":  "Mutating an array stored inside a ParamArray element affects the caller in real VBA.",
+        "ownedExcelPid":  27276,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "ok:99",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]
