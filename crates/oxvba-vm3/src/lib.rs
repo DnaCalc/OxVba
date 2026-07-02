@@ -1785,8 +1785,8 @@ impl<'h> Vm3<'h> {
                 instance.project_field_set(*field, v);
             }
             OxInst::CompareObjectIs { dst, lhs, rhs } => {
-                let a = object_identity(&self.operand(lhs)?);
-                let b = object_identity(&self.operand(rhs)?);
+                let a = object_identity_for_is(&self.operand(lhs)?)?;
+                let b = object_identity_for_is(&self.operand(rhs)?)?;
                 self.store(dst, Variant::from_bool(a == b))?;
             }
             OxInst::TypeOfIs {
@@ -4488,10 +4488,20 @@ fn is_nothing(value: &Variant) -> bool {
     }
 }
 
-/// The raw identity (an `i32`) of an object value, or 0 for a non-object/`Nothing` — the basis
-/// of the `Is` operator (`CompareObjectIs`). Mirrors vm2's `object_identity`.
+/// The raw identity (an `i32`) of an object value, or 0 for a non-object/`Nothing`.
 fn object_identity(value: &Variant) -> i32 {
     value.as_object_ref().map(|o| o.raw()).unwrap_or(0)
+}
+
+/// VBA's `Is` operator accepts only object references at run time. A Variant
+/// that currently holds a scalar compiles, but evaluating the comparison raises
+/// error 424 instead of treating the scalar as the null object identity.
+fn object_identity_for_is(value: &Variant) -> Result<i32, Vm3Error> {
+    if value.vtype() == VarType::Object {
+        Ok(object_identity(value))
+    } else {
+        Err(Vm3Error::Fault(Fault::new(424, "Object required")))
+    }
 }
 
 /// The `withevents` map key: the sink owner's identity in the high 32 bits, the binding token

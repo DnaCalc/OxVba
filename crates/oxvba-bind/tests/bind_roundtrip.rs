@@ -1966,6 +1966,47 @@ fn let_assignment_to_object_without_default_member_is_runtime_error() {
 }
 
 #[test]
+fn is_operator_rejects_statically_scalar_operands() {
+    let err = bind_error_display(
+        "Sub Main()\n    Dim a As Long\n    Dim b As Long\n    Dim r As Boolean\n    r = (a Is b)\nEnd Sub\n",
+    );
+    assert!(err.contains("Type mismatch"), "unexpected error: {err}");
+}
+
+#[test]
+fn is_operator_variant_scalar_operands_raise_object_required() {
+    for (label, src) in [
+        (
+            "Variant scalar Is Variant scalar",
+            "Sub Main()\n    Dim a As Variant\n    Dim b As Variant\n    Dim r As Boolean\n    a = 1\n    b = 2\n    r = (a Is b)\nEnd Sub\n",
+        ),
+        (
+            "Object Is Variant scalar",
+            "Sub Main()\n    Dim o As Object\n    Dim v As Variant\n    Dim r As Boolean\n    v = 1\n    r = (o Is v)\nEnd Sub\n",
+        ),
+    ] {
+        let program = bind_program(&manifest(src), &NullTypeLibs).expect("bind_program");
+        let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
+        let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+        let err = match oxvba_vm3::Vm3::run(&oxp, &host) {
+            Ok(_) => panic!("{label} must fail"),
+            Err(oxvba_vm3::Vm3Error::Fault(fault)) => fault,
+            Err(other) => panic!("expected a VBA fault for {label}, got {other:?}"),
+        };
+        assert_eq!(err.code, 424, "{label}");
+    }
+}
+
+#[test]
+fn is_operator_keeps_object_and_nothing_identity() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim a As Widget\n    Dim b As Widget\n    Dim c As Widget\n    Dim z As Widget\n    Set a = New Widget\n    Set b = a\n    Set c = New Widget\n    If a Is b Then r = r + 1\n    If Not (a Is c) Then r = r + 10\n    If Not (a Is Nothing) Then r = r + 100\n    Set a = Nothing\n    If a Is Nothing Then r = r + 1000\n    If z Is Nothing Then r = r + 10000\nEnd Sub\n";
+    assert_eq!(
+        run_class_main_local0(main, "Widget", "' empty class\n"),
+        Some(11111.0)
+    );
+}
+
+#[test]
 fn set_assigning_to_property_without_set_accessor_is_bind_error() {
     let main = "Sub Main()\n    Dim b As Box\n    Dim t As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b.Item(1) = t\nEnd Sub\n";
     let box_cls = "Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = Nothing\nEnd Property\n";

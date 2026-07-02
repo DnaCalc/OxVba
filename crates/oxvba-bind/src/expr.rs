@@ -315,6 +315,10 @@ impl<'a> ProcLower<'a> {
             node.binary_rhs()
                 .ok_or_else(|| BindError::Malformed("binary rhs".into()))?,
         )?;
+        if op == CoreBinOp::Is && (!is_object_is_operand(&lhs.ty) || !is_object_is_operand(&rhs.ty))
+        {
+            return Err(BindError::TypeMismatch);
+        }
         // `\` and `Mod` always yield an integer (`LongLong` when either side is 64-bit,
         // else `Long`); the VM rounds the operands. Every other op's result type comes
         // from the promotion lattice.
@@ -581,6 +585,10 @@ fn unquote(text: &str) -> String {
     let inner = text.strip_prefix('"').unwrap_or(text);
     let inner = inner.strip_suffix('"').unwrap_or(inner);
     inner.replace("\"\"", "\"")
+}
+
+fn is_object_is_operand(ty: &VarTypeRef) -> bool {
+    matches!(ty, VarTypeRef::Object(_) | VarTypeRef::Variant)
 }
 
 /// The inferred type of a folded constant value.
