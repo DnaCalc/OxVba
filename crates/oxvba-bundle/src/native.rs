@@ -833,4 +833,6 @@ pub enum NativeMethodId {
     CollectionCount,
     /// `Collection.Remove(indexOrKey)`.
     CollectionRemove,
+    /// `Collection.[_NewEnum]`.
+    CollectionNewEnum,
 }

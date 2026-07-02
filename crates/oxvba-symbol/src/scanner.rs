@@ -66,6 +66,8 @@ pub struct ScannedMember {
     pub namespace: SymbolNamespace,
     /// `Attribute VB_UserMemId = 0` — this is the type's default member.
     pub is_default: bool,
+    /// `Attribute VB_UserMemId = -4` — this is the type's NewEnum member.
+    pub is_enumerator: bool,
     /// Declared visibility (drives cross-project / COM export-surface exposure).
     pub visibility: Visibility,
     /// For a `SymbolKind::EnumMember`, the display name of its containing `Enum`
@@ -129,7 +131,8 @@ pub fn scan_module(
         source_attributes,
         exposes_unqualified_members,
     };
-    let default_member_attrs = default_member_attributes(module_syntax);
+    let default_member_attrs = member_attributes_with_user_mem_id(module_syntax, 0);
+    let enumerator_member_attrs = member_attributes_with_user_mem_id(module_syntax, -4);
     let mut ctx = ScanCtx {
         symbols,
         signatures,
@@ -138,6 +141,7 @@ pub fn scan_module(
         module_name: &module_name,
         module_kind: module.module_kind,
         default_member_attrs,
+        enumerator_member_attrs,
         default_types,
         proc_is_static: false,
     };
@@ -153,6 +157,7 @@ struct ScanCtx<'a> {
     module_name: &'a str,
     module_kind: ModuleKind,
     default_member_attrs: BTreeSet<String>,
+    enumerator_member_attrs: BTreeSet<String>,
     default_types: DefaultTypeTable,
     /// Set while walking the body of a `Static Sub/Function/Property`, so every
     /// proc-local declarator becomes a `StaticLocal` even without its own
@@ -329,9 +334,13 @@ impl ScanCtx<'_> {
             return Ok(());
         };
         let logical = normalize_identifier_token(name_token.text).to_string();
-        let is_default = is_default_member_node(node)
+        let is_default = has_user_mem_id_node(node, 0)
             || self
                 .default_member_attrs
+                .contains(&fold_identifier(&logical));
+        let is_enumerator = has_user_mem_id_node(node, -4)
+            || self
+                .enumerator_member_attrs
                 .contains(&fold_identifier(&logical));
         // Sub/Function/Property default to Public; `Private`/`Friend` override.
         let visibility = decl_visibility(node, Visibility::Public);
@@ -385,6 +394,7 @@ impl ScanCtx<'_> {
                             kind: SymbolKind::Property,
                             namespace: SymbolNamespace::Procedure,
                             is_default,
+                            is_enumerator,
                             visibility,
                         });
                     }
@@ -415,6 +425,7 @@ impl ScanCtx<'_> {
                 kind,
                 namespace: SymbolNamespace::Procedure,
                 is_default,
+                is_enumerator,
                 visibility,
             });
         }
@@ -674,6 +685,7 @@ impl ScanCtx<'_> {
                 kind,
                 namespace,
                 is_default: false,
+                is_enumerator: false,
                 visibility,
                 enum_name: enum_name.map(str::to_string),
             });
@@ -726,20 +738,19 @@ fn decl_visibility(node: SyntaxNode<'_>, default: Visibility) -> Visibility {
     default
 }
 
-/// `Attribute VB_UserMemId = 0` inside the procedure → the type's default member.
-fn is_default_member_node(node: SyntaxNode<'_>) -> bool {
-    node.text().lines().any(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.contains("vb_usermemid") && lower.replace(' ', "").contains("=0")
-    })
+/// `Attribute VB_UserMemId = <id>` inside the procedure.
+fn has_user_mem_id_node(node: SyntaxNode<'_>, id: i32) -> bool {
+    node.text()
+        .lines()
+        .any(|line| line_has_user_mem_id(line, id))
 }
 
 /// Exported `.cls` files place member attributes after the member body:
 /// `Attribute Value.VB_UserMemId = 0`. The parser keeps those as top-level
 /// `AttributeStmt` nodes, so associate them with the logical member during scan.
-fn default_member_attributes(root: SyntaxNode<'_>) -> BTreeSet<String> {
+fn member_attributes_with_user_mem_id(root: SyntaxNode<'_>, id: i32) -> BTreeSet<String> {
     let mut attrs = BTreeSet::new();
-    collect_default_member_attributes(root, &mut attrs);
+    collect_member_attributes_with_user_mem_id(root, id, &mut attrs);
     attrs
 }
 
@@ -1010,30 +1021,48 @@ fn parse_bool_attribute(value: &str) -> Option<bool> {
     }
 }
 
-fn collect_default_member_attributes(node: SyntaxNode<'_>, attrs: &mut BTreeSet<String>) {
+fn collect_member_attributes_with_user_mem_id(
+    node: SyntaxNode<'_>,
+    id: i32,
+    attrs: &mut BTreeSet<String>,
+) {
     if node.kind() == SyntaxKind::AttributeStmt
-        && let Some(member) = default_member_attribute_name(&node.text())
+        && let Some(member) = member_attribute_name_with_user_mem_id(&node.text(), id)
     {
         attrs.insert(fold_identifier(&member));
     }
     for child in node.child_nodes() {
-        collect_default_member_attributes(child, attrs);
+        collect_member_attributes_with_user_mem_id(child, id, attrs);
     }
 }
 
-fn default_member_attribute_name(text: &str) -> Option<String> {
+fn member_attribute_name_with_user_mem_id(text: &str, id: i32) -> Option<String> {
     let compact = text.to_ascii_lowercase().replace([' ', '\t'], "");
-    if !compact.starts_with("attribute") || !compact.contains(".vb_usermemid=0") {
+    if !compact.starts_with("attribute") || !compact.contains(".vb_usermemid=") {
         return None;
     }
     let after_keyword = text.trim().split_once(char::is_whitespace)?.1.trim();
-    let (lhs, _) = after_keyword.split_once('=')?;
+    let (lhs, value) = after_keyword.split_once('=')?;
+    if parse_user_mem_id_value(value)? != id {
+        return None;
+    }
     let (member, attr) = lhs.trim().rsplit_once('.')?;
     if !attr.trim().eq_ignore_ascii_case("VB_UserMemId") {
         return None;
     }
     let member = member.trim();
     (!member.is_empty()).then(|| member.to_string())
+}
+
+fn line_has_user_mem_id(line: &str, id: i32) -> bool {
+    let Some((_, value)) = line.split_once('=') else {
+        return false;
+    };
+    line.to_ascii_lowercase().contains("vb_usermemid") && parse_user_mem_id_value(value) == Some(id)
+}
+
+fn parse_user_mem_id_value(value: &str) -> Option<i32> {
+    value.trim().parse::<i32>().ok()
 }
 
 /// Parse a parameter's literal default (`Optional x As Long = 5`). With the

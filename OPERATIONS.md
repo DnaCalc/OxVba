@@ -43,6 +43,9 @@ Parity target rule:
   and VBA runtime behavior. Existing OxVBA behavior, legacy fallbacks, or internal
   convenience paths are not compatibility targets unless explicitly recorded as a
   temporary gap on the way to VBA parity.
+- When there is any doubt, use the real VBA compile/runtime result as the behavior
+  oracle and make OxVBA conform to that result, rather than preserving historical
+  OxVBA behavior.
 - Where the specifications and Excel behavior diverge, or where behavior is ambiguous, the discrepancy must be documented explicitly with evidence and a stated project decision.
 - Those discrepancies do not justify using completion language for an unfinished work area unless the workset scope explicitly includes documenting and resolving that discrepancy as its end condition.
 

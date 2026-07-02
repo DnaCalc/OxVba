@@ -1599,6 +1599,53 @@
   - `scripts/check-governance.ps1`
   - `br dep cycles --json`
   - `git diff --check`
+
+## 2026-07-02 - Compatibility Objective Reinforcement
+
+- User clarified that the goal should always be to match real VBA compile-time
+  and run-time behavior.
+- Recorded this as durable guidance in `CHARTER.md`, `OPERATIONS.md`, and
+  `AGENTS.md`: existing OxVBA behavior, legacy fallbacks, and internal
+  convenience paths are not compatibility targets except as explicitly tracked
+  temporary gaps on the way to VBA parity.
+
+## 2026-07-02 - Project Class NewEnum For Each (`bd-4ktq.49`)
+
+- Implemented vm3 `For Each` over project-class instances that carry a
+  `VB_UserMemId = -4` enumerator member. The scanner now recognizes exact
+  `VB_UserMemId` values for both default members (`0`) and NewEnum members
+  (`-4`), the binder/OxIR class-method metadata preserves the NewEnum bit, and
+  vm3 invokes the marked property/method to obtain the enumeration source.
+- Added native `VBA.Collection.[_NewEnum]` support for the internal enumerator
+  path used by project-class NewEnum properties, plus parser support for dotted
+  bracketed member names such as `items.[_NewEnum]`.
+- Changed plain project instances without a NewEnum member from silent empty
+  iteration to VBA-style runtime error 438.
+- Added regressions:
+  - `crates/oxvba-differential/tests/project_class_newenum_vm3.rs`
+  - `crates/oxvba-bind/tests/bind_roundtrip.rs::project_newenum_attribute_marks_enumerator_member`
+  - `crates/oxvba-bind/tests/bind_roundtrip.rs::project_newenum_attribute_requires_exact_minus_four_memid`
+  - `crates/oxvba-syntax::parser::tests::expr_dot_bracketed_member_name`
+- Verification completed:
+  - `cargo check -p oxvba-syntax -p oxvba-symbol -p oxvba-bind -p oxvba-bundle -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-bind --test bind_roundtrip project_newenum_attribute --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip project_default_member --quiet`
+  - `cargo test -p oxvba-differential --test project_class_newenum_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test foreach_scalar_source_vm3 --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-bundle vba_bundle_exports_collection_with_native_methods --quiet`
+  - `cargo test -p oxvba-bind -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential -p oxvba-symbol -p oxvba-syntax --tests --no-run`
+  - `rustfmt --edition 2024 --check` on the locally formatter-clean touched
+    source/test files, excluding `crates/oxvba-oxir/src/elaborate/lower.rs`
+    and `crates/oxvba-vm3/src/lib.rs` because broad rustfmt on those files
+    still includes pre-existing unrelated drift.
+  - `scripts/check-governance.ps1`
+  - `br dep cycles --json`
+  - `git diff --check`
+- Fresh-eyes review reverted formatter-only churn in the lowerer/vm3 files,
+  rechecked exact `VB_UserMemId = -4` parsing, and confirmed the previous
+  silent-empty project-class iteration fallback is gone in favor of runtime 438.
 - Known check caveat: broad rustfmt checks still surface the pre-existing
   repo-wide formatting drift tracked in `bd-4ktq.58`, so this bead used the
   targeted rustfmt lane above for files that do not pull in unrelated module

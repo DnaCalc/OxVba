@@ -1810,6 +1810,52 @@ fn project_default_member_get_let_roundtrip() {
 }
 
 #[test]
+fn project_newenum_attribute_marks_enumerator_member() {
+    let main = "Sub Main()\nEnd Sub\n";
+    let widget = "Public Property Get NewEnum() As IUnknown\nEnd Property\n\
+                  Attribute NewEnum.VB_UserMemId = -4\n\
+                  Attribute NewEnum.VB_MemberFlags = \"40\"\n";
+    let program =
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).expect("bind");
+    let class = program
+        .classes
+        .iter()
+        .find(|class| class.name == "Widget")
+        .expect("Widget class");
+    assert!(
+        class.methods.iter().any(|method| {
+            method.name == "NewEnum"
+                && method.kind == oxvba_bundle::ProjectMemberKind::PropertyGet
+                && method.is_enumerator_member
+        }),
+        "VB_UserMemId = -4 should mark the project-class enumerator member: {:?}",
+        class.methods
+    );
+}
+
+#[test]
+fn project_newenum_attribute_requires_exact_minus_four_memid() {
+    let main = "Sub Main()\nEnd Sub\n";
+    let widget = "Public Property Get NewEnum() As IUnknown\nEnd Property\n\
+                  Attribute NewEnum.VB_UserMemId = -40\n";
+    let program =
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).expect("bind");
+    let class = program
+        .classes
+        .iter()
+        .find(|class| class.name == "Widget")
+        .expect("Widget class");
+    assert!(
+        class
+            .methods
+            .iter()
+            .all(|method| !method.is_enumerator_member),
+        "only exact VB_UserMemId = -4 should mark NewEnum: {:?}",
+        class.methods
+    );
+}
+
+#[test]
 fn project_default_member_set_roundtrip() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Dim t As Thing\n    Dim got As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b(3) = t\n    Set got = b(2)\n    r = got.GetVal()\nEnd Sub\n";
     let box_cls = "Private stored As Thing\n\n\

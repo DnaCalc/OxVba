@@ -595,6 +595,9 @@ impl<'h> Vm3<'h> {
             oxvba_bundle::NativeMethodId::CollectionItem => CollectionMethod::Item,
             oxvba_bundle::NativeMethodId::CollectionCount => CollectionMethod::Count,
             oxvba_bundle::NativeMethodId::CollectionRemove => CollectionMethod::Remove,
+            oxvba_bundle::NativeMethodId::CollectionNewEnum => {
+                return self.collection_new_enum_object(object);
+            }
         };
         object
             .with_native_collection(|d| dispatch_collection(method, d, &args))
@@ -1558,34 +1561,7 @@ impl<'h> Vm3<'h> {
             }
             OxInst::ForEachInit { iter, source } => {
                 let src = self.operand(source)?;
-                // Snapshot the source's elements at loop entry (matching vm2). An array
-                // enumerates its elements; a `Collection`/COM object needs the object model
-                // (M3-5/M3-8); scalar sources are a type mismatch.
-                let elements = if let Some(arr) = src.as_safearray() {
-                    arr.variant_elements().unwrap_or_default()
-                } else if let Some(obj) = src.as_object_ref() {
-                    if let Some(values) = obj.native_collection_snapshot() {
-                        // A built-in `Collection` enumerates its values in insertion order.
-                        values
-                    } else if obj.is_project_instance() {
-                        // A project instance (or an empty Collection) has nothing to enumerate.
-                        Vec::new()
-                    } else {
-                        // A foreign COM collection: snapshot its elements through the host's
-                        // IEnumVARIANT bridge. Enumeration failures are real VBA run-time
-                        // errors, not an empty collection.
-                        self.host
-                            .com()
-                            .enumerate_object(obj)
-                            .map_err(Fault::from_hal)
-                            .map_err(Vm3Error::Fault)?
-                    }
-                } else {
-                    return Err(Vm3Error::Fault(Fault::new(
-                        13,
-                        "For Each can only iterate over a collection object or an array",
-                    )));
-                };
+                let elements = self.foreach_elements(src, 0)?;
                 let key = self.resolve(iter);
                 self.for_each.insert(
                     key,
@@ -3411,6 +3387,9 @@ impl<'h> Vm3<'h> {
             oxvba_bundle::NativeMethodId::CollectionItem => CollectionMethod::Item,
             oxvba_bundle::NativeMethodId::CollectionCount => CollectionMethod::Count,
             oxvba_bundle::NativeMethodId::CollectionRemove => CollectionMethod::Remove,
+            oxvba_bundle::NativeMethodId::CollectionNewEnum => {
+                return self.collection_new_enum_object(object);
+            }
         };
         let argv = self.collection_args(args)?;
         object
@@ -3446,6 +3425,7 @@ impl<'h> Vm3<'h> {
     /// Resolve a `Collection` member name to its `NativeMethodId` via the VBA library bundle's
     /// Collection class — the single source of truth for the member set.
     fn vba_collection_native_method(member: &str) -> Option<oxvba_bundle::NativeMethodId> {
+        let member = member.trim().trim_start_matches('[').trim_end_matches(']');
         let lib = oxvba_bundle::vba_library_bundle();
         let class = lib.classes.first()?;
         let m = class
@@ -3456,6 +3436,100 @@ impl<'h> Vm3<'h> {
             Some(oxvba_bundle::NativeBody::Method(id)) => Some(id),
             _ => None,
         }
+    }
+
+    fn collection_new_enum_object(&mut self, object: &ObjectRef) -> Result<Variant, Vm3Error> {
+        let snapshot = object
+            .with_native_collection(|data| data.clone())
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?;
+        let instance_id = self.next_instance_id;
+        self.next_instance_id += 1;
+        let enumerator = ObjectRef::from_project_instance(
+            instance_id,
+            VBA_COLLECTION_ROUTE_KEY,
+            object.bundle_id(),
+            false,
+            &VBA_COLLECTION_DESCRIPTOR,
+        );
+        enumerator
+            .with_native_collection(|data| *data = snapshot)
+            .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?;
+        Ok(Variant::from_object_ref(enumerator))
+    }
+
+    fn foreach_elements(&mut self, src: Variant, depth: usize) -> Result<Vec<Variant>, Vm3Error> {
+        if depth > 8 {
+            return Err(Vm3Error::Fault(Fault::new(
+                438,
+                "Object doesn't support this property or method",
+            )));
+        }
+        if let Some(arr) = src.as_safearray() {
+            return Ok(arr.variant_elements().unwrap_or_default());
+        }
+        let Some(obj) = src.as_object_ref() else {
+            return Err(Vm3Error::Fault(Fault::new(
+                13,
+                "For Each can only iterate over a collection object or an array",
+            )));
+        };
+        if let Some(values) = obj.native_collection_snapshot() {
+            return Ok(values);
+        }
+        if obj.is_compat_object() && obj.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return Ok(Vec::new());
+        }
+        if obj.is_project_instance() {
+            return self.project_class_enumerator_elements(obj, depth + 1);
+        }
+        self.host
+            .com()
+            .enumerate_object(obj)
+            .map_err(Fault::from_hal)
+            .map_err(Vm3Error::Fault)
+    }
+
+    fn project_class_enumerator_elements(
+        &mut self,
+        object: ObjectRef,
+        depth: usize,
+    ) -> Result<Vec<Variant>, Vm3Error> {
+        let class_idx = object.route_key() as usize;
+        let obj_bundle = object.bundle_id() as usize;
+        let program = self
+            .programs
+            .get(obj_bundle)
+            .map(|lp| lp.program)
+            .ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+            })?;
+        let class = program.classes.get(class_idx).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, "Object doesn't support this member"))
+        })?;
+        let member = class
+            .methods
+            .iter()
+            .find(|m| m.is_enumerator_member && m.kind == ProjectMemberKind::PropertyGet)
+            .or_else(|| {
+                class
+                    .methods
+                    .iter()
+                    .find(|m| m.is_enumerator_member && m.kind == ProjectMemberKind::Method)
+            })
+            .ok_or_else(|| {
+                Vm3Error::Fault(Fault::new(
+                    438,
+                    "Object doesn't support this property or method",
+                ))
+            })?;
+        let result = self.run_proc_with_me(
+            obj_bundle,
+            member.proc,
+            Variant::from_object_ref(object),
+            &[],
+            false,
+        )?;
+        self.foreach_elements(result, depth)
     }
 
     /// Map a shared `CollectionError` onto its VBA run-time error number (9 / 457 / 5 / 449) —
@@ -4721,6 +4795,7 @@ mod tests {
                     kind: ProjectMemberKind::Method,
                     proc: ProcId(1),
                     is_default_member: false,
+                    is_enumerator_member: false,
                 }],
                 implements: Vec::new(),
             }],

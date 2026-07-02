@@ -3,6 +3,10 @@
 ## 1. Mission
 OxVBA is a full-fidelity VBA 7 runtime engine in Rust, designed for compatibility-first execution with rigorous correctness and high performance.
 
+Compatibility means matching real VBA compile-time and run-time behavior. Existing
+OxVBA behavior, legacy fallbacks, and internal convenience paths are not project
+goals except as explicitly documented temporary gaps on the way to VBA parity.
+
 OxVBA is part of the DNA Calc universe and follows Foundation doctrine, while operating as its own project with its own planning and delivery cadence.
 
 ## 2. Values Ordering

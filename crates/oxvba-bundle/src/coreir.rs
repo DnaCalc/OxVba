@@ -144,6 +144,7 @@ pub struct CoreClassMethod {
     pub kind: ProjectMemberKind,
     pub proc: ProcId,
     pub is_default_member: bool,
+    pub is_enumerator_member: bool,
 }
 
 // ── Places (l-values) ─────────────────────────────────────────────────────────

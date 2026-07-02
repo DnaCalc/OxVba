@@ -50,6 +50,8 @@ pub struct ProcInfo {
     pub local_of: HashMap<SymbolId, LocalId>,
     /// The class module this proc belongs to (its display name), if any.
     pub class_name: Option<String>,
+    /// True when the member carries `Attribute <member>.VB_UserMemId = -4`.
+    pub is_enumerator_member: bool,
     /// `Some(LocalId(0))` for a class member — the implicit `Me` slot.
     pub me_local: Option<LocalId>,
     /// The enclosing module's `Option Compare` mode (for string comparisons).
@@ -193,6 +195,7 @@ impl IdAllocator {
                 alloc.alloc_proc(
                     env,
                     module.module_scope,
+                    module.syntax,
                     *decl,
                     proc_scope,
                     class_name.clone(),
@@ -254,6 +257,7 @@ impl IdAllocator {
                         is_default_member: default_member.as_ref().is_some_and(|(name, _)| {
                             fold_identifier(name) == fold_identifier(&info.name)
                         }),
+                        is_enumerator_member: info.is_enumerator_member,
                     }),
                 }
             }
@@ -290,6 +294,7 @@ impl IdAllocator {
         &mut self,
         env: &ResolutionEnvironment,
         module_scope: ScopeId,
+        module_syntax: SyntaxNode<'_>,
         decl: SyntaxNode<'_>,
         proc_scope: ScopeId,
         class_name: Option<String>,
@@ -328,6 +333,8 @@ impl IdAllocator {
 
         // Map proc symbol → proc id (project-member resolution targets this).
         let proc_sym = symbols.find_in_scope(module_scope, SymbolNamespace::Procedure, &logical)?;
+        let is_enumerator_member = has_user_mem_id_decl(decl, -4)
+            || has_exported_member_user_mem_id(module_syntax, &logical, -4);
         if let Some(sym) = proc_sym {
             match member_kind {
                 Some(mk) => {
@@ -396,6 +403,7 @@ impl IdAllocator {
             return_type,
             local_of,
             class_name,
+            is_enumerator_member,
             me_local,
             compare_mode,
             option_base,
@@ -612,6 +620,53 @@ fn property_accessor_kind(decl: SyntaxNode<'_>) -> ProjectMemberKind {
         }
     }
     ProjectMemberKind::PropertyGet
+}
+
+fn has_user_mem_id_decl(node: SyntaxNode<'_>, id: i32) -> bool {
+    node.text()
+        .lines()
+        .any(|line| line_has_user_mem_id(line, id))
+}
+
+fn has_exported_member_user_mem_id(root: SyntaxNode<'_>, member: &str, id: i32) -> bool {
+    if root.kind() == SyntaxKind::AttributeStmt
+        && let Some(attr_member) = attribute_user_mem_id_member(&root.text(), id)
+        && fold_identifier(&attr_member) == fold_identifier(member)
+    {
+        return true;
+    }
+    root.child_nodes()
+        .into_iter()
+        .any(|child| has_exported_member_user_mem_id(child, member, id))
+}
+
+fn attribute_user_mem_id_member(text: &str, id: i32) -> Option<String> {
+    let compact = text.to_ascii_lowercase().replace([' ', '\t'], "");
+    if !compact.starts_with("attribute") || !compact.contains(".vb_usermemid=") {
+        return None;
+    }
+    let after_keyword = text.trim().split_once(char::is_whitespace)?.1.trim();
+    let (lhs, value) = after_keyword.split_once('=')?;
+    if parse_user_mem_id_value(value)? != id {
+        return None;
+    }
+    let (member, attr) = lhs.trim().rsplit_once('.')?;
+    if !attr.trim().eq_ignore_ascii_case("VB_UserMemId") {
+        return None;
+    }
+    let member = member.trim();
+    (!member.is_empty()).then(|| member.to_string())
+}
+
+fn line_has_user_mem_id(line: &str, id: i32) -> bool {
+    let Some((_, value)) = line.split_once('=') else {
+        return false;
+    };
+    line.to_ascii_lowercase().contains("vb_usermemid") && parse_user_mem_id_value(value) == Some(id)
+}
+
+fn parse_user_mem_id_value(value: &str) -> Option<i32> {
+    value.trim().parse::<i32>().ok()
 }
 
 /// The module's `Option Compare` mode (`Text` makes string comparisons

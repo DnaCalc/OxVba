@@ -83,6 +83,13 @@ fn build() -> Bundle {
             native: NativeMethodId::CollectionRemove,
             param_count: 1,
         },
+        MethodSpec {
+            name: "_NewEnum",
+            member_kind: ProjectMemberKind::PropertyGet,
+            proc_kind: ProcedureKind::PropertyGet,
+            native: NativeMethodId::CollectionNewEnum,
+            param_count: 0,
+        },
     ];
 
     let mut procedures = Vec::with_capacity(specs.len() + NativeImplId::ALL.len());
@@ -216,7 +223,7 @@ mod tests {
             ExportToken::Class { name } if name.eq_ignore_ascii_case("Collection")
         )));
         let collection = &b.classes[0];
-        assert_eq!(collection.methods.len(), 4);
+        assert_eq!(collection.methods.len(), 5);
         // Every method resolves to a native-bodied procedure.
         for m in &collection.methods {
             assert!(

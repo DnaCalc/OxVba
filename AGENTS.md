@@ -32,6 +32,16 @@ Use `docs/` and `synthesis/` for supporting context and provenance.
 - For repo project-scope work executed through beads, capability lanes do not close on documentation, audit, rollout, or other support-only bead outcomes alone.
 - If a support bead exposes unfinished capability work, it must leave behind the next delivery bead or delivery-ready path before the lane is considered clean.
 
+## VBA Compatibility Objective
+- The goal is always to match real VBA compile-time and run-time behavior.
+- Do not preserve legacy OxVBA behavior, fallbacks, or conveniences as compatibility
+  targets. If such a path remains temporarily, document it as a gap and keep
+  delivery status `in-progress` until it matches VBA or the residual scope is
+  explicitly split into an open bead.
+- When behavior is uncertain, use public specifications and reproducible
+  Excel/VBA oracle observations to decide the target behavior before making
+  compatibility claims.
+
 ## Excel/VBA Oracle Modal Handling
 - When driving real Excel/VBA as an oracle, always be prepared to intercept modal
   compile/runtime dialogs with UI Automation before starting the run. Follow

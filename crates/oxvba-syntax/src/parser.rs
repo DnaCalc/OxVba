@@ -535,7 +535,10 @@ impl<'a> Parser<'a> {
                     self.start_node_at(cp, SyntaxKind::MemberExpr);
                     self.bump(); // . or !
                     self.eat_expr_whitespace();
-                    if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+                    if self.at(SyntaxKind::Ident)
+                        || self.at(SyntaxKind::BracketedIdent)
+                        || self.current().is_keyword()
+                    {
                         self.bump();
                     }
                     // Type suffix after member name
@@ -666,7 +669,10 @@ impl<'a> Parser<'a> {
                 self.start_node(SyntaxKind::MemberExpr);
                 self.bump(); // .
                 self.eat_expr_whitespace();
-                if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
+                if self.at(SyntaxKind::Ident)
+                    || self.at(SyntaxKind::BracketedIdent)
+                    || self.current().is_keyword()
+                {
                     self.bump();
                 }
                 if self.at(SyntaxKind::TypeSuffix) {
@@ -3863,6 +3869,20 @@ mod tests {
             members
         );
         assert!(has_node_kind(&p.syntax(), SyntaxKind::IndexExpr));
+    }
+
+    #[test]
+    fn expr_dot_bracketed_member_name() {
+        let src = "Sub T()\n    Set x = items.[_NewEnum]\nEnd Sub\n";
+        let p = parse(src);
+        assert_eq!(p.syntax().text(), src);
+        assert!(p.errors().is_empty(), "unexpected errors: {:?}", p.errors());
+        let members = collect_nodes(&p.syntax(), SyntaxKind::MemberExpr);
+        assert!(
+            members.iter().any(|s| s.contains("items.[_NewEnum]")),
+            "expected bracketed member, got {:?}",
+            members
+        );
     }
 
     #[test]

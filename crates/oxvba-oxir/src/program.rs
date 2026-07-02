@@ -74,6 +74,8 @@ pub struct OxClassMethod {
     pub kind: ProjectMemberKind,
     pub proc: FuncId,
     pub is_default_member: bool,
+    #[serde(default)]
+    pub is_enumerator_member: bool,
 }
 
 /// A project class: lifecycle hooks, late-bound member table, implemented interfaces.
