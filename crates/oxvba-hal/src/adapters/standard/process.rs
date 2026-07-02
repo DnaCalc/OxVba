@@ -205,7 +205,7 @@ impl ProcessEnvHal for StandardHostServices {
             && !text.as_str().trim().is_empty()
         {
             let command_text = text.as_str();
-            let mut child = self
+            let child = self
                 .spawn_probe_shell_process_text(&command_text)
                 .map_err(|err| {
                     HalError::adapter_fault(
@@ -216,15 +216,14 @@ impl ProcessEnvHal for StandardHostServices {
                     )
                 })?;
             let child_id = i32::try_from(child.id()).unwrap_or(i32::MAX).max(1);
-            let _ = child.wait();
-            return Ok(Variant::from_i32(child_id));
+            return Ok(Variant::from_f64(f64::from(child_id)));
         }
         if self.native_process_enabled() {
             let command = self
                 .variant_to_i32(&command, capability, "shell", "command")
                 .unwrap_or(0);
             if command != 0 {
-                let mut child = self.spawn_probe_shell_process(command).map_err(|err| {
+                let child = self.spawn_probe_shell_process(command).map_err(|err| {
                     HalError::adapter_fault(
                         self.profile,
                         capability,
@@ -233,8 +232,7 @@ impl ProcessEnvHal for StandardHostServices {
                     )
                 })?;
                 let child_id = i32::try_from(child.id()).unwrap_or(i32::MAX).max(1);
-                let _ = child.wait();
-                return Ok(Variant::from_i32(child_id));
+                return Ok(Variant::from_f64(f64::from(child_id)));
             }
         }
         let command = match command.as_bstr() {

@@ -1150,8 +1150,8 @@ fn verify_process_host_backed_contract(
         .shell_variant(Variant::from_i32(1), Variant::from_i32(0))
     {
         Ok(token) => {
-            let token = token.as_i32().unwrap_or_default();
-            if host_backed_active && token <= 1 {
+            let token = variant_numeric_f64(&token).unwrap_or_default();
+            if host_backed_active && token <= 1.0 {
                 ok = false;
                 failures.push(format!(
                     "process.shell expected host-backed pid-like token > 1; observed {}",

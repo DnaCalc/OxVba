@@ -1609,6 +1609,54 @@
   bead acceptance text but not yet proved, so the oracle, host regression, and
   docs were expanded to cover it. No remaining scoped Width # issue is open.
 
+## 2026-07-02 - Headless Interaction And Shell Policy Residuals (`bd-4ktq.46`)
+
+- Captured live Excel/VBA 7.1 behavior for `Shell` with VBE Debug -> Compile
+  and PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_headless_interaction_oracle_20260702T0015Z/`.
+- Oracle finding: `Shell("cmd /c ping -n 3 ...", vbHide)` returns before the
+  delayed child process exits, yields a positive task id, and the returned
+  Variant subtype is `Double` (`VarType=5`); the captured elapsed time was about
+  0.016 seconds.
+- Native host-backed `Shell` no longer waits for the child process. It returns
+  the spawned process id immediately as a Variant/Double, so the product target
+  remains real VBA compile/runtime behavior rather than legacy OxVBA behavior.
+- Non-native deterministic process policy remains a host boundary token for
+  environments that cannot or must not spawn processes; it is not documented as
+  Excel/VBA parity.
+- `Debug.Assert` in headless vm3 evaluates its condition expression, including
+  side effects, and does not print or break. A false assertion in Excel/VBE is
+  an IDE debugger break-state boundary, not a headless runtime modal, so OxVBA
+  does not fake that UI state.
+- Added source-level host and HAL regressions for async native `Shell` timing
+  and the Variant/Double return shape, plus a `Debug.Assert` side-effect
+  regression.
+- Verification completed:
+  - `scripts/run-vm3-headless-interaction-oracle.ps1 -RunId vm3_headless_interaction_oracle_20260702T0015Z`
+  - `cargo check -p oxvba-hal`
+  - `cargo check -p oxvba-host`
+  - `cargo test -p oxvba-host --test debug_and_console_print --quiet`
+  - `cargo test -p oxvba-host --test process_statements --quiet`
+  - `cargo test -p oxvba-hal native_mode_ --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `rustfmt --edition 2024 --check --config skip_children=true crates/oxvba-hal/src/adapters/standard/mod.rs crates/oxvba-hal/src/adapters/standard/process.rs crates/oxvba-host/tests/process_statements.rs crates/oxvba-host/tests/debug_and_console_print.rs crates/oxvba-hal/src/conformance.rs`
+  - PowerShell parser check for
+    `scripts/run-vm3-headless-interaction-oracle.ps1`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+- Known check caveat: broad rustfmt over the `standard` module still surfaces
+  pre-existing drift in sibling `com.rs`; this bead used `skip_children=true`
+  plus targeted touched-file checks to avoid mixing unrelated formatting into a
+  runtime behavior change.
+- Fresh-eyes review checked the native Shell implementation, async host/HAL
+  tests, Debug.Assert side-effect test, Excel oracle harness/evidence, and
+  inventory wording against the rule that VBA compile/runtime behavior is the
+  compatibility target. The review caught one important issue before closure:
+  native `Shell` had been made asynchronous but still returned a `Long`; the
+  Excel oracle shows `VarType=5`, so the native path and regressions were
+  corrected to return a Variant/Double task id.
+
 ## 2026-07-01 - Statement Parser/Error-Model Slice (`bd-4ktq.39.6`)
 
 - Closed the focused statement/parser residual subset:

@@ -110,6 +110,33 @@ fn debug_assert_evaluates_without_breaking_in_headless_runtime() {
 }
 
 #[test]
+fn debug_assert_condition_is_evaluated_in_headless_runtime() {
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    engine.set_runtime_profile(RuntimeProfileId::WindowsStdio);
+    engine.set_host_callbacks(Some(callbacks.clone()));
+    let snap = engine
+        .execute_source_with_variant_snapshot_clean(
+            "Public touched As Long\n\
+             Sub Main()\n\
+                Debug.Assert MarkTouched()\n\
+             End Sub\n\
+             Function MarkTouched() As Boolean\n\
+                touched = 7\n\
+                MarkTouched = False\n\
+             End Function\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(7),
+        "Debug.Assert side effect: {snap:?}"
+    );
+    assert!(callbacks.debug_output().is_empty());
+    assert!(callbacks.console_output().is_empty());
+}
+
+#[test]
 fn jit_request_is_rejected_rather_than_falling_back() {
     let callbacks = Arc::new(ConsoleCallbacks::default());
     let err = run("Sub Main()\nDebug.Print \"x\"\nEnd Sub", true, callbacks)

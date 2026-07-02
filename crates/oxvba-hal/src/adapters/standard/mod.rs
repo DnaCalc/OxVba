@@ -1547,7 +1547,7 @@ mod tests {
         take_variant_result_value as com_take_variant_result_value,
         variant_to_com_value as com_variant_to_com_value,
     };
-    use oxvba_runtime::{Variant, bstr::BStr};
+    use oxvba_runtime::{VarType, Variant, bstr::BStr};
     use proptest::prelude::*;
 
     use crate::{
@@ -3289,11 +3289,11 @@ mod tests {
             return;
         };
         let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
-        let shell = expect_i32(
-            host.shell_variant(rv(1), rv(0))
-                .expect("native shell should succeed"),
-        );
-        assert!(shell >= 1);
+        let shell = host
+            .shell_variant(rv(1), rv(0))
+            .expect("native shell should succeed");
+        assert_eq!(shell.vtype(), VarType::Double);
+        assert!(shell.as_f64().is_some_and(|value| value >= 1.0));
         let environ = host
             .environ_variant(Variant::from_string(BStr::from("PATH")))
             .expect("native environ should succeed");
@@ -3335,6 +3335,73 @@ mod tests {
             out,
             Variant::from_string(BStr::from("native-process-env-value"))
         );
+    }
+
+    #[test]
+    fn native_mode_shell_returns_before_process_exit() {
+        let Some(profile) = current_native_profile() else {
+            return;
+        };
+        let host = StandardHostServices::new(profile, HostPolicy::interactive_dev());
+        let temp_dir = std::env::current_dir()
+            .expect("cwd")
+            .join("temp")
+            .join("native-shell-async");
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let marker = temp_dir.join(format!("marker_{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+
+        #[cfg(target_os = "windows")]
+        let command = {
+            let script = temp_dir.join(format!("delayed_{}.cmd", std::process::id()));
+            std::fs::write(
+                &script,
+                format!(
+                    "@echo off\r\nping -n 3 127.0.0.1 > NUL\r\necho done > \"{}\"\r\n",
+                    marker.display()
+                ),
+            )
+            .expect("write delayed cmd");
+            script.to_string_lossy().to_string()
+        };
+        #[cfg(not(target_os = "windows"))]
+        let command = {
+            let script = temp_dir.join(format!("delayed_{}.sh", std::process::id()));
+            let marker_path = marker.to_string_lossy().replace('\'', "'\\''");
+            std::fs::write(&script, format!("sleep 2\necho done > '{marker_path}'\n"))
+                .expect("write delayed sh");
+            let script_path = script.to_string_lossy().replace('\'', "'\\''");
+            format!("sh '{script_path}'")
+        };
+
+        let started = std::time::Instant::now();
+        let task_id = host
+            .shell_variant(Variant::from_string(command), rv(0))
+            .expect("native shell should succeed");
+        let elapsed = started.elapsed();
+
+        assert_eq!(task_id.vtype(), VarType::Double);
+        assert!(
+            task_id.as_f64().is_some_and(|value| value > 0.0),
+            "Shell should return a task id, got {task_id:?}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_millis(1200),
+            "Shell should return before the delayed child exits, elapsed={elapsed:?}"
+        );
+        assert!(
+            !marker.exists(),
+            "delayed marker already existed when Shell returned; command may have blocked"
+        );
+
+        for _ in 0..40 {
+            if marker.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(marker.exists(), "delayed shell command did not finish");
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
