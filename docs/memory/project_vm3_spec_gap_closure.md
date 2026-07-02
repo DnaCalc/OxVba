@@ -2750,3 +2750,18 @@
   later `oxvba-com` clippy denials, now tracked as `bd-4ktq.62`, and the
   existing wrapped COM server `gTopicIds` test failure tracked as
   `bd-4ktq.61`.
+
+## 2026-07-02 - oxvba-com Clippy Gates (`bd-4ktq.62`)
+
+- Repaired two semantic no-op clippy denials in `oxvba-com`:
+  `record_field_kind_matches` now uses `matches!`, and the one-item
+  `LongPtr` vtable exclusion assertion is a direct assertion rather than a
+  single-element loop.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-com --all-targets -- -D warnings`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the previous `oxvba-com` clippy gates. It surfaces the next
+  `oxvba-hal` unsafe-comment clippy gate, now tracked as `bd-4ktq.63`, and the
+  existing wrapped COM server `gTopicIds` test failure tracked as
+  `bd-4ktq.61`.

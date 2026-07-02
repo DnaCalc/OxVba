@@ -3792,12 +3792,11 @@ mod gate_tests {
             );
         }
         // Out-of-set parameter shapes still decline before slot-call.
-        for bad in [crate::TypeLibParamType::LongPtr] {
-            assert!(
-                !is_v1_vtable_vartype(bad),
-                "{bad:?} must be OUTSIDE the v1 set (decline to IDispatch)"
-            );
-        }
+        let bad = crate::TypeLibParamType::LongPtr;
+        assert!(
+            !is_v1_vtable_vartype(bad),
+            "{bad:?} must be OUTSIDE the v1 set (decline to IDispatch)"
+        );
         // Decimal retvals are supported through caller-owned DECIMAL out cells,
         // while still-unsupported retval shapes decline outright.
         let mut decimal_ret = eligible_spec(17, 58);

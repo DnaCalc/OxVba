@@ -1581,20 +1581,20 @@ fn record_field_kind_matches(
     descriptor: &crate::TypeLibRecordFieldKind,
 ) -> bool {
     use crate::TypeLibRecordFieldKind as D;
-    match (runtime, descriptor) {
+    matches!(
+        (runtime, descriptor),
         (VbaRecordFieldKind::Integer, D::I16)
-        | (VbaRecordFieldKind::Long, D::I32)
-        | (VbaRecordFieldKind::LongLong, D::I64)
-        | (VbaRecordFieldKind::Byte, D::U8)
-        | (VbaRecordFieldKind::Single, D::F32)
-        | (VbaRecordFieldKind::Double, D::F64)
-        | (VbaRecordFieldKind::Currency, D::Currency)
-        | (VbaRecordFieldKind::Date, D::Date)
-        | (VbaRecordFieldKind::Boolean, D::Bool)
-        | (VbaRecordFieldKind::String, D::BStr)
-        | (VbaRecordFieldKind::Variant, D::Variant) => true,
-        _ => false,
-    }
+            | (VbaRecordFieldKind::Long, D::I32)
+            | (VbaRecordFieldKind::LongLong, D::I64)
+            | (VbaRecordFieldKind::Byte, D::U8)
+            | (VbaRecordFieldKind::Single, D::F32)
+            | (VbaRecordFieldKind::Double, D::F64)
+            | (VbaRecordFieldKind::Currency, D::Currency)
+            | (VbaRecordFieldKind::Date, D::Date)
+            | (VbaRecordFieldKind::Boolean, D::Bool)
+            | (VbaRecordFieldKind::String, D::BStr)
+            | (VbaRecordFieldKind::Variant, D::Variant)
+    )
 }
 
 #[cfg(target_os = "windows")]
