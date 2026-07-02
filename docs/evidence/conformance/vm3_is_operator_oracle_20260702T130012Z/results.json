@@ -1,0 +1,62 @@
+[
+  {
+    "id": "TYPED-LONG-IS-LONG",
+    "purpose": "typed scalar operands",
+    "compileStatus": "compile-error",
+    "dialogText": "Compile error:\n\nType mismatch",
+    "dialogWindow": "Microsoft Visual Basic for Applications - [Main (Code)]",
+    "selectedText": "b",
+    "selectedLine": "r = (a Is b)",
+    "runStatus": "not-run",
+    "runValue": null,
+    "errorMessage": null
+  },
+  {
+    "id": "VARIANT-SCALAR-IS-VARIANT-SCALAR",
+    "purpose": "Variant operands holding scalars",
+    "compileStatus": "ok",
+    "dialogText": null,
+    "dialogWindow": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "runStatus": "ok",
+    "runValue": "424:Object required:False",
+    "errorMessage": null
+  },
+  {
+    "id": "OBJECT-IS-VARIANT-SCALAR",
+    "purpose": "object operand with Variant holding scalar",
+    "compileStatus": "ok",
+    "dialogText": null,
+    "dialogWindow": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "runStatus": "ok",
+    "runValue": "424:Object required:False",
+    "errorMessage": null
+  },
+  {
+    "id": "UNSET-OBJECT-IS-NOTHING",
+    "purpose": "unset object variable compares with Nothing",
+    "compileStatus": "ok",
+    "dialogText": null,
+    "dialogWindow": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "runStatus": "ok",
+    "runValue": "True",
+    "errorMessage": null
+  },
+  {
+    "id": "COLLECTION-IDENTITY",
+    "purpose": "real object identity and distinct object control",
+    "compileStatus": "ok",
+    "dialogText": null,
+    "dialogWindow": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "runStatus": "ok",
+    "runValue": "True:False:False",
+    "errorMessage": null
+  }
+]
