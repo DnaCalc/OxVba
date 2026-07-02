@@ -4455,6 +4455,42 @@ mod tests {
             ),
             "typed record-array retvals should carry descriptor IRecordInfo metadata"
         );
+
+        let increment = blob
+            .members
+            .iter()
+            .find(|member| member.name == "Increment")
+            .expect("ByRef Long increment member should exist");
+        assert_eq!(
+            increment.parameter_types,
+            vec![TypeLibParamType::ByRefLong],
+            "Increment should expose a single ByRef Long parameter"
+        );
+        assert_eq!(
+            increment.parameter_wire_types,
+            vec![TypeLibWireType::Automation(TypeLibParamType::ByRefLong)],
+            "Increment should preserve the ByRef Long Automation wire shape"
+        );
+        assert!(
+            increment.vtable_slot.is_some(),
+            "Increment should carry a vtable slot from the dual interface metadata"
+        );
+        assert!(
+            increment
+                .vtable_slot_bound
+                .zip(increment.vtable_slot)
+                .is_some_and(|(bound, slot)| slot < bound),
+            "Increment should carry an AV-safe vtable slot bound"
+        );
+        assert_eq!(
+            increment.source_typekind,
+            Some(crate::SourceTypeKind::Interface),
+            "Increment vtable metadata should be sourced from the dual interface"
+        );
+        assert!(
+            increment.is_dual && increment.callconv_is_stdcall && increment.interface_iid.is_some(),
+            "Increment should be vtable-admissible for early-bound ByRef writeback"
+        );
     }
 
     #[test]

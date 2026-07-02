@@ -68,7 +68,7 @@ use oxvba_runtime::object_ref::{
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{Variant, VbaRecord, pointer_helpers};
+use oxvba_runtime::{RuntimeByRefSlot, Variant, VbaRecord, pointer_helpers};
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
@@ -3846,6 +3846,7 @@ impl<'h> Vm3<'h> {
                 .map(|value| DynamicCallArg {
                     value: Some(DynamicValue::from_variant(value)),
                     name: None,
+                    by_ref: None,
                 })
                 .collect(),
             call_kind_hint: Some(invoke_kind_to_dynamic(invoke_kind)),
@@ -3894,7 +3895,7 @@ impl<'h> Vm3<'h> {
         args: &[OxCallArg],
     ) -> Result<Variant, Vm3Error> {
         let mut call_args = Vec::with_capacity(args.len());
-        for arg in args {
+        for (index, arg) in args.iter().enumerate() {
             let (value, arg_name) = match arg {
                 OxCallArg::Operand(op) => (Some(self.operand(op)?), None),
                 OxCallArg::ByRef(place) => (Some(self.read(place)?), None),
@@ -3907,6 +3908,8 @@ impl<'h> Vm3<'h> {
             call_args.push(DynamicCallArg {
                 value: value.map(DynamicValue::from_variant),
                 name: arg_name,
+                by_ref: matches!(arg, OxCallArg::ByRef(_))
+                    .then(|| RuntimeByRefSlot::new(index as u32, None)),
             });
         }
         let request = DynamicCallRequest {

@@ -5,7 +5,10 @@ use crate::{
     take_variant_result_value, take_variant_result_variant,
 };
 use oxvba_diagnostics::{Diagnostic, DiagnosticPhase, extract_prefixed_code};
-use oxvba_runtime::{ObjectRef, RuntimeByRefSlot, RuntimeCallResult, RuntimeValueType, Variant};
+use oxvba_runtime::{
+    ObjectRef, RuntimeByRefSlot, RuntimeByRefWriteback, RuntimeCallResult, RuntimeValueType,
+    Variant,
+};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{SysFreeString, SysStringLen};
 #[cfg(target_os = "windows")]
@@ -14,7 +17,7 @@ use windows_sys::Win32::System::Com::{
     DISPPARAMS, EXCEPINFO,
 };
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::Variant::{VARIANT, VT_ERROR};
+use windows_sys::Win32::System::Variant::{VARIANT, VT_BYREF, VT_ERROR, VT_I4};
 
 #[cfg(target_os = "windows")]
 const IID_NULL: windows_sys::core::GUID = windows_sys::core::GUID {
@@ -675,6 +678,169 @@ where
         detail: Some(detail),
     })
 }
+
+struct DispatchByRefI4Cell {
+    slot: RuntimeByRefSlot,
+    value: i32,
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
+/// Windows `IDispatch::Invoke` call that returns the runtime call-result carrier,
+/// including ByRef Long writebacks.
+///
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
+/// The callback closures must uphold COM ownership and runtime identity guarantees for any object
+/// handles or returned interface pointers they touch.
+pub unsafe fn invoke_dispatch_call_result<
+    FResolveObject,
+    FQueryUnknown,
+    FAddRefDispatch,
+    FBindDispatch,
+>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    flags: u16,
+    args: &[ComInvokeArg],
+    named_arg_dispids: &[i32],
+    label: &'static str,
+    prog_id_hint: &str,
+    resolve_object: &mut FResolveObject,
+    query_dispatch_from_unknown: &mut FQueryUnknown,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<RuntimeCallResult, ComInvokeFailure>
+where
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
+    FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
+    FAddRefDispatch: FnMut(*mut core::ffi::c_void),
+    FBindDispatch: FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<Variant, String>,
+{
+    let dispatch = dispatch.cast::<RawIDispatch>();
+    let mut byref_cells: Vec<Option<DispatchByRefI4Cell>> = (0..args.len()).map(|_| None).collect();
+    for (logical_index, arg) in args.iter().enumerate() {
+        if let Some(slot) = arg.by_ref {
+            let Some(value) = arg
+                .value
+                .as_ref()
+                .and_then(|value| value.variant().as_i32())
+            else {
+                return Err(validation_failure(
+                    label,
+                    dispid,
+                    format!(
+                        "IDispatch ByRef writeback currently supports Long arguments; argument {logical_index} was not a Long"
+                    ),
+                ));
+            };
+            byref_cells[logical_index] = Some(DispatchByRefI4Cell { slot, value });
+        }
+    }
+
+    let mut invoke_args: Vec<VARIANT> = Vec::with_capacity(args.len());
+    for (logical_index, arg) in args.iter().enumerate().rev() {
+        let mut variant: VARIANT = std::mem::zeroed();
+        if let Some(cell) = byref_cells[logical_index].as_mut() {
+            variant.Anonymous.Anonymous.vt = VT_BYREF | VT_I4;
+            variant.Anonymous.Anonymous.Anonymous.plVal = &mut cell.value;
+        } else {
+            match arg.value {
+                Some(ref value) => {
+                    let value = value.to_com_value();
+                    if let Err(detail) = set_variant_from_com_value(
+                        &mut variant,
+                        &value,
+                        resolve_object,
+                        add_ref_dispatch,
+                    ) {
+                        let _ = windows_sys::Win32::System::Variant::VariantClear(&mut variant);
+                        clear_variant_args(&mut invoke_args);
+                        return Err(validation_failure(label, dispid, detail));
+                    }
+                }
+                None => set_variant_missing_arg(&mut variant),
+            }
+        }
+        invoke_args.push(variant);
+    }
+
+    let mut named_arg_dispids_reversed =
+        named_arg_dispids.iter().copied().rev().collect::<Vec<_>>();
+    let mut result: VARIANT = std::mem::zeroed();
+    let mut excep: EXCEPINFO = std::mem::zeroed();
+    let mut arg_err = u32::MAX;
+    let mut params = DISPPARAMS {
+        rgvarg: if invoke_args.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            invoke_args.as_mut_ptr()
+        },
+        rgdispidNamedArgs: if named_arg_dispids_reversed.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            named_arg_dispids_reversed.as_mut_ptr()
+        },
+        cArgs: args.len() as u32,
+        cNamedArgs: named_arg_dispids.len() as u32,
+    };
+    let hr = ((*(*dispatch).vtbl).invoke)(
+        dispatch.cast(),
+        dispid,
+        &IID_NULL,
+        0x0400,
+        flags,
+        &mut params,
+        &mut result,
+        &mut excep,
+        &mut arg_err,
+    );
+    if hr < 0 {
+        clear_variant_args(&mut invoke_args);
+        return Err(ComInvokeFailure {
+            label,
+            dispid,
+            hr: Some(hr),
+            arg_err: (arg_err != u32::MAX).then_some(arg_err),
+            excep: take_excepinfo(&mut excep),
+            detail: None,
+        });
+    }
+
+    let value = match take_variant_result_variant(
+        &mut result,
+        query_dispatch_from_unknown,
+        add_ref_dispatch,
+        &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, op: &'static str| {
+            bind_dispatch_result(dispatch, prog_id_hint, op)
+        },
+        prog_id_hint,
+        "dispatch_invoke",
+    ) {
+        Ok(value) => value,
+        Err(detail) => {
+            clear_variant_args(&mut invoke_args);
+            return Err(ComInvokeFailure {
+                label,
+                dispid,
+                hr: None,
+                arg_err: None,
+                excep: None,
+                detail: Some(detail),
+            });
+        }
+    };
+    let mut call_result = RuntimeCallResult::value(value);
+    for cell in byref_cells.into_iter().flatten() {
+        call_result.add_writeback(RuntimeByRefWriteback::new(
+            cell.slot,
+            Variant::from_i32(cell.value),
+        ));
+    }
+    clear_variant_args(&mut invoke_args);
+    Ok(call_result)
+}
 fn validation_failure(
     label: &'static str,
     dispid: i32,
@@ -1240,6 +1406,171 @@ where
 #[cfg(target_os = "windows")]
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
+/// Member-metadata-backed Windows `IDispatch::Invoke` call that returns ByRef
+/// writebacks in the runtime call-result carrier.
+///
+/// # Safety
+/// `dispatch` must point to a live `IDispatch` implementation for the duration of the call.
+/// The callback closures must uphold COM ownership and runtime identity guarantees for any object handles or returned interface pointers they touch.
+pub unsafe fn invoke_member_spec_call_result<
+    FResolveNamedArgDispids,
+    FResolveObject,
+    FQueryUnknown,
+    FAddRefDispatch,
+    FBindDispatch,
+>(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    spec: &crate::ComMemberSpec,
+    args: &[ComInvokeArg],
+    prog_id_hint: &str,
+    resolve_named_arg_dispids: &mut FResolveNamedArgDispids,
+    resolve_object: &mut FResolveObject,
+    query_dispatch_from_unknown: &mut FQueryUnknown,
+    add_ref_dispatch: &mut FAddRefDispatch,
+    bind_dispatch_result: &mut FBindDispatch,
+) -> Result<RuntimeCallResult, ComInvokeFailure>
+where
+    FResolveNamedArgDispids: FnMut(&str, &[ComInvokeArg]) -> Result<Vec<i32>, String>,
+    FResolveObject: FnMut(ObjectRef) -> Result<*mut core::ffi::c_void, String>,
+    FQueryUnknown: FnMut(*mut core::ffi::c_void) -> Result<*mut core::ffi::c_void, String>,
+    FAddRefDispatch: FnMut(*mut core::ffi::c_void),
+    FBindDispatch: FnMut(*mut core::ffi::c_void, &str, &'static str) -> Result<Variant, String>,
+{
+    let canonical_args;
+    let args = match spec.invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyPut
+        | crate::TypeLibMemberInvokeKind::PropertyPutRef => {
+            canonical_args = crate::invoke_policy::canonicalize_member_known_args(spec, args)
+                .map_err(|detail| validation_failure("dispatch_invoke", dispid, detail))?;
+            canonical_args.as_slice()
+        }
+        _ => args,
+    };
+    if spec.requires_argument && args.iter().all(|arg| arg.value.is_none()) {
+        return Err(validation_failure(
+            "dispatch_invoke",
+            dispid,
+            "member requires argument but DispatchInvoke omitted the third argument",
+        ));
+    }
+    if !spec.requires_argument {
+        return match spec.invoke_kind {
+            crate::TypeLibMemberInvokeKind::PropertyGet => invoke_dispatch_call_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYGET,
+                &[],
+                &[],
+                "property-get",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            ),
+            crate::TypeLibMemberInvokeKind::Method => invoke_dispatch_call_result(
+                dispatch,
+                dispid,
+                DISPATCH_METHOD,
+                &[],
+                &[],
+                "method",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            ),
+            crate::TypeLibMemberInvokeKind::PropertyPut
+            | crate::TypeLibMemberInvokeKind::PropertyPutRef => Err(validation_failure(
+                "dispatch_invoke",
+                dispid,
+                "member requires argument for property put/putref dispatch",
+            )),
+        };
+    }
+    match spec.invoke_kind {
+        crate::TypeLibMemberInvokeKind::PropertyGet => {
+            let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
+                .map_err(|detail| validation_failure("property-get", dispid, detail))?;
+            invoke_dispatch_call_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYGET,
+                args,
+                &named_arg_dispids,
+                "property-get",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::Method => {
+            let named_arg_dispids = resolve_named_arg_dispids(&spec.name, args)
+                .map_err(|detail| validation_failure("method", dispid, detail))?;
+            invoke_dispatch_call_result(
+                dispatch,
+                dispid,
+                DISPATCH_METHOD,
+                args,
+                &named_arg_dispids,
+                "method",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::PropertyPut => {
+            let named_arg_dispids =
+                resolve_named_arg_dispids(&spec.name, &args[..args.len().saturating_sub(1)])
+                    .map_err(|detail| validation_failure("property-put", dispid, detail))?;
+            let mut all_named = named_arg_dispids;
+            all_named.push(crate::COM_DISPID_PROPERTYPUT);
+            invoke_dispatch_call_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUT,
+                args,
+                &all_named,
+                "property-put",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+        crate::TypeLibMemberInvokeKind::PropertyPutRef => {
+            let named_arg_dispids =
+                resolve_named_arg_dispids(&spec.name, &args[..args.len().saturating_sub(1)])
+                    .map_err(|detail| validation_failure("property-putref", dispid, detail))?;
+            let mut all_named = named_arg_dispids;
+            all_named.push(crate::COM_DISPID_PROPERTYPUT);
+            invoke_dispatch_call_result(
+                dispatch,
+                dispid,
+                DISPATCH_PROPERTYPUTREF,
+                args,
+                &all_named,
+                "property-putref",
+                prog_id_hint,
+                resolve_object,
+                query_dispatch_from_unknown,
+                add_ref_dispatch,
+                bind_dispatch_result,
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
 /// Direct-DISPID Windows `IDispatch::Invoke` call.
 ///
 /// Arguments are marshalled from retained `ComInvokeValue`/`Variant` payloads,
@@ -1757,6 +2088,55 @@ pub unsafe fn invoke_member_spec_variant_with_shared_state(
         // add_ref_dispatch before the result VARIANT was cleared; ownership of
         // that reference transfers to the bindings map, satisfying
         // bind_native_runtime_object_result_shared's contract.
+        &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
+            crate::windows_runtime_state::bind_native_runtime_object_result_shared(
+                com_state,
+                dispatch.cast::<crate::RawIDispatch>(),
+                prog_id_hint,
+            )
+            .map(Variant::from_object_ref)
+        },
+    )
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
+pub unsafe fn invoke_member_spec_call_result_with_shared_state(
+    dispatch: *mut core::ffi::c_void,
+    dispid: i32,
+    spec: &crate::ComMemberSpec,
+    args: &[ComInvokeArg],
+    prog_id_hint: &str,
+    com_state: &std::sync::Arc<std::sync::Mutex<crate::WindowsComClientState>>,
+) -> Result<RuntimeCallResult, ComInvokeFailure> {
+    invoke_member_spec_call_result(
+        dispatch,
+        dispid,
+        spec,
+        args,
+        prog_id_hint,
+        &mut |member_name, args| {
+            crate::resolve_named_argument_dispids(
+                dispatch.cast::<crate::RawIDispatch>(),
+                member_name,
+                args,
+            )
+        },
+        &mut |handle| {
+            crate::resolve_dispatch_for_com_value_shared(com_state, handle)
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |unknown: *mut core::ffi::c_void| {
+            crate::query_dispatch_from_unknown(unknown.cast::<crate::RawIUnknown>())
+                .map(|dispatch| dispatch.cast::<core::ffi::c_void>())
+        },
+        &mut |dispatch: *mut core::ffi::c_void| {
+            crate::add_ref_dispatch(dispatch.cast::<crate::RawIDispatch>());
+        },
+        // SAFETY: take_variant_result_variant hands this callback a pointer
+        // that is null or carries the one reference retained via
+        // add_ref_dispatch before the result VARIANT was cleared; ownership of
+        // that reference transfers to the bindings map.
         &mut |dispatch: *mut core::ffi::c_void, prog_id_hint: &str, _op: &'static str| unsafe {
             crate::windows_runtime_state::bind_native_runtime_object_result_shared(
                 com_state,
@@ -3172,53 +3552,63 @@ where
                 )
             }
         };
-    let mut invoke_member_spec = |dispid: i32,
-                                  spec: &crate::ComMemberSpec,
-                                  invoke_args: &[ComInvokeArg],
-                                  prog_id: &str| {
-        // SAFETY: `dispatch` is the live bindings-map-retained dispatch pointer
-        // for this bound object; the helper performs the vtable gate before any
-        // slot access.
-        match unsafe {
-            try_vtable_member_spec_invoke_result_with_shared_state(
-                dispatch.cast(),
-                dispid,
-                spec,
-                invoke_args,
-                prefer_vtable,
-                com_state,
-            )
-        } {
-            Ok(Some(result)) => {
-                transport.record_vtable();
+    let mut invoke_member_spec =
+        |dispid: i32, spec: &crate::ComMemberSpec, invoke_args: &[ComInvokeArg], prog_id: &str| {
+            // SAFETY: `dispatch` is the live bindings-map-retained dispatch pointer
+            // for this bound object; the helper performs the vtable gate before any
+            // slot access.
+            match unsafe {
+                try_vtable_member_spec_invoke_result_with_shared_state(
+                    dispatch.cast(),
+                    dispid,
+                    spec,
+                    invoke_args,
+                    prefer_vtable,
+                    com_state,
+                )
+            } {
+                Ok(Some(result)) => {
+                    transport.record_vtable();
+                    return Ok(result);
+                }
+                Ok(None) => {}
+                Err(failure) => return Err(render_invoke_fault_message(&failure)),
+            }
+            if invoke_args.iter().any(|arg| arg.by_ref.is_some()) {
+                // SAFETY: `dispatch` is the live bindings-map-retained dispatch
+                // pointer for this call; the call-result path keeps ByRef cells alive
+                // for Invoke and decodes writebacks before clearing arguments.
+                let result = unsafe {
+                    invoke_member_spec_call_result_with_shared_state(
+                        dispatch.cast(),
+                        dispid,
+                        spec,
+                        invoke_args,
+                        prog_id,
+                        com_state,
+                    )
+                }
+                .map_err(|failure| render_invoke_fault_message(&failure))?;
+                transport.record_idispatch();
                 return Ok(result);
             }
-            Ok(None) => {}
-            Err(failure) => return Err(render_invoke_fault_message(&failure)),
-        }
-        if invoke_args.iter().any(|arg| arg.by_ref.is_some()) {
-            return Err(format!(
-                "COM-E-BYREF-FALLBACK-UNSUPPORTED: vtable declined `{}` on `{prog_id}`, and the IDispatch fallback cannot return runtime ByRef writebacks",
-                spec.name
-            ));
-        }
-        // SAFETY: `dispatch` is the live bindings-map-retained dispatch pointer
-        // for this call; the shared-state helper installs the standard COM
-        // argument/result ownership callbacks.
-        let value = unsafe {
-            invoke_member_spec_variant_with_shared_state(
-                dispatch.cast(),
-                dispid,
-                spec,
-                invoke_args,
-                prog_id,
-                com_state,
-            )
-        }
-        .map_err(|failure| render_invoke_fault_message(&failure))?;
-        transport.record_idispatch();
-        Ok(RuntimeCallResult::value(value))
-    };
+            // SAFETY: `dispatch` is the live bindings-map-retained dispatch pointer
+            // for this call; the shared-state helper installs the standard COM
+            // argument/result ownership callbacks.
+            let value = unsafe {
+                invoke_member_spec_variant_with_shared_state(
+                    dispatch.cast(),
+                    dispid,
+                    spec,
+                    invoke_args,
+                    prog_id,
+                    com_state,
+                )
+            }
+            .map_err(|failure| render_invoke_fault_message(&failure))?;
+            transport.record_idispatch();
+            Ok(RuntimeCallResult::value(value))
+        };
     let mut invoke_direct_dispid = |member: i32,
                                     invoke_kind: crate::TypeLibMemberInvokeKind,
                                     requires_argument: bool,

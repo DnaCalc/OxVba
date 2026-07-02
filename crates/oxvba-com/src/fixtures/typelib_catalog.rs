@@ -4,7 +4,8 @@ use crate::ComMemberToken;
 use crate::runtime_state::{ComEventPath, ComEventSpec, ComMemberSpec};
 use crate::typelib::{
     TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
-    TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+    TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest, TypeLibResolvedIdentity,
+    TypeLibWireType,
 };
 
 #[cfg(any(test, feature = "fixture-typelibs"))]
@@ -125,6 +126,7 @@ const TEST_EVENT_SERVER_DISPID_FIRE_SIMPLE: i32 = 101;
 const TEST_EVENT_SERVER_DISPID_FIRE_VALUE_CHANGED: i32 = 102;
 const TEST_EVENT_SERVER_DISPID_FIRE_PAIR_CHANGED: i32 = 103;
 const TEST_EVENT_SERVER_DISPID_PING: i32 = 104;
+const TEST_EVENT_SERVER_DISPID_INCREMENT: i32 = 126;
 const TEST_EVENT_SERVER_EVENT_SIMPLE: i32 = 1;
 const TEST_EVENT_SERVER_EVENT_VALUE_CHANGED: i32 = 2;
 const TEST_EVENT_SERVER_EVENT_PAIR_CHANGED: i32 = 3;
@@ -2403,6 +2405,10 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 || libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000201")
         })
     {
+        if let Some(blob) = try_local_test_event_server_typelib_metadata(&effective_identity) {
+            return blob;
+        }
+
         let members = vec![
             TypeLibMemberMetadata {
                 name: "FireSimpleEvent".to_string(),
@@ -2480,6 +2486,29 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 parameter_types: Vec::new(),
                 parameter_wire_types: Vec::new(),
                 parameter_iids: Vec::new(),
+                return_type: None,
+                return_wire_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
+                interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
+            },
+            TypeLibMemberMetadata {
+                name: "Increment".to_string(),
+                token: TEST_EVENT_SERVER_DISPID_INCREMENT,
+                vtable_slot: None,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["value".to_string()],
+                parameter_optional: vec![false],
+                parameter_optional_defaults: Vec::new(),
+                is_default_member: false,
+                parameter_types: vec![TypeLibParamType::ByRefLong],
+                parameter_wire_types: vec![TypeLibWireType::Automation(
+                    TypeLibParamType::ByRefLong,
+                )],
+                parameter_iids: vec![None],
                 return_type: None,
                 return_wire_type: None,
                 callconv_is_stdcall: false,
@@ -2628,6 +2657,62 @@ fn try_live_typelib_metadata(identity: &TypeLibResolvedIdentity) -> Option<TypeL
 
 #[cfg(not(target_os = "windows"))]
 fn try_live_typelib_metadata(_identity: &TypeLibResolvedIdentity) -> Option<TypeLibMetadataBlob> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn try_local_test_event_server_typelib_metadata(
+    identity: &TypeLibResolvedIdentity,
+) -> Option<TypeLibMetadataBlob> {
+    let is_base_test_event_server = identity
+        .importlib
+        .eq_ignore_ascii_case("oxvba_testeventserver.tlb")
+        || identity
+            .importlib
+            .eq_ignore_ascii_case("oxvba.testeventserver.tlb")
+        || identity.libid.as_deref().is_some_and(|libid| {
+            libid.eq_ignore_ascii_case("E2A30001-0001-0001-0001-000000000001")
+        });
+    if !is_base_test_event_server {
+        return None;
+    }
+
+    let typelib_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tools")
+        .join("OxVba.TestEventServer")
+        .join("bin")
+        .join("Debug")
+        .join("net48")
+        .join("OxVba.TestEventServer.tlb");
+    if !typelib_path.exists() {
+        return None;
+    }
+
+    let path = typelib_path.to_string_lossy().into_owned();
+    let ptlib = crate::windows_typelib_loader::load_typelib_from_path(&path).ok()?;
+    let mut live_identity = identity.clone();
+    live_identity.importlib = path;
+    if live_identity.requested_coclass.is_none() {
+        live_identity.requested_coclass = Some("TestEventServer".to_string());
+    }
+    let mut blob =
+        crate::windows_typelib_loader::build_metadata_blob_from_typelib(ptlib, live_identity).ok();
+    // SAFETY: `ptlib` is the live ITypeLib* reference returned by
+    // load_typelib_from_path above; build_metadata_blob_from_typelib borrows it,
+    // and this path releases that reference exactly once.
+    unsafe { crate::windows_typelib_loader::release_typelib(ptlib) };
+    if let Some(blob) = &mut blob {
+        blob.activation_prog_id = Some(OXVBA_TEST_EVENT_SERVER_PROGID.to_string());
+    }
+    blob
+}
+
+#[cfg(not(target_os = "windows"))]
+fn try_local_test_event_server_typelib_metadata(
+    _identity: &TypeLibResolvedIdentity,
+) -> Option<TypeLibMetadataBlob> {
     None
 }
 

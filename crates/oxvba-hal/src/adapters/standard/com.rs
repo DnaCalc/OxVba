@@ -709,6 +709,110 @@ impl ComHal for StandardHostServices {
         self.dispatch_invoke_variant(&lowered)
     }
 
+    fn dispatch_invoke_dynamic_variant_with_writebacks(
+        &self,
+        request: &DynamicCallRequest,
+    ) -> HalResult<(Variant, Vec<Option<Variant>>)> {
+        let capability = CapabilityId::ComActivationDispatch;
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "dispatch_invoke"));
+        }
+        if !self.policy.allow_com_activation {
+            return Err(self.denied(capability, "dispatch_invoke"));
+        }
+        let has_byref_args = request.args.iter().any(|arg| arg.by_ref.is_some());
+
+        #[cfg(target_os = "windows")]
+        if self.native_com_enabled() {
+            let lowered = match &request.member {
+                DynamicMemberSelector::Name(name) => {
+                    if let Some(descriptor) = self
+                        .com_bridge
+                        .describe_object(request.object.clone())
+                        .map_err(|message| self.com_dispatch_adapter_fault(message))?
+                        && let Some((member_token, _)) = self
+                            .com_bridge
+                            .known_member_spec_for_prog_id_name_by_name(
+                                &descriptor.prog_id_name,
+                                name,
+                            )
+                            .map_err(|message| self.com_dispatch_adapter_fault(message))?
+                    {
+                        ComInvokeRequest {
+                            object: request.object.clone(),
+                            member: member_token,
+                            args: request.args.clone().into_iter().map(Into::into).collect(),
+                            invoke_kind_hint: request.call_kind_hint.map(Into::into),
+                        }
+                    } else {
+                        return Err(HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "dispatch_invoke",
+                            format!(
+                                "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` did not resolve through authoritative object metadata"
+                            ),
+                        ));
+                    }
+                }
+                DynamicMemberSelector::Token(_)
+                | DynamicMemberSelector::TokenNamed { .. }
+                | DynamicMemberSelector::DefaultMember => {
+                    request.try_into_com_invoke_request().map_err(|detail| {
+                        HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "dispatch_invoke",
+                            format!("dynamic call request cannot lower to COM invoke: {detail}"),
+                        )
+                    })?
+                }
+            };
+            match self.com_bridge.dispatch_invoke_call_result(
+                &lowered,
+                self.policy.com_invocation_strategy == ComInvocationStrategy::PreferVtable,
+            ) {
+                Ok(Some(result)) => {
+                    let mut writebacks = vec![None; request.args.len()];
+                    for writeback in result.writebacks {
+                        let index = writeback.slot.id as usize;
+                        let Some(slot) = writebacks.get_mut(index) else {
+                            return Err(HalError::adapter_fault(
+                                self.profile,
+                                capability,
+                                "dispatch_invoke",
+                                format!(
+                                    "COM-E-BYREF-WRITEBACK-SLOT-RANGE: runtime writeback slot {} exceeds argument count {}",
+                                    writeback.slot.id,
+                                    request.args.len()
+                                ),
+                            ));
+                        };
+                        *slot = Some(writeback.value);
+                    }
+                    return Ok((result.value.unwrap_or_else(Variant::empty), writebacks));
+                }
+                Ok(None) => {}
+                Err(WindowsComBridgeDispatchError::Message(message)) => {
+                    return Err(self.com_dispatch_adapter_fault(message));
+                }
+                Err(WindowsComBridgeDispatchError::InvokeFailure(failure)) => {
+                    return Err(self.com_dispatch_invoke_fault(failure));
+                }
+            }
+        }
+
+        if has_byref_args {
+            return Err(HalError::adapter_fault(
+                self.profile,
+                capability,
+                "dispatch_invoke",
+                "COM-E-BYREF-WRITEBACK-UNSUPPORTED: dynamic COM ByRef calls require a writeback-capable native COM dispatch path",
+            ));
+        }
+        Ok((self.dispatch_invoke_dynamic_variant(request)?, Vec::new()))
+    }
+
     fn subscribe_event(
         &self,
         object: ObjectRef,

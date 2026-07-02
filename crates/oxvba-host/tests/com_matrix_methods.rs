@@ -330,18 +330,36 @@ fn m11_test_event_server_is_self_object_in_arg() {
     assert_differential("M11", late, early, Some(do_run), find_verdict, 1, Some(2));
 }
 
-// ── M12 (doc-gap): ByRef-out method ──────────────────────────────────────────
+// ── M12: TestEventServer ByRef-out method ────────────────────────────────────
 
 #[test]
-#[ignore = "DOCUMENTED GAP: no ByRef-out member on the registered surface"]
-fn m12_byref_out_method_documented_gap() {
-    // TestEventServer.cs confirms NO ByRef-out member exists. To express this
-    // scenario the server needs `Sub Increment(ByRef n As Long)` (write-back through
-    // a [in,out] interface param). Until then this is a discoverable, non-silent gap.
-    eprintln!(
-        "M12 GAP: no ByRef-out COM member registered. Add \
-         `Sub Increment(ByRef n As Long)` to OxVba.TestEventServer to express this."
-    );
+#[ignore = "live COM; run explicitly"]
+fn m12_test_event_server_byref_out_method_writes_back() {
+    // `Increment(ByRef n As Long)` mutates the caller's slot through a COM [in,out]
+    // parameter. Parenthesizing `n` would be a ByVal temp in VBA, so keep the
+    // statement-form call unparenthesized to prove the l-value writeback path.
+    let early_src = "Public verdict As Long\n\
+         Sub Main()\n\
+         Dim s As OxVba.TestEventServer\n\
+         Set s = CreateObject(\"OxVba.TestEventServer\")\n\
+         Dim n As Long\n\
+         n = 41\n\
+         s.Increment n\n\
+         verdict = n\n\
+         End Sub\n";
+    let late_src = "Public verdict As Long\n\
+         Sub Main()\n\
+         Dim s As Object\n\
+         Set s = CreateObject(\"OxVba.TestEventServer\")\n\
+         Dim n As Long\n\
+         n = 41\n\
+         s.Increment n\n\
+         verdict = n\n\
+         End Sub\n";
+    let late = run_clean(late_src);
+    let early = run_clean_with_references_prefer_vtable(early_src, tes_ref());
+    let do_run = run_clean_with_references_dispatch_only(early_src, tes_ref());
+    assert_differential("M12", late, early, Some(do_run), find_verdict, 42, Some(1));
 }
 
 // ── M13 (doc-gap): ParamArray method ─────────────────────────────────────────

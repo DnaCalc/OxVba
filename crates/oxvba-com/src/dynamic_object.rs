@@ -2,7 +2,7 @@ use crate::{
     ComCallbackPayload, ComCallbackToken, ComInvokeArg, ComInvokeKind, ComInvokeRequest,
     ComMemberToken, ComSubscriptionToken, ComValue,
 };
-use oxvba_runtime::{ObjectRef, Variant};
+use oxvba_runtime::{ObjectRef, RuntimeByRefSlot, Variant};
 
 macro_rules! define_dynamic_token {
     ($name:ident) => {
@@ -168,6 +168,7 @@ impl From<DynamicCallKind> for ComInvokeKind {
 pub struct DynamicCallArg {
     pub value: Option<DynamicValue>,
     pub name: Option<String>,
+    pub by_ref: Option<RuntimeByRefSlot>,
 }
 
 impl From<ComInvokeArg> for DynamicCallArg {
@@ -175,6 +176,7 @@ impl From<ComInvokeArg> for DynamicCallArg {
         Self {
             value: value.value.map(|value| value.to_com_value().into()),
             name: value.name,
+            by_ref: value.by_ref,
         }
     }
 }
@@ -184,7 +186,7 @@ impl From<DynamicCallArg> for ComInvokeArg {
         Self {
             value: value.value.map(|value| value.to_com_value().into()),
             name: value.name,
-            by_ref: None,
+            by_ref: value.by_ref,
         }
     }
 }
@@ -261,7 +263,7 @@ impl From<ComCallbackPayload> for DynamicEventPayload {
 #[cfg(test)]
 mod tests {
     use crate::{ComInvokeArg, ComInvokeKind, ComInvokeRequest, ComValue};
-    use oxvba_runtime::{ObjectRef, VarType};
+    use oxvba_runtime::{ObjectRef, RuntimeByRefSlot, RuntimeValueType, VarType};
 
     use super::{DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue};
 
@@ -308,6 +310,7 @@ mod tests {
             args: vec![super::DynamicCallArg {
                 value: Some(ComValue::Null.into()),
                 name: Some("value".to_string()),
+                by_ref: None,
             }],
             call_kind_hint: Some(DynamicCallKind::PropertySet),
         };
@@ -340,5 +343,21 @@ mod tests {
             .try_into_com_invoke_request()
             .expect_err("name-backed dynamic request should not lower without resolution");
         assert!(err.contains("requires authoritative name resolution"));
+    }
+
+    #[test]
+    fn dynamic_call_arg_roundtrip_preserves_byref_slot() {
+        let slot = RuntimeByRefSlot::new(2, Some(RuntimeValueType::Long));
+        let arg = ComInvokeArg::positional_by_ref(ComValue::I32(7), slot);
+
+        let dynamic: super::DynamicCallArg = arg.into();
+        assert_eq!(dynamic.by_ref, Some(slot));
+
+        let roundtrip: ComInvokeArg = dynamic.into();
+        assert_eq!(roundtrip.by_ref, Some(slot));
+        assert_eq!(
+            roundtrip.value.map(|value| value.to_com_value()),
+            Some(ComValue::I32(7))
+        );
     }
 }

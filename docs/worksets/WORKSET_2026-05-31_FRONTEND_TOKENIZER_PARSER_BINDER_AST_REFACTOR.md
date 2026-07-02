@@ -1534,7 +1534,11 @@ Candidate bead units:
   early-COM named-argument binding for host-injected and typed COM receivers, including bind-time
   unknown/duplicate-name diagnostics and descriptor-order lowering. A follow-up sibling slice adds
   typed COM interface-pointer return chaining so returned COM objects can drive subsequent
-  descriptor-backed member/default-member reads without falling back to `Variant` first.
+  descriptor-backed member/default-member reads without falling back to `Variant` first. A later
+  sibling slice closes the bounded M12 TestEventServer `ByRef Long` method writeback row: the
+  fixture typelib exposes `Increment(ByRef value As Long)`, typed and late COM call sites preserve
+  l-value arguments as runtime `ByRef` slots, and the vtable plus member-metadata-backed
+  `IDispatch` paths return the changed Long value to the caller.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
   `ReDim` parity through HIR, with project/class field-array carrier retirement split explicitly
   to FE-8.5.h.

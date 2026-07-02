@@ -1111,6 +1111,37 @@ impl<'a> ProcLower<'a> {
         Ok(args)
     }
 
+    /// Arguments for a genuinely late-bound COM dispatch. With no static
+    /// signature, VBA still passes an unparenthesized l-value argument by
+    /// reference so a COM `[out]`/`[in,out]` parameter can write back to the
+    /// caller. Parenthesized expressions and explicit `ByVal` stay value temps.
+    pub(crate) fn bind_late_dispatch_args(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Vec<CoreArg>, BindError> {
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        let mut args = Vec::with_capacity(items.len());
+        for item in items {
+            match item {
+                ArgItem::Omitted => args.push(CoreArg::Omitted),
+                ArgItem::Named { name, value } => {
+                    let v = self.bind_expr(value)?.value;
+                    args.push(CoreArg::Named {
+                        name: name.text.to_string(),
+                        value: v,
+                    });
+                }
+                ArgItem::Positional(expr, passing) => {
+                    args.push(self.bind_arg_byref(expr, true, passing)?);
+                }
+            }
+        }
+        Ok(args)
+    }
+
     /// `Prop(index…) = rhs` — an indexed `Property Let`/`Set`. Lowers to a call of the
     /// accessor proc with the index arguments followed by the assigned value (the
     /// accessor's trailing parameter). Returns `None` when the base is not a bare
@@ -1280,7 +1311,7 @@ impl<'a> ProcLower<'a> {
             }
             // An untyped / foreign receiver: a late-bound indexed property put.
             None if self.is_late_bound_receiver(&recv.ty) => {
-                let mut args = self.bind_args(arglist, None)?;
+                let mut args = self.bind_late_dispatch_args(arglist)?;
                 args.push(CoreArg::ByVal(rhs.clone()));
                 Ok(Some(vec![CoreStmt::Eval(
                     self.late_member_call(member, kind, recv.value, args),
@@ -2436,7 +2467,7 @@ impl<'a> ProcLower<'a> {
                 ))),
             },
             None if self.is_late_bound_receiver(&recv.ty) => {
-                let method_args = self.bind_args(arglist, None)?;
+                let method_args = self.bind_late_dispatch_args(arglist)?;
                 Ok(value_bound(
                     self.late_member_call(
                         member,

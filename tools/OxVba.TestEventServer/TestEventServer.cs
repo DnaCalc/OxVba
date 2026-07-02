@@ -96,6 +96,9 @@ namespace OxVba.TestEventServer
 
         [DispId(125)]
         void MutateTypedRecordArray(ref TestRecord[] records);
+
+        [DispId(126)]
+        void Increment([In, Out] ref int value);
     }
 
     [ComVisible(true)]
@@ -277,6 +280,11 @@ namespace OxVba.TestEventServer
                 new TestRecord { Number = 100 },
                 new TestRecord { Number = 200 },
             };
+        }
+
+        public void Increment([In, Out] ref int value)
+        {
+            value += 1;
         }
 
         private static string FormatValue(object value)

@@ -2872,6 +2872,17 @@ fn withevents_com_source_emits_event_route() {
         conditional_constants: BTreeMap::new(),
         conditional_compilation_target: Default::default(),
     };
+    let env = oxvba_symbol::build_resolution_environment(&manifest, &EventServerTypeLibs)
+        .expect("resolution environment");
+    assert!(
+        env.resolve_member(
+            &oxvba_bundle::VarTypeRef::Object("oxvba.testeventserver".into()),
+            "Increment",
+            None,
+        )
+        .is_some(),
+        "TestEventServer.Increment should resolve against the ProgID-style receiver type"
+    );
     let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
 
     // OnValueChanged is event token 2 in the fixture typelib; exactly one route is
@@ -3138,6 +3149,81 @@ fn typed_com_receiver_member_call_lowers_to_early_com() {
             CoreCallee::LateDispatch { name, .. } if name.eq_ignore_ascii_case("Ping")
         )),
         "Ping on a typed receiver must NOT lower to LateDispatch: {callees:?}"
+    );
+}
+
+#[test]
+fn typed_com_byref_method_lowers_lvalue_arg_to_byref() {
+    // A typelib `[in, out]` / `ByRef Long` method argument over an unparenthesized
+    // l-value must lower as `CoreArg::ByRef`; otherwise the COM runtime cannot copy
+    // the mutated value back to the caller, diverging from VBA.
+    let main = "Sub Main()\n    Dim s As OxVba.TestEventServer\n    Dim n As Long\n    s.Increment n\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "OxVba_TestEventServer".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("oxvba_testeventserver.tlb".into()),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let env = oxvba_symbol::build_resolution_environment(&manifest, &EventServerTypeLibs)
+        .expect("resolution environment");
+    assert!(
+        env.resolve_member(
+            &oxvba_bundle::VarTypeRef::Object("oxvba.testeventserver".into()),
+            "Increment",
+            None,
+        )
+        .is_some(),
+        "TestEventServer.Increment should resolve against the ProgID-style receiver type"
+    );
+    let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
+    let Some((_, args)) = top_level_calls(&program).into_iter().find(
+        |(callee, _)| matches!(callee, CoreCallee::EarlyCom { member, .. } if member.token == 126),
+    ) else {
+        let locals = program
+            .entry
+            .and_then(|entry| program.procs.get(entry.0))
+            .map(|proc| &proc.locals);
+        panic!(
+            "no EarlyCom call with token 126; locals={locals:?}; calls={:?}",
+            top_level_calls(&program)
+        );
+    };
+    assert!(
+        matches!(args.get(1), Some(CoreArg::ByRef(_))),
+        "Increment's Long argument should bind ByRef, got {args:?}"
+    );
+}
+
+#[test]
+fn late_com_method_lowers_lvalue_arg_to_byref() {
+    let main = "Sub Main()\n    Dim s As Object\n    Dim n As Long\n    s.Increment n\nEnd Sub\n";
+    let program = bind_program(&manifest(main), &NullTypeLibs).expect("bind_program");
+    let Some((_, args)) = top_level_calls(&program).into_iter().find(|(callee, _)| {
+        matches!(callee, CoreCallee::LateDispatch { name, .. } if name.eq_ignore_ascii_case("Increment"))
+    }) else {
+        panic!(
+            "expected LateDispatch Increment call, got {:?}",
+            top_level_calls(&program)
+        );
+    };
+    assert!(
+        matches!(args.get(1), Some(CoreArg::ByRef(_))),
+        "late-bound l-value argument should bind ByRef, got {args:?}"
     );
 }
 

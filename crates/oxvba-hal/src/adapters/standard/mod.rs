@@ -4236,10 +4236,12 @@ mod tests {
                 oxvba_com::DynamicCallArg {
                     value: Some(oxvba_com::ComValue::I32(3).into()),
                     name: None,
+                    by_ref: None,
                 },
                 oxvba_com::DynamicCallArg {
                     value: Some(oxvba_com::ComValue::I32(14).into()),
                     name: None,
+                    by_ref: None,
                 },
             ],
             call_kind_hint: Some(oxvba_com::DynamicCallKind::Method),
