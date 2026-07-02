@@ -790,6 +790,10 @@ Required newly explicit delivery beads:
   (`docs/evidence/frontend_rework/COM_LIBRARY_MEMBER_SCOPING_2026-07-02.md`) slice separates
   library-wide known-type/activation ownership from member-scoped provider ownership, so one
   coclass/interface no longer sees another coclass/interface's members through a flat typelib blob.
+  A subsequent event-source scoping slice
+  (`docs/evidence/frontend_rework/COM_EVENT_SOURCE_SCOPING_2026-07-02.md`) removes the
+  full-event-set fallback after coclass filtering, so `WithEvents` route construction and direct
+  COM event-member lookup no longer synthesize events from another coclass in the same library.
   Broader imported COM activation/member breadth remains open under `bd-aprs.8.8`.
 - FE-9.7 Broad matrix/corpus route audit: extend the route audit from selected fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
