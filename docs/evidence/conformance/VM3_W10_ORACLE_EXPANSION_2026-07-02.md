@@ -39,6 +39,19 @@ comparison shape:
 - `string_mid_statement_mutation.bas`
 - `string_slice_ops_dollar.bas`
 
+A follow-up typed scalar oracle pass then reran the remaining 14 pending rows
+after `scripts/run-conformance-oracle.ps1` was updated to preserve scalar
+subtypes instead of coercing them through `CLng`. Capture directory:
+
+- `docs/evidence/conformance/oracle_captures/conformance_oracle_w10_typed_pending_20260702/`
+
+That pass promoted four more exact scalar rows:
+
+- `jit_intrinsic_math_subset.bas`
+- `stdlib_date_serial_value.bas`
+- `stdlib_financial_zero_rate.bas`
+- `stdlib_math_transcendental_identity.bas`
+
 W5/W6 fresh-host COM evidence already exists and remains part of the W10
 regression-net story:
 
@@ -57,7 +70,8 @@ It is split to `bd-9sed.18` and W10 remains in progress.
 Open items:
 
 - The Excel oracle harness still has a legacy retained-value encoder that
-  normalizes several typed values through `CLng` and collapses arrays/objects.
+  collapses arrays/objects; scalar subtype preservation is now in place for new
+  captures.
 - A full default conformance run reported pre-existing drift:
   `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language` failed with
   70 mismatches over the prior 163-file basic suite before the newly promoted
@@ -69,14 +83,10 @@ Open items:
   explicit split:
   `financial_algorithm_npv_irr_mirr_subset.bas`,
   `financial_algorithm_rate_nper_subset.bas`,
-  `jit_intrinsic_math_subset.bas`,
   `object_identity_is_nothing.bas`,
   `object_identity_is_same_and_different.bas`,
   `stdlib_array_introspection_bounds.bas`,
   `stdlib_array_introspection_types.bas`,
-  `stdlib_date_serial_value.bas`,
-  `stdlib_financial_zero_rate.bas`,
-  `stdlib_math_transcendental_identity.bas`,
   `stdlib_random_financial_expansion.bas`,
   `stdlib_rnd_isolated.bas`,
   `stdlib_time_serial_value.bas`, and
@@ -91,6 +101,8 @@ Open items:
 - `cargo run -q -p oxvba-cli --bin oxvba-cli -- run conformance/tests/financial_algorithm_rate_nper_subset.bas --dump-values`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <15 promoted rows>`
   - Passed: `conformance run: ok (15 files, backend=vm, suite=basic-language)`.
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <4 typed scalar promoted rows>`
+  - Passed: `conformance run: ok (4 files, backend=vm, suite=basic-language)`.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern conversion_cint_basic.bas`
   - Expected current state: fails, proving the pre-existing typed retained-value
     baseline drift that `bd-9sed.18` must resolve.
@@ -100,7 +112,8 @@ Open items:
 
 ## Fresh-Eyes Review
 
-Reviewed the promoted set against the raw Excel capture and scratch vm3 output.
-Rows with array/object dumps, typed numeric/date ambiguity, random-number
-divergence, or the unstable Excel RPC failure were left pending. This avoids
-turning the older OxVBA comparison shape into a VBA compatibility claim.
+Reviewed the promoted set against the raw Excel captures and scratch vm3 output.
+Rows with array/object dumps, compile-vs-runtime error-shape differences,
+float-format or algorithm tolerance questions, and random-number divergence were
+left pending. This avoids turning the older OxVBA comparison shape into a VBA
+compatibility claim.

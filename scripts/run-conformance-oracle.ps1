@@ -73,7 +73,19 @@ try {
     # Emits the retained-value oracle shape used by oxvba-cli --dump-values
     # for the portable scalar subset covered by this Excel harness.
     $encodeValueCode = @'
+Private Function EncodeFloat(ByVal v As Double) As String
+    EncodeFloat = CStr(v)
+    EncodeFloat = Replace(EncodeFloat, ",", ".")
+End Function
+
+Private Function EncodeNumericText(ByVal v As Variant) As String
+    EncodeNumericText = CStr(v)
+    EncodeNumericText = Replace(EncodeNumericText, ",", ".")
+End Function
+
 Private Function EncodeValue(ByVal v As Variant) As String
+    Dim vt As Long
+    vt = VarType(v)
     If IsEmpty(v) Then
         EncodeValue = "empty"
     ElseIf IsNull(v) Then
@@ -81,12 +93,23 @@ Private Function EncodeValue(ByVal v As Variant) As String
     ElseIf IsError(v) Then
         Dim ec As Long
         ec = CLng(v)
-        If ec < 0 Then ec = -ec
         EncodeValue = "error:" & CStr(ec)
-    ElseIf VarType(v) = vbBoolean Then
+    ElseIf vt = vbBoolean Then
         If v Then EncodeValue = "bool:true" Else EncodeValue = "bool:false"
-    ElseIf VarType(v) = vbString Then
+    ElseIf vt = vbString Then
         EncodeValue = "string:" & Chr$(34) & CStr(v) & Chr$(34)
+    ElseIf vt = vbInteger Then
+        EncodeValue = "i16:" & CStr(CInt(v))
+    ElseIf vt = vbLong Then
+        EncodeValue = "i32:" & CStr(CLng(v))
+    ElseIf vt = vbByte Then
+        EncodeValue = "u8:" & CStr(CByte(v))
+    ElseIf vt = vbSingle Or vt = vbDouble Or vt = vbDate Then
+        EncodeValue = "f64:" & EncodeFloat(CDbl(v))
+    ElseIf vt = vbCurrency Then
+        EncodeValue = "currency:" & EncodeNumericText(v)
+    ElseIf vt = vbDecimal Then
+        EncodeValue = "decimal:" & EncodeNumericText(v)
     Else
         On Error Resume Next
         EncodeValue = "i32:" & CStr(CLng(v))
