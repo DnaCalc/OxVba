@@ -531,18 +531,17 @@ impl PointerRegistry {
                 // `pointer == 0` returned early above, so `value.0` is
                 // non-null. The entry owns the BSTR and nothing frees it
                 // before `free_pins` removes the entry (the registry guard is
-                // held for this whole borrow), so SysStringLen reads a live
+                // held for this whole borrow), so SysStringByteLen reads a live
                 // allocation's 4-byte byte-length prefix at ptr-4.
-                let len = unsafe { windows_sys::Win32::Foundation::SysStringLen(value.0) } as usize;
+                let len =
+                    unsafe { windows_sys::Win32::Foundation::SysStringByteLen(value.0) } as usize;
                 // SAFETY: Same live, non-null, exclusively owned BSTR as
-                // above; `len` is the UTF-16 unit count derived from the
+                // above; `len` is the payload byte count derived from the
                 // length prefix, so `value.0 .. value.0 + len` lies inside the
-                // allocation and is readable. Embedded NULs are legal — the
-                // length comes from the prefix, not from NUL scanning.
-                let slice = unsafe { std::slice::from_raw_parts(value.0, len) };
-                // Preserve the BSTR's units VERBATIM (lone surrogate halves included),
-                // matching the COM decode path; `from_utf16_lossy` would fold them to U+FFFD.
-                Ok(Variant::from_string(BStr::from_utf16_units(slice)?))
+                // allocation and is readable. Embedded NULs and odd byte
+                // lengths are legal because the length is prefix-derived.
+                let bytes = unsafe { std::slice::from_raw_parts(value.0.cast::<u8>(), len) };
+                Ok(Variant::from_string(BStr::from_bytes(bytes)?))
             }
             #[cfg(target_os = "windows")]
             PointerEntry::BstrCell(value) => {
@@ -555,19 +554,18 @@ impl PointerRegistry {
                 // ownership transferred to the cell with that write; per
                 // docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md the pin (and
                 // thus the BSTR) stays live until `free_pins` runs after this
-                // read-back, so SysStringLen reads a live allocation's 4-byte
+                // read-back, so SysStringByteLen reads a live allocation's 4-byte
                 // byte-length prefix at ptr-4.
-                let len =
-                    unsafe { windows_sys::Win32::Foundation::SysStringLen(*value.cell) } as usize;
+                let len = unsafe { windows_sys::Win32::Foundation::SysStringByteLen(*value.cell) }
+                    as usize;
                 // SAFETY: Same live, non-null BSTR as above; `len` is the
-                // UTF-16 unit count from the length prefix, so the first `len`
-                // units are within the allocation and readable. Embedded NULs
-                // are legal because the length is prefix-derived, not
-                // NUL-scanned; the registry guard held by the caller keeps the
-                // entry alive for the duration of this borrow.
-                let slice = unsafe { std::slice::from_raw_parts(*value.cell, len) };
-                // Verbatim units (surrogate halves preserved), matching the COM decode path.
-                Ok(Variant::from_string(BStr::from_utf16_units(slice)?))
+                // payload byte count from the length prefix, so the first
+                // `len` bytes are within the allocation and readable. Embedded
+                // NULs and odd byte lengths are legal because the length is
+                // prefix-derived; the registry guard held by the caller keeps
+                // the entry alive for the duration of this borrow.
+                let bytes = unsafe { std::slice::from_raw_parts((*value.cell).cast::<u8>(), len) };
+                Ok(Variant::from_string(BStr::from_bytes(bytes)?))
             }
             #[cfg(not(target_os = "windows"))]
             PointerEntry::Utf16(value) => {
@@ -971,7 +969,9 @@ mod tests {
     use crate::{Decimal96, ObjectRef, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
     use windows_sys::{
-        Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen},
+        Win32::Foundation::{
+            SysAllocStringByteLen, SysAllocStringLen, SysFreeString, SysStringLen,
+        },
         Win32::System::Ole::{SafeArrayGetDim, SafeArrayGetElement},
         Win32::System::Variant::{
             VARIANT, VT_ARRAY, VT_BSTR, VT_DATE, VT_I4, VT_UNKNOWN, VT_VARIANT, VariantClear,
@@ -1162,6 +1162,30 @@ mod tests {
         let variant =
             super::read_back_string_payload_variant(ptr).expect("read back embedded nul string");
         assert_eq!(variant, Variant::from_string(BStr::from("a\0bc")));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn string_var_pointer_readback_preserves_odd_byte_bstr_payload() {
+        let original = Variant::from_string(BStr::from("abc"));
+        let ptr = register_string_variant_pointer(&original).expect("register string var");
+        let raw = lookup_pointer(ptr)
+            .expect("lookup string var")
+            .cast::<BSTR>();
+        assert!(!raw.is_null());
+        let old_payload = unsafe { *raw };
+        if !old_payload.is_null() {
+            unsafe { SysFreeString(old_payload) };
+        }
+        let bytes = [0x00, 0x43, 0x00];
+        unsafe {
+            *raw = SysAllocStringByteLen(bytes.as_ptr(), bytes.len() as u32);
+        }
+        let variant =
+            super::read_back_string_payload_variant(ptr).expect("read back odd-byte string");
+        assert_eq!(variant.string_byte_len(), Some(3));
+        assert_eq!(variant.string_bytes(), Some(bytes.to_vec()));
+        assert_eq!(variant.string_units(), Some(vec![0x4300]));
     }
 
     #[test]

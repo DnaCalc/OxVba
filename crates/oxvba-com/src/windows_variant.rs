@@ -13,7 +13,7 @@ use oxvba_runtime::{
 use std::ffi::c_void;
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{DECIMAL, SysFreeString, SysStringLen, VARIANT_BOOL};
+use windows_sys::Win32::Foundation::{DECIMAL, SysFreeString, SysStringByteLen, VARIANT_BOOL};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Com::{CY, SAFEARRAY, SAFEARRAYBOUND};
 #[cfg(target_os = "windows")]
@@ -442,15 +442,12 @@ unsafe fn runtime_bstr_from_windows(bstr: windows_sys::core::BSTR) -> BStr {
     if bstr.is_null() {
         return BStr::empty();
     }
-    let len = usize::try_from(SysStringLen(bstr)).unwrap_or(0);
-    let slice = std::slice::from_raw_parts(bstr, len);
-    // Exact code-unit copy: VBA strings carry arbitrary UTF-16 units
-    // (including unpaired surrogates — a classic binary-string idiom), which
-    // the previous lossy String round-trip replaced with U+FFFD (W1-com-010).
-    // A real BSTR's unit count always fits its own byte-length prefix, so the
-    // allocation cannot fail.
-    BStr::from_utf16_units(slice)
-        .expect("BSTR unit count fits the BSTR byte-length prefix by construction")
+    let len = usize::try_from(SysStringByteLen(bstr)).unwrap_or(0);
+    let bytes = std::slice::from_raw_parts(bstr.cast::<u8>(), len);
+    // Exact byte copy: VBA strings carry arbitrary BSTR payload bytes. Whole
+    // UTF-16 units, including unpaired surrogates, must survive unchanged, and
+    // byte-string functions such as LeftB/RightB can produce odd byte lengths.
+    BStr::from_bytes(bytes).expect("BSTR byte-length prefix is already valid")
 }
 
 #[cfg(target_os = "windows")]
@@ -2970,6 +2967,26 @@ mod tests {
                 value,
                 ComValue::String(BStr::from_utf16_units(&units).expect("exact units")),
                 "decode must preserve the exact UTF-16 payload"
+            );
+            let _ = VariantClear(&mut variant);
+        }
+    }
+
+    #[test]
+    fn bstr_decode_preserves_odd_byte_payloads() {
+        use windows_sys::Win32::Foundation::SysAllocStringByteLen;
+        unsafe {
+            let bytes = [0x00, 0x43, 0x00];
+            let bstr = SysAllocStringByteLen(bytes.as_ptr(), bytes.len() as u32);
+            assert!(!bstr.is_null());
+            let mut variant: VARIANT = std::mem::zeroed();
+            variant.Anonymous.Anonymous.vt = VT_BSTR;
+            variant.Anonymous.Anonymous.Anonymous.bstrVal = bstr;
+            let value = variant_to_com_value(&variant).expect("decode odd-byte bstr");
+            assert_eq!(
+                value,
+                ComValue::String(BStr::from_bytes(&bytes).expect("exact bytes")),
+                "decode must preserve the exact BSTR byte payload"
             );
             let _ = VariantClear(&mut variant);
         }

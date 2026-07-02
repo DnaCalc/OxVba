@@ -92,6 +92,16 @@ fn string_units(value: &Variant) -> LibResult<Vec<u16>> {
     }
 }
 
+fn string_bytes(value: &Variant) -> LibResult<Vec<u8>> {
+    match value.string_bytes() {
+        Some(bytes) => Ok(bytes),
+        None => Ok(as_str(value)?
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect()),
+    }
+}
+
 /// Case-fold UTF-16 code units the same way [`norm_compare`] folds a `String` — ASCII A–Z
 /// only — but at the code-unit level so surrogate halves survive. Binary mode is verbatim.
 fn norm_compare_units(units: Vec<u16>, text: bool) -> Vec<u16> {
@@ -117,10 +127,22 @@ pub fn left(args: &[Variant]) -> LibResult<Variant> {
     Ok(Variant::from_utf16_units(&units[..n.min(units.len())]))
 }
 
+pub fn left_b(args: &[Variant]) -> LibResult<Variant> {
+    let bytes = string_bytes(need(args, 0)?)?;
+    let n = as_usize(need(args, 1)?)?;
+    Ok(Variant::from_bstr_bytes(&bytes[..n.min(bytes.len())]))
+}
+
 pub fn right(args: &[Variant]) -> LibResult<Variant> {
     let units = string_units(need(args, 0)?)?;
     let n = as_usize(need(args, 1)?)?.min(units.len());
     Ok(Variant::from_utf16_units(&units[units.len() - n..]))
+}
+
+pub fn right_b(args: &[Variant]) -> LibResult<Variant> {
+    let bytes = string_bytes(need(args, 0)?)?;
+    let n = as_usize(need(args, 1)?)?.min(bytes.len());
+    Ok(Variant::from_bstr_bytes(&bytes[bytes.len() - n..]))
 }
 
 pub fn mid(args: &[Variant]) -> LibResult<Variant> {
@@ -1504,8 +1526,8 @@ pub fn len_b(args: &[Variant]) -> LibResult<Variant> {
         return Ok(vi32(bytes as i32));
     }
     let bytes = match value.vtype() {
-        VarType::String => match value.string_units() {
-            Some(units) => units.len() * 2,
+        VarType::String => match value.string_byte_len() {
+            Some(bytes) => bytes as usize,
             None => as_str(value)?.encode_utf16().count() * 2,
         },
         VarType::Boolean | VarType::Integer | VarType::UnsignedInteger => 2,
@@ -2866,6 +2888,12 @@ mod tests {
     fn bstr(result: LibResult<Variant>) -> String {
         result.unwrap().as_bstr().unwrap().as_str()
     }
+    fn bstr_bytes(result: LibResult<Variant>) -> Vec<u8> {
+        result.unwrap().as_bstr().unwrap().payload_bytes().to_vec()
+    }
+    fn bstr_units(result: LibResult<Variant>) -> Vec<u16> {
+        result.unwrap().as_bstr().unwrap().payload_units().to_vec()
+    }
 
     #[test]
     fn val_parses_vba_radix_prefixes() {
@@ -2924,6 +2952,74 @@ mod tests {
                 .unwrap()
                 .as_str(),
             "ab"
+        );
+    }
+
+    #[test]
+    fn leftb_rightb_slice_raw_bstr_bytes() {
+        let text = vs("ABC");
+
+        assert_eq!(
+            bstr_bytes(left_b(&[text.clone(), Variant::from_i32(0)])),
+            Vec::<u8>::new()
+        );
+        assert_eq!(
+            bstr_bytes(left_b(&[text.clone(), Variant::from_i32(1)])),
+            vec![0x41]
+        );
+        assert_eq!(
+            bstr_units(left_b(&[text.clone(), Variant::from_i32(3)])),
+            vec![0x0041]
+        );
+        assert_eq!(
+            bstr_bytes(left_b(&[text.clone(), Variant::from_i32(99)])),
+            vec![0x41, 0x00, 0x42, 0x00, 0x43, 0x00]
+        );
+
+        assert_eq!(
+            bstr_bytes(right_b(&[text.clone(), Variant::from_i32(1)])),
+            vec![0x00]
+        );
+        assert_eq!(
+            bstr_units(right_b(&[text.clone(), Variant::from_i32(3)])),
+            vec![0x4300]
+        );
+        assert_eq!(
+            bstr_bytes(right_b(&[text, Variant::from_i32(99)])),
+            vec![0x41, 0x00, 0x42, 0x00, 0x43, 0x00]
+        );
+    }
+
+    #[test]
+    fn leftb_rightb_odd_byte_results_keep_lenb_payload() {
+        let left = left_b(&[vs("ABC"), Variant::from_i32(1)]).unwrap();
+        assert_eq!(
+            len_b(std::slice::from_ref(&left)).unwrap().as_i32(),
+            Some(1)
+        );
+        assert_eq!(left.string_units(), Some(vec![]));
+
+        let right = right_b(&[vs("ABC"), Variant::from_i32(3)]).unwrap();
+        assert_eq!(
+            len_b(std::slice::from_ref(&right)).unwrap().as_i32(),
+            Some(3)
+        );
+        assert_eq!(right.string_units(), Some(vec![0x4300]));
+    }
+
+    #[test]
+    fn leftb_rightb_reject_negative_count() {
+        assert_eq!(
+            left_b(&[vs("ABC"), Variant::from_i32(-1)])
+                .unwrap_err()
+                .code,
+            5
+        );
+        assert_eq!(
+            right_b(&[vs("ABC"), Variant::from_i32(-1)])
+                .unwrap_err()
+                .code,
+            5
         );
     }
 

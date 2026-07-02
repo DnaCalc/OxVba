@@ -49,7 +49,9 @@ native_impl_ids! {
     Len,
     LenB,
     Left,
+    LeftB,
     Right,
+    RightB,
     Mid,
     MidStmt, // `Mid(s, i, n) = ...` statement form
     LSetStmt, // `LSet s = ...` statement form
@@ -258,10 +260,11 @@ impl NativeImplId {
         use LibraryModule as M;
         use NativeImplId::*;
         match self {
-            Len | LenB | Left | Right | Mid | MidStmt | LSetStmt | RSetStmt | InStr | InStrRev
-            | LCase | UCase | Split | Join | Replace | Trim | LTrim | RTrim | StrComp | Like
-            | Chr | Asc | ChrW | AscW | Space | StringRepeat | StrReverse | StrConv | Format
-            | FormatNumber | FormatCurrency | FormatPercent | FormatDateTime | Filter => M::Strings,
+            Len | LenB | Left | LeftB | Right | RightB | Mid | MidStmt | LSetStmt | RSetStmt
+            | InStr | InStrRev | LCase | UCase | Split | Join | Replace | Trim | LTrim | RTrim
+            | StrComp | Like | Chr | Asc | ChrW | AscW | Space | StringRepeat | StrReverse
+            | StrConv | Format | FormatNumber | FormatCurrency | FormatPercent | FormatDateTime
+            | Filter => M::Strings,
             Abs | Int | Fix | Sgn | Round | Sqr | Sin | Cos | Log | Exp | Atn | Tan => M::Math,
             DateSerial | TimeSerial | DateValue | TimeValue | DateAdd | DateDiff | Year | Month
             | Day | Weekday | Hour | Minute | Second | MonthName | WeekdayName | DatePart
@@ -373,7 +376,9 @@ impl NativeImplId {
             Len => "Len",
             LenB => "LenB",
             Left => "Left",
+            LeftB => "LeftB",
             Right => "Right",
+            RightB => "RightB",
             Mid => "Mid",
             InStr => "InStr",
             InStrRev => "InStrRev",
@@ -584,7 +589,9 @@ impl NativeImplId {
         use NativeImplId::*;
         match self {
             Left => &["Left$"],
+            LeftB => &["LeftB$"],
             Right => &["Right$"],
+            RightB => &["RightB$"],
             Mid => &["Mid$"],
             LCase => &["LCase$"],
             UCase => &["UCase$"],
@@ -639,7 +646,7 @@ impl NativeImplId {
             // ── Strings ──
             Len | LenB | LCase | UCase | Trim | LTrim | RTrim | Chr | Asc | ChrW | AscW | Space
             | StrReverse => 1,
-            Left | Right | Join | StringRepeat | FormatDateTime => 2,
+            Left | LeftB | Right | RightB | Join | StringRepeat | FormatDateTime => 2,
             Mid | StrComp | StrConv => 3,
             InStr | InStrRev | Split | Format | Filter => 4,
             FormatNumber | FormatCurrency | FormatPercent => 5,

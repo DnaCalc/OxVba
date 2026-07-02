@@ -48,7 +48,9 @@ fn string_functions_propagate_null() {
     let null = canon(&Variant::null());
     for expr in [
         "Left(n, 2)",
+        "LeftB(n, 2)",
         "Right(n, 2)",
+        "RightB(n, 2)",
         "Mid(n, 1)",
         "UCase(n)",
         "LCase(n)",
@@ -70,7 +72,9 @@ fn string_functions_propagate_null() {
 fn string_typed_aliases_raise_94_on_null() {
     for expr in [
         "Left$(n, 2)",
+        "LeftB$(n, 2)",
         "Right$(n, 2)",
+        "RightB$(n, 2)",
         "Mid$(n, 1)",
         "UCase$(n)",
         "LCase$(n)",

@@ -38,7 +38,7 @@ use oxvba_runtime::{
     ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant, bstr::BStr,
     safe_array::SafeArray,
 };
-use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HMODULE, SysStringLen};
+use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HMODULE, SysStringByteLen};
 use windows_sys::Win32::System::Com::{
     DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPATCH_PROPERTYPUTREF,
     DISPPARAMS, EXCEPINFO, SAFEARRAY, SYS_WIN64,
@@ -2465,12 +2465,9 @@ unsafe fn bstr_ptr_to_variant(value: BSTR) -> Variant {
     if value.is_null() {
         return Variant::from_string(BStr::empty());
     }
-    let len = usize::try_from(SysStringLen(value)).unwrap_or(0);
-    let units = std::slice::from_raw_parts(value, len);
-    match BStr::from_utf16_units(units) {
-        Ok(text) => Variant::from_string(text),
-        Err(_) => Variant::from_string(BStr::from_utf16_lossy(units)),
-    }
+    let len = usize::try_from(SysStringByteLen(value)).unwrap_or(0);
+    let bytes = std::slice::from_raw_parts(value.cast::<u8>(), len);
+    Variant::from_string(BStr::from_bytes(bytes).expect("BSTR byte-length prefix is valid"))
 }
 
 unsafe fn rtd_topic_count_from_safearray(array: *mut SAFEARRAY) -> Option<i32> {

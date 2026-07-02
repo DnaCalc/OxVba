@@ -621,10 +621,22 @@ impl Variant {
         Self::from_string(BStr::from_utf16_units(units).expect("BSTR allocation should succeed"))
     }
 
+    pub fn from_bstr_bytes(bytes: &[u8]) -> Self {
+        Self::from_string(BStr::from_bytes(bytes).expect("BSTR allocation should succeed"))
+    }
+
     /// The String Variant's raw UTF-16 code units (none for a non-string), preserving
     /// surrogate halves verbatim — the faithful counterpart to a lossy `as_str`.
     pub fn string_units(&self) -> Option<Vec<u16>> {
         self.string_core().map(|core| core.payload_units().to_vec())
+    }
+
+    pub fn string_bytes(&self) -> Option<Vec<u8>> {
+        self.as_bstr().map(|text| text.payload_bytes().to_vec())
+    }
+
+    pub fn string_byte_len(&self) -> Option<u32> {
+        self.as_bstr().map(|text| text.byte_len())
     }
 
     pub fn as_bstr(&self) -> Option<BStr> {
@@ -1088,6 +1100,20 @@ mod tests {
         assert_eq!(value.as_bstr(), Some(BStr::from("abc")));
         assert!(value.string_core().is_some());
         assert_ne!(u64::from_le_bytes(value.data_bytes()), 0);
+    }
+
+    #[test]
+    fn string_variant_preserves_raw_odd_bstr_bytes() {
+        let value = Variant::from_bstr_bytes(&[0x00, 0x43, 0x00]);
+        assert_eq!(value.vtype(), VarType::String);
+        assert_eq!(value.string_byte_len(), Some(3));
+        assert_eq!(value.string_bytes(), Some(vec![0x00, 0x43, 0x00]));
+        assert_eq!(value.string_units(), Some(vec![0x4300]));
+
+        let cloned = value.clone();
+        assert_eq!(cloned.string_byte_len(), Some(3));
+        assert_eq!(cloned.string_bytes(), Some(vec![0x00, 0x43, 0x00]));
+        assert_eq!(cloned.string_units(), Some(vec![0x4300]));
     }
 
     #[test]

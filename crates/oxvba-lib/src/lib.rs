@@ -214,7 +214,9 @@ fn string_fn_propagates_null(id: NativeImplId) -> bool {
         id,
         Len | LenB
             | Left
+            | LeftB
             | Right
+            | RightB
             | Mid
             | LCase
             | UCase
@@ -257,7 +259,9 @@ pub fn invoke(
         Len => pure::len(args),
         LenB => pure::len_b(args),
         Left => pure::left(args),
+        LeftB => pure::left_b(args),
         Right => pure::right(args),
+        RightB => pure::right_b(args),
         Mid => pure::mid(args),
         MidStmt => pure::mid_stmt(args),
         LSetStmt => pure::lset_stmt(args),

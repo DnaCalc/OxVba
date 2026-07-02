@@ -1,7 +1,9 @@
 use core::ptr::NonNull;
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{SysAllocStringLen, SysFreeString, SysStringLen};
+use windows_sys::Win32::Foundation::{
+    SysAllocStringByteLen, SysAllocStringLen, SysFreeString, SysStringByteLen,
+};
 
 #[cfg(not(target_os = "windows"))]
 const BSTR_PREFIX_BYTES: usize = core::mem::size_of::<u32>();
@@ -66,6 +68,12 @@ impl BStr {
     pub fn from_utf16_units(units: &[u16]) -> Result<Self, String> {
         Ok(Self {
             raw: NonNull::new(alloc_raw_bstr_from_units(units)?),
+        })
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        Ok(Self {
+            raw: NonNull::new(alloc_raw_bstr_from_bytes(bytes)?),
         })
     }
 
@@ -141,6 +149,22 @@ impl BStr {
         unsafe { core::slice::from_raw_parts(raw.cast_const(), raw_bstr_len_units(raw)) }
     }
 
+    pub fn payload_bytes(&self) -> &[u8] {
+        let raw = self.raw_bstr();
+        if raw.is_null() {
+            return &[];
+        }
+        // SAFETY: `raw` was checked non-null above and is the BSTR allocation this `BStr`
+        // owns. The byte-length prefix records exactly the initialized payload bytes,
+        // including a possible odd trailing byte produced by `LeftB`/`RightB`.
+        unsafe {
+            core::slice::from_raw_parts(
+                raw.cast_const().cast::<u8>(),
+                usize::try_from(raw_bstr_len_bytes(raw)).unwrap_or(0),
+            )
+        }
+    }
+
     pub fn payload_units_with_nul(&self) -> Vec<u16> {
         let mut units = self.to_utf16_units();
         units.push(0);
@@ -202,7 +226,7 @@ impl core::fmt::Debug for BStr {
 
 impl PartialEq for BStr {
     fn eq(&self, other: &Self) -> bool {
-        self.payload_units() == other.payload_units()
+        self.payload_bytes() == other.payload_bytes()
     }
 }
 
@@ -228,10 +252,9 @@ impl core::fmt::Display for BStr {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn raw_bstr_layout(len_units: usize) -> Result<std::alloc::Layout, String> {
-    let payload_bytes = len_units
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(BSTR_UNIT_BYTES))
+fn raw_bstr_layout_bytes(len_bytes: usize) -> Result<std::alloc::Layout, String> {
+    let payload_bytes = len_bytes
+        .checked_add(BSTR_UNIT_BYTES)
         .ok_or_else(|| "BSTR payload size overflow".to_string())?;
     let total = BSTR_PREFIX_BYTES
         .checked_add(payload_bytes)
@@ -259,25 +282,50 @@ fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
         let len_bytes = units
             .len()
             .checked_mul(BSTR_UNIT_BYTES)
-            .and_then(|len| u32::try_from(len).ok())
-            .ok_or_else(|| "BSTR payload length should fit in u32 byte count".to_string())?;
-        let layout = raw_bstr_layout(units.len())?;
-        // SAFETY: `layout` from `raw_bstr_layout` always has non-zero size (the 4-byte
-        // length prefix plus at least the terminating NUL unit), as `alloc` requires.
+            .ok_or_else(|| "BSTR payload size overflow".to_string())?;
+        // SAFETY: a `u16` slice is initialized contiguous memory; viewing its bytes is
+        // valid for exactly `units.len() * 2` bytes and preserves native little-endian
+        // UTF-16 storage on all supported Windows/VBA-compatible targets.
+        let bytes = unsafe { core::slice::from_raw_parts(units.as_ptr().cast::<u8>(), len_bytes) };
+        alloc_raw_bstr_from_bytes(bytes)
+    }
+}
+
+fn alloc_raw_bstr_from_bytes(bytes: &[u8]) -> Result<*mut u16, String> {
+    let len_bytes = u32::try_from(bytes.len())
+        .map_err(|_| "BSTR payload length should fit in u32 byte count".to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        // SAFETY: `bytes` is a live slice and `len_bytes` was checked above to equal
+        // `bytes.len()`, so SysAllocStringByteLen copies exactly that many initialized
+        // payload bytes into the new OS-owned BSTR.
+        let raw = unsafe { SysAllocStringByteLen(bytes.as_ptr(), len_bytes) };
+        if raw.is_null() {
+            return Err("failed to allocate BSTR payload".to_string());
+        }
+        Ok(raw.cast_mut())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let layout = raw_bstr_layout_bytes(bytes.len())?;
+        // SAFETY: `layout` from `raw_bstr_layout_bytes` always has non-zero size (the
+        // 4-byte length prefix plus at least the terminating UTF-16 NUL bytes), as
+        // `alloc` requires.
         let raw = unsafe { std::alloc::alloc(layout) };
         if raw.is_null() {
             return Err("failed to allocate BSTR payload".to_string());
         }
         // SAFETY: `raw` was checked non-null above and `layout` sized it for the prefix
-        // plus (units.len() + 1) UTF-16 units, so the prefix write, the payload copy, and
-        // the trailing NUL write all stay in bounds; the copy cannot overlap because `raw`
-        // is a fresh allocation, and the u32-aligned base satisfies both u32 and u16 stores.
+        // plus the payload bytes and a terminating UTF-16 NUL. The prefix write, payload
+        // copy, and two terminator byte writes all stay in bounds; byte writes avoid
+        // unaligned u16 stores after odd-length payloads.
         unsafe {
             raw.cast::<u32>().write(len_bytes);
-            let payload = raw.add(BSTR_PREFIX_BYTES).cast::<u16>();
-            core::ptr::copy_nonoverlapping(units.as_ptr(), payload, units.len());
-            payload.add(units.len()).write(0);
-            Ok(payload)
+            let payload = raw.add(BSTR_PREFIX_BYTES);
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), payload, bytes.len());
+            payload.add(bytes.len()).write(0);
+            payload.add(bytes.len() + 1).write(0);
+            Ok(payload.cast::<u16>())
         }
     }
 }
@@ -289,8 +337,8 @@ unsafe fn raw_bstr_len_bytes(ptr: *mut u16) -> u32 {
     #[cfg(target_os = "windows")]
     {
         // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at
-        // a live BSTR, so SysStringLen may read its 4-byte byte-length prefix at ptr-4.
-        unsafe { SysStringLen(ptr) }.saturating_mul(BSTR_UNIT_BYTES as u32)
+        // a live BSTR, so SysStringByteLen may read its 4-byte byte-length prefix.
+        unsafe { SysStringByteLen(ptr) }
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -318,12 +366,12 @@ unsafe fn clone_raw_bstr(ptr: *mut u16) -> Result<*mut u16, String> {
     }
     // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at a
     // live BSTR whose length prefix is readable.
-    let len = unsafe { raw_bstr_len_units(ptr) };
-    // SAFETY: the length prefix records exactly the allocated payload unit count, so `len`
-    // units starting at `ptr` are initialized and stay live for the duration of this call
-    // (the caller still owns the source BSTR).
-    let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const(), len) };
-    alloc_raw_bstr_from_units(slice)
+    let len = usize::try_from(unsafe { raw_bstr_len_bytes(ptr) }).unwrap_or(0);
+    // SAFETY: the length prefix records exactly the initialized payload byte count, so
+    // `len` bytes starting at `ptr` are live for the duration of this call. Copying bytes
+    // preserves odd-byte BSTRs that do not contain a whole final UTF-16 code unit.
+    let slice = unsafe { core::slice::from_raw_parts(ptr.cast_const().cast::<u8>(), len) };
+    alloc_raw_bstr_from_bytes(slice)
 }
 
 unsafe fn free_raw_bstr(ptr: *mut u16) {
@@ -340,8 +388,8 @@ unsafe fn free_raw_bstr(ptr: *mut u16) {
     {
         // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at
         // a live BSTR payload, so its length prefix is readable.
-        let len = unsafe { raw_bstr_len_units(ptr) };
-        if let Ok(layout) = raw_bstr_layout(len) {
+        let len = usize::try_from(unsafe { raw_bstr_len_bytes(ptr) }).unwrap_or(0);
+        if let Ok(layout) = raw_bstr_layout_bytes(len) {
             // SAFETY: allocations from `alloc_raw_bstr_from_units` begin
             // BSTR_PREFIX_BYTES before the payload pointer, so the subtraction lands on
             // the allocation base.
@@ -408,6 +456,26 @@ mod tests {
         let clone = value.clone();
         assert_eq!(value, clone);
         assert_ne!(value.raw_bstr(), clone.raw_bstr());
+    }
+
+    #[test]
+    fn bstr_preserves_odd_byte_payloads() {
+        let value = BStr::from_bytes(&[0x41]).expect("odd-byte BSTR");
+        assert_eq!(value.byte_len(), 1);
+        assert_eq!(value.payload_bytes(), &[0x41]);
+        assert_eq!(value.payload_units(), &[] as &[u16]);
+        assert_eq!(value.as_str(), "");
+
+        let clone = value.clone();
+        assert_eq!(clone.byte_len(), 1);
+        assert_eq!(clone.payload_bytes(), &[0x41]);
+        assert_eq!(clone.payload_units(), &[] as &[u16]);
+        assert_ne!(value.raw_bstr(), clone.raw_bstr());
+
+        let shifted = BStr::from_bytes(&[0x00, 0x43, 0x00]).expect("right-byte BSTR");
+        assert_eq!(shifted.byte_len(), 3);
+        assert_eq!(shifted.payload_bytes(), &[0x00, 0x43, 0x00]);
+        assert_eq!(shifted.payload_units(), &[0x4300]);
     }
 
     #[test]
