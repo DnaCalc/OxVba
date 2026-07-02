@@ -529,9 +529,8 @@ impl TypeNameIndex {
             .filter_map(|(project_name, candidates_by_name)| {
                 let names: HashSet<String> = candidates_by_name
                     .iter()
-                    .filter_map(|(name, candidates)| {
-                        has_competing_type_owners(candidates).then(|| name.clone())
-                    })
+                    .filter(|(_, candidates)| has_competing_type_owners(candidates))
+                    .map(|(name, _)| name.clone())
                     .collect();
                 (!names.is_empty()).then(|| (project_name.clone(), names))
             })

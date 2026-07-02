@@ -2779,3 +2779,17 @@
   now gets past the previous `oxvba-hal` clippy gate. It surfaces the next
   `oxvba-symbol` clippy gate, now tracked as `bd-4ktq.64`, and the existing
   wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.
+
+## 2026-07-02 - oxvba-symbol Clippy Gate (`bd-4ktq.64`)
+
+- Repaired the `filter_map_bool_then` clippy denial in
+  `SymbolProvider::ambiguous_type_names` by separating the competing-owner
+  filter from the name clone map. This preserves the same ambiguous-name set
+  and makes no VBA compile/runtime behavior claim.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-symbol --all-targets -- -D warnings`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the previous `oxvba-symbol` clippy gate. It surfaces the next
+  `oxvba-lib` clippy batch, now tracked as `bd-4ktq.65`, and the existing
+  wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.
