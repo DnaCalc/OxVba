@@ -346,6 +346,9 @@ impl<'a> Parser<'a> {
                 | SyntaxKind::KwInput
                 | SyntaxKind::KwOutput
                 | SyntaxKind::KwAppend
+                // `Base` is special in `Option Base`; in declarations and
+                // expressions VBA still accepts it as an ordinary identifier.
+                | SyntaxKind::KwBase
                 | SyntaxKind::KwBinary
                 | SyntaxKind::KwRandom
                 | SyntaxKind::KwAccess
@@ -3183,6 +3186,13 @@ mod tests {
             collect_nodes(&p.syntax(), SyntaxKind::VarDeclarator).len(),
             2
         );
+    }
+
+    #[test]
+    fn structures_const_contextual_keyword_name() {
+        let p = parse_ok("Const BASE = 5\nSub Main()\n    Dim x\n    x = BASE + 2\nEnd Sub\n");
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::ConstStmt));
+        assert!(has_node_kind(&p.syntax(), SyntaxKind::AssignStmt));
     }
 
     #[test]
