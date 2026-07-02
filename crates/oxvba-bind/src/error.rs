@@ -26,6 +26,9 @@ pub enum BindError {
     /// A module namespace was used where VBA requires a variable or procedure.
     #[error("expected variable or procedure, not module: {name}")]
     ExpectedVariableOrProcedureNotModule { name: String },
+    /// A statement-position call target did not resolve to any Sub or Function.
+    #[error("Sub or Function not defined")]
+    SubOrFunctionNotDefined { name: String },
     /// An assignment target/intent is invalid (e.g. `Set` on a scalar).
     #[error("invalid assignment: {0}")]
     InvalidAssignment(String),
@@ -114,6 +117,12 @@ impl BindError {
                 format!("expected variable or procedure, not module: {name}"),
             )
             .with_help("Use `Module.Member` qualification, or rename the colliding public member."),
+            BindError::SubOrFunctionNotDefined { name } => Diagnostic::error(
+                "BIND-E-SUB-OR-FUNCTION-NOT-DEFINED",
+                DiagnosticPhase::Bind,
+                "Sub or Function not defined",
+            )
+            .with_help(format!("Define `{name}` as a Sub or Function, or correct the call spelling.")),
             BindError::InvalidAssignment(message) => Diagnostic::error(
                 "BIND-E-INVALID-ASSIGNMENT",
                 DiagnosticPhase::Bind,

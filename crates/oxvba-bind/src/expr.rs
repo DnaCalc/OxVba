@@ -142,7 +142,12 @@ impl<'a> ProcLower<'a> {
                 if let Some(bound) = self.bind_predeclared_instance(name)? {
                     return Ok(bound);
                 }
-                return Err(self.unresolved(name, "expression"));
+                let (place, ty) = self.implicit_local(name)?;
+                return Ok(Bound {
+                    value: CoreValue::Load(place.clone()),
+                    ty,
+                    place: Some(place),
+                });
             }
         };
         // A referenced project's published `Const`/`Enum` value carries its literal
@@ -353,13 +358,19 @@ impl<'a> ProcLower<'a> {
         // indexing the result pseudo-variable, so `f(i)` is always a call).
         if base.kind() == SyntaxKind::IdentExpr
             && let Some(tok) = base.ident_name_token()
-            && let Some(binding) = self.resolve_suffixed(base, tok.text)
         {
-            if self.binding_is_module(&binding) {
-                return Err(self.module_as_value_error(tok.text));
-            }
-            if !matches!(binding.route, DispatchRoute::Value) {
-                return self.bind_call_route(tok.text, &binding, node.index_arg_list());
+            match self.resolve_suffixed(base, tok.text) {
+                Some(binding) => {
+                    if self.binding_is_module(&binding) {
+                        return Err(self.module_as_value_error(tok.text));
+                    }
+                    if !matches!(binding.route, DispatchRoute::Value) {
+                        return self.bind_call_route(tok.text, &binding, node.index_arg_list());
+                    }
+                }
+                None => {
+                    return Err(self.unresolved(tok.text, "call statement"));
+                }
             }
         }
         // `obj(i)` on an Object variable is a DEFAULT-MEMBER call (`obj.Item(i)` /

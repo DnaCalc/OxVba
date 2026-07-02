@@ -1033,6 +1033,16 @@ impl<'a> ProcLower<'a> {
         name: &str,
         preserve: bool,
     ) -> Result<(CorePlace, oxvba_bundle::ArrayElementType), BindError> {
+        if preserve && self.resolve(name).is_none() {
+            if self.has_ambiguous_unqualified_name(name) {
+                return Err(BindError::AmbiguousName {
+                    name: name.to_string(),
+                });
+            }
+            return Err(BindError::VariableNotDefined {
+                name: name.to_string(),
+            });
+        }
         let (place, ty) = self.place_ty_by_name(name).map_err(|err| {
             if preserve && matches!(err, BindError::Unresolved { .. }) {
                 BindError::VariableNotDefined {
@@ -2038,9 +2048,9 @@ impl<'a> ProcLower<'a> {
         if let Some(rl) = self.return_target(name) {
             return Ok((CorePlace::Local(rl), self.info.return_type.clone()));
         }
-        let binding = self
-            .resolve(name)
-            .ok_or_else(|| self.unresolved(name, "place"))?;
+        let Some(binding) = self.resolve(name) else {
+            return self.implicit_local(name);
+        };
         binding
             .symbol
             .and_then(|s| self.place_for_symbol(s))

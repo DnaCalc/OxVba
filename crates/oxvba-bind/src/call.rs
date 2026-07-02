@@ -1787,6 +1787,9 @@ impl<'a> ProcLower<'a> {
             // A qualified member can be a proc (call), a `Const`/`Enum` value, or a
             // module variable (place) — lower it the same way a bare name resolves.
             Some(binding) => Ok(Some(self.finish_value_or_call(member, &binding, arglist)?)),
+            None if self.is_namespace_qualifier(&parts[0]) => {
+                Err(self.unresolved(member, "member"))
+            }
             None => Ok(None),
         }
     }
@@ -1808,6 +1811,9 @@ impl<'a> ProcLower<'a> {
             Some(binding) => Ok(Some(
                 self.finish_value_or_call_statement(member, &binding, arglist)?,
             )),
+            None if self.is_namespace_qualifier(&parts[0]) => {
+                Err(self.unresolved(member, "member"))
+            }
             None => Ok(None),
         }
     }
@@ -1836,6 +1842,9 @@ impl<'a> ProcLower<'a> {
         if parts.is_empty() || self.resolves_to_local_value(&parts[0]) {
             return None;
         }
+        if parts.len() > 1 && self.qualified_receiver_is_value(&parts) {
+            return None;
+        }
         let mut candidate = parts.clone();
         candidate.push(member.to_string());
         let candidate_refs = candidate.iter().map(String::as_str).collect::<Vec<_>>();
@@ -1850,6 +1859,24 @@ impl<'a> ProcLower<'a> {
         }
         parts.push(member.to_string());
         Some(parts)
+    }
+
+    fn qualified_receiver_is_value(&self, parts: &[String]) -> bool {
+        let part_refs = parts.iter().map(String::as_str).collect::<Vec<_>>();
+        let Some(binding) = self.g.env.resolve_qualified(&part_refs) else {
+            return false;
+        };
+        match binding.route {
+            DispatchRoute::Value => !self.binding_is_module(&binding),
+            DispatchRoute::ConstValue(_)
+            | DispatchRoute::PredeclaredObject(_)
+            | DispatchRoute::ComObjectRoot { .. } => true,
+            DispatchRoute::ProjectMember { kind } => kind == ProjectMemberKind::PropertyGet,
+            DispatchRoute::ExternMember {
+                kind, has_receiver, ..
+            } => !has_receiver && kind == ProjectMemberKind::PropertyGet,
+            _ => false,
+        }
     }
 
     fn is_cross_surface_namespace_binding(&self, binding: &Binding) -> bool {

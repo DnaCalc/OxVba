@@ -31,7 +31,7 @@ impl<'a> ProcLower<'a> {
                         {
                             return Ok((place, bound.ty));
                         }
-                        return Err(self.unresolved(name, "assignment target"));
+                        return self.implicit_local(name);
                     }
                 };
                 match binding.symbol.and_then(|s| self.place_for_symbol(s)) {

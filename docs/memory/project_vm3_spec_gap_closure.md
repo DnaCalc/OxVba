@@ -2907,3 +2907,35 @@
   now gets past the hex/octal string conversion failure. The next surfaced
   meta-check failure is the `oxvba-com` record typelib/IRecordInfo test batch,
   now tracked as `bd-ow38`.
+
+## 2026-07-02 - Option Explicit Ordinary Undeclared Names (`bd-4ktq.72`)
+
+- Excel/VBA oracle evidence lives in
+  `docs/evidence/conformance/vm3_option_explicit_oracle_20260702T140228Z/`.
+  The runner made the VBE visible, invoked Debug -> Compile VBAProject through
+  command ID 578, captured compile modals and selected token/line with
+  PID-scoped UI Automation, dismissed only owned dialogs, and stopped only owned
+  Excel PIDs.
+- Oracle result: without `Option Explicit`, ordinary undeclared reads,
+  assignments, and ByRef argument uses create procedure-local Variant storage
+  (`0:Empty`, `7:2`, `12:2`). With `Option Explicit`, the same uses compile as
+  `Variable not defined`. Missing statement-position and expression-position
+  procedure calls remain `Sub or Function not defined`, not implicit variables.
+- Fix: proc binding now carries the module `Option Explicit` flag and appends
+  real implicit locals only after normal resolution, predeclared lookup, and
+  unqualified ambiguity checks fail in modules where `Option Explicit` is
+  absent. These locals are Variant by default and honor the module Def* default
+  typing table. The existing `ReDim` implicit-array exception remains
+  scanner-owned and oracle-backed by `bd-4ktq.41`.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo test -p oxvba-differential --test option_explicit_vm3 -- --nocapture`
+  - `cargo test -p oxvba-differential --test redim_implicit_vm3 -- --nocapture`
+  - `cargo test -p oxvba-differential --test scoping_visibility_vm3 -- --nocapture`
+  - `cargo test -p oxvba-bind module_qualified_object_global_can_receive_member_calls -- --nocapture`
+  - `cargo test -p oxvba-bind vba_module_qualified_intrinsic_requires_matching_module_owner -- --nocapture`
+  - `cargo test -p oxvba-bind referenced_module_variable -- --nocapture`
+  - `cargo clippy -p oxvba-bind --all-targets -- -D warnings`
+  - `cargo test -p oxvba-bind -- --nocapture`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot -- --nocapture`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\meta-check.ps1 -Fast -NoArtifacts`

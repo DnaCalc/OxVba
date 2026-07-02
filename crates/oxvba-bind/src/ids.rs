@@ -29,7 +29,7 @@ use oxvba_symbol::model::{
 };
 use oxvba_symbol::provider::ResolutionEnvironment;
 use oxvba_symbol::signature::{BuiltinType, PassingMode, Signature, VarTypeRef};
-use oxvba_syntax::{SyntaxKind, SyntaxNode};
+use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 use crate::error::BindError;
 use crate::types;
@@ -60,6 +60,27 @@ pub struct ProcInfo {
     /// an array dimension declared with only an upper bound (`Dim a(10)`) and of
     /// the `Array()` function's result.
     pub option_base: i32,
+    /// Whether the enclosing module contains `Option Explicit`.
+    pub option_explicit: bool,
+    /// The module's `Def*` rules for implicit declarations.
+    pub default_types: DefaultTypeRules,
+}
+
+#[derive(Clone, Default)]
+pub struct DefaultTypeRules {
+    ascii: [Option<VarTypeRef>; 26],
+    extended_alpha: Option<VarTypeRef>,
+}
+
+impl DefaultTypeRules {
+    pub(crate) fn type_for(&self, name: &str) -> Option<VarTypeRef> {
+        let normalized = name.trim_start_matches('[').trim_end_matches(']');
+        let first = normalized.chars().next()?;
+        if let Some(idx) = ascii_letter_index(first) {
+            return self.ascii[idx].clone();
+        }
+        first.is_alphabetic().then(|| self.extended_alpha.clone())?
+    }
 }
 
 /// The whole project's id allocation: globals, procs, classes, and the symbol→id
@@ -99,6 +120,8 @@ struct ProcAllocInput<'a> {
     class_name: Option<String>,
     compare_mode: StringCompareMode,
     option_base: i32,
+    option_explicit: bool,
+    default_types: DefaultTypeRules,
 }
 
 impl IdAllocator {
@@ -184,6 +207,8 @@ impl IdAllocator {
             let class_name = class_name_for(manifest, module.module_name);
             let compare_mode = module_compare_mode(module.syntax);
             let option_base = module_option_base(module.syntax);
+            let option_explicit = module_option_explicit(module.syntax);
+            let default_types = module_default_type_rules(module.syntax);
             let proc_scopes: Vec<ScopeId> = symbols
                 .scopes()
                 .iter()
@@ -212,6 +237,8 @@ impl IdAllocator {
                     class_name: class_name.clone(),
                     compare_mode,
                     option_base,
+                    option_explicit,
+                    default_types: default_types.clone(),
                 })?;
             }
         }
@@ -312,6 +339,8 @@ impl IdAllocator {
             class_name,
             compare_mode,
             option_base,
+            option_explicit,
+            default_types,
         } = input;
         let symbols = &env.symbols;
         let proc_id = ProcId(self.procs.len());
@@ -419,6 +448,8 @@ impl IdAllocator {
             me_local,
             compare_mode,
             option_base,
+            option_explicit,
+            default_types,
         });
         Ok(())
     }
@@ -735,6 +766,138 @@ pub(crate) fn module_option_base(module: SyntaxNode<'_>) -> i32 {
         return i32::from(is_one);
     }
     0
+}
+
+/// Whether the module contains `Option Explicit`.
+pub(crate) fn module_option_explicit(module: SyntaxNode<'_>) -> bool {
+    module.child_nodes().into_iter().any(|node| {
+        node.kind() == SyntaxKind::OptionStmt
+            && node
+                .child_tokens()
+                .iter()
+                .any(|t| t.kind == SyntaxKind::KwExplicit)
+    })
+}
+
+pub(crate) fn module_default_type_rules(module: SyntaxNode<'_>) -> DefaultTypeRules {
+    let mut rules = DefaultTypeRules::default();
+    for node in module.child_nodes() {
+        let Some((ty, ranges)) = parse_deftype_directive(node) else {
+            continue;
+        };
+        for (start, end) in ranges {
+            rules.set_range(start, end, &ty);
+        }
+    }
+    rules
+}
+
+impl DefaultTypeRules {
+    fn set_range(&mut self, start: char, end: char, ty: &VarTypeRef) {
+        let Some(start) = ascii_letter_index(start) else {
+            return;
+        };
+        let Some(end) = ascii_letter_index(end) else {
+            return;
+        };
+        let (lo, hi) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        for idx in lo..=hi {
+            self.ascii[idx] = Some(ty.clone());
+        }
+        if lo == 0 && hi == 25 && self.extended_alpha.is_none() {
+            self.extended_alpha = Some(ty.clone());
+        }
+    }
+}
+
+type DeftypeRanges = Vec<(char, char)>;
+type DeftypeDirective = Option<(VarTypeRef, DeftypeRanges)>;
+
+fn parse_deftype_directive(node: SyntaxNode<'_>) -> DeftypeDirective {
+    let tokens = significant_tokens_deep(node);
+    let first = tokens.first()?;
+    if first.kind != SyntaxKind::Ident {
+        return None;
+    }
+    let ty = deftype_statement_type(first.text)?;
+    let mut ranges = Vec::new();
+    let mut i = 1usize;
+    while i < tokens.len() {
+        if tokens[i].kind == SyntaxKind::Comma {
+            i += 1;
+            continue;
+        }
+        let Some(start) = letter_token(tokens[i]) else {
+            i += 1;
+            continue;
+        };
+        let mut end = start;
+        if tokens
+            .get(i + 1)
+            .is_some_and(|t| t.kind == SyntaxKind::Minus)
+            && let Some(next) = tokens.get(i + 2).and_then(|token| letter_token(*token))
+        {
+            end = next;
+            i += 2;
+        }
+        ranges.push((start, end));
+        i += 1;
+    }
+    (!ranges.is_empty()).then_some((ty, ranges))
+}
+
+fn deftype_statement_type(name: &str) -> Option<VarTypeRef> {
+    let ty = match name.to_ascii_lowercase().as_str() {
+        "defbool" => VarTypeRef::Builtin(BuiltinType::Boolean),
+        "defbyte" => VarTypeRef::Builtin(BuiltinType::Byte),
+        "defint" => VarTypeRef::Builtin(BuiltinType::Integer),
+        "deflng" => VarTypeRef::Builtin(BuiltinType::Long),
+        "deflnglng" => VarTypeRef::Builtin(BuiltinType::LongLong),
+        "deflngptr" => VarTypeRef::Builtin(BuiltinType::LongPtr),
+        "defcur" => VarTypeRef::Builtin(BuiltinType::Currency),
+        "defsng" => VarTypeRef::Builtin(BuiltinType::Single),
+        "defdbl" => VarTypeRef::Builtin(BuiltinType::Double),
+        "defdate" => VarTypeRef::Builtin(BuiltinType::Date),
+        "defstr" => VarTypeRef::Builtin(BuiltinType::String),
+        "defobj" => VarTypeRef::Object("object".to_string()),
+        "defvar" => VarTypeRef::Variant,
+        _ => return None,
+    };
+    Some(ty)
+}
+
+fn letter_token(token: SyntaxToken<'_>) -> Option<char> {
+    if token.kind != SyntaxKind::Ident {
+        return None;
+    }
+    let mut chars = token.text.chars();
+    let first = chars.next()?;
+    chars.next().is_none().then_some(first)
+}
+
+fn ascii_letter_index(ch: char) -> Option<usize> {
+    let up = ch.to_ascii_uppercase();
+    up.is_ascii_uppercase().then(|| (up as u8 - b'A') as usize)
+}
+
+fn significant_tokens_deep(node: SyntaxNode<'_>) -> Vec<SyntaxToken<'_>> {
+    let mut out = Vec::new();
+    collect_significant_tokens(node, &mut out);
+    out
+}
+
+fn collect_significant_tokens<'a>(node: SyntaxNode<'a>, out: &mut Vec<SyntaxToken<'a>>) {
+    for child in node.children() {
+        match child {
+            SyntaxElement::Token(token) if !token.kind.is_trivia() => out.push(token),
+            SyntaxElement::Node(node) => collect_significant_tokens(node, out),
+            _ => {}
+        }
+    }
 }
 
 /// Interface display names from a class module's `Implements` clauses (each is a

@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use oxvba_bundle::coreir::CoreStmt;
+use oxvba_bundle::coreir::{CoreLocal, CoreStmt};
 use oxvba_symbol::manifest::ModuleKind;
 use oxvba_symbol::model::{SymbolImpl, SymbolKind, fold_identifier};
 use oxvba_symbol::signature::VarTypeRef;
@@ -14,10 +14,12 @@ use crate::ids::{ProcInfo, module_compare_mode, module_option_base};
 use crate::{Lower, LowerContext, ProcLower};
 
 impl<'a> Lower<'a> {
-    fn lower_with(&'a self, info: LowerContext) -> ProcLower<'a> {
+    fn lower_with(&'a self, info: LowerContext, locals: Vec<CoreLocal>) -> ProcLower<'a> {
         ProcLower {
             g: self,
             info,
+            locals,
+            implicit_local_of: HashMap::new(),
             with_stack: Vec::new(),
             loop_stack: Vec::new(),
             next_with_temp: 0,
@@ -29,7 +31,7 @@ impl<'a> Lower<'a> {
     }
 
     fn proc_lower(&'a self, info: &ProcInfo) -> ProcLower<'a> {
-        self.lower_with(LowerContext::from_proc(info))
+        self.lower_with(LowerContext::from_proc(info), info.locals.clone())
     }
 
     /// Allocations for module-level **fixed-size array globals** (`Dim g(1 To 3)` at
@@ -55,7 +57,7 @@ impl<'a> Lower<'a> {
                 module_compare_mode(module.syntax),
                 module_option_base(module.syntax),
             );
-            let mut pl = self.lower_with(module_info);
+            let mut pl = self.lower_with(module_info, Vec::new());
             for node in module.syntax.child_nodes() {
                 if node.kind() == SyntaxKind::DimStmt {
                     out.extend(pl.bind_dim(node)?);
@@ -114,6 +116,7 @@ impl<'a> Lower<'a> {
         Ok(BoundProcBody {
             body,
             label_lines: pl.label_lines,
+            locals: pl.locals,
         })
     }
 }
@@ -121,6 +124,7 @@ impl<'a> Lower<'a> {
 pub(crate) struct BoundProcBody {
     pub body: Vec<CoreStmt>,
     pub label_lines: Vec<Option<i32>>,
+    pub locals: Vec<CoreLocal>,
 }
 
 impl<'a> ProcLower<'a> {

@@ -21,7 +21,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::coreir::{
-    CoreArg, CoreAsNew, CoreClass, CoreClassAsNewField, CoreConst, CorePlace, CoreProc,
+    CoreArg, CoreAsNew, CoreClass, CoreClassAsNewField, CoreConst, CoreLocal, CorePlace, CoreProc,
     CoreProgram, CoreValue, LabelId, LocalId, ProcId,
 };
 use oxvba_bundle::{
@@ -41,7 +41,7 @@ use oxvba_symbol::surface::{MemberOrigin, SurfaceType, SurfaceTypeKind};
 use oxvba_symbol::{TypeLibResolver, build_resolution_environment};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
-use crate::ids::{IdAllocator, ProcInfo};
+use crate::ids::{DefaultTypeRules, IdAllocator, ProcInfo};
 
 /// Collects the cross-bundle imports a project's binding makes (deduped by
 /// `(unit, token)`, case-insensitively). Lives on [`Lower`] behind a `RefCell` so
@@ -141,7 +141,7 @@ fn bind_one(
             name: info.name.clone(),
             kind: info.kind,
             params: info.params.clone(),
-            locals: info.locals.clone(),
+            locals: bound_body.locals,
             return_local: info.return_local,
             label_lines: bound_body.label_lines,
             body: bound_body.body,
@@ -698,6 +698,8 @@ impl Lower<'_> {
 struct ProcLower<'a> {
     g: &'a Lower<'a>,
     info: LowerContext,
+    locals: Vec<CoreLocal>,
+    implicit_local_of: HashMap<String, LocalId>,
     /// Active `With` receivers (for leading-dot member access).
     with_stack: Vec<Bound>,
     /// Source-level loop nesting used to validate `Exit For` / `Exit Do`.
@@ -725,12 +727,15 @@ struct LowerContext {
     /// VBA.
     proc_scope: ScopeId,
     local_of: HashMap<SymbolId, LocalId>,
+    param_count: usize,
     return_local: Option<LocalId>,
     return_type: VarTypeRef,
     class_name: Option<String>,
     me_local: Option<LocalId>,
     compare_mode: StringCompareMode,
     option_base: i32,
+    option_explicit: bool,
+    default_types: DefaultTypeRules,
 }
 
 impl LowerContext {
@@ -739,12 +744,15 @@ impl LowerContext {
             name: info.name.clone(),
             proc_scope: info.proc_scope,
             local_of: info.local_of.clone(),
+            param_count: info.params.len(),
             return_local: info.return_local,
             return_type: info.return_type.clone(),
             class_name: info.class_name.clone(),
             me_local: info.me_local,
             compare_mode: info.compare_mode,
             option_base: info.option_base,
+            option_explicit: info.option_explicit,
+            default_types: info.default_types.clone(),
         }
     }
 
@@ -758,12 +766,15 @@ impl LowerContext {
             name: module_name.to_string(),
             proc_scope: module_scope,
             local_of: HashMap::new(),
+            param_count: 0,
             return_local: None,
             return_type: VarTypeRef::Variant,
             class_name: None,
             me_local: None,
             compare_mode,
             option_base,
+            option_explicit: false,
+            default_types: DefaultTypeRules::default(),
         }
     }
 }
@@ -935,6 +946,53 @@ impl<'a> ProcLower<'a> {
         None
     }
 
+    /// VBA without `Option Explicit` creates a procedure-local variable when an
+    /// ordinary unresolved variable name is used, typed by the module's Def*
+    /// directives or Variant by default. `Option Explicit` turns the same use
+    /// into the compile diagnostic "Variable not defined".
+    fn implicit_local(&mut self, name: &str) -> Result<(CorePlace, VarTypeRef), BindError> {
+        let display = unbracket_identifier(name).to_string();
+        if self.has_ambiguous_unqualified_name(&display) {
+            return Err(BindError::AmbiguousName { name: display });
+        }
+        if self.info.option_explicit {
+            return Err(BindError::VariableNotDefined {
+                name: name.to_string(),
+            });
+        }
+        let folded = fold_identifier(&display);
+        if let Some(&local) = self.implicit_local_of.get(&folded) {
+            let offset = local.0.checked_sub(self.info.param_count).ok_or_else(|| {
+                BindError::Malformed(format!(
+                    "implicit local `{display}` points outside procedure locals"
+                ))
+            })?;
+            let ty = self
+                .locals
+                .get(offset)
+                .ok_or_else(|| {
+                    BindError::Malformed(format!("implicit local `{display}` has no local slot"))
+                })?
+                .ty
+                .clone();
+            Ok((CorePlace::Local(local), ty))
+        } else {
+            let ty = self
+                .info
+                .default_types
+                .type_for(&display)
+                .unwrap_or(VarTypeRef::Variant);
+            let local = LocalId(self.info.param_count + self.locals.len());
+            self.locals.push(CoreLocal {
+                name: display,
+                ty: ty.clone(),
+                array_element: None,
+            });
+            self.implicit_local_of.insert(folded, local);
+            Ok((CorePlace::Local(local), ty))
+        }
+    }
+
     /// `Some(return_local)` if `name` is the enclosing function's name (the
     /// function-result pseudo-variable).
     fn return_target(&self, name: &str) -> Option<LocalId> {
@@ -971,8 +1029,13 @@ impl<'a> ProcLower<'a> {
     }
 
     fn unresolved(&self, name: &str, context: &str) -> BindError {
-        if is_unqualified_name_context(context) && self.g.env.has_ambiguous_unqualified_name(name) {
+        if is_unqualified_name_context(context) && self.has_ambiguous_unqualified_name(name) {
             return BindError::AmbiguousName {
+                name: unbracket_identifier(name).to_string(),
+            };
+        }
+        if context == "call statement" {
+            return BindError::SubOrFunctionNotDefined {
                 name: name.to_string(),
             };
         }
@@ -981,6 +1044,12 @@ impl<'a> ProcLower<'a> {
             context: context.to_string(),
         }
     }
+
+    fn has_ambiguous_unqualified_name(&self, name: &str) -> bool {
+        self.g
+            .env
+            .has_ambiguous_unqualified_name(unbracket_identifier(name))
+    }
 }
 
 fn is_unqualified_name_context(context: &str) -> bool {
@@ -988,4 +1057,10 @@ fn is_unqualified_name_context(context: &str) -> bool {
         context,
         "expression" | "call statement" | "assignment target" | "place" | "AddressOf operand"
     )
+}
+
+fn unbracket_identifier(name: &str) -> &str {
+    name.strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(name)
 }

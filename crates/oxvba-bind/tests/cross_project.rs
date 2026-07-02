@@ -501,8 +501,27 @@ fn cross_project_enum_type_qualifier_can_be_project_qualified() {
 #[test]
 fn referenced_module_variable_is_not_cross_project_bindable() {
     // A referenced standard-module public VARIABLE has no callable export, so a
-    // cross-project reference must fail cleanly at bind time (unresolved) rather
-    // than opaquely at link time.
+    // cross-project reference must fail cleanly at bind time under Option
+    // Explicit rather than opaquely at link time.
+    let lib_mod = || proc_module("LibMod", "Public gConfig As Long\n");
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Option Explicit\nPublic r As Long\nSub Main()\nr = gConfig\nEnd Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    let err = bind_projects_error(&[lib, app]);
+    assert!(err.contains("VariableNotDefined"));
+}
+
+#[test]
+fn referenced_module_variable_name_without_option_explicit_is_local() {
+    // Without Option Explicit, VBA treats an otherwise unresolved name as an
+    // implicit local variable. That still must not tunnel through the referenced
+    // project's public module variable.
     let lib_mod = || proc_module("LibMod", "Public gConfig As Long\n");
     let lib = project("Lib", vec![lib_mod()], vec![]);
     let app = project(
@@ -513,11 +532,7 @@ fn referenced_module_variable_is_not_cross_project_bindable() {
         )],
         vec![referenced("Lib", vec![lib_mod()])],
     );
-    let result = bind_projects(&[lib, app], &NullTypeLibs);
-    assert!(
-        result.is_err(),
-        "a referenced module variable must not resolve cross-project"
-    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(0));
 }
 
 #[test]
