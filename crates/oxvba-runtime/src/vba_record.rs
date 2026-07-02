@@ -19,6 +19,9 @@ pub enum VbaRecordFieldKind {
     Currency,
     Date,
     String,
+    FixedString {
+        len: usize,
+    },
     Boolean,
     Record(Arc<VbaRecordLayout>),
     FixedArray {
@@ -108,6 +111,14 @@ impl VbaRecordLayout {
         self.align
     }
 
+    pub fn file_len(&self) -> Result<usize, String> {
+        self.fields.iter().try_fold(0usize, |total, field| {
+            Ok(total
+                .checked_add(field.kind.file_len()?)
+                .ok_or_else(|| "VBA record file length overflow".to_string())?)
+        })
+    }
+
     pub fn validate_byref_as_any_native_abi(&self) -> Result<(), String> {
         for field in self.fields() {
             let name = field
@@ -129,6 +140,28 @@ impl VbaRecordLayout {
 }
 
 impl VbaRecordFieldKind {
+    pub fn file_len(&self) -> Result<usize, String> {
+        let len = match self {
+            Self::Variant => {
+                return Err("Variant record field file length is not implemented".to_string());
+            }
+            Self::String => {
+                return Err(
+                    "variable-length String record field file length is not implemented"
+                        .to_string(),
+                );
+            }
+            Self::FixedString { len } => *len,
+            Self::Record(layout) => layout.file_len()?,
+            Self::FixedArray { element, len } => element
+                .file_len()?
+                .checked_mul(*len)
+                .ok_or_else(|| "VBA fixed-array record file length overflow".to_string())?,
+            _ => self.storage_shape()?.0,
+        };
+        Ok(len)
+    }
+
     pub fn storage_shape(&self) -> Result<(usize, usize), String> {
         let pointer_shape = (
             core::mem::size_of::<*mut core::ffi::c_void>(),
@@ -149,6 +182,11 @@ impl VbaRecordFieldKind {
                 (core::mem::size_of::<f64>(), core::mem::align_of::<f64>())
             }
             Self::String => pointer_shape,
+            Self::FixedString { len } => (
+                len.checked_mul(core::mem::size_of::<u16>())
+                    .ok_or_else(|| "VBA fixed-string record field size overflow".to_string())?,
+                1,
+            ),
             Self::Boolean => (core::mem::size_of::<i16>(), core::mem::align_of::<i16>()),
             Self::Record(layout) => (layout.size(), layout.align()),
             Self::FixedArray { element, len } => {
@@ -199,6 +237,7 @@ impl VbaRecordFieldKind {
             Self::String => {
                 Err("String fields carry owned BSTR pointers, not plain native bytes".into())
             }
+            Self::FixedString { .. } => Ok(()),
             Self::Variant => {
                 Err("Variant fields carry nested VARIANT state, not plain native bytes".into())
             }
@@ -233,6 +272,14 @@ impl VbaRecord {
 
     pub fn layout(&self) -> &Arc<VbaRecordLayout> {
         &self.layout
+    }
+
+    pub fn file_len(&self) -> Result<usize, String> {
+        self.layout.file_len()
+    }
+
+    pub fn memory_len(&self) -> usize {
+        self.layout.size()
     }
 
     pub fn data_ptr(&self) -> *const u8 {
@@ -686,6 +733,15 @@ unsafe fn read_field_variant_at(
                 value
             }
         }
+        VbaRecordFieldKind::FixedString { len } => {
+            let mut units = Vec::with_capacity(*len);
+            for i in 0..*len {
+                // SAFETY: fixed-string fields are byte-packed in VBA records, so the
+                // u16 code units may be unaligned. `read_unaligned` copies each unit.
+                units.push(unsafe { ptr::read_unaligned(ptr.add(i * 2).cast::<u16>()) });
+            }
+            Variant::from_string(BStr::from_utf16_units(&units)?)
+        }
         // SAFETY: Boolean is stored as a VBA `i16` (0 / -1); slot is an aligned `i16`.
         VbaRecordFieldKind::Boolean => Variant::from_bool(unsafe { *ptr.cast::<i16>() != 0 }),
         VbaRecordFieldKind::Record(layout) => {
@@ -830,6 +886,27 @@ unsafe fn write_field_variant_at(
             unsafe { drop_field_at(ptr, kind) };
             // SAFETY: slot is the pointer-sized/aligned BSTR carrier, now uninitialized.
             unsafe { ptr.cast::<*mut u16>().write(raw) };
+        }
+        VbaRecordFieldKind::FixedString { len } => {
+            if value.vtype() == crate::VarType::Null {
+                return Err("Invalid use of Null".to_string());
+            }
+            let Some(text) = value.as_bstr() else {
+                return Err("FixedString record field requires String value".to_string());
+            };
+            let mut units = text.to_utf16_units();
+            if units.len() > *len {
+                units.truncate(*len);
+            } else {
+                while units.len() < *len {
+                    units.push(0x20);
+                }
+            }
+            for (i, unit) in units.into_iter().enumerate() {
+                // SAFETY: fixed-string fields are byte-packed in VBA records, so the
+                // u16 code units may be unaligned. `write_unaligned` stores each unit.
+                unsafe { ptr::write_unaligned(ptr.add(i * 2).cast::<u16>(), unit) };
+            }
         }
         VbaRecordFieldKind::Boolean => {
             let value = value
@@ -1050,6 +1127,72 @@ mod tests {
         assert_eq!(
             layout.fields()[2].size,
             core::mem::size_of::<crate::VariantCore>()
+        );
+    }
+
+    #[test]
+    fn fixed_string_fields_are_inline_byte_packed_utf16() {
+        let layout = VbaRecordLayout::new(vec![
+            Field::named("B", Kind::Byte),
+            Field::named("Name", Kind::FixedString { len: 5 }),
+            Field::named("Tail", Kind::Integer),
+        ])
+        .expect("layout");
+
+        assert_eq!(
+            layout
+                .fields()
+                .iter()
+                .map(|field| (field.offset, field.size, field.align))
+                .collect::<Vec<_>>(),
+            vec![(0, 1, 1), (1, 10, 1), (12, 2, 2)]
+        );
+        assert_eq!(layout.size(), 14);
+        assert_eq!(layout.file_len().expect("file len"), 8);
+    }
+
+    #[test]
+    fn fixed_string_fields_default_to_nuls_and_assign_with_spaces() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Name", Kind::FixedString { len: 5 })])
+                .expect("layout"),
+        );
+        let mut record = VbaRecord::new_default(layout).expect("record");
+
+        assert_eq!(
+            record
+                .read_field_variant(0)
+                .expect("default")
+                .as_bstr()
+                .expect("string")
+                .to_utf16_units(),
+            vec![0, 0, 0, 0, 0]
+        );
+
+        record
+            .write_field_variant(0, &Variant::from_string("ab"))
+            .expect("write short");
+        assert_eq!(
+            record
+                .read_field_variant(0)
+                .expect("short")
+                .as_bstr()
+                .expect("string")
+                .as_str(),
+            "ab   "
+        );
+
+        record
+            .write_field_variant(0, &Variant::from_string("abcdef"))
+            .expect("write long");
+        assert_eq!(
+            record
+                .read_field_variant(0)
+                .expect("long")
+                .as_bstr()
+                .expect("string")
+                .as_str(),
+            "abcde"
         );
     }
 

@@ -555,8 +555,11 @@ impl Lower<'_> {
     fn array_field_layout(&self, ty: &VarTypeRef) -> oxvba_bundle::ArrayElementType {
         match self.resolve_udt_type(ty.clone()) {
             VarTypeRef::Udt(_) => self.array_element_layout(ty),
+            VarTypeRef::FixedString(len) => {
+                oxvba_bundle::ArrayElementType::FixedString(len as usize)
+            }
             VarTypeRef::FixedArray { element, len } => oxvba_bundle::ArrayElementType::FixedArray {
-                element: Box::new(self.array_element_layout(&element)),
+                element: Box::new(self.array_field_layout(&element)),
                 len,
             },
             VarTypeRef::Array(_) => oxvba_bundle::ArrayElementType::Variant,

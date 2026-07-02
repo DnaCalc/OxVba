@@ -27,6 +27,9 @@ const VBA_DATE_MAX_EXCLUSIVE_SERIAL: f64 = 2_958_466.0; // 10000-01-01
 
 pub fn len(args: &[Variant]) -> LibResult<Variant> {
     let value = need(args, 0)?;
+    if let Some(bytes) = value.vba_record_file_len() {
+        return Ok(vi32(bytes.map_err(LibError::from)? as i32));
+    }
     // Count UTF-16 CODE UNITS (VBA's string length): read them directly off a String
     // Variant's BSTR so a lone/paired surrogate half counts as one unit each (a UTF-8
     // round-trip via `as_str` would fold a lone surrogate to U+FFFD). Non-strings coerce.
@@ -1497,6 +1500,9 @@ pub fn weekday_name(args: &[Variant]) -> LibResult<Variant> {
 /// for scalar variables it reports the storage width of the value's VarType.
 pub fn len_b(args: &[Variant]) -> LibResult<Variant> {
     let value = need(args, 0)?;
+    if let Some(bytes) = value.vba_record_memory_len() {
+        return Ok(vi32(bytes as i32));
+    }
     let bytes = match value.vtype() {
         VarType::String => match value.string_units() {
             Some(units) => units.len() * 2,

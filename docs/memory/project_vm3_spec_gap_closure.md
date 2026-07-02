@@ -1657,6 +1657,56 @@
   the final implementation removes the legacy copied-element assumption for the
   scoped VBA-observed ParamArray element write-back behavior.
 
+## 2026-07-02 - Fixed-Length String UDT Field Layout (`bd-4ktq.51`)
+
+- Captured live Excel/VBA 7.1 behavior with VBE Debug -> Compile and
+  PID-scoped UI Automation modal handling in
+  `docs/evidence/conformance/vm3_fixed_string_udt_oracle_bd4ktq51_20260702T0300Z/`.
+- Oracle findings:
+  - A scalar `String * N` variable still defaults to spaces, but a UDT field
+    `Name As String * 5` defaults to five NUL UTF-16 code units; `Len` reports
+    5 and `Asc(Mid(field, 1, 1))` reports 0.
+  - Assigning a short value to the UDT field pads with spaces; assigning a long
+    value truncates to the declared width.
+  - `p.Name = Null` raises run-time error 94 (`Invalid use of Null`) and leaves
+    the NUL-filled field unchanged.
+  - Arrays of UDTs and whole-UDT assignment preserve the same fixed-field
+    behavior.
+  - `Len` vs `LenB` on `Byte + String * 5 + Integer` reports `8:14`: file
+    length counts the fixed string as 5 bytes, while memory layout is packed
+    UTF-16 (`1 + 10 + pad + 2`).
+- Implemented `ArrayElementType::FixedString` for UDT record-field metadata and
+  `VbaRecordFieldKind::FixedString { len }` for inline byte-packed UTF-16
+  storage.
+- The binder now preserves `String * N` only for UDT record fields (including
+  fixed-array field elements) and leaves ordinary array-element fixed-string
+  behavior for a separate oracle-backed lane.
+- `VbaRecord` defaults fixed-string fields to zeroed inline storage, reads them
+  as BSTR strings that may contain embedded NULs, and writes by truncating or
+  space-padding UTF-16 code units.
+- `Len(record)` and `LenB(record)` now use native record metadata for the scoped
+  fixed-string/scalar record shapes; variable-length String and Variant record
+  field file lengths remain explicitly unimplemented rather than inferred from
+  pointer-sized storage.
+- Added active vm3 and runtime coverage in
+  `crates/oxvba-differential/tests/fixed_string_default_vm3.rs` and
+  `crates/oxvba-runtime/src/vba_record.rs`.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vm3-fixed-string-udt-oracle.ps1 -RunId vm3_fixed_string_udt_oracle_bd4ktq51_20260702T0300Z`
+  - `cargo test -p oxvba-differential --test fixed_string_default_vm3 --quiet`
+  - `cargo test -p oxvba-runtime vba_record --quiet`
+  - `cargo check -p oxvba-runtime -p oxvba-bundle -p oxvba-bind -p oxvba-lib -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-lib --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `br dep cycles --json`
+  - `git diff --check`
+- The formal runner refreshed `docs/evidence/formal/latest_run.*` in
+  non-blocking mode. Kani remains deferred to WSL async, and unrelated
+  historical TODO obligations remain non-blocking.
+
 ## 2026-07-02 - Compatibility Objective Reinforcement
 
 - User clarified that the goal should always be to match real VBA compile-time
@@ -1893,8 +1943,9 @@
   `bd-4ktq.48` (`object-default-member-index-get` /
   `object-default-member-index-set`), `bd-4ktq.49`
   (`foreach-project-class-no-newenum`), `bd-4ktq.50`
-  (`paramarray-elements-byval`), `bd-4ktq.51`
-  (`fixed-string-udt-field-layout`), `bd-4ktq.52`
+  (`paramarray-elements-byval`; later closed as ParamArray caller aliasing),
+  `bd-4ktq.51` (`fixed-string-udt-field-layout`; closed 2026-07-02),
+  `bd-4ktq.52`
   (`array-byval-accepted-lost` / `array-assign-into-fixed-lhs`),
   `bd-4ktq.53` (`isarray-unallocated-false`), `bd-4ktq.54`
   (`raiseevent-fan-out-order`), `bd-4ktq.55`

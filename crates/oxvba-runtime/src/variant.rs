@@ -781,6 +781,20 @@ impl Variant {
         }
     }
 
+    pub fn vba_record_file_len(&self) -> Option<Result<usize, String>> {
+        match self.as_record_payload()? {
+            RecordPayload::Com(_) => None,
+            RecordPayload::Vba(record) => Some(record.file_len()),
+        }
+    }
+
+    pub fn vba_record_memory_len(&self) -> Option<usize> {
+        match self.as_record_payload()? {
+            RecordPayload::Com(_) => None,
+            RecordPayload::Vba(record) => Some(record.memory_len()),
+        }
+    }
+
     pub fn read_record_field_variant(&self, index: usize) -> Result<Variant, String> {
         match self.as_record_payload() {
             Some(RecordPayload::Vba(record)) => record.read_field_variant(index),

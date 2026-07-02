@@ -99,6 +99,7 @@ pub enum ArrayElementType {
     Currency,
     Date,
     String,
+    FixedString(usize),
     Boolean,
     /// A UDT-record element: the per-field element layout (one entry per record
     /// field, in field order).

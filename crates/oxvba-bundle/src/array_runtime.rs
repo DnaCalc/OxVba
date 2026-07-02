@@ -47,10 +47,12 @@ pub fn redim_safearray_from_elements(
             .collect::<Result<Vec<_>, String>>()?;
         return Ok(SafeArray::from_vba_records_nd(bounds, layout, records)?.with_fixed_size(fixed));
     }
-    Ok(
-        SafeArray::from_typed_variants_nd(bounds, safearray_vartype_for_element(element_type), elems)?
-            .with_fixed_size(fixed),
-    )
+    Ok(SafeArray::from_typed_variants_nd(
+        bounds,
+        safearray_vartype_for_element(element_type),
+        elems,
+    )?
+    .with_fixed_size(fixed))
 }
 
 /// The SAFEARRAY element vartype (`VT_*`) for a declared array element type.
@@ -74,7 +76,7 @@ pub fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
         ArrayElementType::Double => VT_R8_VALUE,
         ArrayElementType::Currency => VT_CY_VALUE,
         ArrayElementType::Date => VT_DATE_VALUE,
-        ArrayElementType::String => VT_BSTR_VALUE,
+        ArrayElementType::String | ArrayElementType::FixedString(_) => VT_BSTR_VALUE,
         ArrayElementType::Boolean => VT_BOOL_VALUE,
     }
 }
@@ -127,6 +129,7 @@ pub fn default_array_element(element_type: &ArrayElementType) -> Variant {
         ArrayElementType::Currency => Variant::from_currency_scaled_i64(0),
         ArrayElementType::Date => Variant::from_date_f64(0.0),
         ArrayElementType::String => Variant::from_string(""),
+        ArrayElementType::FixedString(len) => Variant::from_utf16_units(&vec![0; *len]),
         ArrayElementType::Boolean => Variant::from_bool(false),
         ArrayElementType::Record(fields) => {
             let layout = vba_record_layout_for_fields(fields)
@@ -152,7 +155,9 @@ pub fn vba_record_layout_for_fields(
 
 /// Map one UDT field's declared element type to its native record field kind (recursive for
 /// nested records and fixed arrays).
-pub fn vba_record_field_kind(element_type: &ArrayElementType) -> Result<VbaRecordFieldKind, String> {
+pub fn vba_record_field_kind(
+    element_type: &ArrayElementType,
+) -> Result<VbaRecordFieldKind, String> {
     let kind = match element_type {
         ArrayElementType::Variant => VbaRecordFieldKind::Variant,
         ArrayElementType::Integer => VbaRecordFieldKind::Integer,
@@ -165,6 +170,7 @@ pub fn vba_record_field_kind(element_type: &ArrayElementType) -> Result<VbaRecor
         ArrayElementType::Currency => VbaRecordFieldKind::Currency,
         ArrayElementType::Date => VbaRecordFieldKind::Date,
         ArrayElementType::String => VbaRecordFieldKind::String,
+        ArrayElementType::FixedString(len) => VbaRecordFieldKind::FixedString { len: *len },
         ArrayElementType::Boolean => VbaRecordFieldKind::Boolean,
         ArrayElementType::Record(fields) => {
             VbaRecordFieldKind::Record(vba_record_layout_for_fields(fields)?)
