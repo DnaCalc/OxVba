@@ -1,0 +1,3 @@
+2026-07-03T01:18:29.697+02:00 start excel_pid=13332 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_basic_scalar_drift_20260702\excel_dialog_guardian.stop
+2026-07-03T01:18:38.402+02:00 stop file observed; exiting
+2026-07-03T01:18:38.412+02:00 exit
