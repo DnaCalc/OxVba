@@ -113,9 +113,9 @@ impl VbaRecordLayout {
 
     pub fn file_len(&self) -> Result<usize, String> {
         self.fields.iter().try_fold(0usize, |total, field| {
-            Ok(total
+            total
                 .checked_add(field.kind.file_len()?)
-                .ok_or_else(|| "VBA record file length overflow".to_string())?)
+                .ok_or_else(|| "VBA record file length overflow".to_string())
         })
     }
 

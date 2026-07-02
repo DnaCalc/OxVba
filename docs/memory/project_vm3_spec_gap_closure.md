@@ -2735,3 +2735,18 @@
   - `bd-4ktq.61`: `cargo test -p oxvba-build` fails
     `wrapped_com_server_build_emits_package_descriptor_and_idl` because
     `gTopicIds` is unresolved as a place during build.
+
+## 2026-07-02 - Runtime VbaRecord Clippy Gate (`bd-4ktq.60`)
+
+- Repaired the `clippy::needless_question_mark` denial in
+  `VbaRecordLayout::file_len` by returning the existing checked-add error path
+  directly. This is a semantic no-op and makes no VBA compile/runtime behavior
+  claim.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-runtime --all-targets -- -D warnings`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the previous `oxvba-runtime` clippy gate. It surfaces two
+  later `oxvba-com` clippy denials, now tracked as `bd-4ktq.62`, and the
+  existing wrapped COM server `gTopicIds` test failure tracked as
+  `bd-4ktq.61`.
