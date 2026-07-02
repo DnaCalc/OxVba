@@ -2554,3 +2554,70 @@
   - `git diff --check`
   - `br dep cycles --json`
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet` refreshed formal run `20260702T092738Z` in non-blocking mode: 383 obligations, 125 pass, 242 todo, 16 skipped.
+
+## 2026-07-02 - LSet UDT Record Byte Overlay (`bd-4ktq.57`)
+
+- Extended the modal-safe Excel/VBA LSet/RSet oracle harness with UDT record-copy
+  cases and captured fresh evidence in
+  `docs/evidence/conformance/vm3_lset_rset_oracle_20260702T_bd57_udt/`.
+  The harness made the VBE visible, invoked Debug -> Compile VBAProject through
+  command ID 578, used UI Automation scoped to the owned Excel PID to capture
+  compile dialogs and selected VBE lines, dismissed only owned dialogs, and used
+  PID-scoped cleanup.
+- Oracle findings:
+  - `LSet targetUdt = sourceUdt` compiles and copies record storage as bytes.
+  - Same-layout scalar records return `|xy|:513`.
+  - Different UDT types with the same byte size reinterpret storage, e.g.
+    `513:3:4`.
+  - Shorter sources copy only their byte prefix and leave the target tail intact
+    (`120,121,122,122`); longer sources truncate to the target size (`119,120`).
+  - Fixed arrays inside UDTs participate in the byte overlay (`1:2:3:4` in the
+    real VBA `B(1 To 4)` case).
+  - A non-record RHS and UDTs containing variable-length `String` fields both
+    compile-error with real VBA `Type mismatch`; `RSet` against a UDT target
+    compile-errors with `RSet allowed only on strings`.
+- The binder now lowers accepted UDT LSet statements as
+  `CoreStmt::LSetRecord`, rejects non-record RHS and byte-unsafe record layouts
+  with the VBA compile error text `Type mismatch`, and continues to reject UDT
+  `RSet` with the observed VBA compile error text.
+- OxIR/vm3 carry `OxInst::RecordLSet`. Runtime execution reads the source record,
+  performs `VbaRecord::lset_from`, and writes the mutated target record back to
+  the original place. `VbaRecord::lset_from` copies `min(target_size,
+  source_size)` bytes using overlap-safe copy semantics so `LSet a = a`, shorter
+  source/tail preservation, and longer source/truncation follow the oracle.
+- This bead intentionally does not preserve the old unsupported/legacy behavior.
+  The only residual found during implementation is a separate pre-existing UDT
+  fixed-array projection gap: vm3 currently exposes fixed-array UDT fields as
+  zero-based even though real VBA preserves declared lower bounds such as
+  `B(1 To 4)`. That parity gap is tracked by delivery bead `bd-vt0r`; bd57 tests
+  isolate byte-overlay behavior with `B(0 To 3)` rather than blessing the lower
+  bound bug.
+- Added focused coverage:
+  - `crates/oxvba-differential/tests/lset_rset_vm3.rs` covers UDT byte overlay,
+    same-size reinterpretation, shorter/longer source size behavior, fixed-array
+    byte overlay, non-record RHS rejection, UDT `RSet` rejection, and
+    variable-string UDT rejection.
+  - `crates/oxvba-bind/tests/bind_roundtrip.rs` proves UDT LSet lowers through
+    `CoreStmt::LSetRecord` and rejects the oracle-backed compile-error cases.
+  - `crates/oxvba-runtime/src/vba_record.rs` unit tests pin prefix copy, target
+    tail preservation, truncation, same-size reinterpretation, and rejection of
+    owning fields such as variable strings and variants.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -Command "& { .\scripts\run-vm3-lset-rset-oracle.ps1 -RunId 'vm3_lset_rset_oracle_20260702T_bd57_udt' -CaseId @('LSET-UDT-COPY','LSET-UDT-SAME-LAYOUT-SCALAR','LSET-UDT-DIFFERENT-SAME-SIZE','LSET-UDT-SOURCE-SHORTER','LSET-UDT-SOURCE-LONGER','LSET-UDT-FIXED-ARRAY','LSET-UDT-RHS-NONRECORD','RSET-UDT-TARGET','LSET-UDT-VARIABLE-STRING') }"`
+  - `cargo check -p oxvba-bundle -p oxvba-bind -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-runtime lset_record_overlay --quiet`
+  - `cargo test -p oxvba-differential --test lset_rset_vm3 --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip lset --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `rustfmt --edition 2024 --check crates/oxvba-bind/src/error.rs crates/oxvba-bind/src/stmt.rs crates/oxvba-bind/tests/bind_roundtrip.rs crates/oxvba-bundle/src/coreir.rs crates/oxvba-differential/tests/lset_rset_vm3.rs crates/oxvba-runtime/src/variant.rs crates/oxvba-runtime/src/vba_record.rs`
+  - Full touched-file rustfmt still reports pre-existing formatter drift in
+    legacy OxIR/vm3 implementation files, so the committed formatter proof is
+    scoped to the newly formatted files plus `git diff --check`.
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
+    completed in non-blocking mode with run `20260702T092738Z`: 383
+    obligations, 63 failures/TODOs, 16 skipped.

@@ -1725,6 +1725,14 @@ impl<'h> Vm3<'h> {
                     .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
                 self.store(record, target)?;
             }
+            OxInst::RecordLSet { record, value } => {
+                let source = self.operand(value)?;
+                let mut target = self.read(record)?;
+                target
+                    .lset_record_from(&source)
+                    .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
+                self.store(record, target)?;
+            }
             OxInst::RecordArraySet {
                 record,
                 index,
@@ -4593,6 +4601,7 @@ fn inst_kind(inst: &OxInst) -> &'static str {
         OxInst::FieldGet { .. } | OxInst::FieldSet { .. } => "object field access",
         OxInst::RecordGet { .. }
         | OxInst::RecordSet { .. }
+        | OxInst::RecordLSet { .. }
         | OxInst::RecordArrayGet { .. }
         | OxInst::RecordArraySet { .. } => "record field access",
         OxInst::ArrayLiteral { .. }

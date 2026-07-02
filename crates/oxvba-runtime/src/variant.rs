@@ -840,6 +840,18 @@ impl Variant {
         }
     }
 
+    pub fn lset_record_from(&mut self, source: &Variant) -> Result<(), String> {
+        match (self.as_record_payload_mut(), source.as_record_payload()) {
+            (Some(RecordPayload::Vba(target)), Some(RecordPayload::Vba(source))) => {
+                target.lset_from(source)
+            }
+            (Some(RecordPayload::Com(_)), _) | (_, Some(RecordPayload::Com(_))) => {
+                Err("COM record LSet requires COM metadata".into())
+            }
+            _ => Err("Type mismatch".into()),
+        }
+    }
+
     pub fn record_array_field_bounds_len(
         &self,
         index: usize,

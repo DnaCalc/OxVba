@@ -628,6 +628,12 @@ impl<'a> Lowerer<'a> {
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
+            CoreStmt::LSetRecord { place, value } => {
+                let (src, _) = self.lower_value(value)?;
+                self.lset_record_to_place(place, src)?;
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
+                Ok(())
+            }
             CoreStmt::Eval(value) => {
                 // Evaluate for effect; the result (if any) is discarded. A call in
                 // statement position is lowered with no result destination.
@@ -2355,6 +2361,15 @@ impl<'a> Lowerer<'a> {
                     value,
                 });
             }
+        }
+        Ok(())
+    }
+
+    fn lset_record_to_place(&mut self, place: &coreir::CorePlace, value: OxOperand) -> Result<()> {
+        let (record, compound) = self.mutable_base_place(place)?;
+        self.emit(OxInst::RecordLSet { record, value });
+        if compound {
+            self.store_to_place(place, OxOperand::Use(record))?;
         }
         Ok(())
     }

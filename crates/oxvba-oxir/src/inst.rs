@@ -310,6 +310,12 @@ pub enum OxInst {
         index: usize,
         value: OxOperand,
     },
+    /// `LSet targetUdt = sourceUdt`: overlay the source record bytes onto the
+    /// target record's overlapping storage prefix.
+    RecordLSet {
+        record: OxPlace,
+        value: OxOperand,
+    },
     /// Fused read of an element from a UDT record's array field — `rec.field(i...)`.
     /// This avoids materializing the whole fixed-array field as a temporary SAFEARRAY
     /// for every element access.

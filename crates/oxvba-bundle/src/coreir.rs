@@ -736,6 +736,13 @@ pub enum CoreStmt {
         target_name: String,
         target_type_name: String,
     },
+    /// `LSet targetUdt = sourceUdt`: byte-overlay the source record's storage onto
+    /// the target record, copying only the overlapping prefix and leaving any target
+    /// tail unchanged.
+    LSetRecord {
+        place: CorePlace,
+        value: CoreValue,
+    },
     /// A statement-form call (the value is evaluated, the result discarded). All
     /// file/console/`Debug` I/O statements desugar to `Eval(Call(Native(..)))`.
     Eval(CoreValue),

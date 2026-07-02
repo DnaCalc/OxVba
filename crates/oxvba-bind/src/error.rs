@@ -38,6 +38,9 @@ pub enum BindError {
     /// A ByRef argument l-value has a different declared type than its parameter.
     #[error("ByRef argument type mismatch: expected {expected}, got {actual}")]
     ByRefTypeMismatch { expected: String, actual: String },
+    /// VBA's generic compile-time type mismatch diagnostic.
+    #[error("Type mismatch")]
+    TypeMismatch,
     /// Too many arguments were supplied for a procedure/property call.
     #[error("Wrong number of arguments or invalid property assignment")]
     WrongNumberOfArgumentsOrInvalidPropertyAssignment,
@@ -137,6 +140,12 @@ impl BindError {
             .with_help(
                 "Pass a variable with the exact declared type, or parenthesize the argument to pass a coerced temporary.",
             ),
+            BindError::TypeMismatch => Diagnostic::error(
+                "BIND-E-TYPE-MISMATCH",
+                DiagnosticPhase::Bind,
+                "Type mismatch",
+            )
+            .with_help("Use compatible declared types for this statement."),
             BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment => Diagnostic::error(
                 "BIND-E-WRONG-NUMBER-OF-ARGUMENTS",
                 DiagnosticPhase::Bind,

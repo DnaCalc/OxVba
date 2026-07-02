@@ -152,15 +152,41 @@ fn lset_rset_reject_non_string_targets_with_vba_messages() {
 }
 
 #[test]
-fn lset_udt_record_copy_is_classified_separately() {
-    let err = bind_error(
+fn lset_udt_record_copy_lowers_to_record_statement() {
+    let program = bind(
         "Private Type A\n    X As String * 2\nEnd Type\n\
          Private Type B\n    X As String * 2\nEnd Type\n\
          Sub Main()\n    Dim a As A\n    Dim b As B\n    LSet a = b\nEnd Sub\n",
     );
     assert!(
-        err.contains("LSet user-defined type record copy"),
-        "expected explicit UDT split diagnostic, got {err}"
+        program.procs[0]
+            .body
+            .iter()
+            .any(|stmt| matches!(stmt, CoreStmt::LSetRecord { .. })),
+        "expected UDT LSet to lower as CoreStmt::LSetRecord, got {:?}",
+        program.procs[0].body
+    );
+}
+
+#[test]
+fn lset_udt_record_copy_rejects_vba_type_mismatch_cases() {
+    let non_record_rhs = bind_error_display(
+        "Private Type A\n    X As String * 2\nEnd Type\n\
+         Sub Main()\n    Dim a As A\n    LSet a = \"xy\"\nEnd Sub\n",
+    );
+    assert!(
+        non_record_rhs.contains("Type mismatch"),
+        "expected VBA Type mismatch, got {non_record_rhs}"
+    );
+
+    let owning_field = bind_error_display(
+        "Private Type A\n    S As String\nEnd Type\n\
+         Private Type B\n    S As String\nEnd Type\n\
+         Sub Main()\n    Dim a As A\n    Dim b As B\n    LSet a = b\nEnd Sub\n",
+    );
+    assert!(
+        owning_field.contains("Type mismatch"),
+        "expected VBA Type mismatch, got {owning_field}"
     );
 }
 

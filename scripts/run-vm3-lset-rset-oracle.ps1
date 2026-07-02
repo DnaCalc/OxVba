@@ -1,6 +1,7 @@
 param(
     [string]$RunId = ("vm3_lset_rset_oracle_{0:yyyyMMddTHHmmssZ}" -f (Get-Date).ToUniversalTime()),
-    [string]$OutputRoot = "docs/evidence/conformance"
+    [string]$OutputRoot = "docs/evidence/conformance",
+    [string[]]$CaseId = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -441,6 +442,175 @@ Public Function RunProbe() As Variant
     RunProbe = "|" & a.X & "|"
 End Function
 "@)
+$cases += (New-OracleCase "LSET-UDT-SAME-LAYOUT-SCALAR" "LSet copies fixed-string and scalar fields for same-sized UDT layouts." @"
+Private Type A
+    X As String * 2
+    N As Integer
+End Type
+
+Private Type B
+    X As String * 2
+    N As Integer
+End Type
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    Dim b As B
+    b.X = "xy"
+    b.N = 513
+    LSet a = b
+    RunProbe = "|" & a.X & "|:" & CStr(a.N)
+End Function
+"@)
+$cases += (New-OracleCase "LSET-UDT-DIFFERENT-SAME-SIZE" "LSet overlays bytes between different same-sized UDT layouts." @"
+Private Type A
+    I As Integer
+    B1 As Byte
+    B2 As Byte
+End Type
+
+Private Type B
+    L As Long
+End Type
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    Dim b As B
+    b.L = &H4030201
+    LSet a = b
+    RunProbe = CStr(a.I) & ":" & CStr(a.B1) & ":" & CStr(a.B2)
+End Function
+"@)
+$cases += (New-OracleCase "LSET-UDT-SOURCE-SHORTER" "LSet behavior when the source UDT storage is shorter than the target storage." @"
+Private Type A
+    X As String * 4
+End Type
+
+Private Type B
+    X As String * 2
+End Type
+
+Private Function Codes(ByVal s As String) As String
+    Dim i As Long
+    Dim out As String
+    For i = 1 To Len(s)
+        If i > 1 Then out = out & ","
+        out = out & CStr(AscW(Mid(s, i, 1)))
+    Next
+    Codes = out
+End Function
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    Dim b As B
+    a.X = "zzzz"
+    b.X = "xy"
+    LSet a = b
+    RunProbe = Codes(a.X)
+End Function
+"@)
+$cases += (New-OracleCase "LSET-UDT-SOURCE-LONGER" "LSet behavior when the source UDT storage is longer than the target storage." @"
+Private Type A
+    X As String * 2
+End Type
+
+Private Type B
+    X As String * 4
+End Type
+
+Private Function Codes(ByVal s As String) As String
+    Dim i As Long
+    Dim out As String
+    For i = 1 To Len(s)
+        If i > 1 Then out = out & ","
+        out = out & CStr(AscW(Mid(s, i, 1)))
+    Next
+    Codes = out
+End Function
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    Dim b As B
+    a.X = "zz"
+    b.X = "wxyz"
+    LSet a = b
+    RunProbe = Codes(a.X)
+End Function
+"@)
+$cases += (New-OracleCase "LSET-UDT-FIXED-ARRAY" "LSet overlays bytes into a fixed-array field." @"
+Private Type A
+    B(1 To 4) As Byte
+End Type
+
+Private Type B
+    L As Long
+End Type
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    Dim b As B
+    b.L = &H4030201
+    LSet a = b
+    RunProbe = CStr(a.B(1)) & ":" & CStr(a.B(2)) & ":" & CStr(a.B(3)) & ":" & CStr(a.B(4))
+End Function
+"@)
+$cases += (New-OracleCase "LSET-UDT-RHS-NONRECORD" "Classify LSet with a UDT target and non-record RHS." @"
+Private Type A
+    X As String * 2
+End Type
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    LSet a = "xy"
+    RunProbe = "|" & a.X & "|"
+End Function
+"@)
+$cases += (New-OracleCase "RSET-UDT-TARGET" "Classify whether RSet accepts UDT record targets." @"
+Private Type A
+    X As String * 2
+End Type
+
+Private Type B
+    X As String * 2
+End Type
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    Dim b As B
+    b.X = "xy"
+    RSet a = b
+    RunProbe = "|" & a.X & "|"
+End Function
+"@)
+$cases += (New-OracleCase "LSET-UDT-VARIABLE-STRING" "Classify LSet over UDT layouts with variable-length String fields." @"
+Private Type A
+    S As String
+End Type
+
+Private Type B
+    S As String
+End Type
+
+Public Function RunProbe() As Variant
+    Dim a As A
+    Dim b As B
+    b.S = "alpha"
+    LSet a = b
+    b.S = "beta"
+    RunProbe = a.S & "|" & b.S
+End Function
+"@)
+
+if ($CaseId.Count -gt 0) {
+    $wanted = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($id in $CaseId) {
+        $null = $wanted.Add($id)
+    }
+    $cases = @($cases | Where-Object { $wanted.Contains($_.id) })
+}
+if ($cases.Count -eq 0) {
+    throw "No oracle cases selected"
+}
 
 $results = @()
 $partialJsonPath = Join-Path $outDir "results.partial.json"

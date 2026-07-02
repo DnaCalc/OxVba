@@ -137,6 +137,12 @@ impl VbaRecordLayout {
         }
         Ok(())
     }
+
+    pub fn supports_lset_byte_overlay(&self) -> bool {
+        self.fields()
+            .iter()
+            .all(|field| field.kind.supports_lset_byte_overlay())
+    }
 }
 
 impl VbaRecordFieldKind {
@@ -243,6 +249,25 @@ impl VbaRecordFieldKind {
             }
         }
     }
+
+    fn supports_lset_byte_overlay(&self) -> bool {
+        match self {
+            Self::Variant | Self::String => false,
+            Self::Record(layout) => layout.supports_lset_byte_overlay(),
+            Self::FixedArray { element, .. } => element.supports_lset_byte_overlay(),
+            Self::Integer
+            | Self::Long
+            | Self::LongLong
+            | Self::LongPtr
+            | Self::Byte
+            | Self::Single
+            | Self::Double
+            | Self::Currency
+            | Self::Date
+            | Self::FixedString { .. }
+            | Self::Boolean => true,
+        }
+    }
 }
 
 impl VbaRecord {
@@ -328,6 +353,18 @@ impl VbaRecord {
             .ok_or_else(|| format!("record field {index} out of range"))?;
         // SAFETY: the field pointer is in range and aligned for `field.kind`.
         unsafe { write_field_variant_at(self.field_mut_ptr(&field), &field.kind, value) }
+    }
+
+    pub fn lset_from(&mut self, source: &VbaRecord) -> Result<(), String> {
+        if !self.layout.supports_lset_byte_overlay() || !source.layout.supports_lset_byte_overlay()
+        {
+            return Err("Type mismatch".to_string());
+        }
+        let len = self.memory_len().min(source.memory_len());
+        // SAFETY: both pointers address live record buffers sized by their layouts.
+        // `ptr::copy` permits overlap, so `LSet a = a` is a no-op rather than UB.
+        unsafe { ptr::copy(source.data_ptr(), self.data_mut_ptr(), len) };
+        Ok(())
     }
 
     pub fn array_field_bounds_len(
@@ -1262,6 +1299,110 @@ mod tests {
             .expect("write fixed array projection back");
 
         assert_eq!(record.field_bytes(0).expect("bytes"), &[0, 0xAB, 0, 0xCD]);
+    }
+
+    #[test]
+    fn lset_record_overlay_copies_prefix_and_preserves_target_tail() {
+        let target_layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::FixedString { len: 4 })])
+                .expect("target layout"),
+        );
+        let source_layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::FixedString { len: 2 })])
+                .expect("source layout"),
+        );
+        let mut target = VbaRecord::new_default(target_layout).expect("target");
+        let mut source = VbaRecord::new_default(source_layout).expect("source");
+        target
+            .write_field_variant(0, &Variant::from_string("zzzz"))
+            .expect("target text");
+        source
+            .write_field_variant(0, &Variant::from_string("xy"))
+            .expect("source text");
+
+        target.lset_from(&source).expect("lset");
+
+        assert_eq!(
+            target
+                .read_field_variant(0)
+                .expect("target after lset")
+                .as_bstr()
+                .expect("string")
+                .as_str(),
+            "xyzz"
+        );
+    }
+
+    #[test]
+    fn lset_record_overlay_truncates_longer_source() {
+        let target_layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::FixedString { len: 2 })])
+                .expect("target layout"),
+        );
+        let source_layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::FixedString { len: 4 })])
+                .expect("source layout"),
+        );
+        let mut target = VbaRecord::new_default(target_layout).expect("target");
+        let mut source = VbaRecord::new_default(source_layout).expect("source");
+        source
+            .write_field_variant(0, &Variant::from_string("wxyz"))
+            .expect("source text");
+
+        target.lset_from(&source).expect("lset");
+
+        assert_eq!(
+            target
+                .read_field_variant(0)
+                .expect("target after lset")
+                .as_bstr()
+                .expect("string")
+                .as_str(),
+            "wx"
+        );
+    }
+
+    #[test]
+    fn lset_record_overlay_reinterprets_same_size_storage() {
+        let target_layout = Arc::new(
+            VbaRecordLayout::new(vec![
+                Field::named("I", Kind::Integer),
+                Field::named("B1", Kind::Byte),
+                Field::named("B2", Kind::Byte),
+            ])
+            .expect("target layout"),
+        );
+        let source_layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("L", Kind::Long)]).expect("source layout"),
+        );
+        let mut target = VbaRecord::new_default(target_layout).expect("target");
+        let mut source = VbaRecord::new_default(source_layout).expect("source");
+        source
+            .write_field_variant(0, &Variant::from_i32(0x0403_0201))
+            .expect("source long");
+
+        target.lset_from(&source).expect("lset");
+
+        assert_eq!(
+            target.read_field_variant(0).expect("integer").as_i16(),
+            Some(513)
+        );
+        assert_eq!(target.read_field_variant(1).expect("b1").as_u8(), Some(3));
+        assert_eq!(target.read_field_variant(2).expect("b2").as_u8(), Some(4));
+    }
+
+    #[test]
+    fn lset_record_overlay_rejects_owning_fields() {
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::String)]).expect("layout"),
+        );
+        let mut target = VbaRecord::new_default(layout.clone()).expect("target");
+        let source = VbaRecord::new_default(layout).expect("source");
+
+        let err = target
+            .lset_from(&source)
+            .expect_err("variable strings are not LSet byte-overlay compatible");
+        assert_eq!(err, "Type mismatch");
     }
 
     #[test]

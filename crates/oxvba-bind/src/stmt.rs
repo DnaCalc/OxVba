@@ -8,7 +8,9 @@ use oxvba_bundle::coreir::{
     CoreIfArm, CorePlace, CoreStmt, CoreUnOp, CoreValue, ErrorOp, ExitKind, LocalId,
 };
 use oxvba_bundle::native::NativeImplId;
-use oxvba_bundle::{AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind};
+use oxvba_bundle::{
+    ArrayElementType, AssignmentIntent, BundleImport, ExportToken, NumericMode, ProjectMemberKind,
+};
 use oxvba_symbol::binding::{Binding, DispatchRoute};
 use oxvba_symbol::model::{SymbolId, SymbolKind, fold_identifier};
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
@@ -170,20 +172,34 @@ impl<'a> ProcLower<'a> {
             .assign_value()
             .ok_or_else(|| BindError::Malformed("LSet/RSet value".into()))?;
         let (place, target_ty) = self.bind_place(target_node)?;
+        let value_text = value_node.text();
+        let value_label = value_text.trim();
         match (&target_ty, native) {
             (VarTypeRef::Builtin(BuiltinType::String) | VarTypeRef::FixedString(_), _) => {}
             (VarTypeRef::Udt(_), NativeImplId::LSetStmt) => {
-                return Err(BindError::Unsupported(
-                    "LSet user-defined type record copy".into(),
-                ));
+                let target_layout = self.g.array_element_layout(&target_ty);
+                if !lset_record_layout_is_byte_copyable(&target_layout) {
+                    return Err(BindError::TypeMismatch);
+                }
+                let val = self.bind_expr(value_node)?;
+                let source_ty = self.g.resolve_udt_type(val.ty.clone());
+                if !matches!(source_ty, VarTypeRef::Udt(_)) {
+                    return Err(BindError::TypeMismatch);
+                }
+                let source_layout = self.g.array_element_layout(&source_ty);
+                if !lset_record_layout_is_byte_copyable(&source_layout) {
+                    return Err(BindError::TypeMismatch);
+                }
+                return Ok(vec![CoreStmt::LSetRecord {
+                    place,
+                    value: val.value,
+                }]);
             }
             (_, NativeImplId::LSetStmt) => return Err(BindError::LSetTargetType),
             (_, NativeImplId::RSetStmt) => return Err(BindError::RSetTargetType),
             _ => return Err(BindError::Malformed("unknown LSet/RSet lowering".into())),
         }
 
-        let value_text = value_node.text();
-        let value_label = value_text.trim();
         let mut val = self.bind_expr(value_node)?;
         val = self.bind_default_member_value_context(val, value_label)?;
         let aligned = CoreValue::Call {
@@ -2179,4 +2195,30 @@ fn type_block_name(node: SyntaxNode<'_>) -> Option<&str> {
         }
     }
     None
+}
+
+fn lset_record_layout_is_byte_copyable(layout: &ArrayElementType) -> bool {
+    match layout {
+        ArrayElementType::Record(fields) => fields.iter().all(lset_record_field_is_byte_copyable),
+        _ => false,
+    }
+}
+
+fn lset_record_field_is_byte_copyable(field: &ArrayElementType) -> bool {
+    match field {
+        ArrayElementType::Variant | ArrayElementType::String => false,
+        ArrayElementType::Record(fields) => fields.iter().all(lset_record_field_is_byte_copyable),
+        ArrayElementType::FixedArray { element, .. } => lset_record_field_is_byte_copyable(element),
+        ArrayElementType::Integer
+        | ArrayElementType::Long
+        | ArrayElementType::LongLong
+        | ArrayElementType::LongPtr
+        | ArrayElementType::Byte
+        | ArrayElementType::Single
+        | ArrayElementType::Double
+        | ArrayElementType::Currency
+        | ArrayElementType::Date
+        | ArrayElementType::FixedString(_)
+        | ArrayElementType::Boolean => true,
+    }
 }
