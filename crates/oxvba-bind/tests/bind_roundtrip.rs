@@ -3227,6 +3227,60 @@ fn late_com_method_lowers_lvalue_arg_to_byref() {
     );
 }
 
+#[test]
+fn typed_com_paramarray_method_boxes_tail_to_zero_based_array() {
+    let main = "Sub Main()\n    Dim s As OxVba.TestEventServer\n    Dim r As Long\n    r = s.SumParamArray(1, 2, 3)\nEnd Sub\n";
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: main.into(),
+        }],
+        references: vec![ProjectReference::TypeLibrary {
+            name: "OxVba_TestEventServer".into(),
+            guid: None,
+            version_major: Some(1),
+            version_minor: Some(0),
+            lcid: None,
+            import_lib: Some("oxvba_testeventserver.tlb".into()),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
+    let Some((_, args)) = top_level_calls(&program).into_iter().find(
+        |(callee, _)| matches!(callee, CoreCallee::EarlyCom { member, .. } if member.token == 127),
+    ) else {
+        panic!(
+            "no EarlyCom SumParamArray call with token 127; calls={:?}",
+            top_level_calls(&program)
+        );
+    };
+    let Some(CoreArg::ByVal(CoreValue::ArrayLiteral {
+        elems,
+        lower_bound,
+        aliases,
+    })) = args.get(1)
+    else {
+        panic!("SumParamArray tail should be boxed into one array arg, got {args:?}");
+    };
+    assert_eq!(*lower_bound, 0, "COM ParamArray tail should be zero-based");
+    assert_eq!(
+        elems.len(),
+        3,
+        "three source args should become three array elements"
+    );
+    assert_eq!(
+        aliases,
+        &vec![None, None, None],
+        "COM ParamArray elements should not record caller-slot aliases"
+    );
+}
+
 struct DefaultValueTypeLibs;
 impl TypeLibResolver for DefaultValueTypeLibs {
     fn resolve(

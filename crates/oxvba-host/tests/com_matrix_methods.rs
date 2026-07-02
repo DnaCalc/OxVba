@@ -362,17 +362,27 @@ fn m12_test_event_server_byref_out_method_writes_back() {
     assert_differential("M12", late, early, Some(do_run), find_verdict, 42, Some(1));
 }
 
-// ── M13 (doc-gap): ParamArray method ─────────────────────────────────────────
+// ── M13: TestEventServer ParamArray method ───────────────────────────────────
 
 #[test]
-#[ignore = "DOCUMENTED GAP: no ParamArray/vararg member on the registered surface"]
-fn m13_param_array_method_documented_gap() {
-    // No vararg member exists. To express this scenario the server needs
-    // `Function Sum(ParamArray nums()) As Long`. Discoverable, non-silent gap.
-    eprintln!(
-        "M13 GAP: no ParamArray COM member registered. Add \
-         `Function Sum(ParamArray nums()) As Long` to OxVba.TestEventServer."
-    );
+#[ignore = "live COM; run explicitly"]
+fn m13_test_event_server_paramarray_method_sums_tail() {
+    let early_src = "Public verdict As Long\n\
+         Sub Main()\n\
+         Dim s As OxVba.TestEventServer\n\
+         Set s = CreateObject(\"OxVba.TestEventServer\")\n\
+         verdict = s.SumParamArray(10, 20, 12)\n\
+         End Sub\n";
+    let late_src = "Public verdict As Long\n\
+         Sub Main()\n\
+         Dim s As Object\n\
+         Set s = CreateObject(\"OxVba.TestEventServer\")\n\
+         verdict = s.SumParamArray(10, 20, 12)\n\
+         End Sub\n";
+    let late = run_clean(late_src);
+    let early = run_clean_with_references_prefer_vtable(early_src, tes_ref());
+    let do_run = run_clean_with_references_dispatch_only(early_src, tes_ref());
+    assert_differential("M13", late, early, Some(do_run), find_verdict, 42, Some(1));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 use crate::{
     ComBinding, ComDirectDispatchSpec, ComInvokeArg, ComInvokeRequest, ComMemberSpec,
-    ComMemberToken, DISPATCH_INVOKE_MISSING_ARG_TOKEN,
+    ComMemberToken, ComValue, DISPATCH_INVOKE_MISSING_ARG_TOKEN,
 };
+
+const COM_DISP_E_PARAMNOTFOUND: i32 = 0x8002_0004u32 as i32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundRuntimeInvokePlan {
@@ -54,6 +56,9 @@ pub fn canonicalize_member_known_args(
     args: &[ComInvokeArg],
 ) -> Result<Vec<ComInvokeArg>, String> {
     let _ = validate_named_arg_order(args)?;
+    if let Some(paramarray_index) = member_paramarray_index(spec) {
+        return canonicalize_member_paramarray_args(spec, args, paramarray_index);
+    }
     if spec.parameter_names.is_empty() || args.is_empty() {
         return Ok(args.to_vec());
     }
@@ -105,6 +110,104 @@ pub fn canonicalize_member_known_args(
         .zip(spec.parameter_names.iter())
         .map(|(arg, name)| arg.unwrap_or_else(|| ComInvokeArg::omitted_named(name.clone())))
         .collect())
+}
+
+fn member_paramarray_index(spec: &ComMemberSpec) -> Option<usize> {
+    spec.parameter_optional_defaults
+        .len()
+        .checked_sub(1)
+        .filter(|&index| {
+            matches!(
+                spec.parameter_optional_defaults.get(index),
+                Some(crate::OptionalParamDefault::ParamArray)
+            )
+        })
+}
+
+fn canonicalize_member_paramarray_args(
+    spec: &ComMemberSpec,
+    args: &[ComInvokeArg],
+    paramarray_index: usize,
+) -> Result<Vec<ComInvokeArg>, String> {
+    let fixed_count = paramarray_index;
+    let fixed_names = &spec.parameter_names[..fixed_count.min(spec.parameter_names.len())];
+    let paramarray_name = spec
+        .parameter_names
+        .get(paramarray_index)
+        .map(String::as_str)
+        .unwrap_or("ParamArray");
+    let mut ordered: Vec<Option<ComInvokeArg>> = vec![None; fixed_names.len()];
+    let mut tail = Vec::new();
+    let mut next_positional = 0usize;
+    for arg in args {
+        if let Some(name) = &arg.name {
+            if name.eq_ignore_ascii_case(paramarray_name) {
+                return Err(format!(
+                    "named COM argument `{name}` cannot target ParamArray parameter `{}` on member `{}`",
+                    paramarray_name, spec.name
+                ));
+            }
+            if !tail.is_empty() {
+                return Err(format!(
+                    "named COM argument `{name}` cannot follow ParamArray positional arguments for member `{}`",
+                    spec.name
+                ));
+            }
+            let Some(index) = fixed_names
+                .iter()
+                .position(|candidate| candidate.eq_ignore_ascii_case(name))
+            else {
+                return Err(format!(
+                    "named COM argument `{name}` is not defined for member `{}` in current metadata",
+                    spec.name
+                ));
+            };
+            if ordered[index].is_some() {
+                return Err(format!(
+                    "named COM argument `{name}` was provided more than once for member `{}`",
+                    spec.name
+                ));
+            }
+            ordered[index] = Some(arg.clone());
+            continue;
+        }
+        if next_positional < fixed_names.len() {
+            ordered[next_positional] = Some(arg.clone());
+            next_positional += 1;
+        } else {
+            tail.push(arg.clone());
+        }
+    }
+
+    let mut result: Vec<ComInvokeArg> = ordered
+        .into_iter()
+        .zip(fixed_names.iter())
+        .map(|(arg, name)| arg.unwrap_or_else(|| ComInvokeArg::omitted_named(name.clone())))
+        .collect();
+    result.push(ComInvokeArg::positional_value(ComValue::ArrayIntent(
+        pack_paramarray_tail(&tail)?,
+    )));
+    Ok(result)
+}
+
+fn pack_paramarray_tail(
+    tail: &[ComInvokeArg],
+) -> Result<oxvba_runtime::safe_array::SafeArray, String> {
+    let mut values = Vec::with_capacity(tail.len());
+    for arg in tail {
+        if let Some(name) = &arg.name {
+            return Err(format!(
+                "named COM argument `{name}` cannot be packed into a ParamArray tail"
+            ));
+        }
+        let value = arg
+            .value
+            .as_ref()
+            .map(|value| value.variant().clone())
+            .unwrap_or_else(|| oxvba_runtime::Variant::from_error_code(COM_DISP_E_PARAMNOTFOUND));
+        values.push(value);
+    }
+    Ok(oxvba_runtime::safe_array::SafeArray::from_variants(values))
 }
 
 pub fn plan_unbound_runtime_invoke(
@@ -184,7 +287,8 @@ pub fn plan_bound_runtime_invoke(
 mod tests {
     use crate::{
         ComBinding, ComDirectDispatchSpec, ComInvokeArg, ComInvokeRequest, ComMemberSpec,
-        ComMemberToken, ComValue, TypeLibMemberInvokeKind,
+        ComMemberToken, ComValue, OptionalParamDefault, TypeLibMemberInvokeKind, TypeLibParamType,
+        TypeLibWireType,
     };
     use oxvba_runtime::ObjectRef;
 
@@ -268,6 +372,57 @@ mod tests {
         assert_eq!(
             err,
             "named COM invoke arguments must trail positional arguments"
+        );
+    }
+
+    #[test]
+    fn canonicalize_member_known_args_boxes_paramarray_tail() {
+        let spec = ComMemberSpec {
+            name: "SumParamArray".to_string(),
+            requires_argument: true,
+            invoke_kind: TypeLibMemberInvokeKind::Method,
+            parameter_names: vec!["nums".to_string()],
+            is_default_member: false,
+            vtable_slot: None,
+            parameter_types: vec![TypeLibParamType::Variant],
+            parameter_wire_types: vec![TypeLibWireType::SafeArrayVariant],
+            parameter_iids: vec![None],
+            parameter_optional_defaults: vec![OptionalParamDefault::ParamArray],
+            return_type: Some(TypeLibParamType::Long),
+            return_wire_type: Some(TypeLibWireType::Automation(TypeLibParamType::Long)),
+            callconv_is_stdcall: true,
+            interface_iid: None,
+            is_dual: false,
+            source_typekind: None,
+            vtable_slot_bound: None,
+        };
+
+        let args = canonicalize_member_known_args(
+            &spec,
+            &[
+                ComInvokeArg::positional_value(ComValue::I32(4)),
+                ComInvokeArg::positional_value(ComValue::I32(5)),
+                ComInvokeArg::positional_value(ComValue::I32(6)),
+            ],
+        )
+        .expect("ParamArray canonicalization should succeed");
+
+        assert_eq!(args.len(), 1);
+        let value = args[0]
+            .value
+            .as_ref()
+            .expect("ParamArray call should carry one packed array")
+            .to_com_value();
+        let ComValue::ArrayIntent(array) = value else {
+            panic!("ParamArray tail should pack to ArrayIntent, got {value:?}");
+        };
+        assert_eq!(array.len(), 3);
+        let elems = array
+            .variant_elements()
+            .expect("ParamArray SAFEARRAY should expose Variant elements");
+        assert_eq!(
+            elems.iter().map(|value| value.as_i32()).collect::<Vec<_>>(),
+            vec![Some(4), Some(5), Some(6)]
         );
     }
 

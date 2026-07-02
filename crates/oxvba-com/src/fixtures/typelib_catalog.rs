@@ -3,9 +3,9 @@
 use crate::ComMemberToken;
 use crate::runtime_state::{ComEventPath, ComEventSpec, ComMemberSpec};
 use crate::typelib::{
-    TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
-    TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest, TypeLibResolvedIdentity,
-    TypeLibWireType,
+    OptionalParamDefault, TypeLibEventDispatchPath, TypeLibEventMetadata, TypeLibMemberInvokeKind,
+    TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest,
+    TypeLibResolvedIdentity, TypeLibWireType,
 };
 
 #[cfg(any(test, feature = "fixture-typelibs"))]
@@ -127,6 +127,7 @@ const TEST_EVENT_SERVER_DISPID_FIRE_VALUE_CHANGED: i32 = 102;
 const TEST_EVENT_SERVER_DISPID_FIRE_PAIR_CHANGED: i32 = 103;
 const TEST_EVENT_SERVER_DISPID_PING: i32 = 104;
 const TEST_EVENT_SERVER_DISPID_INCREMENT: i32 = 126;
+const TEST_EVENT_SERVER_DISPID_SUM_PARAM_ARRAY: i32 = 127;
 const TEST_EVENT_SERVER_EVENT_SIMPLE: i32 = 1;
 const TEST_EVENT_SERVER_EVENT_VALUE_CHANGED: i32 = 2;
 const TEST_EVENT_SERVER_EVENT_PAIR_CHANGED: i32 = 3;
@@ -2511,6 +2512,27 @@ pub fn build_typelib_metadata(identity: &TypeLibResolvedIdentity) -> TypeLibMeta
                 parameter_iids: vec![None],
                 return_type: None,
                 return_wire_type: None,
+                callconv_is_stdcall: false,
+                is_dual: false,
+                interface_iid: None,
+                source_typekind: None,
+                vtable_slot_bound: None,
+            },
+            TypeLibMemberMetadata {
+                name: "SumParamArray".to_string(),
+                token: TEST_EVENT_SERVER_DISPID_SUM_PARAM_ARRAY,
+                vtable_slot: None,
+                requires_argument: true,
+                invoke_kind: TypeLibMemberInvokeKind::Method,
+                parameter_names: vec!["nums".to_string()],
+                parameter_optional: vec![true],
+                parameter_optional_defaults: vec![OptionalParamDefault::ParamArray],
+                is_default_member: false,
+                parameter_types: vec![TypeLibParamType::Variant],
+                parameter_wire_types: vec![TypeLibWireType::SafeArrayVariant],
+                parameter_iids: vec![None],
+                return_type: Some(TypeLibParamType::Long),
+                return_wire_type: Some(TypeLibWireType::Automation(TypeLibParamType::Long)),
                 callconv_is_stdcall: false,
                 is_dual: false,
                 interface_iid: None,

@@ -99,6 +99,9 @@ namespace OxVba.TestEventServer
 
         [DispId(126)]
         void Increment([In, Out] ref int value);
+
+        [DispId(127)]
+        int SumParamArray(params object[] nums);
     }
 
     [ComVisible(true)]
@@ -285,6 +288,20 @@ namespace OxVba.TestEventServer
         public void Increment([In, Out] ref int value)
         {
             value += 1;
+        }
+
+        public int SumParamArray(params object[] nums)
+        {
+            int total = 0;
+            if (nums == null)
+            {
+                return total;
+            }
+            foreach (object num in nums)
+            {
+                total += Convert.ToInt32(num);
+            }
+            return total;
         }
 
         private static string FormatValue(object value)

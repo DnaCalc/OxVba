@@ -2787,7 +2787,8 @@ fn is_supported_vtable_putref_shape(
 /// True when every declared parameter from `supplied_count..` (the ones the guest
 /// did not supply) is one the vtable dispatch site can synthesize: a typelib
 /// default ([`OptionalParamDefault::HasDefault`]), an optional VARIANT
-/// ([`OptionalParamDefault::OptionalVariant`]), or a hidden `[lcid]`
+/// ([`OptionalParamDefault::OptionalVariant`]), an Automation ParamArray tail
+/// ([`OptionalParamDefault::ParamArray`]), or a hidden `[lcid]`
 /// ([`OptionalParamDefault::Lcid`], always synthesized with `LOCALE_NEUTRAL`). A
 /// [`Required`] or an [`OptionalNoDefault`] in the missing tail — or a metadata
 /// source that carries no `parameter_optional_defaults` at all (fixture/catalog)
@@ -2809,6 +2810,7 @@ fn trailing_optionals_are_synthesizable(
                 rule,
                 crate::OptionalParamDefault::HasDefault(_)
                     | crate::OptionalParamDefault::OptionalVariant
+                    | crate::OptionalParamDefault::ParamArray
                     | crate::OptionalParamDefault::Lcid
             )
         })
@@ -2817,7 +2819,8 @@ fn trailing_optionals_are_synthesizable(
 /// Synthesize the trailing arguments (declared order) the guest did not supply for
 /// a vtable slot call: a `HasDefault` rule materializes its typelib default value,
 /// an `OptionalVariant` rule materializes a `VT_ERROR`/`DISP_E_PARAMNOTFOUND`
-/// Variant (the standard "missing optional" marshaling), and an `Lcid` rule
+/// Variant (the standard "missing optional" marshaling), a `ParamArray` rule
+/// materializes an empty zero-based Variant SAFEARRAY, and an `Lcid` rule
 /// materializes `LOCALE_NEUTRAL` (0) as the hidden `[lcid]` the vtable ABI injects
 /// ahead of the `[out,retval]`. Returns `None` if any missing entry is not
 /// synthesizable (the gate already proved otherwise, so this is a
@@ -2839,6 +2842,11 @@ fn synthesize_trailing_optional_args(
             }
             crate::OptionalParamDefault::OptionalVariant => {
                 synthesized.push(Variant::from_error_code(COM_DISP_E_PARAMNOTFOUND));
+            }
+            crate::OptionalParamDefault::ParamArray => {
+                synthesized.push(Variant::from_safearray(
+                    oxvba_runtime::safe_array::SafeArray::from_variants(Vec::new()),
+                ));
             }
             // LOCALE_NEUTRAL (0). The slot's LCID param is a `Long` in
             // `parameter_types`, so the marshaller passes this as a VT_I4 by value.

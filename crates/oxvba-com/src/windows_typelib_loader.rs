@@ -2594,6 +2594,7 @@ unsafe fn extract_members_from_typeinfo(
         let mut parameter_optional_defaults = Vec::new();
         let mut retval_return_type = None;
         let mut retval_return_wire_type = None;
+        let is_vararg = fd.cparams_opt == -1;
         let optional_count = u32::try_from(fd.cparams_opt.max(0)).unwrap_or(0);
         let optional_start = cparams.saturating_sub(optional_count);
         for p in 0..cparams {
@@ -2643,6 +2644,16 @@ unsafe fn extract_members_from_typeinfo(
             parameter_iids.push(param_iid);
             parameter_optional.push(is_optional);
             parameter_optional_defaults.push(optional_default);
+        }
+
+        if is_vararg && !parameter_types.is_empty() {
+            let last = parameter_types.len() - 1;
+            if let Some(optional) = parameter_optional.get_mut(last) {
+                *optional = true;
+            }
+            if let Some(default) = parameter_optional_defaults.get_mut(last) {
+                *default = OptionalParamDefault::ParamArray;
+            }
         }
 
         // Extract return type. A `[out,retval]` param (above) wins; otherwise the
@@ -4490,6 +4501,43 @@ mod tests {
         assert!(
             increment.is_dual && increment.callconv_is_stdcall && increment.interface_iid.is_some(),
             "Increment should be vtable-admissible for early-bound ByRef writeback"
+        );
+
+        let sum_param_array = blob
+            .members
+            .iter()
+            .find(|member| member.name == "SumParamArray")
+            .expect("ParamArray sum member should exist");
+        assert_eq!(
+            sum_param_array.parameter_types,
+            vec![TypeLibParamType::Variant],
+            "SumParamArray should expose the ParamArray tail as a Variant array parameter"
+        );
+        assert_eq!(
+            sum_param_array.parameter_wire_types,
+            vec![TypeLibWireType::SafeArrayVariant],
+            "SumParamArray should preserve the SAFEARRAY(VARIANT) wire shape"
+        );
+        assert_eq!(
+            sum_param_array.parameter_optional_defaults,
+            vec![OptionalParamDefault::ParamArray],
+            "SumParamArray should carry the FUNCDESC cParamsOpt=-1 ParamArray marker"
+        );
+        assert_eq!(
+            sum_param_array.return_type,
+            Some(TypeLibParamType::Long),
+            "SumParamArray should return Long"
+        );
+        assert!(
+            sum_param_array.vtable_slot.is_some()
+                && sum_param_array
+                    .vtable_slot_bound
+                    .zip(sum_param_array.vtable_slot)
+                    .is_some_and(|(bound, slot)| slot < bound)
+                && sum_param_array.is_dual
+                && sum_param_array.callconv_is_stdcall
+                && sum_param_array.interface_iid.is_some(),
+            "SumParamArray should be vtable-admissible from the dual interface metadata"
         );
     }
 

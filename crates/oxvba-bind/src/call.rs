@@ -610,7 +610,18 @@ impl<'a> ProcLower<'a> {
         let bindable_count = visible
             .len()
             .saturating_sub(reserved_visible_tail.unwrap_or(0));
-        let mut slots: Vec<Option<CoreArg>> = (0..bindable_count).map(|_| None).collect();
+        let variadic_slot = reserved_visible_tail
+            .is_none()
+            .then(|| com_member_paramarray_index(member))
+            .flatten()
+            .and_then(|param_index| {
+                visible[..bindable_count]
+                    .iter()
+                    .position(|&i| i == param_index)
+            });
+        let fixed_count = variadic_slot.unwrap_or(bindable_count);
+        let mut slots: Vec<Option<CoreArg>> = (0..fixed_count).map(|_| None).collect();
+        let mut variadic_tail = Vec::new();
         let mut pos = 0usize;
         let mut seen_named = false;
         for item in items {
@@ -621,15 +632,22 @@ impl<'a> ProcLower<'a> {
                             "positional argument cannot follow named argument".into(),
                         ));
                     }
-                    if pos >= bindable_count {
+                    if pos < fixed_count {
+                        let param_index = visible[pos];
+                        slots[pos] = Some(self.bind_com_one(
+                            expr,
+                            member.parameter_types.get(param_index),
+                            passing,
+                        )?);
+                    } else if variadic_slot.is_some() {
+                        variadic_tail.push(self.bind_com_one(
+                            expr,
+                            Some(&TypeLibParamType::Variant),
+                            CallSitePassing::ByVal,
+                        )?);
+                    } else {
                         return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
-                    let param_index = visible[pos];
-                    slots[pos] = Some(self.bind_com_one(
-                        expr,
-                        member.parameter_types.get(param_index),
-                        passing,
-                    )?);
                     pos += 1;
                 }
                 ArgItem::Omitted => {
@@ -638,16 +656,29 @@ impl<'a> ProcLower<'a> {
                             "positional argument cannot follow named argument".into(),
                         ));
                     }
-                    if pos >= bindable_count {
+                    if pos < fixed_count {
+                        slots[pos] = Some(CoreArg::Omitted);
+                    } else if variadic_slot.is_some() {
+                        variadic_tail.push(CoreArg::Omitted);
+                    } else {
                         return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
-                    slots[pos] = Some(CoreArg::Omitted);
                     pos += 1;
                 }
                 ArgItem::Named { name, value } => {
                     seen_named = true;
                     let folded = fold_identifier(name.text);
-                    let Some(slot_index) = visible[..bindable_count].iter().position(|&i| {
+                    if variadic_slot.is_some_and(|slot| {
+                        member
+                            .parameter_names
+                            .get(visible[slot])
+                            .is_some_and(|p| fold_identifier(p) == folded)
+                    }) {
+                        return Err(BindError::Unsupported(
+                            "named argument to a ParamArray parameter".into(),
+                        ));
+                    }
+                    let Some(slot_index) = visible[..fixed_count].iter().position(|&i| {
                         member
                             .parameter_names
                             .get(i)
@@ -675,6 +706,36 @@ impl<'a> ProcLower<'a> {
                     )?);
                 }
             }
+        }
+
+        if variadic_slot.is_some() {
+            let mut args = Vec::with_capacity(fixed_count + 1);
+            for (slot_index, slot) in slots.into_iter().enumerate() {
+                let param_index = visible[slot_index];
+                match slot {
+                    Some(CoreArg::Omitted) | None
+                        if !com_param_is_optional(member, param_index) =>
+                    {
+                        return Err(BindError::ArgumentNotOptional {
+                            parameter: com_param_display_name(member, param_index),
+                        });
+                    }
+                    Some(CoreArg::Omitted) | None => args.push(CoreArg::Omitted),
+                    Some(arg) => args.push(arg),
+                }
+            }
+            let mut elems = Vec::with_capacity(variadic_tail.len());
+            let mut aliases = Vec::with_capacity(variadic_tail.len());
+            for arg in variadic_tail {
+                elems.push(paramarray_element(arg));
+                aliases.push(None);
+            }
+            args.push(CoreArg::ByVal(CoreValue::ArrayLiteral {
+                elems,
+                lower_bound: 0,
+                aliases,
+            }));
+            return Ok(args);
         }
 
         let Some(last_supplied) = slots.iter().rposition(Option::is_some) else {
@@ -2842,6 +2903,19 @@ fn visible_com_param_indices(member: &TypeLibMemberMetadata) -> Vec<usize> {
         .collect()
 }
 
+fn com_member_paramarray_index(member: &TypeLibMemberMetadata) -> Option<usize> {
+    member
+        .parameter_optional_defaults
+        .len()
+        .checked_sub(1)
+        .filter(|&index| {
+            matches!(
+                member.parameter_optional_defaults.get(index),
+                Some(OptionalParamDefault::ParamArray)
+            )
+        })
+}
+
 fn com_param_is_lcid(member: &TypeLibMemberMetadata, index: usize) -> bool {
     member.parameter_optional_defaults.len() == member.parameter_types.len()
         && matches!(
@@ -2868,6 +2942,7 @@ fn com_param_is_optional(member: &TypeLibMemberMetadata, index: usize) -> bool {
             OptionalParamDefault::HasDefault(_)
                 | OptionalParamDefault::OptionalVariant
                 | OptionalParamDefault::OptionalNoDefault
+                | OptionalParamDefault::ParamArray
         )
     )
 }

@@ -467,9 +467,10 @@ pub enum ComDefaultValue {
 ///
 /// The vtable gate (D3) admits a call with fewer supplied positionals than
 /// declared params ONLY when every missing one is trailing and is either
-/// [`HasDefault`](OptionalParamDefault::HasDefault) or
-/// [`OptionalVariant`](OptionalParamDefault::OptionalVariant); a [`Required`] or
-/// an [`OptionalNoDefault`] in the missing tail falls the whole call back to the
+/// [`HasDefault`](OptionalParamDefault::HasDefault),
+/// [`OptionalVariant`](OptionalParamDefault::OptionalVariant), or
+/// [`ParamArray`](OptionalParamDefault::ParamArray); a [`Required`] or an
+/// [`OptionalNoDefault`] in the missing tail falls the whole call back to the
 /// IDispatch path (which can drop trailing optionals natively).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OptionalParamDefault {
@@ -489,6 +490,10 @@ pub enum OptionalParamDefault {
     /// safe value to synthesize for the slot ABI, so an omitted one of these
     /// declines the vtable path (the IDispatch fallback handles it).
     OptionalNoDefault,
+    /// Automation vararg/ParamArray tail (`FUNCDESC::cParamsOpt == -1`): the
+    /// last parameter is a SAFEARRAY of Variants, and the caller packages any
+    /// extra arguments into a fresh zero-based array for that slot.
+    ParamArray,
     /// A hidden `[lcid]` parameter (`PARAMFLAG_FLCID`, `0x0004`): an `LCID` the
     /// vtable ABI injects ahead of the `[out,retval]`, NEVER supplied by the VBA
     /// caller (it is invisible at the language level). The vtable dispatch site

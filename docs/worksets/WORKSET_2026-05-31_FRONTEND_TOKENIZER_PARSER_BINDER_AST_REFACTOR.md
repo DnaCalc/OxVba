@@ -1538,7 +1538,11 @@ Candidate bead units:
   sibling slice closes the bounded M12 TestEventServer `ByRef Long` method writeback row: the
   fixture typelib exposes `Increment(ByRef value As Long)`, typed and late COM call sites preserve
   l-value arguments as runtime `ByRef` slots, and the vtable plus member-metadata-backed
-  `IDispatch` paths return the changed Long value to the caller.
+  `IDispatch` paths return the changed Long value to the caller. A further sibling slice closes
+  the bounded M13 TestEventServer ParamArray method row: the generated typelib's
+  `FUNCDESC::cParamsOpt = -1` marker is preserved as COM metadata, early-bound binding boxes the
+  positional tail into a zero-based SAFEARRAY(VARIANT), and metadata-known late-bound dispatch
+  packages the tail before `IDispatch::Invoke`.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
   `ReDim` parity through HIR, with project/class field-array carrier retirement split explicitly
   to FE-8.5.h.
