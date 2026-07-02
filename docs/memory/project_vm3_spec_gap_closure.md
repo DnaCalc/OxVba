@@ -2765,3 +2765,17 @@
   `oxvba-hal` unsafe-comment clippy gate, now tracked as `bd-4ktq.63`, and the
   existing wrapped COM server `gTopicIds` test failure tracked as
   `bd-4ktq.61`.
+
+## 2026-07-02 - oxvba-hal Time Unsafe Clippy Gate (`bd-4ktq.63`)
+
+- Added precise SAFETY comments for the Windows `FileTimeToLocalFileTime` and
+  `FileTimeToSystemTime` calls in the standard HAL time adapter. The comments
+  document the live initialized input/output pointers passed to the APIs; no
+  clock or VBA date/time behavior change is claimed.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-hal --all-targets -- -D warnings`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the previous `oxvba-hal` clippy gate. It surfaces the next
+  `oxvba-symbol` clippy gate, now tracked as `bd-4ktq.64`, and the existing
+  wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.

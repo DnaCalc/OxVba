@@ -75,6 +75,8 @@ pub(super) fn system_time_to_local_vba_serial(time: std::time::SystemTime) -> f6
         dwLowDateTime: 0,
         dwHighDateTime: 0,
     };
+    // SAFETY: Both pointers refer to live FILETIME values for the duration of
+    // the call; the API only reads the UTC input and writes the local output.
     let local_ok = unsafe { FileTimeToLocalFileTime(&utc_filetime, &mut local_filetime) };
     if local_ok == 0 {
         return utc_system_time_to_vba_serial(time);
@@ -89,6 +91,8 @@ pub(super) fn system_time_to_local_vba_serial(time: std::time::SystemTime) -> f6
         wSecond: 0,
         wMilliseconds: 0,
     };
+    // SAFETY: Both pointers refer to live initialized structs for the duration
+    // of the call; the API only reads the FILETIME and writes the SYSTEMTIME.
     let system_ok = unsafe { FileTimeToSystemTime(&local_filetime, &mut local) };
     if system_ok == 0 {
         return utc_system_time_to_vba_serial(time);
