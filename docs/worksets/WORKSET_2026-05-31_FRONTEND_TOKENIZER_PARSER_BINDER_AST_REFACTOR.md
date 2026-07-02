@@ -794,6 +794,10 @@ Required newly explicit delivery beads:
   (`docs/evidence/frontend_rework/COM_EVENT_SOURCE_SCOPING_2026-07-02.md`) removes the
   full-event-set fallback after coclass filtering, so `WithEvents` route construction and direct
   COM event-member lookup no longer synthesize events from another coclass in the same library.
+  A further expression-context slice
+  (`docs/evidence/frontend_rework/COM_DEFAULT_MEMBER_EXPRESSION_CONTEXT_2026-07-02.md`) applies
+  default-member value binding to typed imported and host-injected COM operands in ordinary binary
+  expressions, while keeping `Is` object-identity operands raw.
   Broader imported COM activation/member breadth remains open under `bd-aprs.8.8`.
 - FE-9.7 Broad matrix/corpus route audit: extend the route audit from selected fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
