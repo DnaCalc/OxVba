@@ -36,16 +36,28 @@ Sub Main()
 End Sub
 ";
     let outcome = run(Executor::Vm3, source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    let snap = outcome.result.unwrap_or_else(|e| panic!("vm3 run failed: {e}"));
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    let snap = outcome
+        .result
+        .unwrap_or_else(|e| panic!("vm3 run failed: {e}"));
 
     let has_f64 = |snap: &[Canon], v: f64| snap.contains(&canon(&Variant::from_f64(v)));
     assert!(has_f64(&snap, 1800.0), "SLN(10000,1000,5)=1800: {snap:?}");
     assert!(has_f64(&snap, 3000.0), "SYD(...,1)=3000: {snap:?}");
     assert!(has_f64(&snap, 600.0), "SYD(...,5)=600: {snap:?}");
     assert!(has_f64(&snap, 4000.0), "DDB(...,1)=4000: {snap:?}");
-    assert!(has_f64(&snap, 296.0), "DDB(...,5)=296 (salvage-floored): {snap:?}");
-    assert!(has_f64(&snap, 6000.0), "DDB(...,1,factor:=3)=6000: {snap:?}");
+    assert!(
+        has_f64(&snap, 296.0),
+        "DDB(...,5)=296 (salvage-floored): {snap:?}"
+    );
+    assert!(
+        has_f64(&snap, 6000.0),
+        "DDB(...,1,factor:=3)=6000: {snap:?}"
+    );
     assert!(
         snap.contains(&canon(&Variant::from_bool(true)))
             && !snap.contains(&canon(&Variant::from_bool(false))),

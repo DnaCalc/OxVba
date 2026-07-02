@@ -14,8 +14,14 @@ fn eval_with_null(expr: &str) -> Canon {
         "Public r As Variant\nSub Main()\n    Dim n As Variant\n    n = Null\n    r = {expr}\nEnd Sub\n"
     );
     let outcome = run(Executor::Vm3, &source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    let snap = outcome.result.unwrap_or_else(|e| panic!("vm3 run failed: {e}\n{source}"));
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    let snap = outcome
+        .result
+        .unwrap_or_else(|e| panic!("vm3 run failed: {e}\n{source}"));
     snap.into_iter().next().expect("global r")
 }
 
@@ -24,7 +30,11 @@ fn error_number_with_null(expr: &str) -> i32 {
         "Sub Main()\n    Dim n As Variant\n    n = Null\n    Dim s As String\n    s = {expr}\nEnd Sub\n"
     );
     let outcome = run(Executor::Vm3, &source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     assert!(
         outcome.raised,
         "{expr} should raise a VBA error, got {:?}",
@@ -80,10 +90,16 @@ fn string_typed_aliases_raise_94_on_null() {
 #[test]
 fn non_null_string_functions_still_work() {
     // The guard must not disturb the ordinary (non-Null) path.
-    assert_eq!(eval_with_null("UCase(\"abc\")"), canon(&Variant::from_string("ABC")));
+    assert_eq!(
+        eval_with_null("UCase(\"abc\")"),
+        canon(&Variant::from_string("ABC"))
+    );
     assert_eq!(
         eval_with_null("UCase$(\"abc\")"),
         canon(&Variant::from_string("ABC"))
     );
-    assert_eq!(eval_with_null("Len(\"abcd\")"), canon(&Variant::from_i32(4)));
+    assert_eq!(
+        eval_with_null("Len(\"abcd\")"),
+        canon(&Variant::from_i32(4))
+    );
 }

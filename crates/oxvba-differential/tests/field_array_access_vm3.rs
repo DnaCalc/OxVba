@@ -60,8 +60,14 @@ End Sub
     let start = Instant::now();
     let outcome = run_modules(Executor::Vm3, &modules, "Bench");
     let elapsed = start.elapsed();
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    let snap = outcome.result.unwrap_or_else(|e| panic!("vm3 run failed: {e}"));
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    let snap = outcome
+        .result
+        .unwrap_or_else(|e| panic!("vm3 run failed: {e}"));
     (snap, elapsed)
 }
 
@@ -70,7 +76,10 @@ fn class_field_array_read_write_is_correct_and_o1() {
     let (snap, elapsed) = run_thing(2000);
     let has = |v: i32| snap.contains(&canon(&Variant::from_i32(v)));
     // m(i) = i*2 over 0..1999; Sum = 2 * (1999*2000/2) = 3_998_000.
-    assert!(has(3_998_000), "Sum over the field array should be 3998000: {snap:?}");
+    assert!(
+        has(3_998_000),
+        "Sum over the field array should be 3998000: {snap:?}"
+    );
     assert!(has(0), "first = m(0) = 0: {snap:?}");
     assert!(has(3_998), "last = m(1999) = 3998: {snap:?}");
     // O(1) field-element access → a 2000-element class-field fill+read is milliseconds;

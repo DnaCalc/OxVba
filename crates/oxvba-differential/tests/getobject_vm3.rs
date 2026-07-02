@@ -23,26 +23,42 @@ fn run_main(body: &str) -> RunOutcome {
 fn getobject_running_instance_declines_without_native_com() {
     // `GetObject(, "Excel.Application")` (omitted pathname) has no headless equivalent.
     let outcome = run_main("    Set x = GetObject(, \"Excel.Application\")");
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     assert!(
         outcome.result.is_err(),
         "running-instance GetObject should raise without native COM, got {:?}",
         outcome.result
     );
-    assert_eq!(outcome.err.number, 429, "running-instance GetObject → 429; err={:?}", outcome.err);
+    assert_eq!(
+        outcome.err.number, 429,
+        "running-instance GetObject → 429; err={:?}",
+        outcome.err
+    );
 }
 
 #[test]
 fn getobject_file_bind_declines_without_native_com() {
     // `GetObject("<path>")` (non-empty pathname) has no headless equivalent.
     let outcome = run_main("    Set x = GetObject(\"C:\\does\\not\\exist.doc\")");
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     assert!(
         outcome.result.is_err(),
         "file-bind GetObject should raise without native COM, got {:?}",
         outcome.result
     );
-    assert_eq!(outcome.err.number, 432, "file-bind GetObject → 432; err={:?}", outcome.err);
+    assert_eq!(
+        outcome.err.number, 432,
+        "file-bind GetObject → 432; err={:?}",
+        outcome.err
+    );
 }
 
 #[test]
@@ -50,7 +66,11 @@ fn getobject_without_pathname_or_class_is_invalid() {
     // `GetObject("")` with no class is invalid in EVERY mode — the rejection happens before
     // the native gate, so it is identical on native and deterministic profiles.
     let outcome = run_main("    Set x = GetObject(\"\")");
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     assert!(
         outcome.result.is_err(),
         "GetObject with neither pathname nor class should raise, got {:?}",
@@ -64,7 +84,11 @@ fn getobject_empty_pathname_delegates_to_createobject() {
     // yields the synthetic projection object (no raise), proving the empty-string mode is
     // wired through the same activation path.
     let outcome = run_main("    Set x = GetObject(\"\", \"Scripting.Dictionary\")");
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     assert!(
         outcome.result.is_ok(),
         "empty-string GetObject should delegate to CreateObject, got {:?}",

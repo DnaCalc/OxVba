@@ -73,12 +73,24 @@ End Property
             vec![Variant::from_i32(21)],
         )
         .expect("invoke Twice");
-    assert_eq!(twice.as_i32(), Some(42), "vm3-backed session create + invoke");
+    assert_eq!(
+        twice.as_i32(),
+        Some(42),
+        "vm3-backed session create + invoke"
+    );
 
     let name = session
-        .invoke_member_values(widget, "Name", Some(ProjectMemberKind::PropertyGet), Vec::new())
+        .invoke_member_values(
+            widget,
+            "Name",
+            Some(ProjectMemberKind::PropertyGet),
+            Vec::new(),
+        )
         .expect("invoke Name");
-    assert_eq!(name.as_bstr().map(|s| s.as_str()), Some("Widget".to_string()));
+    assert_eq!(
+        name.as_bstr().map(|s| s.as_str()),
+        Some("Widget".to_string())
+    );
 }
 
 #[test]

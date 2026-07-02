@@ -47,7 +47,10 @@ pub enum Canon {
     /// `Single` — NaN-canonicalized `f32` bits.
     Single(u32),
     /// `Double` / `Date` — `tag` distinguishes them; `bits` are NaN-canonicalized.
-    Float { tag: u16, bits: u64 },
+    Float {
+        tag: u16,
+        bits: u64,
+    },
     /// A value type compared by its raw payload + reserved words (covers
     /// `Integer`/`Long`/`LongLong`/`Byte`/`Currency`/`Error`/`Decimal`/…). Keeping
     /// the tag makes the comparison type-faithful (a `Long 5` differs from an
@@ -61,15 +64,25 @@ pub enum Canon {
     Str(String),
     /// A reference/aggregate type whose payload is a heap pointer (structural
     /// comparison deferred); compared by tag only.
-    Opaque { tag: u16 },
+    Opaque {
+        tag: u16,
+    },
 }
 
 fn canon_f32_bits(x: f32) -> u32 {
-    if x.is_nan() { f32::NAN.to_bits() } else { x.to_bits() }
+    if x.is_nan() {
+        f32::NAN.to_bits()
+    } else {
+        x.to_bits()
+    }
 }
 
 fn canon_f64_bits(x: f64) -> u64 {
-    if x.is_nan() { f64::NAN.to_bits() } else { x.to_bits() }
+    if x.is_nan() {
+        f64::NAN.to_bits()
+    } else {
+        x.to_bits()
+    }
 }
 
 /// Project a runtime [`Variant`] into its canonical comparison form.
@@ -356,10 +369,23 @@ mod tests {
         );
         // After Add 10; Add 20,"k"; Add 30,,before:=1 the collection is [30, 10, 20(key "k")].
         // Snapshot = [c (Object), n=Count=3, a=Item(1)=30, b=Item("k")=20].
-        assert_eq!(snap.first(), Some(&Canon::Opaque { tag: 9 }), "c is an Object: {snap:?}");
-        assert!(snap.contains(&canon(&Variant::from_i32(3))), "Count==3: {snap:?}");
-        assert!(snap.contains(&canon(&Variant::from_i32(30))), "Item(1)==30: {snap:?}");
-        assert!(snap.contains(&canon(&Variant::from_i32(20))), "Item(\"k\")==20: {snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&Canon::Opaque { tag: 9 }),
+            "c is an Object: {snap:?}"
+        );
+        assert!(
+            snap.contains(&canon(&Variant::from_i32(3))),
+            "Count==3: {snap:?}"
+        );
+        assert!(
+            snap.contains(&canon(&Variant::from_i32(30))),
+            "Item(1)==30: {snap:?}"
+        );
+        assert!(
+            snap.contains(&canon(&Variant::from_i32(20))),
+            "Item(\"k\")==20: {snap:?}"
+        );
         assert!(
             !snap.contains(&canon(&Variant::from_i32(10))),
             "10 stays inside the collection, not in the snapshot: {snap:?}"
@@ -386,7 +412,10 @@ mod tests {
              Next v\n\
              End Sub\n",
         );
-        assert!(snap.contains(&canon(&Variant::from_i32(30))), "total: {snap:?}");
+        assert!(
+            snap.contains(&canon(&Variant::from_i32(30))),
+            "total: {snap:?}"
+        );
     }
 
     /// Regression for task_842916b0: a `Double` `/` result stored into a `Long` local must
@@ -440,7 +469,11 @@ mod tests {
             ),
         ]);
         // Global 0 (gResult) holds 42 — Class_Initialize ran.
-        assert_eq!(snap.first(), Some(&canon(&Variant::from_i32(42))), "{snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(42))),
+            "{snap:?}"
+        );
     }
 
     /// `Set w = Nothing` releases the local's object reference at the statement boundary, so
@@ -480,8 +513,16 @@ mod tests {
             ("Widget", Class, "' a minimal class\n"),
         ]);
         // gDiff (two distinct instances) = False; gSame (aliased) = True.
-        assert_eq!(snap.first(), Some(&canon(&Variant::from_bool(false))), "{snap:?}");
-        assert_eq!(snap.get(1), Some(&canon(&Variant::from_bool(true))), "{snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_bool(false))),
+            "{snap:?}"
+        );
+        assert_eq!(
+            snap.get(1),
+            Some(&canon(&Variant::from_bool(true))),
+            "{snap:?}"
+        );
     }
 
     #[test]
@@ -496,8 +537,16 @@ mod tests {
             ("Widget", Class, "' widget\n"),
             ("Gadget", Class, "' gadget\n"),
         ]);
-        assert_eq!(snap.first(), Some(&canon(&Variant::from_bool(true))), "{snap:?}");
-        assert_eq!(snap.get(1), Some(&canon(&Variant::from_bool(false))), "{snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_bool(true))),
+            "{snap:?}"
+        );
+        assert_eq!(
+            snap.get(1),
+            Some(&canon(&Variant::from_bool(false))),
+            "{snap:?}"
+        );
     }
 
     /// `TypeOf Nothing Is X` is False, not error 91 — and so is the test on an unset object
@@ -514,8 +563,16 @@ mod tests {
             ("Widget", Class, "' widget\n"),
         ]);
         // Neither raised (run_obj_ok asserts that); both are False.
-        assert_eq!(snap.first(), Some(&canon(&Variant::from_bool(false))), "{snap:?}");
-        assert_eq!(snap.get(1), Some(&canon(&Variant::from_bool(false))), "{snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_bool(false))),
+            "{snap:?}"
+        );
+        assert_eq!(
+            snap.get(1),
+            Some(&canon(&Variant::from_bool(false))),
+            "{snap:?}"
+        );
     }
 
     /// An object created in a called proc that faults: the object parks as the fault unwinds
@@ -585,7 +642,11 @@ mod tests {
                 "Public Function Twice(ByVal n As Long) As Long\n  Twice = n * 2\nEnd Function\n",
             ),
         ]);
-        assert_eq!(snap.first(), Some(&canon(&Variant::from_i32(42))), "{snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(42))),
+            "{snap:?}"
+        );
     }
 
     /// End-to-end project events: a sink wires a source via `WithEvents`, the source
@@ -611,7 +672,11 @@ mod tests {
             ),
         ]);
         // The event handler set gResult = 7.
-        assert_eq!(snap.first(), Some(&canon(&Variant::from_i32(7))), "{snap:?}");
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(7))),
+            "{snap:?}"
+        );
     }
 
     // NB: most VBA built-ins (`Len`, `UCase`, …) lower to a cross-bundle `CallExtern`
@@ -637,7 +702,9 @@ mod tests {
         let mut out = Vec::new();
         let mut stack = vec![dir.to_path_buf()];
         while let Some(d) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&d) else { continue };
+            let Ok(entries) = std::fs::read_dir(&d) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() {

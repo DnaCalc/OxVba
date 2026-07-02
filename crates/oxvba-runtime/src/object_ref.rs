@@ -978,7 +978,11 @@ impl ObjectRef {
     /// without cloning the whole array. Returns `None` if this is not a project
     /// instance. The closure must not call back into this object's fields (it holds a
     /// shared `RefCell` borrow for its duration).
-    pub fn with_project_field<R>(&self, token: i32, f: impl FnOnce(Option<&Variant>) -> R) -> Option<R> {
+    pub fn with_project_field<R>(
+        &self,
+        token: i32,
+        f: impl FnOnce(Option<&Variant>) -> R,
+    ) -> Option<R> {
         if !self.is_project_instance() {
             return None;
         }
@@ -1049,13 +1053,7 @@ impl ObjectRef {
         // SAFETY: guarded by `is_compat_object()` (vtbl identity), so `owner` is the live
         // `CompatObjectBase` kept alive by this `ObjectRef`'s retained reference; the borrow is
         // single-threaded (`ObjectRef` is neither `Send` nor `Sync`).
-        unsafe {
-            (*owner)
-                .native_state
-                .borrow()
-                .as_ref()
-                .map(|c| c.values())
-        }
+        unsafe { (*owner).native_state.borrow().as_ref().map(|c| c.values()) }
     }
 
     pub fn query_interface_descriptor(

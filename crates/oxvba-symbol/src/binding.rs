@@ -181,4 +181,3 @@ pub fn member_kind_from_invoke(invoke: TypeLibMemberInvokeKind) -> ProjectMember
         TypeLibMemberInvokeKind::PropertyPutRef => ProjectMemberKind::PropertySet,
     }
 }
-

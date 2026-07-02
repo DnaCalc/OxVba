@@ -2712,3 +2712,26 @@
     refreshed `docs/evidence/formal/latest_run.*` before the tool wrapper timed
     out; no runner remained afterward, and the latest report accounts for 383
     obligations: 304 pass, 63 todo, 16 skipped.
+
+## 2026-07-02 - Repo-Wide Rustfmt Drift Repair (`bd-4ktq.58`)
+
+- Isolated and repaired the broad mechanical `cargo fmt --all --check` drift
+  that had been blocking `scripts/meta-check.ps1 -Fast -NoArtifacts` since
+  bd-4ktq.42. This is intentionally a formatting-only support bead; no VBA
+  compile/runtime behavior change is claimed.
+- Ran `cargo fmt --all`, including the pre-existing `object_ref.rs` formatting
+  drift that earlier semantic beads had left unstaged. The remaining untracked
+  `docs/VM3_GAP_RESUME_PROMPT.md` stays unrelated and unstaged.
+- Formatter and graph verification completed:
+  - `cargo fmt --all --check`
+  - `br dep cycles --json` reported zero cycles.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the formatter gate and reaches the next real
+  non-format failures. Those are tracked explicitly before closing this support
+  bead:
+  - `bd-4ktq.60`: `cargo clippy` reports
+    `clippy::needless_question_mark` in
+    `crates/oxvba-runtime/src/vba_record.rs::VbaRecordLayout::file_len`.
+  - `bd-4ktq.61`: `cargo test -p oxvba-build` fails
+    `wrapped_com_server_build_emits_package_descriptor_and_idl` because
+    `gTopicIds` is unresolved as a place during build.

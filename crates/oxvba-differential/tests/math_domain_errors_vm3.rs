@@ -1,7 +1,7 @@
 //! vm3 math intrinsics should raise VBA errors for invalid domains/overflow
 //! instead of returning `NaN` or `Infinity`.
 
-use oxvba_differential::{canon, run, Canon, Executor};
+use oxvba_differential::{Canon, Executor, canon, run};
 use oxvba_runtime::Variant;
 
 fn run_expr(expr: &str) -> oxvba_differential::RunOutcome {

@@ -27,9 +27,21 @@ fn assert_contains(source: &str, expected: &Canon) {
 
 fn assert_raises_number(source: &str, number: i32) {
     let outcome: RunOutcome = run(Executor::Vm3, source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    assert!(outcome.result.is_err(), "unexpectedly completed: {:?}", outcome.result);
-    assert_eq!(outcome.err.number, number, "err={:?}\nsource:\n{source}", outcome.err);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    assert!(
+        outcome.result.is_err(),
+        "unexpectedly completed: {:?}",
+        outcome.result
+    );
+    assert_eq!(
+        outcome.err.number, number,
+        "err={:?}\nsource:\n{source}",
+        outcome.err
+    );
 }
 
 /// Run `Sub Main` with `result = <expr>` and assert the Boolean result.

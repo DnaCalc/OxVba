@@ -9,10 +9,8 @@
 //! documented out-of-scope allowlist.** An allowlisted case that starts matching is
 //! flagged so the allowlist can shrink.
 
-use oxvba_differential::oracle::{
-    OracleObservation, all_oracle_cases, run_oracle_case,
-};
 use oxvba_differential::Executor;
+use oxvba_differential::oracle::{OracleObservation, all_oracle_cases, run_oracle_case};
 
 /// Probes whose vm3 result is a KNOWN, documented gap — NOT an error-model regression.
 /// Each entry names the missing capability and the wave that closes it.
@@ -36,7 +34,10 @@ fn render(obs: &OracleObservation) -> String {
 #[test]
 fn vm3_is_oracle_compliant() {
     let cases = all_oracle_cases();
-    assert!(!cases.is_empty(), "no oracle cases loaded — is oracle/ present?");
+    assert!(
+        !cases.is_empty(),
+        "no oracle cases loaded — is oracle/ present?"
+    );
 
     let mut vm3_match = 0usize;
     let mut vm3_mismatch: Vec<String> = Vec::new();

@@ -610,7 +610,9 @@ pub struct TypeLibMemberMetadata {
     pub vtable_slot_bound: Option<u16>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum TypeLibMemberInvokeKind {
     PropertyGet,
     Method,

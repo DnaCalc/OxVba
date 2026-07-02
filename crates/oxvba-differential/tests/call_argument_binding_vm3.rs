@@ -7,7 +7,7 @@
 //! oracle-backed statement-parentheses and compile-time rejection gaps that
 //! follow-on call-argument beads are expected to unignore and satisfy.
 
-use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
 
 fn run_call_case(source: &str) -> RunOutcome {

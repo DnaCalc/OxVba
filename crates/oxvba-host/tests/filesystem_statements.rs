@@ -203,11 +203,23 @@ fn binary_seek_and_loc_are_one_based() {
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
     let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
-    assert_eq!(snap[0].as_i32(), Some(4), "Seek after 3 bytes = 4: {snap:?}");
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(4),
+        "Seek after 3 bytes = 4: {snap:?}"
+    );
     assert_eq!(snap[1].as_i32(), Some(3), "Loc after 3 bytes = 3: {snap:?}");
     assert_eq!(snap[2].as_i32(), Some(3), "LOF = 3: {snap:?}");
-    assert_eq!(snap[3].as_i32(), Some(3), "Seek after reading byte 2 = 3: {snap:?}");
-    assert_eq!(snap[4].as_i32(), Some(66), "Get at 1-based byte 2 = 'B' (66): {snap:?}");
+    assert_eq!(
+        snap[3].as_i32(),
+        Some(3),
+        "Seek after reading byte 2 = 3: {snap:?}"
+    );
+    assert_eq!(
+        snap[4].as_i32(),
+        Some(66),
+        "Get at 1-based byte 2 = 'B' (66): {snap:?}"
+    );
 }
 
 /// A bare `Seek #f, pos` past EOF does NOT extend the file — only a subsequent
@@ -240,9 +252,21 @@ fn seek_past_eof_does_not_extend_the_file() {
     let on_disk_len = std::fs::metadata(&file).map(|m| m.len()).ok();
     let _ = std::fs::remove_dir_all(&dir);
     let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
-    assert_eq!(snap[0].as_i32(), Some(1), "LOF unchanged by bare seek: {snap:?}");
-    assert_eq!(snap[1].as_i32(), Some(10), "Seek reports the requested position: {snap:?}");
-    assert_eq!(on_disk_len, Some(1), "on-disk file must not be extended by a bare seek");
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(1),
+        "LOF unchanged by bare seek: {snap:?}"
+    );
+    assert_eq!(
+        snap[1].as_i32(),
+        Some(10),
+        "Seek reports the requested position: {snap:?}"
+    );
+    assert_eq!(
+        on_disk_len,
+        Some(1),
+        "on-disk file must not be extended by a bare seek"
+    );
 }
 
 /// In Random mode `Loc(f)` is the RECORD number of the last record (not a byte
@@ -281,13 +305,33 @@ fn random_loc_and_seek_are_record_numbers() {
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
     let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
-    assert_eq!(snap[0].as_i32(), Some(1), "fresh Random Seek = record 1: {snap:?}");
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(1),
+        "fresh Random Seek = record 1: {snap:?}"
+    );
     assert_eq!(snap[1].as_i32(), Some(0), "fresh Random Loc = 0: {snap:?}");
-    assert_eq!(snap[2].as_i32(), Some(3), "Seek after 2 records = 3: {snap:?}");
-    assert_eq!(snap[3].as_i32(), Some(2), "Loc after 2 records = record 2 (not byte 8): {snap:?}");
+    assert_eq!(
+        snap[2].as_i32(),
+        Some(3),
+        "Seek after 2 records = 3: {snap:?}"
+    );
+    assert_eq!(
+        snap[3].as_i32(),
+        Some(2),
+        "Loc after 2 records = record 2 (not byte 8): {snap:?}"
+    );
     assert_eq!(snap[4].as_i32(), Some(100), "Get record 1 = 100: {snap:?}");
-    assert_eq!(snap[5].as_i32(), Some(1), "Loc after Get record 1 = 1: {snap:?}");
-    assert_eq!(snap[6].as_i32(), Some(2), "Seek after Get record 1 = next record 2: {snap:?}");
+    assert_eq!(
+        snap[5].as_i32(),
+        Some(1),
+        "Loc after Get record 1 = 1: {snap:?}"
+    );
+    assert_eq!(
+        snap[6].as_i32(),
+        Some(2),
+        "Seek after Get record 1 = next record 2: {snap:?}"
+    );
 }
 
 /// `Append` reports `Seek = 1` / `Loc = 0` on a fresh open even when the file is
@@ -568,9 +612,21 @@ fn sequential_loc_is_byte_position_over_128() {
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
     let snap = snap.unwrap_or_else(|d| panic!("{:?}: {}", d.phase(), d.message()));
-    assert_eq!(snap[0].as_i32(), Some(1), "Loc after 200 bytes = 200\\128 = 1: {snap:?}");
-    assert_eq!(snap[1].as_i32(), Some(3), "Loc after 400 bytes = 400\\128 = 3: {snap:?}");
-    assert_eq!(snap[2].as_i32(), Some(401), "Seek after 400 bytes = 401: {snap:?}");
+    assert_eq!(
+        snap[0].as_i32(),
+        Some(1),
+        "Loc after 200 bytes = 200\\128 = 1: {snap:?}"
+    );
+    assert_eq!(
+        snap[1].as_i32(),
+        Some(3),
+        "Loc after 400 bytes = 400\\128 = 3: {snap:?}"
+    );
+    assert_eq!(
+        snap[2].as_i32(),
+        Some(401),
+        "Seek after 400 bytes = 401: {snap:?}"
+    );
 }
 
 #[test]

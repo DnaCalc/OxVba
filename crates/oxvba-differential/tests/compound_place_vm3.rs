@@ -11,7 +11,7 @@
 //! `Main` result snapshot, so a passing run is `Ok([.. expected ..])` — never
 //! `unsupported(...)` or `Err(...)`.
 
-use oxvba_differential::{run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, run};
 
 /// A VBA `Long` literal `n` canonicalizes to a `Raw { tag: 3, .. }` whose first 4 little-
 /// endian bytes are `n`. Build the expected `Canon` so assertions read cleanly.

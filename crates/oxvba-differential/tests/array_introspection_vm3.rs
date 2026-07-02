@@ -1,6 +1,6 @@
 //! vm3 `VarType`/`TypeName` should report a SAFEARRAY's element type.
 
-use oxvba_differential::{canon, run, Canon, Executor};
+use oxvba_differential::{Canon, Executor, canon, run};
 use oxvba_runtime::Variant;
 
 fn value(body: &str) -> Canon {

@@ -25,8 +25,7 @@ fn vm3_declines_address_of_native_callback_shape() {
     // needs a thread-local callback-thunk table bound to the VM — platform machinery
     // M3-7 leaves to a follow-up. vm3 must decline it *honestly* (a named Unsupported),
     // never marshal the proc reference as a bogus integer.
-    let source =
-        "Private Declare PtrSafe Function RiffCallPtr4 Lib \"user32\" Alias \"CallWindowProcW\" (ByVal lpPrevWndFunc As LongPtr, ByVal a0 As LongPtr, ByVal a1 As LongPtr, ByVal a2 As LongPtr, ByVal a3 As LongPtr) As LongPtr\n\
+    let source = "Private Declare PtrSafe Function RiffCallPtr4 Lib \"user32\" Alias \"CallWindowProcW\" (ByVal lpPrevWndFunc As LongPtr, ByVal a0 As LongPtr, ByVal a1 As LongPtr, ByVal a2 As LongPtr, ByVal a3 As LongPtr) As LongPtr\n\
          Public CallbackHwnd As LongLong\n\
          Sub Main()\n\
          Dim ignored As LongPtr\n\

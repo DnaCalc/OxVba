@@ -213,15 +213,15 @@ fn dict_value_early_src() -> String {
 #[ignore = "live COM; run explicitly"]
 fn vm3_early_dictionary_value_and_transport_match_vm2() {
     let src = dict_value_early_src();
-    let (vm2_snap, vm2_counts) = match run_clean_with_references_prefer_vtable(&src, scripting_ref())
-    {
-        Ok(x) => x,
-        Err(e) if is_typelib_absent(&e) => {
-            eprintln!("SKIP: {e}");
-            return;
-        }
-        Err(e) => panic!("vm2 early failed: {e}"),
-    };
+    let (vm2_snap, vm2_counts) =
+        match run_clean_with_references_prefer_vtable(&src, scripting_ref()) {
+            Ok(x) => x,
+            Err(e) if is_typelib_absent(&e) => {
+                eprintln!("SKIP: {e}");
+                return;
+            }
+            Err(e) => panic!("vm2 early failed: {e}"),
+        };
     let (vm3_snap, vm3_counts) =
         match run_clean_vm3_with_references_prefer_vtable(&src, scripting_ref()) {
             Ok(x) => x,

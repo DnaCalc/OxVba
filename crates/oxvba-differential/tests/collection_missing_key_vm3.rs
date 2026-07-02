@@ -1,6 +1,6 @@
 //! vm3 built-in `Collection` missing entries should raise error 9.
 
-use oxvba_differential::{run, Executor};
+use oxvba_differential::{Executor, run};
 
 fn error_number(body: &str) -> i32 {
     let source = format!("Public r As Variant\nSub Main()\n{body}End Sub\n");

@@ -567,7 +567,8 @@ impl Engine {
         let leaked_host_services: &'static mut Arc<dyn HostServices> =
             Box::leak(Box::new(self.host_services.clone()));
         let host_services: &'static dyn HostServices = &**leaked_host_services;
-        let vm = oxvba_vm3::Vm3::link(&program_refs, host_services).map_err(vm3_runtime_diagnostic)?;
+        let vm =
+            oxvba_vm3::Vm3::link(&program_refs, host_services).map_err(vm3_runtime_diagnostic)?;
         Ok(ProjectRuntimeSession {
             vm,
             host_services: self.host_services.clone(),
@@ -614,9 +615,11 @@ impl Engine {
             Vm3Snapshot::Unsupported(what) => Err(PhaseDiagnostic::from_diagnostic(
                 OxDiagnostic::error("VM3-E-UNIMPLEMENTED", OxDiagnosticPhase::Host, what),
             )),
-            Vm3Snapshot::Failed(msg) => Err(PhaseDiagnostic::from_diagnostic(
-                OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg),
-            )),
+            Vm3Snapshot::Failed(msg) => Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                "VM3-E-RUNTIME",
+                OxDiagnosticPhase::Host,
+                msg,
+            ))),
         }
     }
 
@@ -750,9 +753,11 @@ impl Engine {
             Vm3Snapshot::Unsupported(what) => Err(PhaseDiagnostic::from_diagnostic(
                 OxDiagnostic::error("VM3-E-UNIMPLEMENTED", OxDiagnosticPhase::Host, what),
             )),
-            Vm3Snapshot::Failed(msg) => Err(PhaseDiagnostic::from_diagnostic(
-                OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg),
-            )),
+            Vm3Snapshot::Failed(msg) => Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                "VM3-E-RUNTIME",
+                OxDiagnosticPhase::Host,
+                msg,
+            ))),
         }
     }
 
@@ -891,7 +896,10 @@ mod tests {
 
     /// Build a vm3-backed [`super::ProjectRuntimeSession`] from a single-project manifest (bind →
     /// elaborate → `OxImage` → `prepare_image_session`), the in-process COM-server path.
-    fn vm3_session_for(engine: &Engine, manifest: &SymbolProjectManifest) -> super::ProjectRuntimeSession {
+    fn vm3_session_for(
+        engine: &Engine,
+        manifest: &SymbolProjectManifest,
+    ) -> super::ProjectRuntimeSession {
         let typelibs = oxvba_symbol::CatalogTypeLibResolver;
         let program = oxvba_bind::bind_program(manifest, &typelibs).expect("bind");
         let oxp = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");

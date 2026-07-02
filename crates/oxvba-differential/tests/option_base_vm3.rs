@@ -6,13 +6,17 @@
 //! `ParamArray` slot is always 0-based regardless of `Option Base`. Default
 //! (no statement / `Option Base 0`) stays 0-based. Closes `option-base-1-ignored`.
 
-use oxvba_differential::{canon, run, Executor};
+use oxvba_differential::{Executor, canon, run};
 use oxvba_runtime::Variant;
 
 /// Run a full module and read the first snapshot value as a `String`.
 fn assert_first_string(source: &str, expected: &str) {
     let outcome = run(Executor::Vm3, source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     let snap = outcome.result.unwrap_or_else(|e| panic!("run failed: {e}"));
     assert_eq!(
         snap.first(),

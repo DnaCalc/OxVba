@@ -43,9 +43,21 @@ fn assert_explicit(arg: &str, expected: bool) {
 /// Assert that running `source` raises the given VBA error number.
 fn assert_raises(source: &str, number: i32) {
     let outcome: RunOutcome = run(Executor::Vm3, source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    assert!(outcome.result.is_err(), "unexpectedly completed: {:?}", outcome.result);
-    assert_eq!(outcome.err.number, number, "err={:?}\nsource:\n{source}", outcome.err);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    assert!(
+        outcome.result.is_err(),
+        "unexpectedly completed: {:?}",
+        outcome.result
+    );
+    assert_eq!(
+        outcome.err.number, number,
+        "err={:?}\nsource:\n{source}",
+        outcome.err
+    );
 }
 
 #[test]

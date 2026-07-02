@@ -68,7 +68,10 @@ pub enum OxInst {
         binding: OxAsNew,
     },
     /// `dst := value` (a typed copy / load of a constant or place).
-    Assign { dst: OxPlace, value: OxOperand },
+    Assign {
+        dst: OxPlace,
+        value: OxOperand,
+    },
     /// `dst := box(value : from)` — a pure typed→Variant representation change.
     Box {
         dst: OxPlace,
@@ -99,7 +102,10 @@ pub enum OxInst {
     /// Boolean** (the documented `Branch` invariant) and the truthiness fault routes
     /// through the block's normal fault pad like any other fallible instruction — keeping
     /// the terminator a pure control transfer.
-    Truthy { dst: OxPlace, src: OxOperand },
+    Truthy {
+        dst: OxPlace,
+        src: OxOperand,
+    },
     /// `Let`/`Set` legality check (diagnostic metadata; fallible).
     ValidateAssignment {
         src: OxOperand,
@@ -109,7 +115,10 @@ pub enum OxInst {
         target_type_name: String,
     },
     /// `AddressOf proc` — materialize a procedure reference into `dst`.
-    LoadProcRef { dst: OxPlace, proc: FuncId },
+    LoadProcRef {
+        dst: OxPlace,
+        proc: FuncId,
+    },
     /// `dst := (current != original)` — VBA-`Variant`-equality change detection. Used to
     /// guard the copy-out of a compound `ByRef` argument: the caller snapshots the copied-in
     /// value (`original`) before the call and writes the (possibly-mutated) `current` temp
@@ -467,7 +476,9 @@ pub enum OxInst {
 
     // ── VBA-observable effects (explicit so the optimizer can't reorder/elide) ─
     /// Take a reference (IUnknown AddRef) — pins object liveness.
-    AddRef { object: OxOperand },
+    AddRef {
+        object: OxOperand,
+    },
     /// Release a reference; `may_terminate` carries the "world" effect because
     /// `Class_Terminate` can run arbitrary user code.
     Release {
@@ -485,7 +496,9 @@ pub enum OxInst {
     },
     /// A numeric source line label has become the active line number for this
     /// procedure activation. A later caught error copies it into `Erl`.
-    SetLineNumber { line: i32 },
+    SetLineNumber {
+        line: i32,
+    },
     /// Run parked `Class_Terminate`s to a fixpoint (pinned to statement boundaries
     /// / proc epilogue / the post-fault path).
     DrainTerminations,

@@ -3373,9 +3373,9 @@ impl<'h> Vm3<'h> {
                 None
             }
         });
-        member
-            .map(|m| m.proc)
-            .ok_or_else(|| Vm3Error::Fault(Fault::new(438, "Object doesn't support default member")))
+        member.map(|m| m.proc).ok_or_else(|| {
+            Vm3Error::Fault(Fault::new(438, "Object doesn't support default member"))
+        })
     }
 
     fn dispatch_project_default_member(
@@ -4414,8 +4414,7 @@ fn default_error_message(code: i32) -> String {
 }
 
 fn default_error_help_file() -> String {
-    "C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm"
-        .to_string()
+    "C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm".to_string()
 }
 
 fn default_error_help_context(code: i32) -> i32 {

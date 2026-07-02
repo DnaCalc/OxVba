@@ -19,7 +19,11 @@ use crate::program::{OxFunc, OxProgram};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifyError {
     /// `block.id` does not match its position in the block list.
-    BlockIdMismatch { func: usize, position: usize, id: usize },
+    BlockIdMismatch {
+        func: usize,
+        position: usize,
+        id: usize,
+    },
     /// The function's entry block index is out of range.
     BadEntry {
         func: usize,
@@ -48,10 +52,7 @@ pub enum VerifyError {
     },
     /// A block ends in a fallible terminator (`Raise`/`Resume*`/`GoSubReturn`) but has
     /// no `fault_target`, so a raised error could not reach the statement's handler.
-    MissingFaultTargetForTerminator {
-        func: usize,
-        block: usize,
-    },
+    MissingFaultTargetForTerminator { func: usize, block: usize },
     /// `param_count` exceeds the number of locals.
     BadParamCount {
         func: usize,
@@ -146,14 +147,31 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "func {func}: block at position {position} has id {id} (must equal its position)"
             ),
-            VerifyError::BadEntry { func, entry, blocks } => {
-                write!(f, "func {func}: entry block {entry} out of range ({blocks} blocks)")
+            VerifyError::BadEntry {
+                func,
+                entry,
+                blocks,
+            } => {
+                write!(
+                    f,
+                    "func {func}: entry block {entry} out of range ({blocks} blocks)"
+                )
             }
-            VerifyError::BadSuccessor { func, block, target, blocks } => write!(
+            VerifyError::BadSuccessor {
+                func,
+                block,
+                target,
+                blocks,
+            } => write!(
                 f,
                 "func {func} block {block}: successor {target} out of range ({blocks} blocks)"
             ),
-            VerifyError::BadFaultTarget { func, block, target, blocks } => write!(
+            VerifyError::BadFaultTarget {
+                func,
+                block,
+                target,
+                blocks,
+            } => write!(
                 f,
                 "func {func} block {block}: fault_target {target} out of range ({blocks} blocks)"
             ),
@@ -165,23 +183,49 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "func {func} block {block}: terminator is fallible (Raise) but the block has no fault_target"
             ),
-            VerifyError::BadParamCount { func, param_count, locals } => write!(
+            VerifyError::BadParamCount {
+                func,
+                param_count,
+                locals,
+            } => write!(
                 f,
                 "func {func}: param_count {param_count} exceeds local count {locals}"
             ),
-            VerifyError::BadReturnLocal { func, local, locals } => write!(
+            VerifyError::BadReturnLocal {
+                func,
+                local,
+                locals,
+            } => write!(
                 f,
                 "func {func}: return local {local} out of range ({locals} locals)"
             ),
-            VerifyError::BadProcRef { func, block, inst, proc, funcs } => write!(
+            VerifyError::BadProcRef {
+                func,
+                block,
+                inst,
+                proc,
+                funcs,
+            } => write!(
                 f,
                 "func {func} block {block} inst {inst}: CallProc proc {proc} out of range ({funcs} funcs)"
             ),
-            VerifyError::BadImportRef { func, block, inst, import, imports } => write!(
+            VerifyError::BadImportRef {
+                func,
+                block,
+                inst,
+                import,
+                imports,
+            } => write!(
                 f,
                 "func {func} block {block} inst {inst}: import {import} out of range ({imports} imports)"
             ),
-            VerifyError::BadClassRef { func, block, inst, class, classes } => write!(
+            VerifyError::BadClassRef {
+                func,
+                block,
+                inst,
+                class,
+                classes,
+            } => write!(
                 f,
                 "func {func} block {block} inst {inst}: class {class} out of range ({classes} classes)"
             ),
@@ -203,19 +247,43 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} field {field}: As New class {class} out of range ({classes} classes)"
             ),
-            VerifyError::BadLabelTarget { func, block, inst, target, blocks } => write!(
+            VerifyError::BadLabelTarget {
+                func,
+                block,
+                inst,
+                target,
+                blocks,
+            } => write!(
                 f,
                 "func {func} block {block} inst {inst}: On Error label {target} out of range ({blocks} blocks)"
             ),
-            VerifyError::BadComIfaceRef { func, block, inst, iface, interfaces } => write!(
+            VerifyError::BadComIfaceRef {
+                func,
+                block,
+                inst,
+                iface,
+                interfaces,
+            } => write!(
                 f,
                 "func {func} block {block} inst {inst}: ComCallEarly interface {iface} out of range ({interfaces} com_interfaces)"
             ),
-            VerifyError::ComCallEarlyOnProjectIface { func, block, inst, iface } => write!(
+            VerifyError::ComCallEarlyOnProjectIface {
+                func,
+                block,
+                inst,
+                iface,
+            } => write!(
                 f,
                 "func {func} block {block} inst {inst}: ComCallEarly targets project interface {iface} (needs a COM interface)"
             ),
-            VerifyError::BadComMemberRef { func, block, inst, iface, member, members } => write!(
+            VerifyError::BadComMemberRef {
+                func,
+                block,
+                inst,
+                iface,
+                member,
+                members,
+            } => write!(
                 f,
                 "func {func} block {block} inst {inst}: ComCallEarly member {member} out of range ({members} members of com_interface {iface})"
             ),
@@ -377,13 +445,25 @@ fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<V
                 });
             }
             verify_inst_refs(
-                fi, bi, ii, inst, funcs, imports, classes, com_interfaces, blocks, errors,
+                fi,
+                bi,
+                ii,
+                inst,
+                funcs,
+                imports,
+                classes,
+                com_interfaces,
+                blocks,
+                errors,
             );
         }
         // A fallible terminator (`Raise`/`Resume*`/`GoSubReturn`) likewise needs a fault
         // pad so the raised error can reach the enclosing statement's `On Error` handler.
         if block.terminator.is_fallible() && block.fault_target.is_none() {
-            errors.push(VerifyError::MissingFaultTargetForTerminator { func: fi, block: bi });
+            errors.push(VerifyError::MissingFaultTargetForTerminator {
+                func: fi,
+                block: bi,
+            });
         }
     }
 }
@@ -438,15 +518,14 @@ fn verify_inst_refs(
                 classes,
             })
         }
-        OxInst::SetErrorHandler(ErrorHandler::GotoLabel(target)) if target.0 >= blocks => {
-            errors.push(VerifyError::BadLabelTarget {
+        OxInst::SetErrorHandler(ErrorHandler::GotoLabel(target)) if target.0 >= blocks => errors
+            .push(VerifyError::BadLabelTarget {
                 func: fi,
                 block: bi,
                 inst: ii,
                 target: target.0,
                 blocks,
-            })
-        }
+            }),
         OxInst::AsNew {
             binding: OxAsNew::ExternClass { import },
             ..

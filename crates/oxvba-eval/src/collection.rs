@@ -158,8 +158,12 @@ mod tests {
         );
         // Missing key → 9.
         assert_eq!(
-            dispatch_collection(CollectionMethod::Item, &mut c, &[Variant::from_string("zz")])
-                .unwrap_err(),
+            dispatch_collection(
+                CollectionMethod::Item,
+                &mut c,
+                &[Variant::from_string("zz")]
+            )
+            .unwrap_err(),
             CollectionError::NotFound
         );
         // Omitted required selector → 449.

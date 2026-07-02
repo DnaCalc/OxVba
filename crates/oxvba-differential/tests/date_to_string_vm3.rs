@@ -11,7 +11,11 @@ use oxvba_runtime::Variant;
 fn eval_str(expr: &str) -> Canon {
     let source = format!("Public r As String\nSub Main()\n    r = {expr}\nEnd Sub\n");
     let outcome = run(Executor::Vm3, &source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     outcome
         .result
         .unwrap_or_else(|e| panic!("vm3 run failed: {e}"))
@@ -46,5 +50,8 @@ fn date_and_time_render_together() {
 #[test]
 fn date_in_concatenation_is_formatted() {
     // `&` uses the same display path, so a concatenated date is formatted, not a serial.
-    assert_eq!(eval_str("\"D=\" & DateSerial(2020, 1, 15)"), s("D=1/15/2020"));
+    assert_eq!(
+        eval_str("\"D=\" & DateSerial(2020, 1, 15)"),
+        s("D=1/15/2020")
+    );
 }

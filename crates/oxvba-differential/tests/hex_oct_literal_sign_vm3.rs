@@ -9,7 +9,7 @@
 //! Closes `vba-hex-oct-literal-sign`. The same sign rule also governs
 //! `Val`/`CLng` of `&H…`/`&O…` *strings*.
 
-use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
 
 fn run_main(body: &str) -> RunOutcome {

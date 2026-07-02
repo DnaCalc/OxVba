@@ -1,6 +1,6 @@
 //! vm3 `Weekday` should honor the optional `firstdayofweek` argument.
 
-use oxvba_differential::{canon, run, Canon, Executor};
+use oxvba_differential::{Canon, Executor, canon, run};
 use oxvba_runtime::Variant;
 
 fn value(expr: &str) -> Canon {

@@ -7,7 +7,7 @@
 //! not overflow. Previously the increment always widened, so a fixed counter
 //! silently promoted too. Closes `for-counter-no-overflow`.
 
-use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
 
 fn run_main(decls: &str, body: &str) -> RunOutcome {
@@ -17,14 +17,26 @@ fn run_main(decls: &str, body: &str) -> RunOutcome {
 
 fn assert_overflow(decls: &str, body: &str) {
     let outcome = run_main(decls, body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    assert!(outcome.result.is_err(), "expected Overflow 6, completed: {:?}", outcome.result);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    assert!(
+        outcome.result.is_err(),
+        "expected Overflow 6, completed: {:?}",
+        outcome.result
+    );
     assert_eq!(outcome.err.number, 6, "err={:?}", outcome.err);
 }
 
 fn assert_first(decls: &str, body: &str, expected: &Canon) {
     let outcome = run_main(decls, body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     let snap = outcome.result.unwrap_or_else(|e| panic!("run failed: {e}"));
     assert_eq!(snap.first(), Some(expected), "{snap:?}");
 }

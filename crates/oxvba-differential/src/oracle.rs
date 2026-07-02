@@ -108,10 +108,7 @@ pub fn load_oracle_cases(bas_file: &str, json_file: &str) -> Vec<OracleCase> {
             source.push_str(&by_name[h.as_str()].text);
             source.push('\n');
         }
-        source.push_str(&format!(
-            "Sub Main()\n  gResult = {}()\nEnd Sub\n",
-            p.name
-        ));
+        source.push_str(&format!("Sub Main()\n  gResult = {}()\nEnd Sub\n", p.name));
         cases.push(OracleCase {
             name: p.name.clone(),
             source,
@@ -124,7 +121,10 @@ pub fn load_oracle_cases(bas_file: &str, json_file: &str) -> Vec<OracleCase> {
 /// The two committed oracle corpora (error model + control flow).
 pub fn all_oracle_cases() -> Vec<OracleCase> {
     let mut cases = load_oracle_cases("probes.bas", "error_handling.json");
-    cases.extend(load_oracle_cases("probes_controlflow.bas", "controlflow.json"));
+    cases.extend(load_oracle_cases(
+        "probes_controlflow.bas",
+        "controlflow.json",
+    ));
     cases
 }
 
@@ -182,8 +182,7 @@ fn split_procedures(bas: &str) -> Vec<Procedure> {
                 // Strip any trailing comment (`End Sub  ' note`) before matching — these
                 // lines have no string literals, so splitting on the first `'` is safe.
                 let code = lines[j].split('\'').next().unwrap_or("").trim();
-                if code.eq_ignore_ascii_case("End Function")
-                    || code.eq_ignore_ascii_case("End Sub")
+                if code.eq_ignore_ascii_case("End Function") || code.eq_ignore_ascii_case("End Sub")
                 {
                     break;
                 }
@@ -222,11 +221,7 @@ fn proc_decl_name(line: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 /// The transitive set of non-`PROBE_` procedures (private helpers) that `root` calls,

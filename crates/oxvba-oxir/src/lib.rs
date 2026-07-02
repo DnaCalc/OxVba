@@ -134,10 +134,8 @@ mod tests {
         p.funcs[0].entry = BlockId(99);
         let errs = verify_program(&p).expect_err("dangling entry must be rejected");
         assert!(
-            errs.iter().any(|e| matches!(
-                e,
-                VerifyError::BadEntry { entry: 99, .. }
-            )),
+            errs.iter()
+                .any(|e| matches!(e, VerifyError::BadEntry { entry: 99, .. })),
             "expected BadEntry, got {errs:?}"
         );
     }
@@ -147,7 +145,8 @@ mod tests {
         let mut p = sample_program();
         // Drop the landing pad on the entry block; its checked-arith ops are fallible.
         p.funcs[0].blocks[0].fault_target = None;
-        let errs = verify_program(&p).expect_err("fallible block without fault_target must be rejected");
+        let errs =
+            verify_program(&p).expect_err("fallible block without fault_target must be rejected");
         assert!(
             errs.iter()
                 .any(|e| matches!(e, VerifyError::MissingFaultTarget { .. })),
@@ -354,7 +353,8 @@ mod tests {
                 kind: ProjectMemberKind::PropertyGet,
             }],
         });
-        let errs = verify_program(&p).expect_err("early call on a project interface must be rejected");
+        let errs =
+            verify_program(&p).expect_err("early call on a project interface must be rejected");
         assert!(
             errs.iter()
                 .any(|e| matches!(e, VerifyError::ComCallEarlyOnProjectIface { iface: 0, .. })),

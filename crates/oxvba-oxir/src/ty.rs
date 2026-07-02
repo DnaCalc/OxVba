@@ -208,7 +208,10 @@ mod tests {
 
     #[test]
     fn nested_array_element_type() {
-        let t = OxTy::Array(Box::new(OxTy::Record(RecordLayoutId(3))), ArrayShape::Fixed { rank: 2 });
+        let t = OxTy::Array(
+            Box::new(OxTy::Record(RecordLayoutId(3))),
+            ArrayShape::Fixed { rank: 2 },
+        );
         match t {
             OxTy::Array(el, ArrayShape::Fixed { rank }) => {
                 assert_eq!(rank, 2);

@@ -327,7 +327,14 @@ pub fn bind_dispatch_by_path(path: &str) -> Result<*mut RawIDispatch, String> {
     // SAFETY: `wide` is a NUL-terminated UTF-16 buffer alive across the call, `pBindOptions`
     // may be null (default bind), `IID_IDISPATCH` is a 'static GUID, and `&mut dispatch_ptr`
     // is a live out-slot. CoGetObject returns S_OK + a retained IDispatch on success.
-    let hr = unsafe { CoGetObject(wide.as_ptr(), std::ptr::null(), &IID_IDISPATCH, &mut dispatch_ptr) };
+    let hr = unsafe {
+        CoGetObject(
+            wide.as_ptr(),
+            std::ptr::null(),
+            &IID_IDISPATCH,
+            &mut dispatch_ptr,
+        )
+    };
     if hr < 0 {
         return Err(format!(
             "CoGetObject failed for `{path}` with HRESULT {:#010X}",

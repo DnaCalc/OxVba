@@ -16,27 +16,43 @@ fn run_main(body: &str) -> RunOutcome {
 
 fn assert_raises_13(body: &str) {
     let outcome = run_main(body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    assert!(outcome.result.is_err(), "expected Type mismatch, completed: {:?}", outcome.result);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    assert!(
+        outcome.result.is_err(),
+        "expected Type mismatch, completed: {:?}",
+        outcome.result
+    );
     assert_eq!(outcome.err.number, 13, "err={:?}", outcome.err);
 }
 
 fn assert_first(body: &str, expected: &Canon) {
     let outcome = run_main(body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
     let snap = outcome.result.unwrap_or_else(|e| panic!("run failed: {e}"));
     assert_eq!(snap.first(), Some(expected), "{snap:?}");
 }
 
 #[test]
 fn string_vs_number_raises_13() {
-    assert_raises_13("    Dim s As Variant\n    Dim n As Variant\n    s = \"abc\"\n    n = 5\n    r = (s = n)\n");
+    assert_raises_13(
+        "    Dim s As Variant\n    Dim n As Variant\n    s = \"abc\"\n    n = 5\n    r = (s = n)\n",
+    );
 }
 
 #[test]
 fn numeric_string_vs_number_still_raises_13() {
     // `"5" = 5` is a Type mismatch in VBA — the string is NOT coerced to a number.
-    assert_raises_13("    Dim s As Variant\n    Dim n As Variant\n    s = \"5\"\n    n = 5\n    r = (s < n)\n");
+    assert_raises_13(
+        "    Dim s As Variant\n    Dim n As Variant\n    s = \"5\"\n    n = 5\n    r = (s < n)\n",
+    );
 }
 
 #[test]

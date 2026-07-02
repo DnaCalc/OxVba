@@ -12,12 +12,16 @@ use oxvba_runtime::Variant;
 /// Run `Main` with a `Null` variable `n` and the given assignments to `Public` Variants,
 /// returning the snapshot (globals in declaration order).
 fn run_logic(decls: &str, body: &str) -> Vec<Canon> {
-    let source = format!(
-        "{decls}Sub Main()\n    Dim n As Variant\n    n = Null\n{body}End Sub\n"
-    );
+    let source = format!("{decls}Sub Main()\n    Dim n As Variant\n    n = Null\n{body}End Sub\n");
     let outcome = run(Executor::Vm3, &source);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    outcome.result.unwrap_or_else(|e| panic!("vm3 run failed: {e}\n{source}"))
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    outcome
+        .result
+        .unwrap_or_else(|e| panic!("vm3 run failed: {e}\n{source}"))
 }
 
 fn b(v: bool) -> Canon {

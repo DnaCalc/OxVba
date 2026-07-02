@@ -5,7 +5,7 @@
 //! otherwise string-valued numeric bounds or fractional Integer headers reach the
 //! VM as raw Variants and diverge from VBA loop semantics.
 
-use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
 
 fn run_main(decls: &str, body: &str) -> RunOutcome {

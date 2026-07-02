@@ -1,7 +1,7 @@
 //! vm3 `Round` should accept negative decimal places and keep banker's
 //! rounding at the shifted place.
 
-use oxvba_differential::{canon, run, Canon, Executor};
+use oxvba_differential::{Canon, Executor, canon, run};
 use oxvba_runtime::Variant;
 
 fn value(expr: &str) -> Canon {

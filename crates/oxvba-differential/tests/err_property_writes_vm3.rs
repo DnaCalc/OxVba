@@ -25,7 +25,10 @@ fn string_result(body: &str) -> String {
 
 fn bind_error(source: &str) -> String {
     let outcome = run(Executor::Vm3, source);
-    assert!(outcome.result.is_err(), "expected bind/runtime error for {source}");
+    assert!(
+        outcome.result.is_err(),
+        "expected bind/runtime error for {source}"
+    );
     outcome.result.err().unwrap()
 }
 
@@ -85,9 +88,7 @@ fn err_number_zero_write_preserves_existing_inheritable_fields_but_does_not_crea
 
 #[test]
 fn err_lastdllerror_assignment_is_rejected() {
-    let err = bind_error(
-        "Sub Main()\n    Err.LastDllError = 123\nEnd Sub\n",
-    );
+    let err = bind_error("Sub Main()\n    Err.LastDllError = 123\nEnd Sub\n");
     assert!(
         err.contains("Err.LastDllError is read-only"),
         "unexpected error: {err}"

@@ -3,7 +3,7 @@
 //! Live Excel/VBA 7.1 oracle evidence:
 //! `docs/evidence/conformance/vm3_array_copy_assignment_oracle_20260702T025158Z/`.
 
-use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
 
 fn run_case(source: &str) -> RunOutcome {

@@ -118,8 +118,7 @@ fn artifact_descriptor_json() -> Result<String, String> {
 
 fn artifact_image_bytes() -> Result<Vec<u8>, String> {
     let path = artifacts()?.oxi_path.clone();
-    fs::read(&path)
-        .map_err(|err| format!("failed to read OxVBA image `{}`: {err}", path.display()))
+    fs::read(&path).map_err(|err| format!("failed to read OxVBA image `{}`: {err}", path.display()))
 }
 
 fn artifact_tlb_path_string() -> Result<String, String> {

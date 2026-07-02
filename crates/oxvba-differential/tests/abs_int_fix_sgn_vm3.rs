@@ -9,7 +9,7 @@
 //! result is Integer). `Sgn` always returns Integer (-1/0/1). Closes
 //! `abs-int-fix-sgn-return-double`.
 
-use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
 
 fn run_main(body: &str) -> RunOutcome {
@@ -19,16 +19,34 @@ fn run_main(body: &str) -> RunOutcome {
 
 fn assert_value(body: &str, expected: &Canon) {
     let outcome = run_main(body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    let snap = outcome.result.unwrap_or_else(|e| panic!("run failed for `{body}`: {e}"));
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    let snap = outcome
+        .result
+        .unwrap_or_else(|e| panic!("run failed for `{body}`: {e}"));
     assert_eq!(snap.first(), Some(expected), "body=`{body}` snap={snap:?}");
 }
 
 fn assert_raises(body: &str, number: i32) {
     let outcome = run_main(body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    assert!(outcome.result.is_err(), "expected err {number}, completed: {:?}", outcome.result);
-    assert_eq!(outcome.err.number, number, "body=`{body}` err={:?}", outcome.err);
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    assert!(
+        outcome.result.is_err(),
+        "expected err {number}, completed: {:?}",
+        outcome.result
+    );
+    assert_eq!(
+        outcome.err.number, number,
+        "body=`{body}` err={:?}",
+        outcome.err
+    );
 }
 
 #[test]
@@ -37,8 +55,14 @@ fn abs_preserves_subtype_and_promotes_on_overflow() {
     assert_value("    r = Abs(CLng(-5))\n", &canon(&Variant::from_i32(5)));
     assert_value("    r = Abs(CDbl(-5.7))\n", &canon(&Variant::from_f64(5.7)));
     // Integer.MIN promotes to Long; Long.MIN promotes to Double.
-    assert_value("    r = Abs(CInt(-32768))\n", &canon(&Variant::from_i32(32768)));
-    assert_value("    r = Abs(CLng(-2147483648#))\n", &canon(&Variant::from_f64(2147483648.0)));
+    assert_value(
+        "    r = Abs(CInt(-32768))\n",
+        &canon(&Variant::from_i32(32768)),
+    );
+    assert_value(
+        "    r = Abs(CLng(-2147483648#))\n",
+        &canon(&Variant::from_f64(2147483648.0)),
+    );
 }
 
 #[test]
@@ -53,10 +77,22 @@ fn abs_of_currency_keeps_currency() {
 #[test]
 fn int_floors_fix_truncates_keeping_subtype() {
     // Negative non-integers: Int floors toward -inf, Fix truncates toward zero.
-    assert_value("    r = Int(CDbl(-5.7))\n", &canon(&Variant::from_f64(-6.0)));
-    assert_value("    r = Fix(CDbl(-5.7))\n", &canon(&Variant::from_f64(-5.0)));
-    assert_value("    r = Int(CCur(-5.7))\n", &canon(&Variant::from_currency_scaled_i64(-60_000)));
-    assert_value("    r = Fix(CCur(-5.7))\n", &canon(&Variant::from_currency_scaled_i64(-50_000)));
+    assert_value(
+        "    r = Int(CDbl(-5.7))\n",
+        &canon(&Variant::from_f64(-6.0)),
+    );
+    assert_value(
+        "    r = Fix(CDbl(-5.7))\n",
+        &canon(&Variant::from_f64(-5.0)),
+    );
+    assert_value(
+        "    r = Int(CCur(-5.7))\n",
+        &canon(&Variant::from_currency_scaled_i64(-60_000)),
+    );
+    assert_value(
+        "    r = Fix(CCur(-5.7))\n",
+        &canon(&Variant::from_currency_scaled_i64(-50_000)),
+    );
     // Integer types are returned unchanged.
     assert_value("    r = Int(CLng(-5))\n", &canon(&Variant::from_i32(-5)));
     assert_value("    r = Fix(CInt(-5))\n", &canon(&Variant::from_i16(-5)));

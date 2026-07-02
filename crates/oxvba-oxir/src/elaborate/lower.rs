@@ -505,10 +505,9 @@ impl<'a> Lowerer<'a> {
     }
 
     fn label_block(&self, id: &CoreLabelId) -> Result<BlockId> {
-        self.labels
-            .get(id)
-            .copied()
-            .ok_or_else(|| ElaborateError::Malformed(format!("reference to undefined label {id:?}")))
+        self.labels.get(id).copied().ok_or_else(|| {
+            ElaborateError::Malformed(format!("reference to undefined label {id:?}"))
+        })
     }
 
     /// The start block of `stmt`: a labelled statement starts at its pre-assigned label
@@ -690,7 +689,13 @@ impl<'a> Lowerer<'a> {
             CoreStmt::GoSub(id) => {
                 let target = self.label_block(id)?;
                 // `Return` from the subroutine resumes at the statement after this GoSub.
-                self.finish_to(OxTerminator::GoSub { target, ret: s_next }, s_next);
+                self.finish_to(
+                    OxTerminator::GoSub {
+                        target,
+                        ret: s_next,
+                    },
+                    s_next,
+                );
                 Ok(())
             }
             CoreStmt::ComputedGoto {
@@ -783,11 +788,7 @@ impl<'a> Lowerer<'a> {
                 self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
-            CoreStmt::With {
-                id,
-                receiver,
-                body,
-            } => {
+            CoreStmt::With { id, receiver, body } => {
                 // Evaluate the receiver once into a temp the body's `WithTemp(id)` reads.
                 let (recv, _) = self.lower_value(receiver)?;
                 let t = self.new_temp();
@@ -1023,7 +1024,10 @@ impl<'a> Lowerer<'a> {
         if post_check {
             // `Do … Loop While/Until`: run the body, then test.
             self.finish_to(OxTerminator::Jump(body_blk), body_blk);
-            self.loops.push(LoopCtx { is_for: false, brk: after });
+            self.loops.push(LoopCtx {
+                is_for: false,
+                brk: after,
+            });
             self.lower_block(body)?;
             self.loops.pop();
             self.cur_fault = loop_pad;
@@ -1050,7 +1054,10 @@ impl<'a> Lowerer<'a> {
                 },
                 body_blk,
             );
-            self.loops.push(LoopCtx { is_for: false, brk: after });
+            self.loops.push(LoopCtx {
+                is_for: false,
+                brk: after,
+            });
             self.lower_block(body)?;
             self.loops.pop();
             self.finish_to(OxTerminator::Jump(head), after);
@@ -1508,9 +1515,7 @@ impl<'a> Lowerer<'a> {
                     field: *field,
                 });
                 let ty = match field {
-                    ErrField::Number | ErrField::HelpContext | ErrField::LastDllError => {
-                        OxTy::Long
-                    }
+                    ErrField::Number | ErrField::HelpContext | ErrField::LastDllError => OxTy::Long,
                     ErrField::Description | ErrField::Source | ErrField::HelpFile => OxTy::Str,
                 };
                 Ok((OxOperand::temp(t), ty))
@@ -1630,7 +1635,12 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_unary(&mut self, op: CoreUnOp, expr: &CoreValue, num: NumericMode) -> Result<(OxOperand, OxTy)> {
+    fn lower_unary(
+        &mut self,
+        op: CoreUnOp,
+        expr: &CoreValue,
+        num: NumericMode,
+    ) -> Result<(OxOperand, OxTy)> {
         let (src, src_ty) = self.lower_value(expr)?;
         let t = self.new_temp();
         let (inst, ty) = match op {
@@ -1679,7 +1689,11 @@ impl<'a> Lowerer<'a> {
         let dst = OxPlace::Temp(t);
 
         let ty = match op {
-            CoreBinOp::Add | CoreBinOp::Sub | CoreBinOp::Mul | CoreBinOp::IntDiv | CoreBinOp::Mod => {
+            CoreBinOp::Add
+            | CoreBinOp::Sub
+            | CoreBinOp::Mul
+            | CoreBinOp::IntDiv
+            | CoreBinOp::Mod => {
                 let aop = arith_op(op).expect("arith op");
                 self.emit(OxInst::Arith {
                     dst,
@@ -1691,15 +1705,27 @@ impl<'a> Lowerer<'a> {
                 numeric_result_type(num)
             }
             CoreBinOp::Div => {
-                self.emit(OxInst::Div { dst, lhs: l, rhs: r });
+                self.emit(OxInst::Div {
+                    dst,
+                    lhs: l,
+                    rhs: r,
+                });
                 OxTy::Double
             }
             CoreBinOp::Pow => {
-                self.emit(OxInst::Pow { dst, lhs: l, rhs: r });
+                self.emit(OxInst::Pow {
+                    dst,
+                    lhs: l,
+                    rhs: r,
+                });
                 OxTy::Double
             }
             CoreBinOp::Concat => {
-                self.emit(OxInst::Concat { dst, lhs: l, rhs: r });
+                self.emit(OxInst::Concat {
+                    dst,
+                    lhs: l,
+                    rhs: r,
+                });
                 OxTy::Str
             }
             CoreBinOp::Eq
@@ -1724,11 +1750,7 @@ impl<'a> Lowerer<'a> {
                     OxTy::Bool
                 }
             }
-            CoreBinOp::And
-            | CoreBinOp::Or
-            | CoreBinOp::Xor
-            | CoreBinOp::Eqv
-            | CoreBinOp::Imp => {
+            CoreBinOp::And | CoreBinOp::Or | CoreBinOp::Xor | CoreBinOp::Eqv | CoreBinOp::Imp => {
                 let lop = logical_op(op).expect("logical op");
                 self.emit(OxInst::Logical {
                     dst,
@@ -1741,7 +1763,11 @@ impl<'a> Lowerer<'a> {
                 OxTy::Variant
             }
             CoreBinOp::Is => {
-                self.emit(OxInst::CompareObjectIs { dst, lhs: l, rhs: r });
+                self.emit(OxInst::CompareObjectIs {
+                    dst,
+                    lhs: l,
+                    rhs: r,
+                });
                 OxTy::Bool
             }
             CoreBinOp::Like => {
@@ -1767,7 +1793,11 @@ impl<'a> Lowerer<'a> {
         Ok((OxOperand::temp(t), ty))
     }
 
-    fn lower_coerce(&mut self, value: &CoreValue, to: &coreir::CoerceTarget) -> Result<(OxOperand, OxTy)> {
+    fn lower_coerce(
+        &mut self,
+        value: &CoreValue,
+        to: &coreir::CoerceTarget,
+    ) -> Result<(OxOperand, OxTy)> {
         use crate::value::OxCoerceTarget;
         let (src, _) = self.lower_value(value)?;
         let (target, ty) = match to {
@@ -1775,9 +1805,10 @@ impl<'a> Lowerer<'a> {
                 (OxCoerceTarget::Numeric(*n), numeric_coerce_type(*n))
             }
             coreir::CoerceTarget::String => (OxCoerceTarget::Str, OxTy::Str),
-            coreir::CoerceTarget::FixedString(len) => {
-                (OxCoerceTarget::FixedStr(*len as u32), OxTy::FixedStr(*len as u32))
-            }
+            coreir::CoerceTarget::FixedString(len) => (
+                OxCoerceTarget::FixedStr(*len as u32),
+                OxTy::FixedStr(*len as u32),
+            ),
             // An implicit Variant widening keeps the value; OxIR models it as the
             // identity-typed ImplicitVariant coercion.
             coreir::CoerceTarget::ImplicitVariant(_) => {
@@ -2022,10 +2053,7 @@ impl<'a> Lowerer<'a> {
     /// Lower arguments for a native / late-bound call (`OxCallArg`, which keeps named
     /// arguments and ByRef copy-out distinct), plus the copy-out write-backs for any compound
     /// `ByRef` argument (see [`Self::lower_byref_place`]).
-    fn lower_call_args(
-        &mut self,
-        args: &[CoreArg],
-    ) -> Result<(Vec<OxCallArg>, Vec<ArgWriteback>)> {
+    fn lower_call_args(&mut self, args: &[CoreArg]) -> Result<(Vec<OxCallArg>, Vec<ArgWriteback>)> {
         let mut out = Vec::with_capacity(args.len());
         let mut writebacks = Vec::new();
         for arg in args {
@@ -2147,7 +2175,10 @@ impl<'a> Lowerer<'a> {
                 // The lowerer does not yet hold the global type table, so a global load
                 // is conservatively typed `Variant` (sound; threading the global types
                 // into the lowerer is a noted refinement).
-                Ok((OxOperand::Use(OxPlace::Global(GlobalId(g.0))), OxTy::Variant))
+                Ok((
+                    OxOperand::Use(OxPlace::Global(GlobalId(g.0))),
+                    OxTy::Variant,
+                ))
             }
             coreir::CorePlace::Index { array, indices } => {
                 // Fuse `obj.field(i…)`: read one element of the field-held array IN PLACE
@@ -2539,7 +2570,7 @@ mod tests {
     use crate::verify::{VerifyError, verify_program};
     use oxvba_bundle::coreir::{
         BoundWhich, CoreBound, CoreCallee, CoreClassMethod, CoreIfArm, CoreLocal, CorePlace,
-        ErrField, ErrorOp, LocalId as CoreLocalId, PtrKind, ProcId as CoreProcId,
+        ErrField, ErrorOp, LocalId as CoreLocalId, ProcId as CoreProcId, PtrKind,
     };
     use oxvba_bundle::{
         ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, NativeImplId,
@@ -2563,7 +2594,11 @@ mod tests {
     }
 
     /// A minimal typed COM member descriptor for the early-bound elaboration tests.
-    fn com_member(name: &str, token: i32, invoke_kind: TypeLibMemberInvokeKind) -> TypeLibMemberMetadata {
+    fn com_member(
+        name: &str,
+        token: i32,
+        invoke_kind: TypeLibMemberInvokeKind,
+    ) -> TypeLibMemberMetadata {
         TypeLibMemberMetadata {
             name: name.into(),
             token,
@@ -2682,7 +2717,11 @@ mod tests {
     fn scalar_proc_elaborates_verifies_and_round_trips() {
         let prog = program(scalar_proc());
         let oxp = elaborate(&prog).expect("elaborate");
-        assert_eq!(verify_program(&oxp), Ok(()), "elaborated program must verify");
+        assert_eq!(
+            verify_program(&oxp),
+            Ok(()),
+            "elaborated program must verify"
+        );
 
         let json = serde_json::to_string(&oxp).expect("serialize");
         let back: OxProgram = serde_json::from_str(&json).expect("deserialize");
@@ -2691,7 +2730,11 @@ mod tests {
         // The single function lowered to a real CFG (entry + the If/For blocks + the
         // shared exit), with the binder's `Long` type recovered onto the local.
         let f = &oxp.funcs[0];
-        assert!(f.blocks.len() > 3, "expected a multi-block CFG, got {}", f.blocks.len());
+        assert!(
+            f.blocks.len() > 3,
+            "expected a multi-block CFG, got {}",
+            f.blocks.len()
+        );
         assert_eq!(f.locals[0].ty, OxTy::Long);
     }
 
@@ -2787,7 +2830,9 @@ mod tests {
                     kind: Some(ProjectMemberKind::PropertyLet),
                     default_member: false,
                 },
-                args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(CoreLocalId(0))))],
+                args: vec![CoreArg::ByVal(CoreValue::Load(CorePlace::Local(
+                    CoreLocalId(0),
+                )))],
             })],
         ));
         let oxp = elaborate(&prog).expect("elaborate");
@@ -2844,9 +2889,9 @@ mod tests {
             ],
         };
         let body = vec![
-            assign(x(), read(&getter)),         // x = r.Value
-            assign(x(), read(&getter)),         // x = r.Value (again — reuses the entry)
-            CoreStmt::Eval(write),              // r.Value = x
+            assign(x(), read(&getter)), // x = r.Value
+            assign(x(), read(&getter)), // x = r.Value (again — reuses the entry)
+            CoreStmt::Eval(write),      // r.Value = x
         ];
         let locals = vec![
             CoreLocal {
@@ -2865,8 +2910,14 @@ mod tests {
         // Three early-bound calls; the two reads share one ComMethodRef, the write differs.
         let methods = com_call_early_methods(&oxp);
         assert_eq!(methods.len(), 3);
-        assert_eq!(methods[0], methods[1], "repeated reads reuse one descriptor");
-        assert_ne!(methods[0], methods[2], "get and put are distinct descriptors");
+        assert_eq!(
+            methods[0], methods[1],
+            "repeated reads reuse one descriptor"
+        );
+        assert_ne!(
+            methods[0], methods[2],
+            "get and put are distinct descriptors"
+        );
         // Each ComMethodRef resolves to its typed descriptor.
         let get_desc = oxp.com_method(methods[0]).expect("get descriptor");
         assert_eq!(get_desc.invoke_kind, TypeLibMemberInvokeKind::PropertyGet);
@@ -2907,9 +2958,14 @@ mod tests {
                     type_name: "Widget".to_string(),
                 },
             ),
-            assign(w(), CoreValue::Predeclared { class: coreir::ClassId(0) }),
-            assign(sink(), CoreValue::Load(w())),  // Set w.Sink = w (WithEvents set)
-            assign(r(), CoreValue::Load(sink())),  // r = w.Sink (WithEvents get)
+            assign(
+                w(),
+                CoreValue::Predeclared {
+                    class: coreir::ClassId(0),
+                },
+            ),
+            assign(sink(), CoreValue::Load(w())), // Set w.Sink = w (WithEvents set)
+            assign(r(), CoreValue::Load(sink())), // r = w.Sink (WithEvents get)
             CoreStmt::RaiseEvent {
                 source: CoreValue::Load(w()),
                 event: 3,
@@ -2986,7 +3042,11 @@ mod tests {
         ];
         let prog = program(sub("Main", vec![long_local("n")], body));
         let oxp = elaborate(&prog).expect("elaborate");
-        assert_eq!(verify_program(&oxp), Ok(()), "error-handling program must verify");
+        assert_eq!(
+            verify_program(&oxp),
+            Ok(()),
+            "error-handling program must verify"
+        );
 
         // The handler-dispatch pad + Resume terminator are present.
         let f = &oxp.funcs[0];
@@ -3133,11 +3193,23 @@ mod tests {
 
         let f = &oxp.funcs[0];
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
-        assert!(has(|i| matches!(i, OxInst::ArrayRedim { .. })), "expected ArrayRedim");
-        assert!(has(|i| matches!(i, OxInst::ArraySet { .. })), "expected ArraySet");
-        assert!(has(|i| matches!(i, OxInst::ArrayGet { .. })), "expected ArrayGet");
+        assert!(
+            has(|i| matches!(i, OxInst::ArrayRedim { .. })),
+            "expected ArrayRedim"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::ArraySet { .. })),
+            "expected ArraySet"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::ArrayGet { .. })),
+            "expected ArrayGet"
+        );
         assert!(has(|i| matches!(i, OxInst::Bound { .. })), "expected Bound");
-        assert!(has(|i| matches!(i, OxInst::ArrayErase { .. })), "expected ArrayErase");
+        assert!(
+            has(|i| matches!(i, OxInst::ArrayErase { .. })),
+            "expected ArrayErase"
+        );
         // The declared element type is recovered: `a` is an Array(Long).
         assert_eq!(
             f.locals[0].ty,
@@ -3170,8 +3242,14 @@ mod tests {
 
         let f = &oxp.funcs[0];
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
-        assert!(has(|i| matches!(i, OxInst::RecordSet { .. })), "expected RecordSet");
-        assert!(has(|i| matches!(i, OxInst::RecordGet { .. })), "expected RecordGet");
+        assert!(
+            has(|i| matches!(i, OxInst::RecordSet { .. })),
+            "expected RecordSet"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::RecordGet { .. })),
+            "expected RecordGet"
+        );
     }
 
     #[test]
@@ -3272,8 +3350,14 @@ mod tests {
         assert_eq!(verify_program(&oxp), Ok(()));
         let f = &oxp.funcs[0];
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
-        assert!(has(|i| matches!(i, OxInst::ForEachInit { .. })), "expected ForEachInit");
-        assert!(has(|i| matches!(i, OxInst::ForEachNext { .. })), "expected ForEachNext");
+        assert!(
+            has(|i| matches!(i, OxInst::ForEachInit { .. })),
+            "expected ForEachInit"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::ForEachNext { .. })),
+            "expected ForEachNext"
+        );
     }
 
     /// `p = VarPtr(x) : n = Err.Number : Err.Source = "s" : f = AddressOf Main`
@@ -3312,9 +3396,18 @@ mod tests {
         let f = &oxp.funcs[0];
         let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
         assert!(has(|i| matches!(i, OxInst::Ptr { .. })), "expected Ptr");
-        assert!(has(|i| matches!(i, OxInst::ErrFieldGet { .. })), "expected ErrFieldGet");
-        assert!(has(|i| matches!(i, OxInst::ErrFieldSet { .. })), "expected ErrFieldSet");
-        assert!(has(|i| matches!(i, OxInst::LoadProcRef { .. })), "expected LoadProcRef");
+        assert!(
+            has(|i| matches!(i, OxInst::ErrFieldGet { .. })),
+            "expected ErrFieldGet"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::ErrFieldSet { .. })),
+            "expected ErrFieldSet"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::LoadProcRef { .. })),
+            "expected LoadProcRef"
+        );
     }
 
     // ── Review-fix regressions ───────────────────────────────────────────────
@@ -3337,10 +3430,10 @@ mod tests {
         let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
         assert!(
-            oxp.funcs[0]
-                .blocks
+            oxp.funcs[0].blocks.iter().any(|b| b
+                .instrs
                 .iter()
-                .any(|b| b.instrs.iter().any(|i| matches!(i, OxInst::ValidateAssignment { .. }))),
+                .any(|i| matches!(i, OxInst::ValidateAssignment { .. }))),
             "Set assignment must emit ValidateAssignment"
         );
     }
@@ -3365,10 +3458,10 @@ mod tests {
         let oxp = elaborate(&prog).expect("elaborate");
         assert_eq!(verify_program(&oxp), Ok(()));
         assert!(
-            oxp.funcs[0]
-                .blocks
+            oxp.funcs[0].blocks.iter().any(|b| b
+                .instrs
                 .iter()
-                .any(|b| b.instrs.iter().any(|i| matches!(i, OxInst::ValidateAssignment { .. }))),
+                .any(|i| matches!(i, OxInst::ValidateAssignment { .. }))),
             "Let Variant = Nothing must emit ValidateAssignment"
         );
     }
@@ -3388,10 +3481,10 @@ mod tests {
         ));
         let oxp = elaborate(&prog).expect("elaborate");
         assert!(
-            oxp.funcs[0]
-                .blocks
+            oxp.funcs[0].blocks.iter().any(|b| b
+                .instrs
                 .iter()
-                .any(|b| b.instrs.iter().any(|i| matches!(i, OxInst::CallProc { dst: None, .. }))),
+                .any(|i| matches!(i, OxInst::CallProc { dst: None, .. }))),
             "a statement call must have no result destination"
         );
     }
@@ -3441,7 +3534,8 @@ mod tests {
         let oxp = elaborate(&prog).expect("elaborate");
         let errs = verify_program(&oxp).expect_err("dangling AddressOf proc");
         assert!(
-            errs.iter().any(|e| matches!(e, VerifyError::BadProcRef { proc: 99, .. })),
+            errs.iter()
+                .any(|e| matches!(e, VerifyError::BadProcRef { proc: 99, .. })),
             "expected BadProcRef, got {errs:?}"
         );
     }

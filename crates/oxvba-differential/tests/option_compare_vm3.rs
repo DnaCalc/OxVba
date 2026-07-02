@@ -14,7 +14,7 @@
 //!   "ABC" Like "abc"           False | True
 //! Closes option-compare-text-ignored-string-fns + select-case-ignores-option-compare-text.
 
-use oxvba_differential::{canon, run, Canon, Executor, RunOutcome};
+use oxvba_differential::{Canon, Executor, RunOutcome, canon, run};
 use oxvba_runtime::Variant;
 
 /// Run a module whose `Option Compare` is `mode` ("Binary" or "Text"); `body`
@@ -26,14 +26,30 @@ fn run_mode(mode: &str, body: &str) -> RunOutcome {
 
 fn assert_val(mode: &str, body: &str, expected: &Canon) {
     let outcome = run_mode(mode, body);
-    assert!(outcome.unsupported.is_none(), "unsupported: {:?}", outcome.unsupported);
-    let snap = outcome.result.unwrap_or_else(|e| panic!("[{mode}] `{body}` failed: {e}"));
-    assert_eq!(snap.first(), Some(expected), "[{mode}] body=`{body}` snap={snap:?}");
+    assert!(
+        outcome.unsupported.is_none(),
+        "unsupported: {:?}",
+        outcome.unsupported
+    );
+    let snap = outcome
+        .result
+        .unwrap_or_else(|e| panic!("[{mode}] `{body}` failed: {e}"));
+    assert_eq!(
+        snap.first(),
+        Some(expected),
+        "[{mode}] body=`{body}` snap={snap:?}"
+    );
 }
 
-fn i32v(n: i32) -> Canon { canon(&Variant::from_i32(n)) }
-fn strv(s: &str) -> Canon { canon(&Variant::from_string(s.to_string())) }
-fn boolv(b: bool) -> Canon { canon(&Variant::from_bool(b)) }
+fn i32v(n: i32) -> Canon {
+    canon(&Variant::from_i32(n))
+}
+fn strv(s: &str) -> Canon {
+    canon(&Variant::from_string(s.to_string()))
+}
+fn boolv(b: bool) -> Canon {
+    canon(&Variant::from_bool(b))
+}
 
 #[test]
 fn instr_respects_compare() {
@@ -49,8 +65,16 @@ fn strcomp_respects_compare() {
 
 #[test]
 fn replace_respects_compare() {
-    assert_val("Binary", "    r = Replace(\"aAbB\", \"a\", \"x\")\n", &strv("xAbB"));
-    assert_val("Text", "    r = Replace(\"aAbB\", \"a\", \"x\")\n", &strv("xxbB"));
+    assert_val(
+        "Binary",
+        "    r = Replace(\"aAbB\", \"a\", \"x\")\n",
+        &strv("xAbB"),
+    );
+    assert_val(
+        "Text",
+        "    r = Replace(\"aAbB\", \"a\", \"x\")\n",
+        &strv("xxbB"),
+    );
 }
 
 #[test]

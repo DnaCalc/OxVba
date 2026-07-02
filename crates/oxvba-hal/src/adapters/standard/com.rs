@@ -249,8 +249,10 @@ impl ComHal for StandardHostServices {
         let class_name = com_optional_string(&class);
         // An omitted pathname is an `Empty`/`Null`/`Error` variant; a *present* one keeps its
         // string form — which may be "" (the new-instance mode, distinct from omitted).
-        let pathname_present =
-            !matches!(pathname.vtype(), VarType::Empty | VarType::Null | VarType::Error);
+        let pathname_present = !matches!(
+            pathname.vtype(),
+            VarType::Empty | VarType::Null | VarType::Error
+        );
         let path_text = if pathname_present {
             Some(
                 variant_to_vba_string(&pathname)
@@ -301,9 +303,12 @@ impl ComHal for StandardHostServices {
                     (self.com_bridge.bind_file_object(path, class_opt), 432)
                 }
                 // The invalid shapes were already rejected above; defend the invariant.
-                _ => unreachable!("GetObject invalid-arg shapes are rejected before the native gate"),
+                _ => {
+                    unreachable!("GetObject invalid-arg shapes are rejected before the native gate")
+                }
             };
-            let object = result.map_err(|message| self.com_getobject_adapter_fault(message, fail_num))?;
+            let object =
+                result.map_err(|message| self.com_getobject_adapter_fault(message, fail_num))?;
             return Ok(Variant::from_object_ref(object));
         }
 
