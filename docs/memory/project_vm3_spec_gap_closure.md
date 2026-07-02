@@ -2971,3 +2971,33 @@
   - `cargo clippy -p oxvba-bundle -p oxvba-symbol -p oxvba-bind -p oxvba-hal -p oxvba-lib -p oxvba-differential --all-targets -- -D warnings`
   - `cargo test -p oxvba-differential --lib vm3_golden_snapshot -- --nocapture`
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\meta-check.ps1 -Fast -NoArtifacts`
+
+## 2026-07-02 - vm3 Spec-Gap Terminal Reconciliation (`bd-ggpa`)
+
+- Reconciled `docs/VM3_VBA_SPEC_GAP_INVENTORY.md` against the closed
+  `bd-4ktq` child bead graph and this memory log.
+- Marked the remaining visually-open `foreach-project-class-no-newenum` row as
+  done through `bd-4ktq.49`, citing the project-class NewEnum coverage,
+  `Collection.[_NewEnum]` support, bracketed member parsing, and runtime 438
+  no-NewEnum case.
+- Replaced stale risk notes for already-closed object-model, integer-literal,
+  and call-argument beads with terminal notes.
+- Recorded the residual boundary explicitly: `addressof-native-callback-thunk`
+  remains an honest-decline row for `bd-4ktq`, while the broader native thunk
+  implementation path is still owned by open work item `bd-9sed.6`.
+- Confirmed broader PMR/COM/host/frontend partial rows are wider than the vm3
+  spec-gap inventory and do not leave an accepted `bd-4ktq` gap only in prose.
+- Fresh-eyes review caught and repaired stale wording that could imply
+  `AddressOf` native callback thunking was "correct" or parity-complete here;
+  the inventory now says it is explicitly split, not closed as VBA parity.
+- Verification completed:
+  - inventory token audit for open-looking rows; the only regex false-positive
+    was prose inside `VarType(Shell(...))`.
+  - `cargo test -p oxvba-differential --test project_class_newenum_vm3 -- --nocapture`
+  - `cargo test -p oxvba-differential --test sendkeys_appactivate_vm3 -- --nocapture`
+  - `cargo test -p oxvba-differential --test call_argument_binding_vm3 -- --nocapture`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot -- --nocapture`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\check-governance.ps1`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\meta-check.ps1 -Fast -NoArtifacts`
+  - `git diff --check`
+  - `br dep cycles --json`
