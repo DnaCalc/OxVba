@@ -721,6 +721,9 @@ impl ComHal for StandardHostServices {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
         let has_byref_args = request.args.iter().any(|arg| arg.by_ref.is_some());
+        if !has_byref_args {
+            return Ok((self.dispatch_invoke_dynamic_variant(request)?, Vec::new()));
+        }
 
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
@@ -802,15 +805,12 @@ impl ComHal for StandardHostServices {
             }
         }
 
-        if has_byref_args {
-            return Err(HalError::adapter_fault(
-                self.profile,
-                capability,
-                "dispatch_invoke",
-                "COM-E-BYREF-WRITEBACK-UNSUPPORTED: dynamic COM ByRef calls require a writeback-capable native COM dispatch path",
-            ));
-        }
-        Ok((self.dispatch_invoke_dynamic_variant(request)?, Vec::new()))
+        Err(HalError::adapter_fault(
+            self.profile,
+            capability,
+            "dispatch_invoke",
+            "COM-E-BYREF-WRITEBACK-UNSUPPORTED: dynamic COM ByRef calls require a writeback-capable native COM dispatch path",
+        ))
     }
 
     fn subscribe_event(

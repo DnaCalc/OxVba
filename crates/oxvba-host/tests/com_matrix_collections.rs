@@ -250,6 +250,31 @@ fn c6_excel_for_each_worksheets_oop_enum() {
     assert_differential("C6", late, early, None, find_verdict, 3, None);
 }
 
+#[test]
+#[ignore = "live COM; run explicitly"]
+fn c6_vm3_excel_for_each_worksheets_oop_enum() {
+    let body = "Dim verdict As Long\n\
+         Dim wb As Object\n\
+         Set wb = app.Workbooks.Add\n\
+         wb.Worksheets.Add\n\
+         wb.Worksheets.Add\n\
+         wb.Worksheets.Add\n\
+         Dim count As Long\n\
+         Dim allNamed As Boolean\n\
+         count = 0\n\
+         allNamed = True\n\
+         Dim ws As Object\n\
+         For Each ws In wb.Worksheets\n\
+         count = count + 1\n\
+         If Len(ws.Name) = 0 Then allNamed = False\n\
+         Next ws\n\
+         verdict = 0\n\
+         If count >= 3 Then verdict = verdict + 1\n\
+         If allNamed Then verdict = verdict + 2\n";
+    let vm3 = run_clean_vm3(&excel_late(body));
+    assert_vm3_verdict("C6-vm3", vm3, find_verdict, 3);
+}
+
 // ── C7: Excel Sheets(i) vs Worksheets(i) parity + Workbooks(i) ───────────────
 
 #[test]

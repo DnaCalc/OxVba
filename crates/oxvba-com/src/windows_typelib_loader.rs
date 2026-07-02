@@ -1409,8 +1409,19 @@ fn invkind_to_member_invoke_kind(invkind: u32) -> TypeLibMemberInvokeKind {
 }
 
 #[cfg(target_os = "windows")]
-fn requested_coclass_name(identity: &TypeLibResolvedIdentity) -> Option<&str> {
-    identity.requested_coclass.as_deref()
+fn requested_coclass_name(identity: &TypeLibResolvedIdentity) -> Option<String> {
+    let requested = identity.requested_coclass.as_deref()?.trim();
+    if requested.is_empty() {
+        return None;
+    }
+    let reference_name = identity.reference_name.trim();
+    if requested.len() > reference_name.len()
+        && requested.as_bytes().get(reference_name.len()) == Some(&b'.')
+        && requested[..reference_name.len()].eq_ignore_ascii_case(reference_name)
+    {
+        return Some(requested[reference_name.len() + 1..].to_string());
+    }
+    Some(requested.to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -3759,37 +3770,31 @@ pub fn build_metadata_blob_from_typelib(
     identity: TypeLibResolvedIdentity,
 ) -> Result<TypeLibMetadataBlob, String> {
     let members = if let Some(coclass_name) = requested_coclass_name(&identity) {
-        let scoped = enumerate_typelib_members_for_coclass(ptlib, coclass_name)?;
+        let scoped = enumerate_typelib_members_for_coclass(ptlib, &coclass_name)?;
         if !scoped.is_empty() {
             scoped
         } else {
-            // The requested type is not a coclass. Before giving up to a whole-library
-            // flatten (which collides shared member names across unrelated objects),
-            // scope to the dispinterface/interface of the same name (DAO Database/Recordset).
-            let interface_scoped = enumerate_typelib_members_for_interface(ptlib, coclass_name)?;
+            // The requested type is not a coclass. Scope to the dispinterface/interface
+            // of the same name (DAO Database/Recordset). If that also misses, keep the
+            // scoped blob empty instead of falling back to a whole-library flatten.
+            let interface_scoped = enumerate_typelib_members_for_interface(ptlib, &coclass_name)?;
             if !interface_scoped.is_empty() {
                 interface_scoped
             } else {
-                enumerate_typelib_members(ptlib)?
+                Vec::new()
             }
         }
     } else {
         enumerate_typelib_members(ptlib)?
     };
     let events = if let Some(coclass_name) = requested_coclass_name(&identity) {
-        let scoped = enumerate_typelib_events_for_coclass(ptlib, coclass_name)?;
-        if scoped.is_empty() {
-            enumerate_typelib_events(ptlib)?
-        } else {
-            scoped
-        }
+        enumerate_typelib_events_for_coclass(ptlib, &coclass_name)?
     } else {
-        enumerate_typelib_events(ptlib)?
+        Vec::new()
     };
     let coclass_names = enumerate_typelib_coclass_names(ptlib);
     let activation_prog_id = if let Some(coclass_name) = requested_coclass_name(&identity) {
-        extract_coclass_prog_id_for_name(ptlib, coclass_name)
-            .or_else(|| Some(identity.reference_name.clone()))
+        extract_coclass_prog_id_for_name(ptlib, &coclass_name)
     } else {
         extract_coclass_prog_id(ptlib)
     };
@@ -3921,17 +3926,11 @@ pub unsafe fn build_metadata_blob_from_dispatch(
     // cross-apartment marshalling — `app.Visible = False` measured at ~11 minutes via
     // the vtable vs milliseconds late-bound). Enumerating only the coclass's source
     // events keeps recovery cheap and the object on its fast dispatch path.
-    let events = match identity.requested_coclass.as_deref() {
+    let events = match requested_coclass_name(&identity) {
         Some(coclass) => {
-            let scoped =
-                enumerate_typelib_events_for_coclass(local_ptlib, coclass).unwrap_or_default();
-            if scoped.is_empty() {
-                enumerate_typelib_events(local_ptlib).unwrap_or_default()
-            } else {
-                scoped
-            }
+            enumerate_typelib_events_for_coclass(local_ptlib, &coclass).unwrap_or_default()
         }
-        None => enumerate_typelib_events(local_ptlib).unwrap_or_default(),
+        None => Vec::new(),
     };
     let coclass_names = enumerate_typelib_coclass_names(local_ptlib);
     // SAFETY: `local_ptlib` is the live ITypeLib just loaded from the registry; this is
@@ -4394,6 +4393,110 @@ mod tests {
                 wire_type.supports_vtable_param(TypeLibParamType::Variant)
             }),
             "the projected record-array wire shape should be admitted by the vtable support matrix"
+        );
+    }
+
+    #[test]
+    fn library_typelib_metadata_does_not_expose_broad_source_events() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let typelib_path = manifest_dir
+            .join("..")
+            .join("..")
+            .join("tools")
+            .join("OxVba.TestEventServer")
+            .join("bin")
+            .join("Debug")
+            .join("net48")
+            .join("OxVba.TestEventServer.tlb");
+        if !typelib_path.exists() {
+            return;
+        }
+        let Ok(ptlib) = load_typelib_from_path(&typelib_path.display().to_string()) else {
+            return;
+        };
+        let identity = TypeLibResolvedIdentity {
+            reference_name: "OxVba_TestEventServer".to_string(),
+            requested_coclass: None,
+            importlib: typelib_path.display().to_string(),
+            libid: Some("{E2A30001-0001-0001-0001-000000000001}".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "test:testeventserver-library-no-broad-events".to_string(),
+        };
+        let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        // SAFETY: `ptlib` is the live ITypeLib from `load_typelib_from_path`, borrowed
+        // (not consumed) by `build_metadata_blob_from_typelib`; released exactly once
+        // here per `release_typelib`'s contract.
+        unsafe { release_typelib(ptlib) };
+        let blob = blob_result.expect("TestEventServer typelib should build metadata");
+
+        assert!(
+            blob.coclass_names
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("TestEventServer")),
+            "library metadata should still expose coclass names"
+        );
+        assert!(
+            blob.events.is_empty(),
+            "library-wide metadata must not expose broad source events; got {:?}",
+            blob.events
+                .iter()
+                .map(|event| (&event.coclass, &event.name))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn scoped_typelib_metadata_does_not_fallback_to_other_coclass_events() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let typelib_path = manifest_dir
+            .join("..")
+            .join("..")
+            .join("tools")
+            .join("OxVba.TestEventServer")
+            .join("bin")
+            .join("Debug")
+            .join("net48")
+            .join("OxVba.TestEventServer.tlb");
+        if !typelib_path.exists() {
+            return;
+        }
+        let Ok(ptlib) = load_typelib_from_path(&typelib_path.display().to_string()) else {
+            return;
+        };
+        let identity = TypeLibResolvedIdentity {
+            reference_name: "OxVba_TestEventServer".to_string(),
+            requested_coclass: Some("MissingEventSource".to_string()),
+            importlib: typelib_path.display().to_string(),
+            libid: Some("{E2A30001-0001-0001-0001-000000000001}".to_string()),
+            major_version: 1,
+            minor_version: 0,
+            lcid: Some(0),
+            cache_key: "test:testeventserver-scoped-no-broad-events".to_string(),
+        };
+        let blob_result = build_metadata_blob_from_typelib(ptlib, identity);
+        // SAFETY: `ptlib` is the live ITypeLib from `load_typelib_from_path`, borrowed
+        // (not consumed) by `build_metadata_blob_from_typelib`; released exactly once
+        // here per `release_typelib`'s contract.
+        unsafe { release_typelib(ptlib) };
+        let blob = blob_result.expect("TestEventServer typelib should build metadata");
+
+        assert!(
+            blob.members.is_empty(),
+            "missing scoped type metadata must not fall back to whole-library members"
+        );
+        assert_eq!(
+            blob.activation_prog_id, None,
+            "missing scoped type metadata must not synthesize an activation ProgID"
+        );
+        assert!(
+            blob.events.is_empty(),
+            "scoped metadata must not fall back to unrelated coclass source events; got {:?}",
+            blob.events
+                .iter()
+                .map(|event| (&event.coclass, &event.name))
+                .collect::<Vec<_>>()
         );
     }
 

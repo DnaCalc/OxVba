@@ -2489,7 +2489,23 @@ impl<'a> ProcLower<'a> {
                     // Emit descriptor-ordered args; typed COM named args are
                     // validated/reordered here, while ByRef still aliases from the
                     // typelib's [out]/[in,out] parameter type.
-                    let method_args = self.bind_com_args(arglist, com_member)?;
+                    let method_args = match self.bind_com_args(arglist, com_member) {
+                        Ok(args) => args,
+                        Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment)
+                            if arglist.is_some()
+                                && member_kind == ProjectMemberKind::PropertyGet
+                                && visible_com_param_indices(com_member).is_empty() =>
+                        {
+                            return self.bind_com_property_get_default_member_call(
+                                member,
+                                interface_name,
+                                com_member,
+                                recv.value,
+                                arglist,
+                            );
+                        }
+                        Err(err) => return Err(err),
+                    };
                     Ok(value_bound(
                         self.early_com_call(
                             member,
@@ -2540,6 +2556,56 @@ impl<'a> ProcLower<'a> {
                 ))
             }
             None => Err(self.unresolved(member, "member call")),
+        }
+    }
+
+    fn bind_com_property_get_default_member_call(
+        &mut self,
+        property_name: &str,
+        interface_name: &str,
+        property_member: &TypeLibMemberMetadata,
+        recv: CoreValue,
+        arglist: Option<SyntaxNode<'_>>,
+    ) -> Result<Bound, BindError> {
+        let property_args = self.bind_com_args(None, property_member)?;
+        let property_value = self.early_com_call(
+            property_name,
+            ProjectMemberKind::PropertyGet,
+            interface_name,
+            property_member,
+            recv,
+            property_args,
+        );
+        let property_ty = com_member_return_type(property_member);
+        let Some(default_binding) = self.resolve_default_member(&property_ty) else {
+            return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+        };
+        match default_binding.route {
+            DispatchRoute::ComMember {
+                member_name,
+                member_kind,
+                interface_name,
+                member: default_member,
+                ..
+            } => {
+                let member_kind = match member_kind {
+                    ProjectMemberKind::Method => ProjectMemberKind::Method,
+                    _ => ProjectMemberKind::PropertyGet,
+                };
+                let args = self.bind_com_args(arglist, &default_member)?;
+                Ok(value_bound(
+                    self.early_com_call(
+                        &member_name,
+                        member_kind,
+                        &interface_name,
+                        &default_member,
+                        property_value,
+                        args,
+                    ),
+                    com_member_return_type(&default_member),
+                ))
+            }
+            _ => Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment),
         }
     }
 

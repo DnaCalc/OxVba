@@ -1,13 +1,13 @@
 //! Differential COM matrix — Category V: EVENTS (`WithEvents`, in & out of proc).
 //!
 //! `WithEvents` is only valid in a class module, so every scenario is a manifest
-//! (a `Main` procedural module + a `Sink` class module) run via [`run_manifest`].
+//! (a `Main` procedural module + a `Sink` class module) run on vm3 via [`run_manifest`].
 //! Each event scenario fires the server's `Fire*` trigger, pumps the inbound event
 //! queue (the statement boundary / `DoEvents`), and reads the captured value(s)
 //! back into a `Main` global.
 //!
 //! These are NOT three-leg differential value tests — an event delivery is a single
-//! observable effect — so each asserts the captured effect directly (with the
+//! observable effect — so each asserts the captured vm3 effect directly (with the
 //! occasional project-`RaiseEvent` twin as a same-language oracle for the same
 //! arity). The connection-point path is exercised the same way the existing
 //! `com_office_integration` event smoke test does.

@@ -630,11 +630,27 @@ fn resolve_typelib_provider_closure(
         let major_version_hint = request.major_version_hint;
         let minor_version_hint = request.minor_version_hint;
         let lcid_hint = request.lcid_hint;
-
-        for interface_name in returned_interface_names(&blob)
-            .into_iter()
-            .chain(used_coclass_names(&blob, used_type_names))
-        {
+        let mut followups = Vec::new();
+        let mut followup_seen = HashSet::new();
+        if request.requested_coclass.is_some() {
+            for interface_name in returned_interface_names(&blob) {
+                push_typelib_followup(
+                    &reference_name,
+                    interface_name,
+                    &mut followups,
+                    &mut followup_seen,
+                );
+            }
+        }
+        for coclass_name in used_coclass_names(&blob, used_type_names) {
+            push_typelib_followup(
+                &reference_name,
+                coclass_name,
+                &mut followups,
+                &mut followup_seen,
+            );
+        }
+        for interface_name in followups {
             queue.push_back(oxvba_com::TypeLibResolveRequest {
                 reference_name: reference_name.clone(),
                 requested_coclass: Some(interface_name),
@@ -650,6 +666,42 @@ fn resolve_typelib_provider_closure(
     }
 
     blobs
+}
+
+fn push_typelib_followup(
+    reference_name: &str,
+    name: String,
+    followups: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) {
+    let Some(normalized) = normalize_typelib_followup_name(reference_name, &name) else {
+        return;
+    };
+    let folded = fold_identifier(&normalized);
+    if matches!(folded.as_str(), "idispatch" | "iunknown") {
+        return;
+    }
+    if seen.insert(folded) {
+        followups.push(normalized);
+    }
+}
+
+fn normalize_typelib_followup_name(reference_name: &str, name: &str) -> Option<String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some((prefix, suffix)) = trimmed.split_once('.') {
+        if !prefix.eq_ignore_ascii_case(reference_name) {
+            return None;
+        }
+        let suffix = suffix.trim();
+        if suffix.is_empty() {
+            return None;
+        }
+        return Some(suffix.to_string());
+    }
+    Some(trimmed.to_string())
 }
 
 fn returned_interface_names(blob: &oxvba_com::TypeLibMetadataBlob) -> Vec<String> {

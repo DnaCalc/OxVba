@@ -69,9 +69,19 @@ pub const LEG_LATE: &str = "late";
 pub const LEG_EARLY_VTABLE: &str = "earlyvt";
 /// Per-leg substitution token for the early-bound `DispatchOnly` leg.
 pub const LEG_EARLY_DISPATCH: &str = "earlydo";
+/// Per-leg substitution token for vm3 late-bound proof legs.
+pub const LEG_VM3_LATE: &str = "vm3";
+/// Per-leg substitution token for vm3 early-bound proof legs.
+pub const LEG_VM3_EARLY: &str = "vm3early";
 /// The full set of leg tokens — used by [`TempDbPath`] teardown to remove every
 /// per-leg side-effect target a scenario may have produced.
-pub const ALL_LEG_TOKENS: &[&str] = &[LEG_LATE, LEG_EARLY_VTABLE, LEG_EARLY_DISPATCH];
+pub const ALL_LEG_TOKENS: &[&str] = &[
+    LEG_LATE,
+    LEG_EARLY_VTABLE,
+    LEG_EARLY_DISPATCH,
+    LEG_VM3_LATE,
+    LEG_VM3_EARLY,
+];
 
 /// Substitute the per-leg token into a scenario source for one differential leg
 /// (a no-op when the source carries no [`LEG_PLACEHOLDER`]).
@@ -142,7 +152,7 @@ pub fn run_clean_with_references_prefer_vtable(
 /// failure (`Failed`) both to `Err`, so a category test can differential vm3's late-bound
 /// dispatch against vm2's.
 pub fn run_clean_vm3(source: &str) -> Result<Vec<Variant>, String> {
-    let source = with_leg_token(source, LEG_LATE);
+    let source = with_leg_token(source, LEG_VM3_LATE);
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     match engine.execute_source_with_variant_snapshot_vm3(&source) {
@@ -158,7 +168,7 @@ pub fn run_clean_vm3(source: &str) -> Result<Vec<Variant>, String> {
 /// is the host's decision, not the VM's — so the oracle is that vm3's counts MATCH vm2's for
 /// the same scenario, i.e. no silent transport divergence between the two VMs.)
 pub fn run_clean_vm3_with_counts(source: &str) -> EarlyRun {
-    let source = with_leg_token(source, LEG_LATE);
+    let source = with_leg_token(source, LEG_VM3_LATE);
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snapshot = match engine.execute_source_with_variant_snapshot_vm3(&source) {
@@ -180,7 +190,7 @@ pub fn run_clean_vm3_with_references_prefer_vtable(
     source: &str,
     references: Vec<ProjectReference>,
 ) -> EarlyRun {
-    let source = with_leg_token(source, LEG_EARLY_VTABLE);
+    let source = with_leg_token(source, LEG_VM3_EARLY);
     let manifest = sym::SymbolProjectManifest {
         project_name: "Main".to_string(),
         project_kind: sym::ProjectKind::Source,
@@ -357,7 +367,7 @@ pub fn run_clean_with_references_dispatch_only(
     Ok((snap, counts))
 }
 
-/// Class-module manifest runner (for `WithEvents` / events and other multi-module
+/// Class-module manifest runner on vm3 (for `WithEvents` / events and other multi-module
 /// scenarios). Mirrors the inline manifest in `com_office_integration.rs`'s event
 /// test. Each `(name, kind, source)` becomes a `ModuleUnit`; the project is named
 /// `"Main"` so `Main`'s globals sort first in the snapshot.
@@ -384,9 +394,11 @@ pub fn run_manifest(
     };
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());
-    engine
-        .execute_manifest_with_variant_snapshot(&manifest)
-        .map_err(|d| format!("{:?}: {}", d.phase(), d.message()))
+    match engine.execute_manifest_with_variant_snapshot_vm3(&manifest) {
+        Vm3Snapshot::Ran(values) => Ok(values),
+        Vm3Snapshot::Unsupported(what) => Err(format!("vm3-unsupported: {what}")),
+        Vm3Snapshot::Failed(msg) => Err(msg),
+    }
 }
 
 /// Extract a by-CONVENTION error capture: the scenario stores `Err.Number` into a
@@ -532,6 +544,31 @@ pub fn assert_differential(
     }
     // (3b) No-AV guard is implicit: reaching this line means neither lane crashed.
     eprintln!("{case}: OK (vtable={vt} idispatch={idisp})");
+}
+
+/// Assert a focused vm3 proof leg. An absent live COM dependency remains an
+/// environment skip; any other vm3 failure is a real test failure.
+pub fn assert_vm3_verdict(
+    case: &str,
+    vm3: LateRun,
+    verdict: impl Fn(&[Variant]) -> Option<i64>,
+    expected_verdict: i64,
+) {
+    let snap = match vm3 {
+        Ok(s) => s,
+        Err(e) if is_component_absent(&e) || is_typelib_absent(&e) => {
+            eprintln!("SKIP {case}: {e}");
+            return;
+        }
+        Err(e) => panic!("{case} vm3 failed: {e}"),
+    };
+    assert_eq!(
+        verdict(&snap),
+        Some(expected_verdict),
+        "{case}: vm3 verdict {:?} != expected {expected_verdict} in {snap:?}",
+        verdict(&snap)
+    );
+    eprintln!("{case}: vm3 OK");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
