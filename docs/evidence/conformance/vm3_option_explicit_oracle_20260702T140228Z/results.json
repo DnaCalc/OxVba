@@ -1,0 +1,180 @@
+﻿[
+    {
+        "id":  "NOEXPLICIT-UNDECLARED-READ-EMPTY",
+        "purpose":  "Read of an otherwise undeclared ordinary name without Option Explicit.",
+        "ownedExcelPid":  21424,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:Empty",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "NOEXPLICIT-UNDECLARED-ASSIGN-READ",
+        "purpose":  "Assignment to an otherwise undeclared ordinary name without Option Explicit.",
+        "ownedExcelPid":  21384,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "7:2",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "NOEXPLICIT-UNDECLARED-BYREF",
+        "purpose":  "Undeclared ordinary name without Option Explicit is a real Variant local for ByRef calls.",
+        "ownedExcelPid":  28604,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "12:2",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "NOEXPLICIT-MISSING-CALL",
+        "purpose":  "A missing statement-position procedure call is not an implicit Variant variable.",
+        "ownedExcelPid":  3608,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nSub or Function not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "MissingProc",
+        "selectedLine":  "MissingProc",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "NOEXPLICIT-MISSING-FUNCTION-CALL",
+        "purpose":  "A missing expression-position function call is not an implicit indexed Variant variable.",
+        "ownedExcelPid":  23664,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nSub or Function not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "MissingProc",
+        "selectedLine":  "x = MissingProc(1)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-UNDECLARED-READ",
+        "purpose":  "Read of an undeclared ordinary name with Option Explicit.",
+        "ownedExcelPid":  32736,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "x",
+        "selectedLine":  "RunProbe = x",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-UNDECLARED-ASSIGN",
+        "purpose":  "Assignment to an undeclared ordinary name with Option Explicit.",
+        "ownedExcelPid":  4460,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "x =",
+        "selectedLine":  "x = 7",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "EXPLICIT-UNDECLARED-BYREF",
+        "purpose":  "ByRef use of an undeclared ordinary name with Option Explicit.",
+        "ownedExcelPid":  16740,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nVariable not defined",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  "x",
+        "selectedLine":  "Inc x",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]
