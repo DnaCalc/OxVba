@@ -59,13 +59,16 @@ with an error-5 regression.
 
 ## Current Gate
 
-After the oracle-backed golden refreshes and `Round` fix:
+After the oracle-backed golden refreshes, `Round` fix, and the
+`bd-5kqj.4` module-level `Const` parser fix:
 
 - Command: `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-- Current result: 27 mismatches over 192 files.
-- Log: `target/conformance_basic_language_vm_after_remaining_oracle_20260702.log`
+- Current result: 26 mismatches over 192 files.
+- Latest evidence: terminal output from the `bd-5kqj.4` closure run.
+- Earlier 27-mismatch log before the `Const` fix:
+  `target/conformance_basic_language_vm_after_remaining_oracle_20260702.log`
 
-The 27 remaining mismatches are classified and split as follows:
+The 26 remaining mismatches are classified and split as follows:
 
 - `bd-5kqj.1` composite retained-value dump shape:
   array/`ReDim`/UDT rows where vm3 currently dumps structural SAFEARRAY/record
@@ -78,8 +81,6 @@ The 27 remaining mismatches are classified and split as follows:
 - `bd-5kqj.3` compile diagnostics:
   `default_type_param_defobj_error.bas`,
   `function_return_explicit_as_precedence_error.bas`.
-- `bd-5kqj.4` module-level `Const` parsing/execution:
-  `module_const_basic.bas`.
 - `bd-5kqj.5` non-VBA synthetic collection fixtures:
   `object_collection_add_item.bas`,
   `object_collection_count_chain.bas`,
@@ -98,10 +99,14 @@ The 27 remaining mismatches are classified and split as follows:
 - `cargo test -q -p oxvba-differential --test round_negative_digits_vm3`
 - `cargo test -q -p oxvba-lib round`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern stdlib_math_primitives.bas`
+- `cargo test -q -p oxvba-syntax`
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern module_const_basic.bas`
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern financial_algorithm_npv_irr_mirr_subset.bas,module_const_basic.bas,object_identity_is_nothing.bas,object_identity_is_same_and_different.bas,stdlib_array_introspection_bounds.bas,stdlib_array_introspection_types.bas,stdlib_math_primitives.bas,stdlib_random_financial_expansion.bas,stdlib_rnd_isolated.bas,string_join_array_tag_count.bas`
+- `cargo test -q -p oxvba-differential --lib vm3_golden_snapshot`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <42 scalar oracle rows>`
   - Current expected result: 3 mismatches, all split to follow-up beads.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-  - Current expected result: 27 mismatches over 192 files, all classified above.
+  - Current expected result: 26 mismatches over 192 files, all classified above.
 
 ## Fresh-Eyes Review
 
@@ -110,5 +115,8 @@ vm3 outputs. Rows were only refreshed to real Excel targets when the generic
 oracle capture was a valid observation for that fixture shape. UDT and synthetic
 collection rows were explicitly split instead of being treated as VBA parity.
 The `Round(19, -1)` change was backed by the Excel runtime error 5 capture and
-by a focused differential regression. No remaining mismatch is left only in
-chat; every residual category has an open bead.
+by a focused differential regression. The `module_const_basic.bas` parser
+failure was traced to `Base` being tokenized as an `Option Base` keyword; VBA
+accepts it as an ordinary identifier in `Const BASE = 5` and `x = BASE + 2`,
+and vm3 now matches the Excel-backed `i16:7` observable. No remaining mismatch
+is left only in chat; every residual category has an open bead.
