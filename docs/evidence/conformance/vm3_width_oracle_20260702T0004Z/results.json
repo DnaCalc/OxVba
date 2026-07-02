@@ -1,0 +1,249 @@
+[
+  {
+    "id": "WIDTH-LONG-FIELD",
+    "purpose": "Width wraps a single long Print field.",
+    "ownedExcelPid": 26392,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "abcdef<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-ADJACENT-FIELDS",
+    "purpose": "Width wraps adjacent semicolon fields.",
+    "ownedExcelPid": 50356,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "abcd<CR><LF>ef<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-CROSS-STATEMENT",
+    "purpose": "Width wrapping continues across a suppressed newline.",
+    "ownedExcelPid": 31520,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "abcde<CR><LF>f<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-NUMERIC-WRAP",
+    "purpose": "Width wraps before the next numeric print field when padded text would overflow.",
+    "ownedExcelPid": 45088,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "_12_<CR><LF>_34_<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-COMMA-ZONE",
+    "purpose": "Width interacts with comma print zones.",
+    "ownedExcelPid": 28188,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "a<CR><LF>b<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-SPC-TAB",
+    "purpose": "Width interacts with Spc, explicit Tab, and bare Tab.",
+    "ownedExcelPid": 33072,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "A___B<CR><LF>__C<CR><LF>D<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-SPC-LONG",
+    "purpose": "Width behavior for Spc count larger than the width.",
+    "ownedExcelPid": 2836,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "_A<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-TAB-FAR",
+    "purpose": "Width behavior for explicit Tab beyond the width.",
+    "ownedExcelPid": 23120,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "____A<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-WRITE-UNAFFECTED",
+    "purpose": "Width does not wrap Write # records.",
+    "ownedExcelPid": 3780,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "\"abcdef\",1<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-ZERO-DISABLES",
+    "purpose": "Width 0 disables wrapping.",
+    "ownedExcelPid": 12416,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "abcdef<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-REOPEN-RESETS",
+    "purpose": "Closing and reopening resets the active width.",
+    "ownedExcelPid": 18680,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "abcdef<CR><LF>",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-NEGATIVE-ERROR",
+    "purpose": "Negative Width value error behavior.",
+    "ownedExcelPid": 24428,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "5|Invalid procedure call or argument",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  },
+  {
+    "id": "WIDTH-256-ERROR",
+    "purpose": "Width 256 boundary behavior.",
+    "ownedExcelPid": 25992,
+    "compileStatus": "ok",
+    "dialogWindow": null,
+    "dialogText": null,
+    "dialogButtons": null,
+    "selectedText": null,
+    "selectedLine": null,
+    "vbeWindow": null,
+    "run": "Main.RunProbe",
+    "runStatus": "ok",
+    "runValue": "5|Invalid procedure call or argument",
+    "errorMessage": null,
+    "modules": [
+      "Main"
+    ]
+  }
+]
