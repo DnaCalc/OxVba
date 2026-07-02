@@ -38,11 +38,17 @@ Language/runtime operations to align:
 
 3. State transitions:
 - `open` allocates handle and initializes cursor/length state.
-- `seek` updates cursor; mutable modes may extend logical length.
+- statement-form `seek(handle, pos)` uses VBA's 1-based position; `pos < 1`
+  is invalid. In byte-positioned modes, `pos = len` targets the last byte and
+  EOF is reached at `pos = len + 1`; Random mode maps the 1-based record number
+  to a byte slot through the active record length.
+- bare seek updates the reported cursor but does not extend logical length; a
+  later write is what grows mutable host-backed files.
 - `close` releases handle deterministically.
 
 4. Error behavior:
 - invalid handle operations are deterministic adapter faults.
+- invalid seek positions (`pos < 1`) are deterministic adapter faults.
 - unsupported profiles return capability-unavailable errors.
 
 ## Profile Intent

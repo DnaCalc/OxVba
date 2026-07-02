@@ -24,7 +24,7 @@ HAL-EVT-001,event-pump,implemented-verified,conformance,events.do_events
 HAL-EVT-002,event-pump,specified-pending,documentation,uncertainty_registry
 HAL-FS-001,file-system,implemented-verified,host-tests,file_open_seek_eof_lof_close_roundtrip
 HAL-FS-002,file-system,implemented-verified,host-tests,file_open_seek_eof_lof_close_roundtrip
-HAL-FS-003,file-system,implemented-verified,host-tests,seek_negative_returns_adapter_fault
+HAL-FS-003,file-system,implemented-verified,host-tests,seek_negative_returns_adapter_fault;seek_zero_returns_adapter_fault;prop_seek_eof_boundary
 HAL-FS-004,file-system,implemented-verified,host-tests,file_open_seek_eof_lof_close_roundtrip
 HAL-FS-005,file-system,implemented-verified,host-tests,file_open_seek_eof_lof_close_roundtrip
 HAL-FS-006,file-system,implemented-verified,conformance,fs.free_file

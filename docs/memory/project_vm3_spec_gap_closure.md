@@ -2678,3 +2678,37 @@
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
     refreshed non-blocking formal run `20260702T103922Z`: 383 obligations, 81
     pass, 286 todo, 16 skipped.
+
+## 2026-07-02 - HAL Seek EOF Boundary Property (`bd-1a2x`)
+
+- Closed the existing `prop_seek_eof_boundary` failure exposed during the
+  date/time and `Input #` verification pass. The implementation was already
+  VBA-shaped: statement-form `Seek #n, pos` is 1-based, so `pos < 1` is invalid,
+  `pos = len` targets the last byte in byte-positioned modes, and EOF begins at
+  the one-past position.
+- Reclassified the bug as a property/spec mismatch rather than a runtime seek
+  behavior bug. The property now generates valid `seek_position in 1..6000` and
+  expects EOF only when the byte-positioned seek position is greater than `LOF`.
+- Added `seek_zero_returns_adapter_fault` beside the existing negative-position
+  test, so the former shrunk case (`offset = 0`) is explicitly pinned as an
+  adapter fault instead of entering the success property.
+- Updated HAL filesystem contract docs/catalogs to say seek positions are
+  1-based, nonpositive positions fail, bare seek does not extend logical length,
+  and the `len + 1` EOF boundary is the byte-positioned rule rather than a
+  universal Random-mode formula.
+- Fresh-eyes review tightened that Random-mode wording after spotting the first
+  doc patch was too broad.
+- Verification completed:
+  - `cargo test -p oxvba-hal seek_zero_returns_adapter_fault -- --nocapture`
+  - `cargo test -p oxvba-hal prop_seek_eof_boundary -- --nocapture`
+  - `cargo test -p oxvba-hal file_open_seek_eof_lof_close_roundtrip -- --nocapture`
+  - `cargo test -p oxvba-hal seek_negative_returns_adapter_fault -- --nocapture`
+  - `cargo test -p oxvba-hal --quiet`
+  - `rustfmt --edition 2024 --config skip_children=true --check crates/oxvba-hal/src/adapters/standard/mod.rs`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
+    refreshed `docs/evidence/formal/latest_run.*` before the tool wrapper timed
+    out; no runner remained afterward, and the latest report accounts for 383
+    obligations: 304 pass, 63 todo, 16 skipped.

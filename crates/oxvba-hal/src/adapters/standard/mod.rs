@@ -2381,6 +2381,18 @@ mod tests {
     }
 
     #[test]
+    fn seek_zero_returns_adapter_fault() {
+        let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
+        let handle = host
+            .open_variant(rv(43), rv(0))
+            .expect("open should succeed");
+        let err = host
+            .seek_variant(handle, rv(0))
+            .expect_err("zero seek should return error");
+        assert_eq!(err.kind, HalErrorKind::AdapterFault);
+    }
+
+    #[test]
     fn ui_virtualization_modes_follow_contract() {
         let policy = HostPolicy {
             allow_interaction: true,
@@ -5286,13 +5298,13 @@ mod tests {
         }
 
         #[test]
-        fn prop_seek_eof_boundary(path_token in 1i32..10_000, offset in 0i32..6000) {
+        fn prop_seek_eof_boundary(path_token in 1i32..10_000, seek_position in 1i32..6000) {
             let host = StandardHostServices::new(HalProfileId::Windows, HostPolicy::default());
             let handle = host.open_variant(rv(path_token), rv(0)).expect("open should succeed");
             let len = expect_i32(host.lof_variant(handle.clone()).expect("lof should succeed"));
-            host.seek_variant(handle.clone(), rv(offset)).expect("seek should succeed");
+            host.seek_variant(handle.clone(), rv(seek_position)).expect("seek should succeed");
             let eof = host.eof_variant(handle).expect("eof should succeed");
-            let expected = if offset >= len { 1 } else { 0 };
+            let expected = if seek_position > len { 1 } else { 0 };
             prop_assert_eq!(eof, rv(expected));
         }
 
