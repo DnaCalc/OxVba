@@ -102,6 +102,7 @@ pub struct SurfaceMember {
     pub parameter_types: Vec<TypeLibParamType>,
     pub parameter_optional: Vec<bool>,
     pub parameter_optional_defaults: Vec<Option<CoreConst>>,
+    pub parameter_variadic: bool,
     pub return_type: Option<TypeLibParamType>,
     /// The originating project symbol — the binder maps it to a `ProcId`
     /// (proc/property accessor) or a global place (field) for devirtualisation.
@@ -363,7 +364,7 @@ fn method_member(
     signatures: &SignatureTable,
 ) -> SurfaceMember {
     let sig = member_signature(symbols, signatures, member.symbol);
-    let (names, types, optional, defaults) = sig.map(param_lists).unwrap_or_default();
+    let (names, types, optional, defaults, variadic) = sig.map(param_lists).unwrap_or_default();
     let return_type = sig
         .and_then(|s| s.return_type.as_ref())
         .map(|t| param_type(t, false));
@@ -378,6 +379,7 @@ fn method_member(
         parameter_types: types,
         parameter_optional: optional,
         parameter_optional_defaults: defaults,
+        parameter_variadic: variadic,
         return_type,
         symbol: member.symbol,
         origin: MemberOrigin::Proc,
@@ -418,7 +420,7 @@ fn property_members(
     for (sig_id, invoke_kind, member_kind) in accessors {
         let Some(sig_id) = sig_id else { continue };
         let sig = signatures.get(sig_id);
-        let (names, types, optional, defaults) = sig.map(param_lists).unwrap_or_default();
+        let (names, types, optional, defaults, variadic) = sig.map(param_lists).unwrap_or_default();
         let return_type = sig
             .and_then(|s| s.return_type.as_ref())
             .map(|t| param_type(t, false));
@@ -433,6 +435,7 @@ fn property_members(
             parameter_types: types,
             parameter_optional: optional,
             parameter_optional_defaults: defaults,
+            parameter_variadic: variadic,
             return_type,
             symbol: member.symbol,
             origin: MemberOrigin::PropertyAccessor,
@@ -467,6 +470,7 @@ fn field_members(
         parameter_types: Vec::new(),
         parameter_optional: Vec::new(),
         parameter_optional_defaults: Vec::new(),
+        parameter_variadic: false,
         return_type: Some(param_type(&ty, false)),
         symbol: member.symbol,
         origin: MemberOrigin::Field,
@@ -494,6 +498,7 @@ fn field_members(
         parameter_types: vec![param_type(&ty, false)],
         parameter_optional: vec![false],
         parameter_optional_defaults: vec![None],
+        parameter_variadic: false,
         return_type: None,
         symbol: member.symbol,
         origin: MemberOrigin::Field,
@@ -525,18 +530,21 @@ fn param_lists(
     Vec<TypeLibParamType>,
     Vec<bool>,
     Vec<Option<CoreConst>>,
+    bool,
 ) {
     let mut names = Vec::with_capacity(sig.params.len());
     let mut types = Vec::with_capacity(sig.params.len());
     let mut optional = Vec::with_capacity(sig.params.len());
     let mut defaults = Vec::with_capacity(sig.params.len());
+    let mut variadic = false;
     for p in &sig.params {
         names.push(p.name.clone());
         types.push(param_type(&p.ty, p.mode == PassingMode::ByRef));
         optional.push(p.optional);
         defaults.push(p.default.as_ref().and_then(default_value_to_core_const));
+        variadic |= p.param_array;
     }
-    (names, types, optional, defaults)
+    (names, types, optional, defaults, variadic)
 }
 
 fn default_value_to_core_const(default: &DefaultValue) -> Option<CoreConst> {
@@ -743,12 +751,26 @@ mod tests {
             add.parameter_types,
             vec![TypeLibParamType::ByRefLong, TypeLibParamType::ByRefLong]
         );
+        assert!(!add.parameter_variadic);
         assert_eq!(add.return_type, Some(TypeLibParamType::Long));
         // A hidden module is not a vtable interface.
         assert_eq!(add.vtable_slot, None);
 
         // The Public Const is a global-namespace constant; nothing private leaks.
         assert!(s.consts.iter().any(|c| c.name.eq_ignore_ascii_case("K")));
+    }
+
+    #[test]
+    fn surface_preserves_paramarray_metadata() {
+        let s = synth(vec![proc_mod(
+            "Lib",
+            "Public Function SumAll(ParamArray xs() As Variant) As Long\nEnd Function\n",
+            false,
+        )]);
+        let lib = find_type(&s, "Lib").expect("Lib module in surface");
+        let sum = member(lib, "SumAll").expect("SumAll exposed");
+        assert_eq!(sum.parameter_names, vec!["xs"]);
+        assert!(sum.parameter_variadic);
     }
 
     #[test]

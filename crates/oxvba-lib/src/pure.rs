@@ -2088,8 +2088,8 @@ pub fn cvar(args: &[Variant]) -> LibResult<Variant> {
 // VBA's `Rnd` is the VB6/VBA 24-bit linear-congruential generator:
 //   x = (x * 0x43FD43FD + 0xC39EC3) mod 2^24,  result = x / 2^24  (as Single).
 // `Rnd(0)` repeats the last number; `Rnd(n<0)` reseeds deterministically from
-// the Single bit-pattern of `n`; `Randomize [n]` reseeds the high word. State
-// is the 24-bit value in `LibContext::rng_state`.
+// the Single bit-pattern of `n`; `Randomize [n]` reseeds the high word from the
+// Double bit-pattern. State is the 24-bit value in `LibContext::rng_state`.
 
 const RND_MULT: u64 = 0x43FD_43FD;
 const RND_INC: u64 = 0x00C3_9EC3;
@@ -2099,6 +2099,15 @@ const RND_SCALE: f64 = 16_777_216.0; // 2^24
 fn rng_step(ctx: &mut LibContext) -> f64 {
     ctx.rng_state = ctx.rng_state.wrapping_mul(RND_MULT).wrapping_add(RND_INC) & RND_MASK;
     ctx.rng_state as f64 / RND_SCALE
+}
+
+fn rnd_negative_seed(value: f64) -> u64 {
+    let bits = (value as f32).to_bits() as u64;
+    ((bits & RND_MASK) | ((bits >> 24) & 0xFF)) & RND_MASK
+}
+
+fn randomize_seed_word(value: f64) -> u64 {
+    (value.to_bits() >> 48) & 0xFFFF
 }
 
 /// An optional numeric argument, treating an `Empty` placeholder as omitted.
@@ -2116,7 +2125,7 @@ pub fn rnd(args: &[Variant], ctx: &mut LibContext) -> LibResult<Variant> {
         ctx.rng_state as f64 / RND_SCALE
     } else if value < 0.0 {
         // Rnd(n<0): deterministic reseed from the Single bit pattern of n.
-        ctx.rng_state = (value as f32).to_bits() as u64 & RND_MASK;
+        ctx.rng_state = rnd_negative_seed(value);
         rng_step(ctx)
     } else {
         rng_step(ctx)
@@ -2126,7 +2135,7 @@ pub fn rnd(args: &[Variant], ctx: &mut LibContext) -> LibResult<Variant> {
 
 pub fn randomize(args: &[Variant], ctx: &mut LibContext) -> LibResult<Variant> {
     let seed = match numeric_arg(args, 0) {
-        Some(v) => (as_f64(v)? as f32).to_bits() as u64,
+        Some(v) => randomize_seed_word(as_f64(v)?),
         // No argument: VBA seeds from the system timer. Without host access here,
         // fold the current state forward deterministically.
         None => ctx.rng_state.wrapping_mul(RND_MULT).wrapping_add(RND_INC),
@@ -2153,7 +2162,7 @@ fn cashflows(v: &Variant) -> LibResult<Vec<f64>> {
             .iter()
             .map(as_f64)
             .collect(),
-        None => Ok(vec![as_f64(v)?]),
+        None => Err(LibError::type_mismatch("expected cash-flow array")),
     }
 }
 
@@ -2336,16 +2345,7 @@ pub fn nper(args: &[Variant]) -> LibResult<Variant> {
 
 pub fn npv(args: &[Variant]) -> LibResult<Variant> {
     let rate = as_f64(need(args, 0)?)?;
-    let flows: Vec<f64> = match opt(args, 1) {
-        Some(v) if v.as_safearray().is_some() => cashflows(v)?,
-        _ => {
-            let mut out = Vec::new();
-            for v in &args[1..] {
-                out.push(as_f64(v)?);
-            }
-            out
-        }
-    };
+    let flows = cashflows(need(args, 1)?)?;
     let mut acc = 0.0;
     for (k, cf) in flows.iter().enumerate() {
         acc += cf / (1.0 + rate).powi(k as i32 + 1);
@@ -3512,9 +3512,57 @@ mod tests {
         let x = as_f64(&rnd(&[], &mut a).unwrap()).unwrap();
         let y = as_f64(&rnd(&[], &mut b).unwrap()).unwrap();
         assert_eq!(x, y, "default seed is deterministic");
+        assert_eq!(a.rng_state, 0xB4_9E_C3);
+        assert_eq!(x, 0.7055475115776062);
         assert!((0.0..1.0).contains(&x), "result in [0,1): {x}");
+        let second = as_f64(&rnd(&[], &mut a).unwrap()).unwrap();
+        assert_eq!(a.rng_state, 0x88_8E_7A);
+        assert_eq!(second, 0.5334240198135376);
         // Rnd(0) repeats the most recent value without advancing.
         let again = as_f64(&rnd(&[Variant::from_i32(0)], &mut a).unwrap()).unwrap();
-        assert_eq!(x, again);
+        assert_eq!(second, again);
+    }
+
+    #[test]
+    fn rnd_negative_and_randomize_match_excel_seed_states() {
+        let mut ctx = LibContext::default();
+        let negative = as_f64(&rnd(&[Variant::from_i32(-1)], &mut ctx).unwrap()).unwrap();
+        assert_eq!(ctx.rng_state, 0x39_58_86);
+        assert_eq!(negative, 0.2240070104598999);
+        let next = as_f64(&rnd(&[], &mut ctx).unwrap()).unwrap();
+        assert_eq!(ctx.rng_state, 0x09_2D_31);
+        assert_eq!(next, 0.035845816135406494);
+
+        let mut repeatable = LibContext::default();
+        let _ = rnd(&[Variant::from_i32(-1)], &mut repeatable).unwrap();
+        randomize(&[Variant::from_i32(1)], &mut repeatable).unwrap();
+        assert_eq!(repeatable.rng_state, 0x3F_F0_86);
+        let first = as_f64(&rnd(&[], &mut repeatable).unwrap()).unwrap();
+        assert_eq!(repeatable.rng_state, 0x55_65_31);
+        assert_eq!(first, 0.3335753083229065);
+        let second = as_f64(&rnd(&[], &mut repeatable).unwrap()).unwrap();
+        assert_eq!(repeatable.rng_state, 0x11_73_30);
+        assert_eq!(second, 0.06816387176513672);
+    }
+
+    #[test]
+    fn financial_cashflow_functions_reject_scalar_values() {
+        assert_eq!(
+            npv(&[Variant::from_i32(0), Variant::from_i32(10)])
+                .unwrap_err()
+                .code,
+            13
+        );
+        assert_eq!(irr(&[Variant::from_i32(50)]).unwrap_err().code, 13);
+        assert_eq!(
+            mirr(&[
+                Variant::from_i32(70),
+                Variant::from_i32(10),
+                Variant::from_i32(12),
+            ])
+            .unwrap_err()
+            .code,
+            13
+        );
     }
 }

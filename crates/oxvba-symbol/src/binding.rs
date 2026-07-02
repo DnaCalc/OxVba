@@ -80,6 +80,8 @@ pub enum DispatchRoute {
         /// folded/default literal in the surface; callers still synthesize VBA's
         /// declared-type default for omitted typed optional parameters.
         param_optional_defaults: Vec<Option<CoreConst>>,
+        /// True when the exported member has a trailing `ParamArray` slot.
+        variadic: bool,
         /// `true` for a coclass member (dispatched on a receiver); `false` for a
         /// global-namespace / hidden-module function (no receiver).
         has_receiver: bool,

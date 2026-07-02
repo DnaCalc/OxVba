@@ -64,13 +64,10 @@ impl Provider for VbaLibraryProvider {
                         member: member.to_string(),
                         kind: ProjectMemberKind::Method,
                         param_types: Vec::new(),
-                        param_names: entry
-                            .param_names
-                            .iter()
-                            .map(|name| (*name).to_string())
-                            .collect(),
-                        param_optional: Vec::new(),
-                        param_optional_defaults: Vec::new(),
+                        param_names: intrinsic_param_names(&entry),
+                        param_optional: intrinsic_param_optional(&entry),
+                        param_optional_defaults: intrinsic_param_optional_defaults(&entry),
+                        variadic: entry.sig.param_array,
                         has_receiver: false,
                     },
                 ));
@@ -179,6 +176,7 @@ fn collection_member(name: &str) -> Option<Binding> {
             param_names: Vec::new(),
             param_optional: Vec::new(),
             param_optional_defaults: Vec::new(),
+            variadic: false,
             has_receiver: true,
         },
     ))
@@ -209,6 +207,36 @@ fn special_form(name: &str) -> Option<SpecialForm> {
         "erl" => SpecialForm::Erl,
         _ => return None,
     })
+}
+
+fn intrinsic_param_names(entry: &crate::catalog::IntrinsicEntry) -> Vec<String> {
+    if !entry.param_names.is_empty() {
+        return entry
+            .param_names
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect();
+    }
+    match entry.sig.max_args {
+        Some(max) => vec![String::new(); usize::from(max)],
+        None => Vec::new(),
+    }
+}
+
+fn intrinsic_param_optional(entry: &crate::catalog::IntrinsicEntry) -> Vec<bool> {
+    match entry.sig.max_args {
+        Some(max) => (0..max).map(|index| index >= entry.sig.min_args).collect(),
+        None => Vec::new(),
+    }
+}
+
+fn intrinsic_param_optional_defaults(
+    entry: &crate::catalog::IntrinsicEntry,
+) -> Vec<Option<CoreConst>> {
+    match entry.sig.max_args {
+        Some(max) => vec![None; usize::from(max)],
+        None => Vec::new(),
+    }
 }
 
 /// The predeclared-object lookup helper (also used by `build`).

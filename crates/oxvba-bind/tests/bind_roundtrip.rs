@@ -1208,6 +1208,26 @@ fn extra_argument_is_bind_error() {
 }
 
 #[test]
+fn migrated_vba_intrinsic_extra_argument_is_bind_error() {
+    let src = "Sub Main()\n    Dim r\n    r = NPV(0, 10, 20)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("WrongNumberOfArgumentsOrInvalidPropertyAssignment"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn migrated_vba_zero_arg_intrinsic_extra_argument_is_bind_error() {
+    let src = "Sub Main()\n    Dim r\n    r = Timer(1)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("WrongNumberOfArgumentsOrInvalidPropertyAssignment"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn missing_required_argument_is_bind_error() {
     let src = "Sub Main()\n    TakeTwo 1\nEnd Sub\n\nSub TakeTwo(ByVal a As Long, ByVal b As Long)\nEnd Sub\n";
     let err = bind_error(src);

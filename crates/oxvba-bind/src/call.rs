@@ -88,6 +88,7 @@ impl<'a> ProcLower<'a> {
                 param_names,
                 param_optional,
                 param_optional_defaults,
+                variadic,
                 has_receiver,
             } => {
                 if *has_receiver {
@@ -109,6 +110,7 @@ impl<'a> ProcLower<'a> {
                     param_names,
                     param_optional,
                     param_optional_defaults,
+                    *variadic,
                 )?;
                 self.inject_option_compare(member, &mut args);
                 Ok(value_bound(
@@ -1027,6 +1029,7 @@ impl<'a> ProcLower<'a> {
         param_names: &[String],
         param_optional: &[bool],
         param_optional_defaults: &[Option<CoreConst>],
+        variadic: bool,
     ) -> Result<Vec<CoreArg>, BindError> {
         let items = match arglist {
             Some(a) => a.arg_items(),
@@ -1045,11 +1048,13 @@ impl<'a> ProcLower<'a> {
                             "positional argument cannot follow named argument".into(),
                         ));
                     }
-                    let arg = self.bind_extern_one(expr, param_types.get(pos), passing)?;
                     if pos < n {
+                        let arg = self.bind_extern_one(expr, param_types.get(pos), passing)?;
                         slots[pos] = Some(arg)
+                    } else if variadic {
+                        extra.push(self.bind_extern_one(expr, None, passing)?)
                     } else {
-                        extra.push(arg)
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
                     pos += 1;
                 }
@@ -1061,8 +1066,10 @@ impl<'a> ProcLower<'a> {
                     }
                     if pos < n {
                         slots[pos] = Some(CoreArg::Omitted)
-                    } else {
+                    } else if variadic {
                         extra.push(CoreArg::Omitted)
+                    } else {
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
                     }
                     pos += 1;
                 }
@@ -1105,6 +1112,9 @@ impl<'a> ProcLower<'a> {
                 Some(arg) => arg,
             })
             .collect();
+        while matches!(args.last(), Some(CoreArg::Omitted)) {
+            args.pop();
+        }
         args.extend(extra);
         Ok(args)
     }

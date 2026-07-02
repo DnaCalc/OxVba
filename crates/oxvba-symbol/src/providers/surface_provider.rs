@@ -127,6 +127,7 @@ impl SurfaceProvider {
                 param_names: m.parameter_names.clone(),
                 param_optional: m.parameter_optional.clone(),
                 param_optional_defaults: m.parameter_optional_defaults.clone(),
+                variadic: m.parameter_variadic,
                 has_receiver: Self::is_coclass(ty),
             },
         }
