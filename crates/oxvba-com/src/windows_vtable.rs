@@ -1648,6 +1648,7 @@ mod tests {
     use oxvba_runtime::ComRecord;
     use oxvba_runtime::safe_array::{SafeArray, VT_I4_VALUE};
     use oxvba_runtime::{RuntimeByRefSlot, RuntimeValueType, VarType};
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     const VT_RECORD_TEST_VALUE: u16 = 36;
 
@@ -1908,6 +1909,7 @@ mod tests {
     struct RegisteredRecordTypelib {
         descriptor: TypeLibRecordInfo,
         path: std::path::PathBuf,
+        wire_name: String,
     }
 
     impl Drop for RegisteredRecordTypelib {
@@ -1949,6 +1951,34 @@ mod tests {
         }
     }
 
+    static RECORD_TYPELIB_FIXTURE_ID: AtomicU32 = AtomicU32::new(1);
+    type RecordTypelibFixtureIdentity = (u32, windows_sys::core::GUID, windows_sys::core::GUID);
+
+    fn next_record_typelib_fixture_identity() -> Result<RecordTypelibFixtureIdentity, String> {
+        let id = RECORD_TYPELIB_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+        let mut libid = windows_sys::core::GUID {
+            data1: 0,
+            data2: 0,
+            data3: 0,
+            data4: [0; 8],
+        };
+        let mut record_guid = windows_sys::core::GUID {
+            data1: 0,
+            data2: 0,
+            data3: 0,
+            data4: [0; 8],
+        };
+        // SAFETY: CoCreateGuid writes one GUID into each live local out-slot.
+        check_test_hr("CoCreateGuid(libid)", unsafe {
+            windows_sys::Win32::System::Com::CoCreateGuid(&mut libid)
+        })?;
+        // SAFETY: CoCreateGuid writes one GUID into the live local out-slot.
+        check_test_hr("CoCreateGuid(record)", unsafe {
+            windows_sys::Win32::System::Com::CoCreateGuid(&mut record_guid)
+        })?;
+        Ok((id, libid, record_guid))
+    }
+
     unsafe fn test_vtbl<T>(ptr: *mut c_void) -> &'static T {
         // SAFETY: callers pass a live COM interface pointer whose first field is its
         // vtable pointer; reading `*ptr` yields that vtable, and `T` is the matching
@@ -1979,21 +2009,14 @@ mod tests {
         };
         use windows_sys::Win32::System::Variant::VT_I4;
 
-        let libid = windows_sys::core::GUID {
-            data1: 0x67E5_2026,
-            data2: 0x0619,
-            data3: 0x1001,
-            data4: [0x90, 0x01, 0x10, 0x32, 0x54, 0x76, 0x98, 0x10],
-        };
-        let record_guid = windows_sys::core::GUID {
-            data1: 0x67E5_2026,
-            data2: 0x0619,
-            data3: 0x1002,
-            data4: [0x90, 0x01, 0x10, 0x32, 0x54, 0x76, 0x98, 0x11],
-        };
+        let (fixture_id, libid, record_guid) = next_record_typelib_fixture_identity()?;
+        let lib_name_text = format!("OxVbaRecordRetvalFixture{fixture_id}");
+        let record_name_text = format!("RecordRetvalFixture{fixture_id}");
+        let wire_name = format!("{lib_name_text}.{record_name_text}");
         let path = std::env::temp_dir().join(format!(
-            "oxvba-record-retval-{}-{}.tlb",
+            "oxvba-record-retval-{}-{}-{}.tlb",
             std::process::id(),
+            fixture_id,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|duration| duration.as_nanos())
@@ -2015,7 +2038,7 @@ mod tests {
             // CreateTypeLib2; its first field is the vtable laid out as
             // `TestCreateTypeLib2Vtbl`.
             let lib_vtbl = unsafe { test_vtbl::<TestCreateTypeLib2Vtbl>(typelib) };
-            let lib_name = wide("OxVbaRecordRetvalFixture");
+            let lib_name = wide(&lib_name_text);
             // SAFETY: ICreateTypeLib2::SetGuid on `typelib` with a pointer to the local
             // `libid` GUID, which outlives the call.
             check_test_hr("ICreateTypeLib2::SetGuid", unsafe {
@@ -2036,7 +2059,7 @@ mod tests {
                 (lib_vtbl.set_lcid)(typelib, 0)
             })?;
 
-            let record_name = wide("RecordRetvalFixture");
+            let record_name = wide(&record_name_text);
             let mut create_info: *mut c_void = std::ptr::null_mut();
             // SAFETY: ICreateTypeLib2::CreateTypeInfo on `typelib` reads the
             // NUL-terminated `record_name` buffer and writes the new ICreateTypeInfo
@@ -2163,6 +2186,7 @@ mod tests {
                 layout: None,
             },
             path,
+            wire_name,
         })
     }
 
@@ -2598,7 +2622,7 @@ mod tests {
             vec![],
             Some(TypeLibParamType::Record),
             Some(TypeLibWireType::Record {
-                name: "OxVbaRecordRetvalFixture.RecordRetvalFixture".to_string(),
+                name: registered_record.wire_name.clone(),
                 record_info: Some(registered_record.descriptor.clone()),
             }),
             TypeLibMemberInvokeKind::PropertyGet,
