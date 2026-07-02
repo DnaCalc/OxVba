@@ -2586,12 +2586,10 @@
   source_size)` bytes using overlap-safe copy semantics so `LSet a = a`, shorter
   source/tail preservation, and longer source/truncation follow the oracle.
 - This bead intentionally does not preserve the old unsupported/legacy behavior.
-  The only residual found during implementation is a separate pre-existing UDT
-  fixed-array projection gap: vm3 currently exposes fixed-array UDT fields as
-  zero-based even though real VBA preserves declared lower bounds such as
-  `B(1 To 4)`. That parity gap is tracked by delivery bead `bd-vt0r`; bd57 tests
-  isolate byte-overlay behavior with `B(0 To 3)` rather than blessing the lower
-  bound bug.
+  The separate UDT fixed-array projection residual found during implementation
+  is closed by delivery bead `bd-vt0r`: vm3 now preserves real VBA fixed-array
+  field bounds for explicit, negative, and multidimensional `Type` members while
+  keeping single-bound `Type` members zero-based as observed in Excel/VBA.
 - Added focused coverage:
   - `crates/oxvba-differential/tests/lset_rset_vm3.rs` covers UDT byte overlay,
     same-size reinterpretation, shorter/longer source size behavior, fixed-array
@@ -2621,3 +2619,62 @@
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
     completed in non-blocking mode with run `20260702T092738Z`: 383
     obligations, 63 failures/TODOs, 16 skipped.
+
+## 2026-07-02 - UDT Fixed-Array Field Bounds (`bd-vt0r`)
+
+- Extended the modal-safe Excel/VBA record-array oracle harness with UDT
+  fixed-array bound probes and captured fresh evidence in
+  `docs/evidence/conformance/vm3_record_array_field_oracle_20260702T_bdvt0r_bounds/`.
+  The harness used the established VBE-visible Debug -> Compile path, UI
+  Automation dialog capture scoped to the owned Excel PID, selected-line capture,
+  owned-dialog dismissal, and PID-scoped Excel cleanup.
+- Oracle findings:
+  - `Buses(1 To 2)` inside a `Type` preserves bounds and returns
+    `1:2:11:22`.
+  - `Option Base 1` does not affect a single-bound UDT fixed-array member:
+    `Buses(2)` returns `0:2:11:22`.
+  - Negative lower bounds are preserved: `Buses(-2 To 0)` returns `-2:0:7:9`.
+  - Multidimensional explicit bounds are preserved:
+    `Grid(1 To 2, 3 To 4)` returns `1:2:3:4:13:24`.
+  - Indexed scalar UDT fields compile-error with real VBA `Expected array`.
+- The declared type model now carries `FixedArrayBound { lower, len }` through
+  symbol scanning, bind types, bundle metadata, OxIR lowering, and native
+  `VbaRecord` field descriptors. The scanner preserves explicit lower bounds
+  but deliberately keeps single-bound fixed arrays inside `Type` blocks
+  zero-based because that is the real VBA compile/runtime behavior.
+- Runtime record-field projection now materializes SAFEARRAY descriptors with
+  the stored bounds and marks projected fixed arrays fixed-size. The fused vm3
+  `RecordArrayGet` / `RecordArraySet` path uses the same native `VbaRecord`
+  bound metadata for O(1) element access, so the fast path and materialized path
+  agree on lower bounds, ranks, and element storage.
+- Fresh-eyes review found and fixed one diagnostic-formatting robustness issue:
+  fixed-array type-name display now computes upper bounds in `i64` so very wide
+  metadata cannot overflow while formatting a compile/bind diagnostic.
+- Added focused coverage:
+  - `crates/oxvba-differential/tests/record_array_access_vm3.rs` covers explicit
+    nonzero lower bounds, `Option Base 1` single-bound zero base, negative lower
+    bounds, multidimensional bounds, scalar-field `Expected array`, and the
+    existing O(1) record-array performance guard.
+  - `crates/oxvba-runtime/src/vba_record.rs` verifies fixed-array field
+    projection/writeback keeps stored bounds while preserving inline storage.
+  - Symbol/bind/oxir tests cover the new fixed-array bound metadata shape.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -Command "& { .\scripts\run-vm3-record-array-field-oracle.ps1 -RunId 'vm3_record_array_field_oracle_20260702T_bdvt0r_bounds' -CaseId @('UDT-FIXED-ARRAY-FIELD','UDT-FIXED-ARRAY-EXPLICIT-LOWER','UDT-FIXED-ARRAY-OPTION-BASE','UDT-FIXED-ARRAY-NEGATIVE-LOWER','UDT-FIXED-ARRAY-MULTIDIM','UDT-SCALAR-FIELD-INDEX-GET','UDT-SCALAR-FIELD-INDEX-SET') }"`
+  - `cargo check -p oxvba-bundle -p oxvba-symbol -p oxvba-bind -p oxvba-runtime -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-runtime fixed_array_record_field --quiet`
+  - `cargo test -p oxvba-differential --test record_array_access_vm3 --quiet`
+  - `cargo test -p oxvba-differential --test lset_rset_vm3 --quiet`
+  - `cargo test -p oxvba-symbol --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip lset --quiet`
+  - `cargo test -p oxvba-runtime fixed_array --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-bind --quiet`
+  - `rustfmt --edition 2024 --check crates/oxvba-bind/src/ids.rs crates/oxvba-bind/src/lib.rs crates/oxvba-bind/src/stmt.rs crates/oxvba-bind/src/types.rs crates/oxvba-bundle/src/array_runtime.rs crates/oxvba-bundle/src/lib.rs crates/oxvba-bundle/src/vartype.rs crates/oxvba-differential/tests/record_array_access_vm3.rs crates/oxvba-oxir/src/elaborate/types.rs crates/oxvba-runtime/src/vba_record.rs crates/oxvba-symbol/src/scanner.rs crates/oxvba-symbol/src/signature.rs`
+  - `git diff --check`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `br dep cycles --json`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet`
+    refreshed non-blocking formal run `20260702T103922Z`: 383 obligations, 81
+    pass, 286 todo, 16 skipped.

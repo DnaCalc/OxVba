@@ -20,9 +20,9 @@ pub fn array_element_of(elem: &VarTypeRef) -> ArrayElementType {
     match elem {
         VarTypeRef::Builtin(b) => builtin_element(*b),
         VarTypeRef::FixedString(_) => ArrayElementType::String,
-        VarTypeRef::FixedArray { element, len } => ArrayElementType::FixedArray {
+        VarTypeRef::FixedArray { element, bounds } => ArrayElementType::FixedArray {
             element: Box::new(array_element_of(element)),
-            len: *len,
+            bounds: bounds.clone(),
         },
         VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Variant | VarTypeRef::Array(_) => {
             ArrayElementType::Variant
@@ -77,9 +77,27 @@ pub fn type_name(ty: &VarTypeRef) -> String {
         VarTypeRef::Object(name) | VarTypeRef::Udt(name) => name.clone(),
         VarTypeRef::Variant => "Variant".into(),
         VarTypeRef::Array(inner) => format!("{}()", type_name(inner)),
-        VarTypeRef::FixedArray { element, len } => format!("{}({len})", type_name(element)),
+        VarTypeRef::FixedArray { element, bounds } => {
+            format!(
+                "{}({})",
+                type_name(element),
+                fixed_array_bounds_name(bounds)
+            )
+        }
         VarTypeRef::FixedString(_) => "String".into(),
     }
+}
+
+fn fixed_array_bounds_name(bounds: &[oxvba_bundle::FixedArrayBound]) -> String {
+    bounds
+        .iter()
+        .map(|bound| {
+            let upper = i64::from(bound.lower)
+                + i64::try_from(bound.len.saturating_sub(1)).unwrap_or(i64::MAX);
+            format!("{} To {}", bound.lower, upper)
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ── Coercion insertion ──────────────────────────────────────────────────────

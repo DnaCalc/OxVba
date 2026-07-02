@@ -1,6 +1,7 @@
 param(
     [string]$RunId = ("vm3_record_array_field_oracle_{0:yyyyMMddTHHmmssZ}" -f (Get-Date).ToUniversalTime()),
-    [string]$OutputRoot = "docs/evidence/conformance"
+    [string]$OutputRoot = "docs/evidence/conformance",
+    [string[]]$CaseId = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -288,6 +289,83 @@ End Function
         )
     },
     [pscustomobject]@{
+        id = "UDT-FIXED-ARRAY-EXPLICIT-LOWER"
+        purpose = "Fixed-array UDT field preserves an explicit nonzero lower bound."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Private Type State
+    Buses(1 To 2) As Long
+End Type
+
+Public Function RunProbe() As Variant
+    Dim s As State
+    s.Buses(1) = 11
+    s.Buses(2) = 22
+    RunProbe = CStr(LBound(s.Buses)) & ":" & CStr(UBound(s.Buses)) & ":" & CStr(s.Buses(1)) & ":" & CStr(s.Buses(2))
+End Function
+"@
+        )
+    },
+    [pscustomobject]@{
+        id = "UDT-FIXED-ARRAY-OPTION-BASE"
+        purpose = "Fixed-array UDT field with a single bound is zero-based even under Option Base 1."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Option Base 1
+Private Type State
+    Buses(2) As Long
+End Type
+
+Public Function RunProbe() As Variant
+    Dim s As State
+    s.Buses(1) = 11
+    s.Buses(2) = 22
+    RunProbe = CStr(LBound(s.Buses)) & ":" & CStr(UBound(s.Buses)) & ":" & CStr(s.Buses(1)) & ":" & CStr(s.Buses(2))
+End Function
+"@
+        )
+    },
+    [pscustomobject]@{
+        id = "UDT-FIXED-ARRAY-NEGATIVE-LOWER"
+        purpose = "Fixed-array UDT field preserves an explicit negative lower bound."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Private Type State
+    Buses(-2 To 0) As Long
+End Type
+
+Public Function RunProbe() As Variant
+    Dim s As State
+    s.Buses(-2) = 7
+    s.Buses(0) = 9
+    RunProbe = CStr(LBound(s.Buses)) & ":" & CStr(UBound(s.Buses)) & ":" & CStr(s.Buses(-2)) & ":" & CStr(s.Buses(0))
+End Function
+"@
+        )
+    },
+    [pscustomobject]@{
+        id = "UDT-FIXED-ARRAY-MULTIDIM"
+        purpose = "Fixed-array UDT field preserves multidimensional bounds."
+        run = "Main.RunProbe"
+        modules = @(
+            New-ModuleSpec "Main" 1 @"
+Private Type State
+    Grid(1 To 2, 3 To 4) As Long
+End Type
+
+Public Function RunProbe() As Variant
+    Dim s As State
+    s.Grid(1, 3) = 13
+    s.Grid(2, 4) = 24
+    RunProbe = CStr(LBound(s.Grid, 1)) & ":" & CStr(UBound(s.Grid, 1)) & ":" & CStr(LBound(s.Grid, 2)) & ":" & CStr(UBound(s.Grid, 2)) & ":" & CStr(s.Grid(1, 3)) & ":" & CStr(s.Grid(2, 4))
+End Function
+"@
+        )
+    },
+    [pscustomobject]@{
         id = "UDT-SCALAR-FIELD-INDEX-GET"
         purpose = "Scalar UDT field used with index in value context."
         run = $null
@@ -322,6 +400,17 @@ End Sub
         )
     }
 )
+
+if ($CaseId.Count -gt 0) {
+    $wanted = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($id in $CaseId) {
+        $null = $wanted.Add($id)
+    }
+    $cases = @($cases | Where-Object { $wanted.Contains($_.id) })
+}
+if ($cases.Count -eq 0) {
+    throw "No oracle cases selected"
+}
 
 $results = @()
 $partialJsonPath = Join-Path $outDir "results.partial.json"

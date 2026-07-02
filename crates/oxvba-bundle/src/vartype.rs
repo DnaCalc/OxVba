@@ -26,6 +26,15 @@ pub enum BuiltinType {
     String,
 }
 
+/// One declared dimension of a fixed-size array. For inline UDT fixed-array
+/// fields, a single-bound dimension is zero-based in real VBA; explicit
+/// `lower To upper` bounds preserve their written lower bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct FixedArrayBound {
+    pub lower: i32,
+    pub len: usize,
+}
+
 /// A resolved type reference. `Object(name)` is the object-reference discriminator
 /// the binder uses to pick early vs late COM dispatch. A known project class name
 /// binds early; bare `Object` and foreign/COM object names bind late.
@@ -43,11 +52,11 @@ pub enum VarTypeRef {
     Variant,
     Array(Box<VarTypeRef>),
     /// A fixed-size array field inside a UDT, carrying its element type and total
-    /// element count. This is distinct from `Array` because UDT fixed arrays are
+    /// declared shape. This is distinct from `Array` because UDT fixed arrays are
     /// inline record payload, not a SAFEARRAY slot.
     FixedArray {
         element: Box<VarTypeRef>,
-        len: usize,
+        bounds: Vec<FixedArrayBound>,
     },
     /// A fixed-length string `String * N` (length in characters). Behaves like
     /// `String` in the type lattice, but assignment pads/truncates to `N` and file

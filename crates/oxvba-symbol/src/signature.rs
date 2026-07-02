@@ -6,7 +6,7 @@
 // `oxvba-bundle` (the lowest crate the symbol model, the binder, and the typed IR
 // all share), and re-exported here so the symbol/binder code keeps its established
 // `signature::VarTypeRef` paths. See `oxvba_bundle::vartype`.
-pub use oxvba_bundle::{BuiltinType, VarTypeRef};
+pub use oxvba_bundle::{BuiltinType, FixedArrayBound, VarTypeRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PassingMode {

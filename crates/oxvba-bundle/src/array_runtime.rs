@@ -175,10 +175,23 @@ pub fn vba_record_field_kind(
         ArrayElementType::Record(fields) => {
             VbaRecordFieldKind::Record(vba_record_layout_for_fields(fields)?)
         }
-        ArrayElementType::FixedArray { element, len } => VbaRecordFieldKind::FixedArray {
-            element: Box::new(vba_record_field_kind(element)?),
-            len: *len,
-        },
+        ArrayElementType::FixedArray { element, bounds } => {
+            let bounds = bounds
+                .iter()
+                .map(|bound| {
+                    Ok(SafeArrayBound {
+                        count: u32::try_from(bound.len).map_err(|_| {
+                            "fixed-array record field length exceeds SAFEARRAY capacity".to_string()
+                        })?,
+                        lower: bound.lower,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            VbaRecordFieldKind::FixedArray {
+                element: Box::new(vba_record_field_kind(element)?),
+                bounds,
+            }
+        }
     };
     Ok(kind)
 }

@@ -1324,10 +1324,6 @@ fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {
 /// `ReDim`/`Erase`/frame layout — without it a `Dim x() As Byte` would be typed as a
 /// scalar `Byte` and a whole-array assignment would wrongly coerce the array to that
 /// scalar.
-fn declared_var_type(declarator: SyntaxNode<'_>) -> VarTypeRef {
-    declared_var_type_with_default(declarator, &DefaultTypeTable::default(), false)
-}
-
 fn declared_var_type_with_default(
     declarator: SyntaxNode<'_>,
     default_types: &DefaultTypeTable,
@@ -1346,10 +1342,10 @@ fn declared_var_type_with_default(
         .unwrap_or(VarTypeRef::Variant);
     let element = fixed_string_refine(base, declarator);
     if let Some(bounds) = declarator.array_bounds() {
-        if let Some(len) = fixed_array_len_from_bounds(bounds) {
+        if let Some(bounds) = fixed_array_bounds_from_bounds(bounds) {
             return VarTypeRef::FixedArray {
                 element: Box::new(element),
-                len,
+                bounds,
             };
         }
         return VarTypeRef::Array(Box::new(element));
@@ -1488,11 +1484,13 @@ fn collect_udt_fields_in(
 }
 
 fn declared_udt_field_type(field: SyntaxNode<'_>) -> VarTypeRef {
-    declared_var_type(field)
+    declared_var_type_with_default(field, &DefaultTypeTable::default(), false)
 }
 
-fn fixed_array_len_from_bounds(bounds: SyntaxNode<'_>) -> Option<usize> {
-    let mut len = 1usize;
+fn fixed_array_bounds_from_bounds(
+    bounds: SyntaxNode<'_>,
+) -> Option<Vec<crate::signature::FixedArrayBound>> {
+    let mut out = Vec::new();
     let mut saw_bound = false;
     for bound in bounds.children_of(SyntaxKind::Bound) {
         saw_bound = true;
@@ -1506,9 +1504,12 @@ fn fixed_array_len_from_bounds(bounds: SyntaxNode<'_>) -> Option<usize> {
         if dim_len <= 0 {
             return None;
         }
-        len = len.checked_mul(dim_len as usize)?;
+        out.push(crate::signature::FixedArrayBound {
+            lower,
+            len: dim_len as usize,
+        });
     }
-    saw_bound.then_some(len)
+    saw_bound.then_some(out)
 }
 
 fn literal_i32(expr: SyntaxNode<'_>) -> Option<i32> {

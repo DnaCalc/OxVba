@@ -431,9 +431,9 @@ fn normalize_declared_type(env: &ResolutionEnvironment, ty: VarTypeRef) -> VarTy
         VarTypeRef::Array(element) => {
             VarTypeRef::Array(Box::new(normalize_declared_type(env, *element)))
         }
-        VarTypeRef::FixedArray { element, len } => VarTypeRef::FixedArray {
+        VarTypeRef::FixedArray { element, bounds } => VarTypeRef::FixedArray {
             element: Box::new(normalize_declared_type(env, *element)),
-            len,
+            bounds,
         },
         other => other,
     }

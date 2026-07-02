@@ -644,9 +644,9 @@ impl Lower<'_> {
             VarTypeRef::Object(name) if self.env.is_enum_type(&name) => {
                 VarTypeRef::Builtin(oxvba_symbol::signature::BuiltinType::Long)
             }
-            VarTypeRef::FixedArray { element, len } => VarTypeRef::FixedArray {
+            VarTypeRef::FixedArray { element, bounds } => VarTypeRef::FixedArray {
                 element: Box::new(self.resolve_udt_type(*element)),
-                len,
+                bounds,
             },
             VarTypeRef::Array(element) => {
                 VarTypeRef::Array(Box::new(self.resolve_udt_type(*element)))
@@ -689,10 +689,12 @@ impl Lower<'_> {
             VarTypeRef::FixedString(len) => {
                 oxvba_bundle::ArrayElementType::FixedString(len as usize)
             }
-            VarTypeRef::FixedArray { element, len } => oxvba_bundle::ArrayElementType::FixedArray {
-                element: Box::new(self.array_field_layout(&element)),
-                len,
-            },
+            VarTypeRef::FixedArray { element, bounds } => {
+                oxvba_bundle::ArrayElementType::FixedArray {
+                    element: Box::new(self.array_field_layout(&element)),
+                    bounds,
+                }
+            }
             VarTypeRef::Array(_) => oxvba_bundle::ArrayElementType::Variant,
             other => crate::types::array_element_of(&other),
         }

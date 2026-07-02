@@ -119,10 +119,22 @@ mod tests {
     #[test]
     fn scalars_and_strings_map_directly() {
         let r = resolver();
-        assert_eq!(lower_var_type(&VarTypeRef::Builtin(BuiltinType::Long), &r), OxTy::Long);
-        assert_eq!(lower_var_type(&VarTypeRef::Builtin(BuiltinType::Boolean), &r), OxTy::Bool);
-        assert_eq!(lower_var_type(&VarTypeRef::Builtin(BuiltinType::String), &r), OxTy::Str);
-        assert_eq!(lower_var_type(&VarTypeRef::FixedString(16), &r), OxTy::FixedStr(16));
+        assert_eq!(
+            lower_var_type(&VarTypeRef::Builtin(BuiltinType::Long), &r),
+            OxTy::Long
+        );
+        assert_eq!(
+            lower_var_type(&VarTypeRef::Builtin(BuiltinType::Boolean), &r),
+            OxTy::Bool
+        );
+        assert_eq!(
+            lower_var_type(&VarTypeRef::Builtin(BuiltinType::String), &r),
+            OxTy::Str
+        );
+        assert_eq!(
+            lower_var_type(&VarTypeRef::FixedString(16), &r),
+            OxTy::FixedStr(16)
+        );
         assert_eq!(lower_var_type(&VarTypeRef::Variant, &r), OxTy::Variant);
     }
 
@@ -161,7 +173,10 @@ mod tests {
             OxTy::Record(RecordLayoutId(3))
         );
         // An Enum lowers to Long whether tagged Object or already a Builtin.
-        assert_eq!(lower_var_type(&VarTypeRef::Object("color".into()), &r), OxTy::Long);
+        assert_eq!(
+            lower_var_type(&VarTypeRef::Object("color".into()), &r),
+            OxTy::Long
+        );
     }
 
     #[test]
@@ -190,7 +205,7 @@ mod tests {
         let r = resolver();
         let ty = VarTypeRef::FixedArray {
             element: Box::new(VarTypeRef::Builtin(BuiltinType::Long)),
-            len: 4,
+            bounds: vec![oxvba_bundle::FixedArrayBound { lower: 0, len: 4 }],
         };
         assert_eq!(lower_var_type(&ty, &r), OxTy::Variant);
     }

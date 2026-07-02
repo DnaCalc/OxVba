@@ -28,7 +28,7 @@ pub use array_runtime::{
 };
 pub use isa::{CallArg, DeclarePtrWriteback, NativeCallee, Op, ProcArg};
 pub use native::{LibraryModule, NativeBody, NativeImplId, NativeMethodId};
-pub use vartype::{BuiltinType, VarTypeRef};
+pub use vartype::{BuiltinType, FixedArrayBound, VarTypeRef};
 pub use vba_library::vba_library_bundle;
 
 pub use coreir::{
@@ -107,7 +107,7 @@ pub enum ArrayElementType {
     /// A fixed-size inline array field inside a UDT record.
     FixedArray {
         element: Box<ArrayElementType>,
-        len: usize,
+        bounds: Vec<FixedArrayBound>,
     },
 }
 

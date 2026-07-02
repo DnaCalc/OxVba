@@ -26,7 +26,7 @@ pub enum VbaRecordFieldKind {
     Record(Arc<VbaRecordLayout>),
     FixedArray {
         element: Box<VbaRecordFieldKind>,
-        len: usize,
+        bounds: Vec<SafeArrayBound>,
     },
 }
 
@@ -159,9 +159,9 @@ impl VbaRecordFieldKind {
             }
             Self::FixedString { len } => *len,
             Self::Record(layout) => layout.file_len()?,
-            Self::FixedArray { element, len } => element
+            Self::FixedArray { element, bounds } => element
                 .file_len()?
-                .checked_mul(*len)
+                .checked_mul(fixed_array_total_len(bounds)?)
                 .ok_or_else(|| "VBA fixed-array record file length overflow".to_string())?,
             _ => self.storage_shape()?.0,
         };
@@ -195,17 +195,13 @@ impl VbaRecordFieldKind {
             ),
             Self::Boolean => (core::mem::size_of::<i16>(), core::mem::align_of::<i16>()),
             Self::Record(layout) => (layout.size(), layout.align()),
-            Self::FixedArray { element, len } => {
-                if *len == 0 {
-                    return Err(
-                        "VBA fixed-array record field must have at least one element".into(),
-                    );
-                }
+            Self::FixedArray { element, bounds } => {
+                let len = fixed_array_total_len(bounds)?;
                 let (element_size, element_align) = element.storage_shape()?;
                 let stride = align_to(element_size, element_align);
                 (
                     stride
-                        .checked_mul(*len)
+                        .checked_mul(len)
                         .ok_or_else(|| "VBA fixed-array record field size overflow".to_string())?,
                     element_align,
                 )
@@ -382,15 +378,9 @@ impl VbaRecord {
                 let value = unsafe { &*self.field_ptr(field).cast::<Variant>() };
                 Ok(value.safearray_bounds_len())
             }
-            VbaRecordFieldKind::FixedArray { len, .. } => Ok(Some((
-                vec![SafeArrayBound {
-                    lower: 0,
-                    count: u32::try_from(*len).map_err(
-                        |_| "fixed-array record field length exceeds SAFEARRAY capacity",
-                    )?,
-                }],
-                *len,
-            ))),
+            VbaRecordFieldKind::FixedArray { bounds, .. } => {
+                Ok(Some((bounds.clone(), fixed_array_total_len(bounds)?)))
+            }
             _ => Ok(None),
         }
     }
@@ -411,8 +401,9 @@ impl VbaRecord {
                 let value = unsafe { &*self.field_ptr(field).cast::<Variant>() };
                 Ok(value.safearray_element(flat).transpose()?)
             }
-            VbaRecordFieldKind::FixedArray { element, len } => {
-                if flat >= *len {
+            VbaRecordFieldKind::FixedArray { element, bounds } => {
+                let len = fixed_array_total_len(bounds)?;
+                if flat >= len {
                     return Err("fixed-array record field index out of range".to_string());
                 }
                 let (element_size, element_align) = element.storage_shape()?;
@@ -450,8 +441,9 @@ impl VbaRecord {
                 field_value.set_safearray_element(flat, value)?;
                 Ok(Some(()))
             }
-            VbaRecordFieldKind::FixedArray { element, len } => {
-                if flat >= *len {
+            VbaRecordFieldKind::FixedArray { element, bounds } => {
+                let len = fixed_array_total_len(bounds)?;
+                if flat >= len {
                     return Err("fixed-array record field index out of range".to_string());
                 }
                 let (element_size, element_align) = element.storage_shape()?;
@@ -613,10 +605,11 @@ unsafe fn init_field_at(ptr: *mut u8, kind: &VbaRecordFieldKind) -> Result<(), S
                 unsafe { init_field_at(ptr.add(field.offset), &field.kind)? };
             }
         }
-        VbaRecordFieldKind::FixedArray { element, len } => {
+        VbaRecordFieldKind::FixedArray { element, bounds } => {
+            let len = fixed_array_total_len(bounds)?;
             let (element_size, element_align) = element.storage_shape()?;
             let stride = align_to(element_size, element_align);
-            for i in 0..*len {
+            for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the per-element storage size, so
                 // `i * stride` indexes the `i`-th element slot inside the array field.
                 unsafe { init_field_at(ptr.add(i * stride), element)? };
@@ -660,10 +653,11 @@ unsafe fn clone_field_at(
                 };
             }
         }
-        VbaRecordFieldKind::FixedArray { element, len } => {
+        VbaRecordFieldKind::FixedArray { element, bounds } => {
+            let len = fixed_array_total_len(bounds)?;
             let (element_size, element_align) = element.storage_shape()?;
             let stride = align_to(element_size, element_align);
-            for i in 0..*len {
+            for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the element storage size, so
                 // `i * stride` selects matching element slots in `src` and `dst`.
                 unsafe { clone_field_at(src.add(i * stride), dst.add(i * stride), element)? };
@@ -702,12 +696,15 @@ unsafe fn drop_field_at(ptr: *mut u8, kind: &VbaRecordFieldKind) {
                 unsafe { drop_field_at(ptr.add(field.offset), &field.kind) };
             }
         }
-        VbaRecordFieldKind::FixedArray { element, len } => {
+        VbaRecordFieldKind::FixedArray { element, bounds } => {
             let Ok((element_size, element_align)) = element.storage_shape() else {
                 return;
             };
+            let Ok(len) = fixed_array_total_len(bounds) else {
+                return;
+            };
             let stride = align_to(element_size, element_align);
-            for i in 0..*len {
+            for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the element storage size, so each
                 // `i * stride` selects a distinct live element slot dropped once.
                 unsafe { drop_field_at(ptr.add(i * stride), element) };
@@ -786,11 +783,12 @@ unsafe fn read_field_variant_at(
             // `layout`; `clone_record_from_ptr` deep-copies it without consuming it.
             Variant::from_vba_record(unsafe { clone_record_from_ptr(ptr, layout.clone())? })
         }
-        VbaRecordFieldKind::FixedArray { element, len } => {
+        VbaRecordFieldKind::FixedArray { element, bounds } => {
+            let len = fixed_array_total_len(bounds)?;
             let (element_size, element_align) = element.storage_shape()?;
             let stride = align_to(element_size, element_align);
-            let mut values = Vec::with_capacity(*len);
-            for i in 0..*len {
+            let mut values = Vec::with_capacity(len);
+            for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the element storage size, so
                 // `i * stride` selects the live `i`-th element slot of this array.
                 values.push(unsafe { read_field_variant_at(ptr.add(i * stride), element)? });
@@ -800,16 +798,7 @@ unsafe fn read_field_variant_at(
             // its elements (and is then written back into the inline storage)
             // rather than deallocating — which the inline field cannot represent.
             Variant::from_safearray(
-                SafeArray::from_variants_nd(
-                    vec![SafeArrayBound {
-                        lower: 0,
-                        count: u32::try_from(*len).map_err(
-                            |_| "fixed-array record field length exceeds SAFEARRAY capacity",
-                        )?,
-                    }],
-                    values,
-                )
-                .with_fixed_size(true),
+                SafeArray::from_variants_nd(bounds.clone(), values).with_fixed_size(true),
             )
         }
     };
@@ -966,7 +955,8 @@ unsafe fn write_field_variant_at(
                 clone_record_into_ptr(source.data_ptr(), ptr, layout)?;
             }
         }
-        VbaRecordFieldKind::FixedArray { element, len } => {
+        VbaRecordFieldKind::FixedArray { element, bounds } => {
+            let len = fixed_array_total_len(bounds)?;
             let Some(array) = value.as_safearray() else {
                 return Err("fixed-array record field assignment requires an array value".into());
             };
@@ -974,7 +964,7 @@ unsafe fn write_field_variant_at(
                 "fixed-array record field assignment requires materialized array elements"
                     .to_string()
             })?;
-            if values.len() != *len {
+            if values.len() != len {
                 return Err(format!(
                     "fixed-array record field assignment requires {len} elements, got {}",
                     values.len()
@@ -1040,6 +1030,20 @@ fn clone_bstr_raw(raw: *mut u16) -> Result<*mut u16, String> {
     cloned
 }
 
+fn fixed_array_total_len(bounds: &[SafeArrayBound]) -> Result<usize, String> {
+    if bounds.is_empty() {
+        return Err("VBA fixed-array record field must have at least one dimension".into());
+    }
+    bounds.iter().try_fold(1usize, |total, bound| {
+        if bound.count == 0 {
+            return Err("VBA fixed-array record field must have at least one element".into());
+        }
+        total
+            .checked_mul(bound.count as usize)
+            .ok_or_else(|| "VBA fixed-array record field size overflow".to_string())
+    })
+}
+
 fn align_to(value: usize, align: usize) -> usize {
     debug_assert!(align.is_power_of_two());
     (value + align - 1) & !(align - 1)
@@ -1050,8 +1054,16 @@ mod tests {
     use super::{
         VbaRecord, VbaRecordFieldKind as Kind, VbaRecordFieldSpec as Field, VbaRecordLayout,
     };
+    use crate::safe_array::SafeArrayBound;
     use crate::{Variant, bstr::BStr};
     use std::sync::Arc;
+
+    fn bounds(lower: i32, len: usize) -> Vec<SafeArrayBound> {
+        vec![SafeArrayBound {
+            lower,
+            count: u32::try_from(len).expect("test bound fits u32"),
+        }]
+    }
 
     #[test]
     fn guid_shaped_udt_layout_matches_native_offsets() {
@@ -1063,7 +1075,7 @@ mod tests {
                 "Data4",
                 Kind::FixedArray {
                     element: Box::new(Kind::Byte),
-                    len: 8,
+                    bounds: bounds(0, 8),
                 },
             ),
         ])
@@ -1112,7 +1124,7 @@ mod tests {
                 "Bytes",
                 Kind::FixedArray {
                     element: Box::new(Kind::Byte),
-                    len: 4,
+                    bounds: bounds(0, 4),
                 },
             ),
             Field::named("Total", Kind::Currency),
@@ -1242,7 +1254,7 @@ mod tests {
                     "Bytes",
                     Kind::FixedArray {
                         element: Box::new(Kind::Byte),
-                        len: 4,
+                        bounds: bounds(0, 4),
                     },
                 ),
             ])
@@ -1276,7 +1288,7 @@ mod tests {
                 "Bytes",
                 Kind::FixedArray {
                     element: Box::new(Kind::Byte),
-                    len: 4,
+                    bounds: bounds(1, 4),
                 },
             )])
             .expect("layout"),
@@ -1288,6 +1300,7 @@ mod tests {
             .expect("fixed array projection")
             .as_safearray()
             .expect("array projection");
+        assert_eq!(array.bounds(), Some(bounds(1, 4)));
         array
             .set_variant_element(1, &Variant::from_u8(0xAB))
             .expect("set array element");

@@ -1453,7 +1453,7 @@ impl<'a> ProcLower<'a> {
             let (array, ty) = self.bind_place(target)?;
             // The element type drives a fixed-array `Erase`'s typed re-default
             // (e.g. a UDT fixed-array field `arr(1 To 3) As Long`, whose declared
-            // type is `FixedArray { element, len }`, not `Array`). `array_element`
+            // type is `FixedArray { element, bounds }`, not `Array`). `array_element`
             // unwraps both array spellings; a non-array target stays Variant.
             let element_type =
                 types::array_element(&ty).unwrap_or(oxvba_bundle::ArrayElementType::Variant);
