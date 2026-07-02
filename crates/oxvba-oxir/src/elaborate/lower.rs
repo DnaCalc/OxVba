@@ -59,7 +59,9 @@ use crate::com::{ComInterface, ComMethodRef};
 use crate::elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
 use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxAsNew, OxBlock, OxInst, OxTerminator};
-use crate::program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
+use crate::program::{
+    OxClass, OxClassAsNewField, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram,
+};
 use crate::ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy};
 use crate::value::{
     ArithOp, CmpOp, DeclarePtrWriteback, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
@@ -165,6 +167,14 @@ fn lower_class(c: &CoreClass) -> OxClass {
                 proc: FuncId(m.proc.0),
                 is_default_member: m.is_default_member,
                 is_enumerator_member: m.is_enumerator_member,
+            })
+            .collect(),
+        as_new_fields: c
+            .as_new_fields
+            .iter()
+            .map(|field| OxClassAsNewField {
+                field: field.field,
+                binding: lower_as_new(&field.binding),
             })
             .collect(),
         implements: c.implements.clone(),
@@ -2917,6 +2927,7 @@ mod tests {
                     is_default_member: false,
                     is_enumerator_member: false,
                 }],
+                as_new_fields: Vec::new(),
                 implements: Vec::new(),
             }],
             unit_name: "T".into(),

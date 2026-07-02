@@ -349,6 +349,7 @@ fn app_with_thing_program() -> CoreProgram {
                 is_default_member: false,
                 is_enumerator_member: false,
             }],
+            as_new_fields: Vec::new(),
             implements: Vec::new(),
         }],
         imports: vec![BundleImport {
@@ -510,6 +511,7 @@ fn app_echo_program() -> CoreProgram {
                 is_default_member: false,
                 is_enumerator_member: false,
             }],
+            as_new_fields: Vec::new(),
             implements: Vec::new(),
         }],
         imports: vec![BundleImport {
@@ -578,6 +580,7 @@ fn lib_widget_program() -> CoreProgram {
                 is_default_member: false,
                 is_enumerator_member: false,
             }],
+            as_new_fields: Vec::new(),
             implements: Vec::new(),
         }],
         unit_name: "Lib".into(),

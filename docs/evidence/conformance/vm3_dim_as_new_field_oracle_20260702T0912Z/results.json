@@ -1,0 +1,140 @@
+﻿[
+    {
+        "id":  "FIELD-DIM-ONLY",
+        "purpose":  "A class-field As New declaration does not instantiate during host construction or unrelated method execution.",
+        "ownedExcelPid":  9240,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "0|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter",
+                        "Host"
+                    ]
+    },
+    {
+        "id":  "FIELD-FIRST-MEMBER",
+        "purpose":  "The first member access on a class-field As New slot lazily creates the child object.",
+        "ownedExcelPid":  8956,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "11|I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter",
+                        "Host"
+                    ]
+    },
+    {
+        "id":  "FIELD-IS-NOTHING",
+        "purpose":  "Is Nothing against a class-field As New slot.",
+        "ownedExcelPid":  32536,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "False|I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter",
+                        "Host"
+                    ]
+    },
+    {
+        "id":  "FIELD-SET-NOTHING-BEFORE-ACCESS",
+        "purpose":  "Assigning Nothing to a class-field As New slot before any read/member access does not create the child object.",
+        "ownedExcelPid":  13684,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "0|",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter",
+                        "Host"
+                    ]
+    },
+    {
+        "id":  "FIELD-SET-NOTHING-RESURRECT",
+        "purpose":  "Set Nothing clears a class-field As New slot; the next access resurrects a fresh child object.",
+        "ownedExcelPid":  33028,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "10|I;T11;I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter",
+                        "Host"
+                    ]
+    },
+    {
+        "id":  "FIELD-INSTANCE-ISOLATION",
+        "purpose":  "Two host instances keep independent class-field As New child slots.",
+        "ownedExcelPid":  9008,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.OracleEntry",
+        "runStatus":  "ok",
+        "runValue":  "11/11/12|I;I;",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main",
+                        "Counter",
+                        "Host"
+                    ]
+    }
+]

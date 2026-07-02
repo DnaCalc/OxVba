@@ -20,11 +20,15 @@ pub use error::BindError;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use oxvba_bundle::coreir::{CorePlace, CoreProc, CoreProgram, CoreValue, LabelId, LocalId, ProcId};
+use oxvba_bundle::coreir::{
+    CoreArg, CoreAsNew, CoreClass, CoreClassAsNewField, CoreConst, CorePlace, CoreProc,
+    CoreProgram, CoreValue, LabelId, LocalId, ProcId,
+};
 use oxvba_bundle::{
     BundleExport, BundleImport, ComClassExport, EventRoute, ExportTarget, ExportToken,
     ExternalCallDescriptor, ProcedureKind,
 };
+use oxvba_bundle::{coreir::CoreCallee, native::NativeImplId};
 use oxvba_runtime::DynLinkSymbol;
 use oxvba_symbol::binding::{Binding, DispatchRoute};
 use oxvba_symbol::manifest::{ModuleKind, SymbolProjectManifest};
@@ -114,6 +118,7 @@ fn bind_one(
     let ids = IdAllocator::build(env, manifest)?;
     let lower = Lower {
         env,
+        manifest,
         ids: &ids,
         imports: RefCell::new(ImportCollector::default()),
     };
@@ -172,6 +177,9 @@ fn bind_one(
         None
     };
 
+    let mut classes = ids.classes.clone();
+    lower.attach_class_as_new_fields(&mut classes)?;
+
     // The active project's published surface → this bundle's exports (the contract
     // a referrer's imports resolve against). Imports were accumulated while lowering.
     let exports = build_exports(env, &ids);
@@ -180,7 +188,7 @@ fn bind_one(
     Ok(CoreProgram {
         globals: ids.globals.clone(),
         procs,
-        classes: ids.classes.clone(),
+        classes,
         event_routes: build_event_routes(env, &ids)?,
         external_calls: build_external_calls(env),
         com_class_exports: build_com_class_exports(manifest),
@@ -497,6 +505,7 @@ fn build_com_class_exports(manifest: &SymbolProjectManifest) -> Vec<ComClassExpo
 /// collector is interior-mutable so proc bodies can register cross-bundle imports.
 struct Lower<'a> {
     env: &'a ResolutionEnvironment,
+    manifest: &'a SymbolProjectManifest,
     ids: &'a IdAllocator,
     imports: RefCell<ImportCollector>,
 }
@@ -505,6 +514,125 @@ impl Lower<'_> {
     /// Register a cross-bundle import and return its index in `CoreProgram.imports`.
     fn intern_import(&self, import: BundleImport) -> usize {
         self.imports.borrow_mut().intern(import)
+    }
+
+    /// Resolve `New <name>` to its instantiation value + inferred object type — the
+    /// resolution ladder shared by the `New` expression and every `As New` slot.
+    fn new_value_for_type(
+        &self,
+        name: &str,
+    ) -> Result<(CoreValue, oxvba_symbol::signature::VarTypeRef), BindError> {
+        let folded = oxvba_symbol::model::fold_identifier(name);
+        if let Some(&class_id) = self.ids.class_of.get(&folded) {
+            return Ok((
+                CoreValue::New(class_id),
+                VarTypeRef::Object(name.to_string()),
+            ));
+        }
+        // A creatable coclass published by a referenced project.
+        if let Some((unit, class)) = self.env.resolve_extern_coclass(name) {
+            let import = self.intern_import(BundleImport {
+                unit,
+                token: ExportToken::Class {
+                    name: class.clone(),
+                },
+            });
+            return Ok((CoreValue::NewExtern { import }, VarTypeRef::Object(class)));
+        }
+        // A creatable COM coclass from a referenced typelib.
+        if let Some(prog_id) = self.env.resolve_coclass(name) {
+            let args = vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))];
+            return Ok((
+                CoreValue::Call {
+                    callee: CoreCallee::Native(NativeImplId::CreateObject),
+                    args,
+                },
+                VarTypeRef::Object(name.to_string()),
+            ));
+        }
+        Err(BindError::Unsupported(format!(
+            "New {name} (only project classes are creatable)"
+        )))
+    }
+
+    fn as_new_binding_for_type(&self, type_name: &str) -> Result<CoreAsNew, BindError> {
+        let (value, _ty) = self.new_value_for_type(type_name)?;
+        match value {
+            CoreValue::New(class) => Ok(CoreAsNew::ProjectClass { class }),
+            CoreValue::NewExtern { import } => Ok(CoreAsNew::ExternClass { import }),
+            CoreValue::Call { callee, args } => match (callee, args.as_slice()) {
+                (
+                    CoreCallee::Native(NativeImplId::CreateObject),
+                    [CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))],
+                ) => Ok(CoreAsNew::ComClass {
+                    prog_id: prog_id.clone(),
+                }),
+                _ => Err(BindError::Unsupported(format!(
+                    "As New {type_name} (unsupported activation path)"
+                ))),
+            },
+            _ => Err(BindError::Unsupported(format!(
+                "As New {type_name} (unsupported activation path)"
+            ))),
+        }
+    }
+
+    fn attach_class_as_new_fields(&self, classes: &mut [CoreClass]) -> Result<(), BindError> {
+        for module in self.env.modules() {
+            let Some(display) = ids::class_name_for(self.manifest, module.module_name) else {
+                continue;
+            };
+            let Some(&class_id) = self.ids.class_of.get(&fold_identifier(&display)) else {
+                continue;
+            };
+            let class = classes
+                .get_mut(class_id.0)
+                .ok_or_else(|| BindError::Malformed(format!("unknown class `{display}`")))?;
+            let mut as_new_fields = Vec::new();
+            for node in module.syntax.child_nodes() {
+                if node.kind() != SyntaxKind::DimStmt {
+                    continue;
+                }
+                for declarator in node.declarators() {
+                    if !declarator.is_new() {
+                        continue;
+                    }
+                    let Some(name) = declarator.declarator_name() else {
+                        continue;
+                    };
+                    let logical = name.text.trim_start_matches('[').trim_end_matches(']');
+                    let sym = self
+                        .env
+                        .symbols
+                        .find_in_scope(module.module_scope, SymbolNamespace::Member, logical)
+                        .map_err(|e| BindError::Malformed(format!("{e:?}")))?
+                        .ok_or_else(|| {
+                            BindError::Malformed(format!("class field `{logical}` has no symbol"))
+                        })?;
+                    let field = *self.ids.field_token_of.get(&sym).ok_or_else(|| {
+                        BindError::Malformed(format!("class field `{logical}` has no field token"))
+                    })?;
+                    let Some(symbol) = self.env.symbols.symbol(sym) else {
+                        return Err(BindError::Malformed(format!(
+                            "class field `{logical}` symbol is missing"
+                        )));
+                    };
+                    if symbol.kind != SymbolKind::Field {
+                        continue;
+                    }
+                    let SymbolImpl::DeclaredType(VarTypeRef::Object(type_name)) = &symbol.imp
+                    else {
+                        continue;
+                    };
+                    as_new_fields.push(CoreClassAsNewField {
+                        field,
+                        binding: self.as_new_binding_for_type(type_name)?,
+                    });
+                }
+            }
+            class.as_new_fields = as_new_fields;
+        }
+        Ok(())
     }
 
     /// A declared type name may be a class, a `Type` (UDT), or an `Enum`; the

@@ -17,7 +17,7 @@ use oxvba_com::TypeLibMemberMetadata;
 
 use crate::com::{ComInterface, ComMethodRef};
 use crate::ids::{BlockId, FuncId, LocalId};
-use crate::inst::OxBlock;
+use crate::inst::{OxAsNew, OxBlock};
 use crate::ty::{IfaceId, OxTy};
 
 /// Parameter-specific facts for a [`OxLocal`] that is a procedure parameter.
@@ -78,6 +78,14 @@ pub struct OxClassMethod {
     pub is_enumerator_member: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OxClassAsNewField {
+    /// Stable per-class instance-field token.
+    pub field: i32,
+    /// Activation target for this field's `As New` declaration.
+    pub binding: OxAsNew,
+}
+
 /// A project class: lifecycle hooks, late-bound member table, implemented interfaces.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OxClass {
@@ -85,6 +93,8 @@ pub struct OxClass {
     pub initialize: Option<FuncId>,
     pub terminate: Option<FuncId>,
     pub methods: Vec<OxClassMethod>,
+    #[serde(default)]
+    pub as_new_fields: Vec<OxClassAsNewField>,
     /// Display names of `Implements`ed interfaces (for `TypeOf`/`Set` and typed
     /// interface dispatch).
     pub implements: Vec<String>,

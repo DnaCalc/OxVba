@@ -2508,3 +2508,49 @@
   - `git diff --check`
   - `br dep cycles --json`
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet` completed in non-blocking mode with run `20260702T081142Z`: 383 obligations, 63 failures/TODOs, 16 skipped.
+
+## 2026-07-02 - Class-Field Dim As New Per-Instance Resurrection (`bd-4ktq.59`)
+
+- Extended the modal-safe Excel/VBA `Dim As New` oracle harness with a `Host`
+  class containing `Private child As New Counter`, then captured field-specific
+  evidence in
+  `docs/evidence/conformance/vm3_dim_as_new_field_oracle_20260702T0912Z/`.
+  The harness again made the VBE visible, invoked Debug -> Compile VBAProject
+  via command ID 578, captured/dismissed any modal dialog through UI Automation
+  scoped to the owned Excel PID, and performed PID-scoped cleanup.
+- Oracle findings for class fields match the local/module slot rules:
+  declaration and host construction do not instantiate the child; first member
+  access instantiates it; `child Is Nothing` instantiates and returns `False`;
+  `Set child = Nothing` before first access does not instantiate; post-access
+  `Set child = Nothing` clears the slot and the next read creates a fresh child
+  with `Class_Terminate` observed before the next statement; separate host
+  instances keep independent child slots (`11/11/12|I;I;`).
+- CoreIR/OxIR now carry class-level `as_new_fields` metadata keyed by the stable
+  per-class field token and the same `CoreAsNew`/`OxAsNew` activation binding
+  used by local/global slots. The binder derives this from class-module `Dim`
+  declarators and resolves project, referenced-project, and COM activation
+  through the shared `New` ladder before imports are finalized.
+- vm3 field reads now consult the owning object's `(bundle_id, route_key,
+  field)` metadata. Missing/`Nothing` `As New` fields instantiate in the
+  object's owning bundle, store the fresh object back into that instance field,
+  and return it. The field-array fallback path uses the same helper so default
+  member indexing on an `As New` object field can instantiate before dispatch.
+- Added the class-field oracle cases to
+  `crates/oxvba-differential/tests/dim_as_new_vm3.rs`; the test now covers 13
+  local, module-level, and class-field cases.
+- Verification completed:
+  - `powershell -NoProfile -ExecutionPolicy Bypass -Command "& { & 'scripts\run-vm3-dim-as-new-oracle.ps1' -RunId 'vm3_dim_as_new_field_oracle_20260702T0912Z' -CaseId @('FIELD-DIM-ONLY','FIELD-FIRST-MEMBER','FIELD-IS-NOTHING','FIELD-SET-NOTHING-BEFORE-ACCESS','FIELD-SET-NOTHING-RESURRECT','FIELD-INSTANCE-ISOLATION') }"`
+  - `cargo check -p oxvba-bundle -p oxvba-bind -p oxvba-oxir -p oxvba-vm3 -p oxvba-differential`
+  - `cargo test -p oxvba-differential --test dim_as_new_vm3 --quiet`
+  - `cargo test -p oxvba-vm3 --test cross_program --quiet`
+  - `cargo test -p oxvba-bind --test bind_roundtrip as_new --quiet`
+  - `cargo test -p oxvba-oxir --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --test project_class_newenum_vm3 --test predeclared_singleton_vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `rustfmt --edition 2024 --check crates/oxvba-bind/src/expr.rs crates/oxvba-bind/src/ids.rs crates/oxvba-bind/src/lib.rs crates/oxvba-bind/src/stmt.rs crates/oxvba-bundle/src/coreir.rs crates/oxvba-differential/tests/dim_as_new_vm3.rs crates/oxvba-oxir/src/program.rs crates/oxvba-vm3/tests/cross_program.rs`
+  - Full `rustfmt --edition 2024 --check` over all touched Rust files still reports pre-existing formatter drift in `crates/oxvba-oxir/src/elaborate/lower.rs`, `crates/oxvba-oxir/src/verify.rs`, and `crates/oxvba-vm3/src/lib.rs`; this bead manually kept its hunks scoped and uses targeted formatter proof plus `git diff --check`.
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet` refreshed formal run `20260702T092738Z` in non-blocking mode: 383 obligations, 125 pass, 242 todo, 16 skipped.

@@ -1314,25 +1314,7 @@ impl<'a> ProcLower<'a> {
     }
 
     fn as_new_binding_for_type(&mut self, type_name: &str) -> Result<CoreAsNew, BindError> {
-        let (value, _ty) = self.new_value_for_type(type_name)?;
-        match value {
-            CoreValue::New(class) => Ok(CoreAsNew::ProjectClass { class }),
-            CoreValue::NewExtern { import } => Ok(CoreAsNew::ExternClass { import }),
-            CoreValue::Call { callee, args } => match (callee, args.as_slice()) {
-                (
-                    CoreCallee::Native(NativeImplId::CreateObject),
-                    [CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))],
-                ) => Ok(CoreAsNew::ComClass {
-                    prog_id: prog_id.clone(),
-                }),
-                _ => Err(BindError::Unsupported(format!(
-                    "As New {type_name} (unsupported activation path)"
-                ))),
-            },
-            _ => Err(BindError::Unsupported(format!(
-                "As New {type_name} (unsupported activation path)"
-            ))),
-        }
+        self.g.as_new_binding_for_type(type_name)
     }
 
     /// Default-record allocation statements if `name` is a UDT-typed variable: a

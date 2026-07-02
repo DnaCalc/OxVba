@@ -358,6 +358,49 @@ Public Property Get Total() As Long
 End Property
 "@
 
+$hostClass = @"
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "Host"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = False
+Attribute VB_Exposed = True
+Option Explicit
+Private child As New Counter
+
+Public Function FieldDimOnly() As String
+    FieldDimOnly = CStr(Len(Main.Log)) & "|" & Main.Log
+End Function
+
+Public Function FieldFirstMember() As String
+    child.Bump
+    FieldFirstMember = CStr(child.Total) & "|" & Main.Log
+End Function
+
+Public Function FieldIsNothing() As String
+    FieldIsNothing = CStr(child Is Nothing) & "|" & Main.Log
+End Function
+
+Public Function FieldSetNothingBeforeAccess() As String
+    Set child = Nothing
+    FieldSetNothingBeforeAccess = CStr(Len(Main.Log)) & "|" & Main.Log
+End Function
+
+Public Function FieldSetNothingResurrect() As String
+    child.Bump
+    Set child = Nothing
+    FieldSetNothingResurrect = CStr(child.Total) & "|" & Main.Log
+End Function
+
+Public Function FieldBumpTotal() As Long
+    child.Bump
+    FieldBumpTotal = child.Total
+End Function
+"@
+
 function New-StandardModule([string]$Code) {
     $wrapped = $Code + @"
 
@@ -374,6 +417,10 @@ End Function
 
 function New-CounterClass {
     New-ClassFileSpec "Counter" $counterClass
+}
+
+function New-HostClass {
+    New-ClassFileSpec "Host" $hostClass
 }
 
 $cases = @()
@@ -459,6 +506,79 @@ Public Function RunProbe() As Variant
 End Function
 "@),
     (New-CounterClass)
+))
+$cases += (New-OracleCase "FIELD-DIM-ONLY" "A class-field As New declaration does not instantiate during host construction or unrelated method execution." @(
+    (New-StandardModule @"
+Public Log As String
+
+Public Function RunProbe() As Variant
+    Dim h As New Host
+    RunProbe = h.FieldDimOnly()
+End Function
+"@),
+    (New-CounterClass),
+    (New-HostClass)
+))
+$cases += (New-OracleCase "FIELD-FIRST-MEMBER" "The first member access on a class-field As New slot lazily creates the child object." @(
+    (New-StandardModule @"
+Public Log As String
+
+Public Function RunProbe() As Variant
+    Dim h As New Host
+    RunProbe = h.FieldFirstMember()
+End Function
+"@),
+    (New-CounterClass),
+    (New-HostClass)
+))
+$cases += (New-OracleCase "FIELD-IS-NOTHING" "`Is Nothing` against a class-field As New slot." @(
+    (New-StandardModule @"
+Public Log As String
+
+Public Function RunProbe() As Variant
+    Dim h As New Host
+    RunProbe = h.FieldIsNothing()
+End Function
+"@),
+    (New-CounterClass),
+    (New-HostClass)
+))
+$cases += (New-OracleCase "FIELD-SET-NOTHING-BEFORE-ACCESS" "Assigning Nothing to a class-field As New slot before any read/member access does not create the child object." @(
+    (New-StandardModule @"
+Public Log As String
+
+Public Function RunProbe() As Variant
+    Dim h As New Host
+    RunProbe = h.FieldSetNothingBeforeAccess()
+End Function
+"@),
+    (New-CounterClass),
+    (New-HostClass)
+))
+$cases += (New-OracleCase "FIELD-SET-NOTHING-RESURRECT" "Set Nothing clears a class-field As New slot; the next access resurrects a fresh child object." @(
+    (New-StandardModule @"
+Public Log As String
+
+Public Function RunProbe() As Variant
+    Dim h As New Host
+    RunProbe = h.FieldSetNothingResurrect()
+End Function
+"@),
+    (New-CounterClass),
+    (New-HostClass)
+))
+$cases += (New-OracleCase "FIELD-INSTANCE-ISOLATION" "Two host instances keep independent class-field As New child slots." @(
+    (New-StandardModule @"
+Public Log As String
+
+Public Function RunProbe() As Variant
+    Dim a As New Host
+    Dim b As New Host
+    RunProbe = CStr(a.FieldBumpTotal()) & "/" & CStr(b.FieldBumpTotal()) & "/" & CStr(a.FieldBumpTotal()) & "|" & Log
+End Function
+"@),
+    (New-CounterClass),
+    (New-HostClass)
 ))
 
 if ($CaseId.Count -gt 0) {

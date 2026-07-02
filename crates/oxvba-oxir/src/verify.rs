@@ -88,6 +88,20 @@ pub enum VerifyError {
         class: usize,
         classes: usize,
     },
+    /// A class field `As New` binding names a referenced project import that does not exist.
+    BadClassFieldAsNewImportRef {
+        class_index: usize,
+        field: i32,
+        import: usize,
+        imports: usize,
+    },
+    /// A class field `As New` binding names a project class that does not exist.
+    BadClassFieldAsNewClassRef {
+        class_index: usize,
+        field: i32,
+        class: usize,
+        classes: usize,
+    },
     /// An `On Error GoTo <label>` names a block that does not exist.
     BadLabelTarget {
         func: usize,
@@ -171,6 +185,24 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "func {func} block {block} inst {inst}: class {class} out of range ({classes} classes)"
             ),
+            VerifyError::BadClassFieldAsNewImportRef {
+                class_index,
+                field,
+                import,
+                imports,
+            } => write!(
+                f,
+                "class {class_index} field {field}: As New import {import} out of range ({imports} imports)"
+            ),
+            VerifyError::BadClassFieldAsNewClassRef {
+                class_index,
+                field,
+                class,
+                classes,
+            } => write!(
+                f,
+                "class {class_index} field {field}: As New class {class} out of range ({classes} classes)"
+            ),
             VerifyError::BadLabelTarget { func, block, inst, target, blocks } => write!(
                 f,
                 "func {func} block {block} inst {inst}: On Error label {target} out of range ({blocks} blocks)"
@@ -196,6 +228,7 @@ impl std::error::Error for VerifyError {}
 /// Verify an entire program. Returns every structural defect found (empty ⇒ valid).
 pub fn verify_program(program: &OxProgram) -> Result<(), Vec<VerifyError>> {
     let mut errors = Vec::new();
+    verify_classes(program, &mut errors);
     for (fi, func) in program.funcs.iter().enumerate() {
         verify_func(program, fi, func, &mut errors);
     }
@@ -203,6 +236,34 @@ pub fn verify_program(program: &OxProgram) -> Result<(), Vec<VerifyError>> {
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
+    let imports = program.imports.len();
+    let classes = program.classes.len();
+    for (class_index, class) in program.classes.iter().enumerate() {
+        for field in &class.as_new_fields {
+            match &field.binding {
+                OxAsNew::ExternClass { import } if import.0 >= imports => {
+                    errors.push(VerifyError::BadClassFieldAsNewImportRef {
+                        class_index,
+                        field: field.field,
+                        import: import.0,
+                        imports,
+                    });
+                }
+                OxAsNew::ProjectClass { class } if class.0 >= classes => {
+                    errors.push(VerifyError::BadClassFieldAsNewClassRef {
+                        class_index,
+                        field: field.field,
+                        class: class.0,
+                        classes,
+                    });
+                }
+                _ => {}
+            }
+        }
     }
 }
 

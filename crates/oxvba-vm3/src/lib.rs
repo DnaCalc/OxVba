@@ -1544,9 +1544,7 @@ impl<'h> Vm3<'h> {
                         // Field is absent or not an array (e.g. an object whose default
                         // member is indexed): materialize (cheap for an object ref) and
                         // index generically.
-                        let field_val = instance
-                            .project_field_get(*field)
-                            .unwrap_or_else(Variant::empty);
+                        let field_val = self.read_project_field_as_new(&instance, *field)?;
                         self.index_value_into(field_val, indices, dst)?;
                     }
                 }
@@ -1581,9 +1579,7 @@ impl<'h> Vm3<'h> {
                     Some(result) => result?,
                     None => {
                         // Not an array field: materialize, set the element, write back.
-                        let field_val = instance
-                            .project_field_get(*field)
-                            .unwrap_or_else(Variant::empty);
+                        let field_val = self.read_project_field_as_new(&instance, *field)?;
                         let updated = self.set_index_in_value(field_val, indices, &v)?;
                         instance.project_field_set(*field, updated);
                     }
@@ -1767,10 +1763,7 @@ impl<'h> Vm3<'h> {
             OxInst::FieldGet { dst, object, field } => {
                 let recv = self.operand(object)?;
                 let instance = variant_to_object(&recv)?;
-                // A missing field reads as `Empty` (vm2 parity — field storage is sparse).
-                let value = instance
-                    .project_field_get(*field)
-                    .unwrap_or_else(Variant::empty);
+                let value = self.read_project_field_as_new(&instance, *field)?;
                 self.store(dst, value)?;
             }
             OxInst::FieldSet {
@@ -4338,14 +4331,64 @@ impl<'h> Vm3<'h> {
     }
 
     fn instantiate_as_new(&mut self, binding: OxAsNew) -> Result<Variant, Vm3Error> {
-        match binding {
+        self.instantiate_as_new_in_bundle(self.cur, binding)
+    }
+
+    fn instantiate_as_new_in_bundle(
+        &mut self,
+        bundle: usize,
+        binding: OxAsNew,
+    ) -> Result<Variant, Vm3Error> {
+        if bundle >= self.programs.len() {
+            return Err(Vm3Error::Malformed(format!(
+                "unknown As New owner bundle {bundle}"
+            )));
+        }
+        let saved = self.cur;
+        self.cur = bundle;
+        let result = match binding {
             OxAsNew::ProjectClass { class } => self.new_project_instance(class.0),
             OxAsNew::ExternClass { import } => self.new_extern_instance(import),
-            OxAsNew::ComClass { prog_id } => self.invoke_native_lib(
-                NativeImplId::CreateObject,
-                &[Variant::from_string(prog_id)],
-            ),
+            OxAsNew::ComClass { prog_id } => {
+                self.invoke_native_lib(NativeImplId::CreateObject, &[Variant::from_string(prog_id)])
+            }
+        };
+        self.cur = saved;
+        result
+    }
+
+    fn class_field_as_new_binding(&self, object: &ObjectRef, field: i32) -> Option<OxAsNew> {
+        if !object.is_project_instance() || object.route_key() == VBA_COLLECTION_ROUTE_KEY {
+            return None;
         }
+        self.programs
+            .get(object.bundle_id() as usize)?
+            .program
+            .classes
+            .get(object.route_key() as usize)?
+            .as_new_fields
+            .iter()
+            .find(|candidate| candidate.field == field)
+            .map(|candidate| candidate.binding.clone())
+    }
+
+    fn read_project_field_as_new(
+        &mut self,
+        instance: &ObjectRef,
+        field: i32,
+    ) -> Result<Variant, Vm3Error> {
+        let value = instance
+            .project_field_get(field)
+            .unwrap_or_else(Variant::empty);
+        let Some(binding) = self.class_field_as_new_binding(instance, field) else {
+            return Ok(value);
+        };
+        if !is_nothing(&value) {
+            return Ok(value);
+        }
+        let object = self.instantiate_as_new_in_bundle(instance.bundle_id() as usize, binding)?;
+        instance.project_field_set(field, object.clone());
+        Ok(object)
     }
 
     fn operand(&mut self, op: &OxOperand) -> Result<Variant, Vm3Error> {
@@ -5080,6 +5123,7 @@ mod tests {
                     is_default_member: false,
                     is_enumerator_member: false,
                 }],
+                as_new_fields: Vec::new(),
                 implements: Vec::new(),
             }],
             ..Default::default()

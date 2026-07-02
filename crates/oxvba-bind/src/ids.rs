@@ -280,6 +280,7 @@ impl IdAllocator {
                 initialize,
                 terminate,
                 methods,
+                as_new_fields: Vec::new(),
                 implements,
             });
         }
@@ -782,7 +783,10 @@ fn validate_interface_members(
     Ok(())
 }
 
-fn class_name_for(manifest: &SymbolProjectManifest, module_name: &str) -> Option<String> {
+pub(crate) fn class_name_for(
+    manifest: &SymbolProjectManifest,
+    module_name: &str,
+) -> Option<String> {
     let folded = fold_identifier(module_name);
     manifest.modules.iter().find_map(|m| {
         let name = if m.attributes.vb_name.is_empty() {

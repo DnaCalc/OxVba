@@ -140,11 +140,22 @@ pub enum CoreAsNew {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreClassAsNewField {
+    /// Stable per-class instance-field token.
+    pub field: i32,
+    /// Activation target for this field's `As New` declaration.
+    pub binding: CoreAsNew,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreClass {
     pub name: String,
     pub initialize: Option<ProcId>,
     pub terminate: Option<ProcId>,
     pub methods: Vec<CoreClassMethod>,
+    /// Per-instance `Dim field As New T` field metadata. The field itself remains
+    /// sparse/default until read; this records which field tokens auto-instantiate.
+    pub as_new_fields: Vec<CoreClassAsNewField>,
     /// Display names of the interfaces this class `Implements` (for `TypeOf` and
     /// `Set` type checking). Members dispatch through the mangled `Interface_Member`
     /// names already present in `methods`.

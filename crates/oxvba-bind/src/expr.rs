@@ -517,45 +517,7 @@ impl<'a> ProcLower<'a> {
         ),
         BindError,
     > {
-        let folded = oxvba_symbol::model::fold_identifier(name);
-        if let Some(&class_id) = self.g.ids.class_of.get(&folded) {
-            return Ok((
-                CoreValue::New(class_id),
-                VarTypeRef::Object(name.to_string()),
-            ));
-        }
-        // A creatable coclass published by a *referenced project*: instantiate it in
-        // that project's bundle via a cross-bundle `NewExtern` (the new instance
-        // carries the target bundle's id, so later method dispatch routes there). The
-        // result is typed by the bare class name so member access binds against the
-        // referenced surface.
-        if let Some((unit, class)) = self.g.env.resolve_extern_coclass(name) {
-            let import = self.g.intern_import(oxvba_bundle::BundleImport {
-                unit,
-                token: oxvba_bundle::ExportToken::Class {
-                    name: class.clone(),
-                },
-            });
-            return Ok((CoreValue::NewExtern { import }, VarTypeRef::Object(class)));
-        }
-        // A creatable COM coclass (from a referenced typelib) instantiates via the
-        // same activation path as `CreateObject("<ProgID>")`; the result is typed
-        // as the coclass so member access resolves against its typelib.
-        if let Some(prog_id) = self.g.env.resolve_coclass(name) {
-            let args = vec![CoreArg::ByVal(CoreValue::Const(CoreConst::Str(prog_id)))];
-            return Ok((
-                CoreValue::Call {
-                    callee: oxvba_bundle::coreir::CoreCallee::Native(
-                        oxvba_bundle::native::NativeImplId::CreateObject,
-                    ),
-                    args,
-                },
-                VarTypeRef::Object(name.to_string()),
-            ));
-        }
-        Err(BindError::Unsupported(format!(
-            "New {name} (only project classes are creatable)"
-        )))
+        self.g.new_value_for_type(name)
     }
 
     /// `AddressOf proc` — resolve the operand to a standard-module procedure and
