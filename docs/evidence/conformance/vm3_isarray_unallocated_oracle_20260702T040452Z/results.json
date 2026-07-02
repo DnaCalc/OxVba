@@ -1,0 +1,422 @@
+﻿[
+    {
+        "id":  "DYNAMIC-UNALLOCATED-LONG",
+        "purpose":  "Declared dynamic array before ReDim.",
+        "ownedExcelPid":  51324,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-UNALLOCATED-LONG-LBOUND",
+        "purpose":  "LBound on declared dynamic array before ReDim.",
+        "ownedExcelPid":  55920,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:9",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-UNALLOCATED-LONG-UBOUND",
+        "purpose":  "UBound on declared dynamic array before ReDim.",
+        "ownedExcelPid":  2276,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:9",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-UNALLOCATED-LONG-INTROSPECTION",
+        "purpose":  "VarType/TypeName on declared dynamic array before ReDim.",
+        "ownedExcelPid":  52596,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:8195:Long()",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-ALLOCATED-LONG",
+        "purpose":  "Dynamic typed array after ReDim.",
+        "ownedExcelPid":  17656,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-ERASED-LONG",
+        "purpose":  "Dynamic typed array after Erase.",
+        "ownedExcelPid":  46472,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-ERASED-LONG-LBOUND",
+        "purpose":  "LBound on dynamic typed array after Erase.",
+        "ownedExcelPid":  52872,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:9",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-ERASED-LONG-UBOUND",
+        "purpose":  "UBound on dynamic typed array after Erase.",
+        "ownedExcelPid":  56864,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:9",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "DYNAMIC-ERASED-LONG-INTROSPECTION",
+        "purpose":  "VarType/TypeName on dynamic typed array after Erase.",
+        "ownedExcelPid":  35312,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:8195:Long()",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "FIXED-LONG",
+        "purpose":  "Fixed-size typed array.",
+        "ownedExcelPid":  49172,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "FIXED-ERASED-LONG",
+        "purpose":  "Fixed-size typed array after Erase.",
+        "ownedExcelPid":  56544,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "VARIANT-EMPTY",
+        "purpose":  "Empty Variant control.",
+        "ownedExcelPid":  27744,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "False",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "VARIANT-ARRAY-LITERAL",
+        "purpose":  "Variant holding Array() result.",
+        "ownedExcelPid":  40812,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "VARIANT-DYNAMIC-ARRAY-COPY",
+        "purpose":  "Variant assigned from allocated dynamic typed array.",
+        "ownedExcelPid":  38488,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "VARIANT-UNALLOCATED-DYNAMIC-COPY",
+        "purpose":  "Variant assigned from unallocated dynamic typed array.",
+        "ownedExcelPid":  21852,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "VARIANT-UNALLOCATED-DYNAMIC-COPY-INTROSPECTION",
+        "purpose":  "VarType/TypeName on Variant assigned from unallocated dynamic typed array.",
+        "ownedExcelPid":  46448,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:8195:Long()",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "ERASE-VARIANT-ARRAY",
+        "purpose":  "Erase on Variant holding Array() result.",
+        "ownedExcelPid":  9752,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "ERASE-VARIANT-ARRAY-LBOUND",
+        "purpose":  "LBound after Erase on Variant holding Array() result.",
+        "ownedExcelPid":  48360,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:9",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "ERASE-VARIANT-ARRAY-UBOUND",
+        "purpose":  "UBound after Erase on Variant holding Array() result.",
+        "ownedExcelPid":  54488,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:9",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "ERASE-VARIANT-ARRAY-INTROSPECTION",
+        "purpose":  "VarType/TypeName after Erase on Variant holding Array() result.",
+        "ownedExcelPid":  41344,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "True:8204:Variant()",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]
