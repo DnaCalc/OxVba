@@ -1,0 +1,153 @@
+﻿[
+    {
+        "id":  "UDT-FIXED-ARRAY-FIELD",
+        "purpose":  "Fixed-array UDT field compiles and indexes.",
+        "ownedExcelPid":  31928,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "7",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-ARRAY-EXPLICIT-LOWER",
+        "purpose":  "Fixed-array UDT field preserves an explicit nonzero lower bound.",
+        "ownedExcelPid":  18528,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "1:2:11:22",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-ARRAY-OPTION-BASE",
+        "purpose":  "Fixed-array UDT field with a single bound is zero-based even under Option Base 1.",
+        "ownedExcelPid":  30004,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "0:2:11:22",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-ARRAY-NEGATIVE-LOWER",
+        "purpose":  "Fixed-array UDT field preserves an explicit negative lower bound.",
+        "ownedExcelPid":  18284,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "-2:0:7:9",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-FIXED-ARRAY-MULTIDIM",
+        "purpose":  "Fixed-array UDT field preserves multidimensional bounds.",
+        "ownedExcelPid":  13000,
+        "compileStatus":  "ok",
+        "dialogWindow":  null,
+        "dialogText":  null,
+        "dialogButtons":  {
+
+                          },
+        "selectedText":  null,
+        "selectedLine":  null,
+        "vbeWindow":  null,
+        "run":  "Main.RunProbe",
+        "runStatus":  "ok",
+        "runValue":  "1:2:3:4:13:24",
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-SCALAR-FIELD-INDEX-GET",
+        "purpose":  "Scalar UDT field used with index in value context.",
+        "ownedExcelPid":  20784,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nExpected array",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  ".Value",
+        "selectedLine":  "RunProbe = s.Value(0)",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    },
+    {
+        "id":  "UDT-SCALAR-FIELD-INDEX-SET",
+        "purpose":  "Scalar UDT field used with index in assignment context.",
+        "ownedExcelPid":  18676,
+        "compileStatus":  "compile-error",
+        "dialogWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "dialogText":  "Compile error:\n\nExpected array",
+        "dialogButtons":  [
+                              "OK",
+                              "Help",
+                              "Help"
+                          ],
+        "selectedText":  ".Value(0) =",
+        "selectedLine":  "s.Value(0) = 7",
+        "vbeWindow":  "Microsoft Visual Basic for Applications - [Main (Code)]",
+        "run":  null,
+        "runStatus":  "not-run",
+        "runValue":  null,
+        "errorMessage":  null,
+        "modules":  [
+                        "Main"
+                    ]
+    }
+]
