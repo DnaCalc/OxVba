@@ -260,10 +260,8 @@ fn append_next_print_zone(out: &mut String, col: &mut usize, width: Option<usize
 
 fn append_print_text(out: &mut String, col: &mut usize, text: &str, width: Option<usize>) {
     let text_width = text.chars().count();
-    if let Some(width) = width {
-        if *col > 0 && col.saturating_add(text_width) > width {
-            append_line_break(out, col);
-        }
+    if width.is_some_and(|width| *col > 0 && col.saturating_add(text_width) > width) {
+        append_line_break(out, col);
     }
     *col = col.saturating_add(text_width);
     out.push_str(text);
@@ -271,7 +269,7 @@ fn append_print_text(out: &mut String, col: &mut usize, text: &str, width: Optio
 
 #[cfg(test)]
 fn default_print_item_spec(field_count: usize) -> String {
-    std::iter::repeat('v').take(field_count).collect()
+    "v".repeat(field_count)
 }
 
 /// Assemble a `Print #` record: each field rendered with VBA display semantics,

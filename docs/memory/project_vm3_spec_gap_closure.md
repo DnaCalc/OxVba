@@ -2793,3 +2793,18 @@
   now gets past the previous `oxvba-symbol` clippy gate. It surfaces the next
   `oxvba-lib` clippy batch, now tracked as `bd-4ktq.65`, and the existing
   wrapped COM server `gTopicIds` test failure tracked as `bd-4ktq.61`.
+
+## 2026-07-02 - oxvba-lib Clippy Batch (`bd-4ktq.65`)
+
+- Repaired the oxvba-lib clippy style batch without changing VBA library
+  semantics: collapsed the print-width guard, replaced repeat/take padding with
+  `repeat_n`, removed the redundant numeric parse cast/map, and used string
+  repetition for a test helper.
+- Verification completed:
+  - `cargo fmt --all --check`
+  - `cargo clippy -p oxvba-lib --all-targets -- -D warnings`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/meta-check.ps1 -Fast -NoArtifacts`
+  now gets past the previous `oxvba-lib` clippy gate. It surfaces the next
+  `oxvba-bind` `alloc_proc` clippy gate, now tracked as `bd-4ktq.66`, and the
+  existing wrapped COM server `gTopicIds` test failure tracked as
+  `bd-4ktq.61`.

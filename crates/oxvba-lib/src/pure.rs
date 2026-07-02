@@ -180,11 +180,11 @@ fn align_stmt(args: &[Variant], right_align: bool) -> LibResult<Variant> {
     let pad = width.saturating_sub(value.len());
     let mut out = Vec::with_capacity(width);
     if right_align {
-        out.extend(std::iter::repeat(0x20).take(pad));
+        out.extend(std::iter::repeat_n(0x20, pad));
         out.extend(value);
     } else {
         out.extend(value);
-        out.extend(std::iter::repeat(0x20).take(pad));
+        out.extend(std::iter::repeat_n(0x20, pad));
     }
     Ok(Variant::from_utf16_units(&out))
 }
@@ -1749,7 +1749,6 @@ pub fn cverr(args: &[Variant]) -> LibResult<Variant> {
 fn conv_f64(value: &Variant) -> LibResult<f64> {
     if value.vtype() == VarType::String {
         return parse_vba_numeric_string(&as_str(value)?)
-            .map(|n| n as f64)
             .ok_or_else(|| LibError::type_mismatch("expected a numeric value"));
     }
     as_f64(value)
@@ -1941,7 +1940,7 @@ fn parse_decimal96_text(text: &str) -> Option<Decimal96> {
         if zero_count > 60 {
             return None;
         }
-        digits.extend(std::iter::repeat(0).take(zero_count));
+        digits.extend(std::iter::repeat_n(0, zero_count));
         decimal96_from_digits(digits, 0, negative)
     } else {
         decimal96_from_digits(digits, usize::try_from(scale).ok()?, negative)
