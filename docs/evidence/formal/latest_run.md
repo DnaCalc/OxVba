@@ -1,7 +1,7 @@
 # Formal Run Report
 
 - Run ID: 20260702T103922Z
-- Timestamp (UTC): 2026-07-02T10:39:22Z
+- Timestamp (UTC): 2026-07-02T10:52:52Z
 - Profile scope: mvp-profile-v620
 - Overall mode: non-blocking
 - Kani required: false
@@ -103,105 +103,105 @@
 | FO-V32-001 | v32 | no | pass | cargo test -p oxvba-host formal_v32_language_coverage_index_exists | crates/oxvba-host/src/engine.rs |  |
 | FO-V32-002 | v32 | no | pass | cargo test -p oxvba-host formal_v32_meta_check_validates_language_coverage | crates/oxvba-host/src/engine.rs |  |
 | FO-V32-003 | v32 | no | pass | cargo test -p oxvba-host formal_v32_language_coverage_status_taxonomy_is_present | crates/oxvba-host/src/engine.rs |  |
-| FO-V33-001 | v33 | no | todo | cargo test -p oxvba-host formal_v33_core_coverage_tracks_key_control_flow_constructs | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V33-002 | v33 | no | todo | cargo test -p oxvba-host formal_v33_core_coverage_workset_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V33-003 | v33 | no | todo | cargo test -p oxvba-host formal_v33_core_conformance_fixtures_are_present | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V34-001 | v34 | no | todo | cargo test -p oxvba-host formal_v34_object_coverage_entries_are_present | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V34-002 | v34 | no | todo | cargo test -p oxvba-host formal_v34_object_coverage_workset_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V34-003 | v34 | no | todo | cargo test -p oxvba-host formal_v34_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V35-001 | v35 | no | todo | cargo test -p oxvba-host formal_v35_hotpath_workset_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V35-002 | v35 | no | todo | cargo test -p oxvba-host formal_v35_jit_vm_hotpath_parity_examples_exist | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V35-003 | v35 | no | todo | cargo test -p oxvba-host formal_v35_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V36-001 | v36 | no | todo | cargo test -p oxvba-host formal_v36_script_defaults_target_v36_profile_scope | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V36-002 | v36 | no | todo | cargo test -p oxvba-host formal_v36_benchmark_default_targets_v36_artifact | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V36-003 | v36 | no | todo | cargo test -p oxvba-host formal_v36_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V37-001 | v37 | no | todo | cargo test -p oxvba-host formal_v37_optional_param_default_applies_when_omitted | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V37-002 | v37 | no | todo | cargo test -p oxvba-host formal_v37_optional_param_explicit_value_overrides_default | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V37-003 | v37 | no | todo | cargo test -p oxvba-host formal_v37_optional_param_missing_required_arg_is_rejected | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V38-001 | v38 | no | todo | cargo test -p oxvba-host formal_v38_named_args_bind_by_parameter_name | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V38-002 | v38 | no | todo | cargo test -p oxvba-host formal_v38_named_args_allow_omitting_optional_by_name | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V38-003 | v38 | no | todo | cargo test -p oxvba-host formal_v38_named_args_reject_positional_after_named | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V40-001 | v40 | no | todo | cargo test -p oxvba-host formal_v40_gosub_executes_label_body_and_returns | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V40-002 | v40 | no | todo | cargo test -p oxvba-host formal_v40_gosub_missing_label_is_rejected | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V40-003 | v40 | no | todo | cargo test -p oxvba-host formal_v40_gosub_return_stack_handles_repeated_calls | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V41-001 | v41 | no | todo | cargo test -p oxvba-host formal_v41_on_error_goto_label_jumps_to_handler | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V41-002 | v41 | no | todo | cargo test -p oxvba-host formal_v41_on_error_goto_label_missing_target_is_rejected | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V41-003 | v41 | no | todo | cargo test -p oxvba-host formal_v41_on_error_goto_zero_disables_label_handler | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V42-001 | v42 | no | todo | cargo test -p oxvba-host formal_v42_redim_preserve_retains_existing_values | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V42-002 | v42 | no | todo | cargo test -p oxvba-host formal_v42_redim_without_preserve_reinitializes_array | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V42-003 | v42 | no | todo | cargo test -p oxvba-host formal_v42_redim_shrink_rejects_out_of_bounds_access | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V43-001 | v43 | no | todo | cargo test -p oxvba-host formal_v43_module_const_evaluates_in_expression | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V43-002 | v43 | no | todo | cargo test -p oxvba-host formal_v43_enum_members_bind_to_expected_values | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V43-003 | v43 | no | todo | cargo test -p oxvba-host formal_v43_udt_declaration_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V44-001 | v44 | no | todo | cargo test -p oxvba-host formal_v44_property_let_routes_assignment_byref | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V44-002 | v44 | no | todo | cargo test -p oxvba-host formal_v44_property_set_routes_assignment_byref | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V44-003 | v44 | no | todo | cargo test -p oxvba-host formal_v44_property_get_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V45-001 | v45 | no | todo | cargo test -p oxvba-host formal_v45_cint_conversion_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V45-002 | v45 | no | todo | cargo test -p oxvba-host formal_v45_nested_conversion_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V45-003 | v45 | no | todo | cargo test -p oxvba-host formal_v45_val_str_conversion_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V46-001 | v46 | no | todo | cargo test -p oxvba-host formal_v46_len_intrinsic_digit_count | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V46-002 | v46 | no | todo | cargo test -p oxvba-host formal_v46_slice_intrinsics_digit_subsets | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V46-003 | v46 | no | todo | cargo test -p oxvba-host formal_v46_instr_and_case_intrinsics | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V47-001 | v47 | no | todo | cargo test -p oxvba-host formal_v47_split_and_join_intrinsics | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V47-002 | v47 | no | todo | cargo test -p oxvba-host formal_v47_replace_and_trim_intrinsics | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V47-003 | v47 | no | todo | cargo test -p oxvba-host formal_v47_strcomp_intrinsic_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V48-001 | v48 | no | todo | cargo test -p oxvba-host formal_v48_date_serial_and_value_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V48-002 | v48 | no | todo | cargo test -p oxvba-host formal_v48_time_serial_and_value_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V48-003 | v48 | no | todo | cargo test -p oxvba-host formal_v48_date_add_diff_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V49-001 | v49 | no | todo | cargo test -p oxvba-host formal_v49_math_primitives_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V49-002 | v49 | no | todo | cargo test -p oxvba-host formal_v49_transcendental_identity_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V49-003 | v49 | no | todo | cargo test -p oxvba-host formal_v49_financial_zero_rate_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V50-001 | v50 | no | todo | cargo test -p oxvba-host formal_v50_array_bounds_introspection_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V50-002 | v50 | no | todo | cargo test -p oxvba-host formal_v50_variant_type_tag_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V50-003 | v50 | no | todo | cargo test -p oxvba-host formal_v50_numeric_date_object_predicates_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V51-001 | v51 | no | todo | cargo test -p oxvba-host formal_v51_err_raise_maps_to_runtime_error_state | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V51-002 | v51 | no | todo | cargo test -p oxvba-host formal_v51_cverr_error_tag_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V51-003 | v51 | no | todo | cargo test -p oxvba-host formal_v51_err_raise_without_handler_fails | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V52-001 | v52 | no | todo | cargo test -p oxvba-host formal_v52_shell_environ_dir_host_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V52-002 | v52 | no | todo | cargo test -p oxvba-host formal_v52_host_sensitive_subset_is_jit_vm_equivalent | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V52-003 | v52 | no | todo | cargo test -p oxvba-host formal_v52_missing_capability_fallback_is_deterministic | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V53-001 | v53 | no | todo | cargo test -p oxvba-host formal_v53_collection_add_item_count_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V53-002 | v53 | no | todo | cargo test -p oxvba-host formal_v53_collection_remove_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V53-003 | v53 | no | todo | cargo test -p oxvba-host formal_v53_collection_ops_jit_vm_equivalent | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V54-001 | v54 | no | todo | cargo test -p oxvba-host formal_v54_class_initialize_runs_before_main | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V54-002 | v54 | no | todo | cargo test -p oxvba-host formal_v54_class_terminate_runs_after_main | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V54-003 | v54 | no | todo | cargo test -p oxvba-host formal_v54_lifecycle_jit_vm_equivalence | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V55-001 | v55 | no | todo | cargo test -p oxvba-host formal_v55_createobject_dispatch_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V55-002 | v55 | no | todo | cargo test -p oxvba-host formal_v55_dispatch_jit_vm_equivalence | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V55-003 | v55 | no | todo | cargo test -p oxvba-host formal_v55_dispatch_diagnostics_are_deterministic | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V56-001 | v56 | no | todo | cargo test -p oxvba-host formal_v56_script_defaults_target_v56_profile_scope | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V56-002 | v56 | no | todo | cargo test -p oxvba-host formal_v56_benchmark_default_targets_v56_artifact | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V56-003 | v56 | no | todo | cargo test -p oxvba-host formal_v56_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V57-001 | v57 | no | todo | cargo test -p oxvba-host formal_v57_async_runner_supports_watcher_controls | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V57-002 | v57 | no | todo | cargo test -p oxvba-host formal_v57_watcher_script_is_resilient | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V57-003 | v57 | no | todo | cargo test -p oxvba-host formal_v57_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V58-001 | v58 | no | todo | cargo test -p oxvba-host formal_v58_syntax_kani_harnesses_exist | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V58-002 | v58 | no | todo | cargo test -p oxvba-host formal_v58_optimizer_kani_harness_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V58-003 | v58 | no | todo | cargo test -p oxvba-host formal_v58_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V59-001 | v59 | no | todo | cargo test -p oxvba-host formal_v59_line_continuation_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V59-002 | v59 | no | todo | cargo test -p oxvba-host formal_v59_line_continuation_conformance_fixture_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V59-003 | v59 | no | todo | cargo test -p oxvba-host formal_v59_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V60-001 | v60 | no | todo | cargo test -p oxvba-host formal_v60_with_block_member_assignments_execute | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V60-002 | v60 | no | todo | cargo test -p oxvba-host formal_v60_nested_with_block_assignments_execute | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V60-003 | v60 | no | todo | cargo test -p oxvba-host formal_v60_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V61-001 | v61 | no | todo | cargo test -p oxvba-host formal_v61_conditional_compilation_if_else_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V61-002 | v61 | no | todo | cargo test -p oxvba-host formal_v61_conditional_compilation_elseif_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V61-003 | v61 | no | todo | cargo test -p oxvba-host formal_v61_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V62-001 | v62 | no | todo | cargo test -p oxvba-host formal_v62_intrinsic_surface_registry_classifies_host_and_core | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V62-002 | v62 | no | todo | cargo test -p oxvba-host formal_v62_intrinsic_surface_evidence_file_exists | docs/evidence/runtime/INTRINSIC_SURFACE.csv | command exited with code 101 |
-| FO-V62-003 | v62 | no | todo | cargo test -p oxvba-host formal_v62_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V63-001 | v63 | no | todo | cargo test -p oxvba-host formal_v63_jit_supports_intrinsic_math_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V63-002 | v63 | no | todo | cargo test -p oxvba-host formal_v63_intrinsic_math_subset_is_jit_vm_equivalent | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V63-003 | v63 | no | todo | cargo test -p oxvba-host formal_v63_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V64-001 | v64 | no | todo | cargo test -p oxvba-host formal_v64_benchmark_script_tracks_mixed_workloads | scripts/run-bench.ps1 | command exited with code 101 |
-| FO-V64-002 | v64 | no | todo | cargo test -p oxvba-host formal_v64_benchmark_profile_artifact_defaults_exist | scripts/run-bench.ps1 | command exited with code 101 |
-| FO-V64-003 | v64 | no | todo | cargo test -p oxvba-host formal_v64_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V65-001 | v65 | no | todo | cargo test -p oxvba-host formal_v65_integrated_gate_script_exists | scripts/run-profile-gate.ps1 | command exited with code 101 |
-| FO-V65-002 | v65 | no | todo | cargo test -p oxvba-host formal_v65_workset_document_exists | docs/worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md | command exited with code 101 |
-| FO-V65-003 | v65 | no | todo | cargo test -p oxvba-host formal_v65_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V66-001 | v66 | no | todo | cargo test -p oxvba-host formal_v66_script_defaults_target_v66_profile_scope | scripts/run-formal.ps1 | command exited with code 101 |
-| FO-V66-002 | v66 | no | todo | cargo test -p oxvba-host formal_v66_workset_document_exists | docs/worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md | command exited with code 101 |
-| FO-V66-003 | v66 | no | todo | cargo test -p oxvba-host formal_v66_profile_status_document_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
+| FO-V33-001 | v33 | no | pass | cargo test -p oxvba-host formal_v33_core_coverage_tracks_key_control_flow_constructs | crates/oxvba-host/src/engine.rs |  |
+| FO-V33-002 | v33 | no | pass | cargo test -p oxvba-host formal_v33_core_coverage_workset_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V33-003 | v33 | no | pass | cargo test -p oxvba-host formal_v33_core_conformance_fixtures_are_present | crates/oxvba-host/src/engine.rs |  |
+| FO-V34-001 | v34 | no | pass | cargo test -p oxvba-host formal_v34_object_coverage_entries_are_present | crates/oxvba-host/src/engine.rs |  |
+| FO-V34-002 | v34 | no | pass | cargo test -p oxvba-host formal_v34_object_coverage_workset_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V34-003 | v34 | no | pass | cargo test -p oxvba-host formal_v34_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V35-001 | v35 | no | pass | cargo test -p oxvba-host formal_v35_hotpath_workset_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V35-002 | v35 | no | pass | cargo test -p oxvba-host formal_v35_jit_vm_hotpath_parity_examples_exist | crates/oxvba-host/src/engine.rs |  |
+| FO-V35-003 | v35 | no | pass | cargo test -p oxvba-host formal_v35_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V36-001 | v36 | no | pass | cargo test -p oxvba-host formal_v36_script_defaults_target_v36_profile_scope | crates/oxvba-host/src/engine.rs |  |
+| FO-V36-002 | v36 | no | pass | cargo test -p oxvba-host formal_v36_benchmark_default_targets_v36_artifact | crates/oxvba-host/src/engine.rs |  |
+| FO-V36-003 | v36 | no | pass | cargo test -p oxvba-host formal_v36_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V37-001 | v37 | no | pass | cargo test -p oxvba-host formal_v37_optional_param_default_applies_when_omitted | crates/oxvba-host/src/engine.rs |  |
+| FO-V37-002 | v37 | no | pass | cargo test -p oxvba-host formal_v37_optional_param_explicit_value_overrides_default | crates/oxvba-host/src/engine.rs |  |
+| FO-V37-003 | v37 | no | pass | cargo test -p oxvba-host formal_v37_optional_param_missing_required_arg_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V38-001 | v38 | no | pass | cargo test -p oxvba-host formal_v38_named_args_bind_by_parameter_name | crates/oxvba-host/src/engine.rs |  |
+| FO-V38-002 | v38 | no | pass | cargo test -p oxvba-host formal_v38_named_args_allow_omitting_optional_by_name | crates/oxvba-host/src/engine.rs |  |
+| FO-V38-003 | v38 | no | pass | cargo test -p oxvba-host formal_v38_named_args_reject_positional_after_named | crates/oxvba-host/src/engine.rs |  |
+| FO-V40-001 | v40 | no | pass | cargo test -p oxvba-host formal_v40_gosub_executes_label_body_and_returns | crates/oxvba-host/src/engine.rs |  |
+| FO-V40-002 | v40 | no | pass | cargo test -p oxvba-host formal_v40_gosub_missing_label_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V40-003 | v40 | no | pass | cargo test -p oxvba-host formal_v40_gosub_return_stack_handles_repeated_calls | crates/oxvba-host/src/engine.rs |  |
+| FO-V41-001 | v41 | no | pass | cargo test -p oxvba-host formal_v41_on_error_goto_label_jumps_to_handler | crates/oxvba-host/src/engine.rs |  |
+| FO-V41-002 | v41 | no | pass | cargo test -p oxvba-host formal_v41_on_error_goto_label_missing_target_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V41-003 | v41 | no | pass | cargo test -p oxvba-host formal_v41_on_error_goto_zero_disables_label_handler | crates/oxvba-host/src/engine.rs |  |
+| FO-V42-001 | v42 | no | pass | cargo test -p oxvba-host formal_v42_redim_preserve_retains_existing_values | crates/oxvba-host/src/engine.rs |  |
+| FO-V42-002 | v42 | no | pass | cargo test -p oxvba-host formal_v42_redim_without_preserve_reinitializes_array | crates/oxvba-host/src/engine.rs |  |
+| FO-V42-003 | v42 | no | pass | cargo test -p oxvba-host formal_v42_redim_shrink_rejects_out_of_bounds_access | crates/oxvba-host/src/engine.rs |  |
+| FO-V43-001 | v43 | no | pass | cargo test -p oxvba-host formal_v43_module_const_evaluates_in_expression | crates/oxvba-host/src/engine.rs |  |
+| FO-V43-002 | v43 | no | pass | cargo test -p oxvba-host formal_v43_enum_members_bind_to_expected_values | crates/oxvba-host/src/engine.rs |  |
+| FO-V43-003 | v43 | no | pass | cargo test -p oxvba-host formal_v43_udt_declaration_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs |  |
+| FO-V44-001 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_let_routes_assignment_byref | crates/oxvba-host/src/engine.rs |  |
+| FO-V44-002 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_set_routes_assignment_byref | crates/oxvba-host/src/engine.rs |  |
+| FO-V44-003 | v44 | no | pass | cargo test -p oxvba-host formal_v44_property_get_block_is_parse_tolerated | crates/oxvba-host/src/engine.rs |  |
+| FO-V45-001 | v45 | no | pass | cargo test -p oxvba-host formal_v45_cint_conversion_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V45-002 | v45 | no | pass | cargo test -p oxvba-host formal_v45_nested_conversion_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V45-003 | v45 | no | pass | cargo test -p oxvba-host formal_v45_val_str_conversion_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V46-001 | v46 | no | pass | cargo test -p oxvba-host formal_v46_len_intrinsic_digit_count | crates/oxvba-host/src/engine.rs |  |
+| FO-V46-002 | v46 | no | pass | cargo test -p oxvba-host formal_v46_slice_intrinsics_digit_subsets | crates/oxvba-host/src/engine.rs |  |
+| FO-V46-003 | v46 | no | pass | cargo test -p oxvba-host formal_v46_instr_and_case_intrinsics | crates/oxvba-host/src/engine.rs |  |
+| FO-V47-001 | v47 | no | pass | cargo test -p oxvba-host formal_v47_split_and_join_intrinsics | crates/oxvba-host/src/engine.rs |  |
+| FO-V47-002 | v47 | no | pass | cargo test -p oxvba-host formal_v47_replace_and_trim_intrinsics | crates/oxvba-host/src/engine.rs |  |
+| FO-V47-003 | v47 | no | pass | cargo test -p oxvba-host formal_v47_strcomp_intrinsic_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V48-001 | v48 | no | pass | cargo test -p oxvba-host formal_v48_date_serial_and_value_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V48-002 | v48 | no | pass | cargo test -p oxvba-host formal_v48_time_serial_and_value_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V48-003 | v48 | no | pass | cargo test -p oxvba-host formal_v48_date_add_diff_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V49-001 | v49 | no | pass | cargo test -p oxvba-host formal_v49_math_primitives_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V49-002 | v49 | no | pass | cargo test -p oxvba-host formal_v49_transcendental_identity_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V49-003 | v49 | no | pass | cargo test -p oxvba-host formal_v49_financial_zero_rate_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V50-001 | v50 | no | pass | cargo test -p oxvba-host formal_v50_array_bounds_introspection_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V50-002 | v50 | no | pass | cargo test -p oxvba-host formal_v50_variant_type_tag_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V50-003 | v50 | no | pass | cargo test -p oxvba-host formal_v50_numeric_date_object_predicates_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V51-001 | v51 | no | pass | cargo test -p oxvba-host formal_v51_err_raise_maps_to_runtime_error_state | crates/oxvba-host/src/engine.rs |  |
+| FO-V51-002 | v51 | no | pass | cargo test -p oxvba-host formal_v51_cverr_error_tag_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V51-003 | v51 | no | pass | cargo test -p oxvba-host formal_v51_err_raise_without_handler_fails | crates/oxvba-host/src/engine.rs |  |
+| FO-V52-001 | v52 | no | pass | cargo test -p oxvba-host formal_v52_shell_environ_dir_host_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V52-002 | v52 | no | pass | cargo test -p oxvba-host formal_v52_host_sensitive_subset_is_jit_vm_equivalent | crates/oxvba-host/src/engine.rs |  |
+| FO-V52-003 | v52 | no | pass | cargo test -p oxvba-host formal_v52_missing_capability_fallback_is_deterministic | crates/oxvba-host/src/engine.rs |  |
+| FO-V53-001 | v53 | no | pass | cargo test -p oxvba-host formal_v53_collection_add_item_count_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V53-002 | v53 | no | pass | cargo test -p oxvba-host formal_v53_collection_remove_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V53-003 | v53 | no | pass | cargo test -p oxvba-host formal_v53_collection_ops_jit_vm_equivalent | crates/oxvba-host/src/engine.rs |  |
+| FO-V54-001 | v54 | no | pass | cargo test -p oxvba-host formal_v54_class_initialize_runs_before_main | crates/oxvba-host/src/engine.rs |  |
+| FO-V54-002 | v54 | no | pass | cargo test -p oxvba-host formal_v54_class_terminate_runs_after_main | crates/oxvba-host/src/engine.rs |  |
+| FO-V54-003 | v54 | no | pass | cargo test -p oxvba-host formal_v54_lifecycle_jit_vm_equivalence | crates/oxvba-host/src/engine.rs |  |
+| FO-V55-001 | v55 | no | pass | cargo test -p oxvba-host formal_v55_createobject_dispatch_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V55-002 | v55 | no | pass | cargo test -p oxvba-host formal_v55_dispatch_jit_vm_equivalence | crates/oxvba-host/src/engine.rs |  |
+| FO-V55-003 | v55 | no | pass | cargo test -p oxvba-host formal_v55_dispatch_diagnostics_are_deterministic | crates/oxvba-host/src/engine.rs |  |
+| FO-V56-001 | v56 | no | pass | cargo test -p oxvba-host formal_v56_script_defaults_target_v56_profile_scope | crates/oxvba-host/src/engine.rs |  |
+| FO-V56-002 | v56 | no | pass | cargo test -p oxvba-host formal_v56_benchmark_default_targets_v56_artifact | crates/oxvba-host/src/engine.rs |  |
+| FO-V56-003 | v56 | no | pass | cargo test -p oxvba-host formal_v56_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V57-001 | v57 | no | pass | cargo test -p oxvba-host formal_v57_async_runner_supports_watcher_controls | crates/oxvba-host/src/engine.rs |  |
+| FO-V57-002 | v57 | no | pass | cargo test -p oxvba-host formal_v57_watcher_script_is_resilient | crates/oxvba-host/src/engine.rs |  |
+| FO-V57-003 | v57 | no | pass | cargo test -p oxvba-host formal_v57_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V58-001 | v58 | no | pass | cargo test -p oxvba-host formal_v58_syntax_kani_harnesses_exist | crates/oxvba-host/src/engine.rs |  |
+| FO-V58-002 | v58 | no | pass | cargo test -p oxvba-host formal_v58_optimizer_kani_harness_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V58-003 | v58 | no | pass | cargo test -p oxvba-host formal_v58_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V59-001 | v59 | no | pass | cargo test -p oxvba-host formal_v59_line_continuation_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V59-002 | v59 | no | pass | cargo test -p oxvba-host formal_v59_line_continuation_conformance_fixture_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V59-003 | v59 | no | pass | cargo test -p oxvba-host formal_v59_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V60-001 | v60 | no | pass | cargo test -p oxvba-host formal_v60_with_block_member_assignments_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V60-002 | v60 | no | pass | cargo test -p oxvba-host formal_v60_nested_with_block_assignments_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V60-003 | v60 | no | pass | cargo test -p oxvba-host formal_v60_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V61-001 | v61 | no | pass | cargo test -p oxvba-host formal_v61_conditional_compilation_if_else_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V61-002 | v61 | no | pass | cargo test -p oxvba-host formal_v61_conditional_compilation_elseif_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V61-003 | v61 | no | pass | cargo test -p oxvba-host formal_v61_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V62-001 | v62 | no | pass | cargo test -p oxvba-host formal_v62_intrinsic_surface_registry_classifies_host_and_core | crates/oxvba-host/src/engine.rs |  |
+| FO-V62-002 | v62 | no | pass | cargo test -p oxvba-host formal_v62_intrinsic_surface_evidence_file_exists | docs/evidence/runtime/INTRINSIC_SURFACE.csv |  |
+| FO-V62-003 | v62 | no | pass | cargo test -p oxvba-host formal_v62_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V63-001 | v63 | no | pass | cargo test -p oxvba-host formal_v63_jit_supports_intrinsic_math_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V63-002 | v63 | no | pass | cargo test -p oxvba-host formal_v63_intrinsic_math_subset_is_jit_vm_equivalent | crates/oxvba-host/src/engine.rs |  |
+| FO-V63-003 | v63 | no | pass | cargo test -p oxvba-host formal_v63_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V64-001 | v64 | no | pass | cargo test -p oxvba-host formal_v64_benchmark_script_tracks_mixed_workloads | scripts/run-bench.ps1 |  |
+| FO-V64-002 | v64 | no | pass | cargo test -p oxvba-host formal_v64_benchmark_profile_artifact_defaults_exist | scripts/run-bench.ps1 |  |
+| FO-V64-003 | v64 | no | pass | cargo test -p oxvba-host formal_v64_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V65-001 | v65 | no | pass | cargo test -p oxvba-host formal_v65_integrated_gate_script_exists | scripts/run-profile-gate.ps1 |  |
+| FO-V65-002 | v65 | no | pass | cargo test -p oxvba-host formal_v65_workset_document_exists | docs/worksets/WORKSET_2026-02-28_INTEGRATED_GATE_V65.md |  |
+| FO-V65-003 | v65 | no | pass | cargo test -p oxvba-host formal_v65_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V66-001 | v66 | no | pass | cargo test -p oxvba-host formal_v66_script_defaults_target_v66_profile_scope | scripts/run-formal.ps1 |  |
+| FO-V66-002 | v66 | no | pass | cargo test -p oxvba-host formal_v66_workset_document_exists | docs/worksets/WORKSET_2026-02-28_STABILIZATION_ROLLUP_V66.md |  |
+| FO-V66-003 | v66 | no | pass | cargo test -p oxvba-host formal_v66_profile_status_document_exists | crates/oxvba-host/src/engine.rs |  |
 | FO-V67-001 | v67 | no | todo | cargo test -p oxvba-compiler typecheck::tests::join_numeric_promotes_to_wider_type | crates/oxvba-compiler/src/typecheck.rs | command exited with code 101 |
 | FO-V67-002 | v67 | no | todo | cargo test -p oxvba-compiler resolve::tests::resolve_typed_param_and_dim_declarations | crates/oxvba-compiler/src/resolve.rs | command exited with code 101 |
 | FO-V67-003 | v67 | no | todo | cargo test -p oxvba-compiler resolve::tests::resolve_typed_array_dim_records_element_alias_types | crates/oxvba-compiler/src/resolve.rs | command exited with code 101 |
@@ -247,131 +247,131 @@
 | FO-V81-001 | v81 | no | todo | cargo test -p oxvba-compiler resolve::tests::resolve_option_base_one_applies_to_array_declaration_bounds | crates/oxvba-compiler/src/resolve.rs | command exited with code 101 |
 | FO-V81-002 | v81 | no | todo | cargo test -p oxvba-compiler resolve::tests::resolve_multidim_reference_linearizes_indices | crates/oxvba-compiler/src/resolve.rs | command exited with code 101 |
 | FO-V81-003 | v81 | no | todo | cargo test -p oxvba-compiler compile_multidim_array_reference_subset | crates/oxvba-compiler/src/lib.rs | command exited with code 101 |
-| FO-V82-001 | v82 | no | todo | cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V82-002 | v82 | no | todo | cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V82-003 | v82 | no | todo | cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V83-001 | v83 | no | todo | cargo test -p oxvba-host formal_v83_paramarray_packs_trailing_args_count | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V83-002 | v83 | no | todo | cargo test -p oxvba-host formal_v83_paramarray_empty_pack_reports_negative_upper_bound | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V83-003 | v83 | no | todo | cargo test -p oxvba-host formal_v83_paramarray_named_args_rejected_in_current_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V84-001 | v84 | no | todo | cargo test -p oxvba-host formal_v84_dispatch_invoke_marshals_array_argument_shape | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V84-002 | v84 | no | todo | cargo test -p oxvba-host formal_v84_paramarray_pack_roundtrips_into_dispatch_boundary | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V84-003 | v84 | no | todo | cargo test -p oxvba-host formal_v84_deferred_gate_rows_present_for_array_track | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V85-001 | v85 | no | todo | cargo test -p oxvba-host formal_v85_typed_fastpath_vm_parity_disabled_vs_enabled | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V85-002 | v85 | no | todo | cargo test -p oxvba-host formal_v85_typed_fastpath_jit_vm_equivalence | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V85-003 | v85 | no | todo | cargo test -p oxvba-host formal_v85_typed_fastpath_hotloop_fixture_exists | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V86-001 | v86 | no | todo | cargo test -p oxvba-host formal_v86_script_defaults_target_v86_profile_scope | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V86-002 | v86 | no | todo | cargo test -p oxvba-host formal_v86_phase12_status_targets_v86_scope | docs/PHASE12_STATUS.md | command exited with code 101 |
-| FO-V86-003 | v86 | no | todo | cargo test -p oxvba-host formal_v86_deferred_gate_audit_exists_with_unblock_steps | docs/evidence/formal/DG_AUDIT_V86.md | command exited with code 101 |
+| FO-V82-001 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_multidim_last_dimension_keeps_overlap | crates/oxvba-host/src/engine.rs |  |
+| FO-V82-002 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_shrink_then_expand_clears_removed_tail | crates/oxvba-host/src/engine.rs |  |
+| FO-V82-003 | v82 | no | pass | cargo test -p oxvba-host formal_v82_redim_preserve_rejects_non_last_dimension_resize | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-001 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_packs_trailing_args_count | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-002 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_empty_pack_reports_negative_upper_bound | crates/oxvba-host/src/engine.rs |  |
+| FO-V83-003 | v83 | no | pass | cargo test -p oxvba-host formal_v83_paramarray_named_args_rejected_in_current_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V84-001 | v84 | no | pass | cargo test -p oxvba-host formal_v84_dispatch_invoke_marshals_array_argument_shape | crates/oxvba-host/src/engine.rs |  |
+| FO-V84-002 | v84 | no | pass | cargo test -p oxvba-host formal_v84_paramarray_pack_roundtrips_into_dispatch_boundary | crates/oxvba-host/src/engine.rs |  |
+| FO-V84-003 | v84 | no | pass | cargo test -p oxvba-host formal_v84_deferred_gate_rows_present_for_array_track | crates/oxvba-host/src/engine.rs |  |
+| FO-V85-001 | v85 | no | pass | cargo test -p oxvba-host formal_v85_typed_fastpath_vm_parity_disabled_vs_enabled | crates/oxvba-host/src/engine.rs |  |
+| FO-V85-002 | v85 | no | pass | cargo test -p oxvba-host formal_v85_typed_fastpath_jit_vm_equivalence | crates/oxvba-host/src/engine.rs |  |
+| FO-V85-003 | v85 | no | pass | cargo test -p oxvba-host formal_v85_typed_fastpath_hotloop_fixture_exists | crates/oxvba-host/src/engine.rs |  |
+| FO-V86-001 | v86 | no | pass | cargo test -p oxvba-host formal_v86_script_defaults_target_v86_profile_scope | crates/oxvba-host/src/engine.rs |  |
+| FO-V86-002 | v86 | no | pass | cargo test -p oxvba-host formal_v86_phase12_status_targets_v86_scope | docs/PHASE12_STATUS.md |  |
+| FO-V86-003 | v86 | no | pass | cargo test -p oxvba-host formal_v86_deferred_gate_audit_exists_with_unblock_steps | docs/evidence/formal/DG_AUDIT_V86.md |  |
 | FO-V107-001 | v107 | no | todo | cargo test -p oxvba-compiler resolve::tests::resolve_with_block_direct_member_target_assignment | crates/oxvba-compiler/src/resolve.rs | command exited with code 101 |
-| FO-V107-002 | v107 | no | todo | cargo test -p oxvba-host formal_v107_with_block_direct_member_target_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V107-003 | v107 | no | todo | cargo test -p oxvba-host formal_v107_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V107.md | command exited with code 101 |
-| FO-V120-001 | v120 | no | todo | cargo test -p oxvba-host formal_v120_extended_conversion_subset_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V121-001 | v121 | no | todo | cargo test -p oxvba-host formal_v121_set_let_assignment_keywords_execute | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V126-001 | v126 | no | todo | cargo test -p oxvba-host formal_v126_introspection_and_typeof_subset_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V132-001 | v132 | no | todo | cargo test -p oxvba-host formal_v132_builtin_expansion_fixtures_exist | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V134-001 | v134 | no | todo | cargo test -p oxvba-host formal_v134_file_stub_intrinsics_execute | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V146-001 | v146 | no | todo | cargo test -p oxvba-host formal_v146_profile_status_range_exists | docs/profile-status/PROFILE_STATUS_V146.md | command exited with code 101 |
+| FO-V107-002 | v107 | no | pass | cargo test -p oxvba-host formal_v107_with_block_direct_member_target_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V107-003 | v107 | no | pass | cargo test -p oxvba-host formal_v107_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V107.md |  |
+| FO-V120-001 | v120 | no | pass | cargo test -p oxvba-host formal_v120_extended_conversion_subset_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V121-001 | v121 | no | pass | cargo test -p oxvba-host formal_v121_set_let_assignment_keywords_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V126-001 | v126 | no | pass | cargo test -p oxvba-host formal_v126_introspection_and_typeof_subset_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V132-001 | v132 | no | pass | cargo test -p oxvba-host formal_v132_builtin_expansion_fixtures_exist | crates/oxvba-host/src/engine.rs |  |
+| FO-V134-001 | v134 | no | pass | cargo test -p oxvba-host formal_v134_file_stub_intrinsics_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V146-001 | v146 | no | pass | cargo test -p oxvba-host formal_v146_profile_status_range_exists | docs/profile-status/PROFILE_STATUS_V146.md |  |
 | FO-V148-001 | v148 | no | todo | cargo test -p oxvba-compiler resolve::tests::resolve_err_surface_member_aliases | crates/oxvba-compiler/src/resolve.rs | command exited with code 101 |
-| FO-V148-002 | v148 | no | todo | cargo test -p oxvba-host formal_v148_err_surface_member_subset_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V148-003 | v148 | no | todo | cargo test -p oxvba-host formal_v148_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V148.md | command exited with code 101 |
+| FO-V148-002 | v148 | no | pass | cargo test -p oxvba-host formal_v148_err_surface_member_subset_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V148-003 | v148 | no | pass | cargo test -p oxvba-host formal_v148_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V148.md |  |
 | FO-V149-001 | v149 | no | todo | cargo test -p oxvba-vm resume_next_clears_error_state_before_continuing | crates/oxvba-vm/src/interpreter.rs | command exited with code 101 |
-| FO-V149-002 | v149 | no | todo | cargo test -p oxvba-host formal_v149_resume_next_clears_err_number | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V149-003 | v149 | no | todo | cargo test -p oxvba-host formal_v149_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V149.md | command exited with code 101 |
+| FO-V149-002 | v149 | no | pass | cargo test -p oxvba-host formal_v149_resume_next_clears_err_number | crates/oxvba-host/src/engine.rs |  |
+| FO-V149-003 | v149 | no | pass | cargo test -p oxvba-host formal_v149_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V149.md |  |
 | FO-V150-001 | v150 | no | todo | cargo test -p oxvba-vm join_intrinsic_maps_array_tag_to_count | crates/oxvba-vm/src/interpreter.rs | command exited with code 101 |
-| FO-V150-002 | v150 | no | todo | cargo test -p oxvba-host formal_v150_join_maps_array_tag_to_count | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V150-003 | v150 | no | todo | cargo test -p oxvba-host formal_v150_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V150.md | command exited with code 101 |
+| FO-V150-002 | v150 | no | pass | cargo test -p oxvba-host formal_v150_join_maps_array_tag_to_count | crates/oxvba-host/src/engine.rs |  |
+| FO-V150-003 | v150 | no | pass | cargo test -p oxvba-host formal_v150_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V150.md |  |
 | FO-V151-001 | v151 | no | todo | cargo test -p oxvba-compiler vbnullstring_assignment_to_long_is_rejected | crates/oxvba-compiler/src/lib.rs | command exited with code 101 |
-| FO-V151-002 | v151 | no | todo | cargo test -p oxvba-host formal_v151_vbnullstring_long_assignment_is_rejected | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V151-003 | v151 | no | todo | cargo test -p oxvba-host formal_v151_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V151.md | command exited with code 101 |
+| FO-V151-002 | v151 | no | pass | cargo test -p oxvba-host formal_v151_vbnullstring_long_assignment_is_rejected | crates/oxvba-host/src/engine.rs |  |
+| FO-V151-003 | v151 | no | pass | cargo test -p oxvba-host formal_v151_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V151.md |  |
 | FO-V152-001 | v152 | no | todo | cargo test -p oxvba-compiler compile_udt_whole_assignment_emits_field_copy_slots | crates/oxvba-compiler/src/lib.rs | command exited with code 101 |
-| FO-V152-002 | v152 | no | todo | cargo test -p oxvba-host formal_v152_udt_whole_assignment_copies_fields | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V152-003 | v152 | no | todo | cargo test -p oxvba-host formal_v152_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V152.md | command exited with code 101 |
-| FO-V153-001 | v153 | no | todo | cargo test -p oxvba-host formal_v153_null_empty_error_predicates_are_distinct | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V153-002 | v153 | no | todo | cargo test -p oxvba-host formal_v153_conformance_fixture_exists | conformance/tests/coercion_null_empty_error_predicates.bas | command exited with code 101 |
-| FO-V153-003 | v153 | no | todo | cargo test -p oxvba-host formal_v153_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V153.md | command exited with code 101 |
+| FO-V152-002 | v152 | no | pass | cargo test -p oxvba-host formal_v152_udt_whole_assignment_copies_fields | crates/oxvba-host/src/engine.rs |  |
+| FO-V152-003 | v152 | no | pass | cargo test -p oxvba-host formal_v152_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V152.md |  |
+| FO-V153-001 | v153 | no | pass | cargo test -p oxvba-host formal_v153_null_empty_error_predicates_are_distinct | crates/oxvba-host/src/engine.rs |  |
+| FO-V153-002 | v153 | no | pass | cargo test -p oxvba-host formal_v153_conformance_fixture_exists | conformance/tests/coercion_null_empty_error_predicates.bas |  |
+| FO-V153-003 | v153 | no | pass | cargo test -p oxvba-host formal_v153_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V153.md |  |
 | FO-V154-001 | v154 | no | todo | cargo test -p oxvba-compiler compile_financial_intrinsics_emit_algorithmic_ops | crates/oxvba-compiler/src/lib.rs | command exited with code 101 |
-| FO-V154-002 | v154 | no | todo | cargo test -p oxvba-host formal_v154_financial_intrinsics_use_algorithmic_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V154-003 | v154 | no | todo | cargo test -p oxvba-host formal_v154_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V154.md | command exited with code 101 |
+| FO-V154-002 | v154 | no | pass | cargo test -p oxvba-host formal_v154_financial_intrinsics_use_algorithmic_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V154-003 | v154 | no | pass | cargo test -p oxvba-host formal_v154_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V154.md |  |
 | FO-V155-001 | v155 | no | todo | cargo test -p oxvba-compiler compile_financial_intrinsics_emit_algorithmic_ops | crates/oxvba-compiler/src/lib.rs | command exited with code 101 |
-| FO-V155-002 | v155 | no | todo | cargo test -p oxvba-host formal_v155_rate_nper_algorithmic_subset | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V155-003 | v155 | no | todo | cargo test -p oxvba-host formal_v155_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V155.md | command exited with code 101 |
-| FO-V156-001 | v156 | no | todo | cargo test -p oxvba-host formal_v156_financial_non_convergence_signals_error_tags | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V156-002 | v156 | no | todo | cargo test -p oxvba-host formal_v156_conformance_fixture_exists | conformance/tests/financial_tolerance_non_convergence.bas | command exited with code 101 |
-| FO-V156-003 | v156 | no | todo | cargo test -p oxvba-host formal_v156_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V156.md | command exited with code 101 |
-| FO-V157-001 | v157 | no | todo | cargo test -p oxvba-host formal_v157_compile_time_diagnostic_wins_before_runtime | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V157-002 | v157 | no | todo | cargo test -p oxvba-host formal_v157_conformance_fixture_exists | conformance/tests/diagnostic_phase_compile_wins.bas | command exited with code 101 |
-| FO-V157-003 | v157 | no | todo | cargo test -p oxvba-host formal_v157_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V157.md | command exited with code 101 |
+| FO-V155-002 | v155 | no | pass | cargo test -p oxvba-host formal_v155_rate_nper_algorithmic_subset | crates/oxvba-host/src/engine.rs |  |
+| FO-V155-003 | v155 | no | pass | cargo test -p oxvba-host formal_v155_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V155.md |  |
+| FO-V156-001 | v156 | no | pass | cargo test -p oxvba-host formal_v156_financial_non_convergence_signals_error_tags | crates/oxvba-host/src/engine.rs |  |
+| FO-V156-002 | v156 | no | pass | cargo test -p oxvba-host formal_v156_conformance_fixture_exists | conformance/tests/financial_tolerance_non_convergence.bas |  |
+| FO-V156-003 | v156 | no | pass | cargo test -p oxvba-host formal_v156_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V156.md |  |
+| FO-V157-001 | v157 | no | pass | cargo test -p oxvba-host formal_v157_compile_time_diagnostic_wins_before_runtime | crates/oxvba-host/src/engine.rs |  |
+| FO-V157-002 | v157 | no | pass | cargo test -p oxvba-host formal_v157_conformance_fixture_exists | conformance/tests/diagnostic_phase_compile_wins.bas |  |
+| FO-V157-003 | v157 | no | pass | cargo test -p oxvba-host formal_v157_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V157.md |  |
 | FO-V158-001 | v158 | no | todo | cargo test -p oxvba-vm vartype_and_isnumeric_distinguish_empty_null_error_and_array_tags | crates/oxvba-vm/src/interpreter.rs | command exited with code 101 |
-| FO-V158-002 | v158 | no | todo | cargo test -p oxvba-host formal_v158_conformance_fixture_exists | conformance/tests/introspection_vartype_isnumeric_tags.bas | command exited with code 101 |
-| FO-V158-003 | v158 | no | todo | cargo test -p oxvba-host formal_v158_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V158.md | command exited with code 101 |
-| FO-V159-001 | v159 | no | todo | cargo test -p oxvba-jit falls_back_for_financial_tolerance_subset_and_matches_vm | crates/oxvba-jit/src/lib.rs | command exited with code 101 |
-| FO-V159-002 | v159 | no | todo | cargo test -p oxvba-host formal_v159_conformance_fixture_exists | conformance/tests/introspection_vartype_isnumeric_tags.bas | command exited with code 101 |
-| FO-V159-003 | v159 | no | todo | cargo test -p oxvba-host formal_v159_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V159.md | command exited with code 101 |
-| FO-V160-001 | v160 | no | todo | cargo test -p oxvba-host formal_v160_err_clear_full_surface_fixture_executes | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V160-002 | v160 | no | todo | cargo test -p oxvba-host formal_v160_conformance_fixtures_exist | conformance/tests/err_clear_full_surface_reset.bas | command exited with code 101 |
-| FO-V160-003 | v160 | no | todo | cargo test -p oxvba-host formal_v160_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V160.md | command exited with code 101 |
-| FO-V161-001 | v161 | no | todo | cargo test -p oxvba-host formal_v161_financial_algorithm_fixtures_execute | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V161-002 | v161 | no | todo | cargo test -p oxvba-host formal_v161_conformance_fixtures_exist | conformance/tests/financial_algorithm_npv_irr_mirr_subset.bas | command exited with code 101 |
-| FO-V161-003 | v161 | no | todo | cargo test -p oxvba-host formal_v161_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V161.md | command exited with code 101 |
+| FO-V158-002 | v158 | no | pass | cargo test -p oxvba-host formal_v158_conformance_fixture_exists | conformance/tests/introspection_vartype_isnumeric_tags.bas |  |
+| FO-V158-003 | v158 | no | pass | cargo test -p oxvba-host formal_v158_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V158.md |  |
+| FO-V159-001 | v159 | no | pass | cargo test -p oxvba-jit falls_back_for_financial_tolerance_subset_and_matches_vm | crates/oxvba-jit/src/lib.rs |  |
+| FO-V159-002 | v159 | no | pass | cargo test -p oxvba-host formal_v159_conformance_fixture_exists | conformance/tests/introspection_vartype_isnumeric_tags.bas |  |
+| FO-V159-003 | v159 | no | pass | cargo test -p oxvba-host formal_v159_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V159.md |  |
+| FO-V160-001 | v160 | no | pass | cargo test -p oxvba-host formal_v160_err_clear_full_surface_fixture_executes | crates/oxvba-host/src/engine.rs |  |
+| FO-V160-002 | v160 | no | pass | cargo test -p oxvba-host formal_v160_conformance_fixtures_exist | conformance/tests/err_clear_full_surface_reset.bas |  |
+| FO-V160-003 | v160 | no | pass | cargo test -p oxvba-host formal_v160_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V160.md |  |
+| FO-V161-001 | v161 | no | pass | cargo test -p oxvba-host formal_v161_financial_algorithm_fixtures_execute | crates/oxvba-host/src/engine.rs |  |
+| FO-V161-002 | v161 | no | pass | cargo test -p oxvba-host formal_v161_conformance_fixtures_exist | conformance/tests/financial_algorithm_npv_irr_mirr_subset.bas |  |
+| FO-V161-003 | v161 | no | pass | cargo test -p oxvba-host formal_v161_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V161.md |  |
 | FO-V162-001 | v162 | no | skipped | cargo kani -p oxvba-vm --harness financial_rate_zero_nper_yields_error_tag | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V162-002 | v162 | no | skipped | cargo kani -p oxvba-vm --harness financial_nper_invalid_domain_yields_error_tag | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V162-003 | v162 | no | skipped | cargo kani -p oxvba-vm --harness vartype_intrinsic_outputs_expected_domain | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
-| FO-V162-004 | v162 | no | todo | cargo test -p oxvba-host formal_v162_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V162.md | command exited with code 101 |
-| FO-V163-001 | v163 | no | todo | cargo test -p oxvba-host formal_v163_coverage_index_reconciles_non_hal_rows | docs/evidence/language/COVERAGE_INDEX.csv | command exited with code 101 |
-| FO-V163-002 | v163 | no | todo | cargo test -p oxvba-host formal_v163_library_checklist_reconciles_financial_status | docs/evidence/runtime/LIBRARY_CHECKLIST.csv | command exited with code 101 |
-| FO-V163-003 | v163 | no | todo | cargo test -p oxvba-host formal_v163_spec_checklist_reconciles_non_hal_rows | docs/evidence/SPEC_CHECKLIST.md | command exited with code 101 |
-| FO-V163-004 | v163 | no | todo | cargo test -p oxvba-host formal_v163_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V163.md | command exited with code 101 |
-| FO-V164-001 | v164 | no | todo | cargo test -p oxvba-host formal_v164_non_hal_deferred_gates_have_foldback_notes | docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv | command exited with code 101 |
-| FO-V164-002 | v164 | no | todo | cargo test -p oxvba-host formal_v164_impl_defined_followup_is_registered | docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv | command exited with code 101 |
-| FO-V164-003 | v164 | no | todo | cargo test -p oxvba-host formal_v164_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V164.md | command exited with code 101 |
-| FO-V165-001 | v165 | no | todo | cargo test -p oxvba-host formal_v165_integrated_gate_artifacts_exist | docs/evidence/profiles/v165/integrated_gate.md | command exited with code 101 |
-| FO-V165-002 | v165 | no | todo | cargo test -p oxvba-host formal_v165_workset_document_exists | docs/worksets/WORKSET_2026-03-01_INTEGRATED_NON_HAL_GATE_V165.md | command exited with code 101 |
-| FO-V165-003 | v165 | no | todo | cargo test -p oxvba-host formal_v165_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V165.md | command exited with code 101 |
-| FO-V166-001 | v166 | no | todo | cargo test -p oxvba-host formal_v166_terminal_gate_artifacts_exist | docs/evidence/profiles/v166/integrated_gate.md | command exited with code 101 |
-| FO-V166-002 | v166 | no | todo | cargo test -p oxvba-host formal_v166_non_hal_milestone_closure_doc_exists | docs/evidence/profiles/v166/non_hal_completion_milestone.md | command exited with code 101 |
-| FO-V166-003 | v166 | no | todo | cargo test -p oxvba-host formal_v166_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V166.md | command exited with code 101 |
-| FO-V167-001 | v167 | no | todo | cargo test -p oxvba-host formal_v167_non_hal_audit_report_exists_and_is_clean | docs/evidence/language/NON_HAL_POST_COMPLETION_AUDIT_V167.md | command exited with code 101 |
-| FO-V167-002 | v167 | no | todo | cargo test -p oxvba-host formal_v167_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V167.md | command exited with code 101 |
-| FO-V168-001 | v168 | no | todo | cargo test -p oxvba-host formal_v168_benchmark_includes_subset_workloads | scripts/run-bench.ps1 | command exited with code 101 |
-| FO-V168-002 | v168 | no | todo | cargo test -p oxvba-host formal_v168_conformance_runner_supports_include_pattern | scripts/run-conformance.ps1 | command exited with code 101 |
-| FO-V168-003 | v168 | no | todo | cargo test -p oxvba-host formal_v168_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V168.md | command exited with code 101 |
-| FO-V169-001 | v169 | no | todo | cargo test -p oxvba-host formal_v169_financial_rate_uses_derivative_helper | crates/oxvba-vm/src/interpreter.rs | command exited with code 101 |
-| FO-V169-002 | v169 | no | todo | cargo test -p oxvba-host formal_v169_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V169.md | command exited with code 101 |
-| FO-V170-001 | v170 | no | todo | cargo test -p oxvba-host formal_v170_string_digit_paths_use_slice_based_substrings | crates/oxvba-vm/src/interpreter.rs | command exited with code 101 |
-| FO-V170-002 | v170 | no | todo | cargo test -p oxvba-host formal_v170_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V170.md | command exited with code 101 |
-| FO-V171-001 | v171 | no | todo | cargo test -p oxvba-host formal_v171_coercion_cverr_range_fixture_executes | conformance/tests/coercion_cverr_range_predicates.bas | command exited with code 101 |
-| FO-V171-002 | v171 | no | todo | cargo test -p oxvba-host formal_v171_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V171.md | command exited with code 101 |
-| FO-V172-001 | v172 | no | todo | cargo test -p oxvba-host formal_v172_error_nested_mode_fixture_executes | conformance/tests/error_nested_mode_transitions.bas | command exited with code 101 |
-| FO-V172-002 | v172 | no | todo | cargo test -p oxvba-host formal_v172_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V172.md | command exited with code 101 |
-| FO-V173-001 | v173 | no | todo | cargo test -p oxvba-host formal_v173_jit_fallback_regressions_cover_new_non_hal_edges | crates/oxvba-jit/src/lib.rs | command exited with code 101 |
-| FO-V173-002 | v173 | no | todo | cargo test -p oxvba-host formal_v173_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V173.md | command exited with code 101 |
-| FO-V174-001 | v174 | no | todo | cargo test -p oxvba-host formal_v174_oracle_probe_scaffold_exists | scripts/oracle-probe.ps1 | command exited with code 101 |
-| FO-V174-002 | v174 | no | todo | cargo test -p oxvba-host formal_v174_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V174.md | command exited with code 101 |
+| FO-V162-004 | v162 | no | pass | cargo test -p oxvba-host formal_v162_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V162.md |  |
+| FO-V163-001 | v163 | no | pass | cargo test -p oxvba-host formal_v163_coverage_index_reconciles_non_hal_rows | docs/evidence/language/COVERAGE_INDEX.csv |  |
+| FO-V163-002 | v163 | no | pass | cargo test -p oxvba-host formal_v163_library_checklist_reconciles_financial_status | docs/evidence/runtime/LIBRARY_CHECKLIST.csv |  |
+| FO-V163-003 | v163 | no | pass | cargo test -p oxvba-host formal_v163_spec_checklist_reconciles_non_hal_rows | docs/evidence/SPEC_CHECKLIST.md |  |
+| FO-V163-004 | v163 | no | pass | cargo test -p oxvba-host formal_v163_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V163.md |  |
+| FO-V164-001 | v164 | no | pass | cargo test -p oxvba-host formal_v164_non_hal_deferred_gates_have_foldback_notes | docs/evidence/conformance/DEFERRED_ORACLE_GATES.csv |  |
+| FO-V164-002 | v164 | no | pass | cargo test -p oxvba-host formal_v164_impl_defined_followup_is_registered | docs/evidence/conformance/CONFORMANCE_CHECK_TOPICS.csv |  |
+| FO-V164-003 | v164 | no | pass | cargo test -p oxvba-host formal_v164_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V164.md |  |
+| FO-V165-001 | v165 | no | pass | cargo test -p oxvba-host formal_v165_integrated_gate_artifacts_exist | docs/evidence/profiles/v165/integrated_gate.md |  |
+| FO-V165-002 | v165 | no | pass | cargo test -p oxvba-host formal_v165_workset_document_exists | docs/worksets/WORKSET_2026-03-01_INTEGRATED_NON_HAL_GATE_V165.md |  |
+| FO-V165-003 | v165 | no | pass | cargo test -p oxvba-host formal_v165_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V165.md |  |
+| FO-V166-001 | v166 | no | pass | cargo test -p oxvba-host formal_v166_terminal_gate_artifacts_exist | docs/evidence/profiles/v166/integrated_gate.md |  |
+| FO-V166-002 | v166 | no | pass | cargo test -p oxvba-host formal_v166_non_hal_milestone_closure_doc_exists | docs/evidence/profiles/v166/non_hal_completion_milestone.md |  |
+| FO-V166-003 | v166 | no | pass | cargo test -p oxvba-host formal_v166_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V166.md |  |
+| FO-V167-001 | v167 | no | pass | cargo test -p oxvba-host formal_v167_non_hal_audit_report_exists_and_is_clean | docs/evidence/language/NON_HAL_POST_COMPLETION_AUDIT_V167.md |  |
+| FO-V167-002 | v167 | no | pass | cargo test -p oxvba-host formal_v167_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V167.md |  |
+| FO-V168-001 | v168 | no | pass | cargo test -p oxvba-host formal_v168_benchmark_includes_subset_workloads | scripts/run-bench.ps1 |  |
+| FO-V168-002 | v168 | no | pass | cargo test -p oxvba-host formal_v168_conformance_runner_supports_include_pattern | scripts/run-conformance.ps1 |  |
+| FO-V168-003 | v168 | no | pass | cargo test -p oxvba-host formal_v168_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V168.md |  |
+| FO-V169-001 | v169 | no | pass | cargo test -p oxvba-host formal_v169_financial_rate_uses_derivative_helper | crates/oxvba-vm/src/interpreter.rs |  |
+| FO-V169-002 | v169 | no | pass | cargo test -p oxvba-host formal_v169_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V169.md |  |
+| FO-V170-001 | v170 | no | pass | cargo test -p oxvba-host formal_v170_string_digit_paths_use_slice_based_substrings | crates/oxvba-vm/src/interpreter.rs |  |
+| FO-V170-002 | v170 | no | pass | cargo test -p oxvba-host formal_v170_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V170.md |  |
+| FO-V171-001 | v171 | no | pass | cargo test -p oxvba-host formal_v171_coercion_cverr_range_fixture_executes | conformance/tests/coercion_cverr_range_predicates.bas |  |
+| FO-V171-002 | v171 | no | pass | cargo test -p oxvba-host formal_v171_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V171.md |  |
+| FO-V172-001 | v172 | no | pass | cargo test -p oxvba-host formal_v172_error_nested_mode_fixture_executes | conformance/tests/error_nested_mode_transitions.bas |  |
+| FO-V172-002 | v172 | no | pass | cargo test -p oxvba-host formal_v172_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V172.md |  |
+| FO-V173-001 | v173 | no | pass | cargo test -p oxvba-host formal_v173_jit_fallback_regressions_cover_new_non_hal_edges | crates/oxvba-jit/src/lib.rs |  |
+| FO-V173-002 | v173 | no | pass | cargo test -p oxvba-host formal_v173_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V173.md |  |
+| FO-V174-001 | v174 | no | pass | cargo test -p oxvba-host formal_v174_oracle_probe_scaffold_exists | scripts/oracle-probe.ps1 |  |
+| FO-V174-002 | v174 | no | pass | cargo test -p oxvba-host formal_v174_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V174.md |  |
 | FO-V175-001 | v175 | no | skipped | cargo kani -p oxvba-vm --harness cverr_tag_encoding_stays_in_reserved_error_band | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V175-002 | v175 | no | skipped | cargo kani -p oxvba-vm --harness resume_next_clears_err_number_after_raise | crates/oxvba-vm/src/interpreter.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
-| FO-V175-003 | v175 | no | todo | cargo test -p oxvba-host formal_v175_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V175.md | command exited with code 101 |
-| FO-V176-001 | v176 | no | todo | cargo test -p oxvba-host formal_v176_deferred_gate_register_tracks_new_lanes | docs/evidence/formal/DEFERRED_GATES.md | command exited with code 101 |
-| FO-V176-002 | v176 | no | todo | cargo test -p oxvba-host formal_v176_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V176.md | command exited with code 101 |
-| FO-V177-001 | v177 | no | todo | cargo test -p oxvba-host formal_v177_docs_reference_non_hal_hardening_artifacts | docs/CONFORMANCE.md | command exited with code 101 |
-| FO-V177-002 | v177 | no | todo | cargo test -p oxvba-host formal_v177_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V177.md | command exited with code 101 |
-| FO-V178-001 | v178 | no | todo | cargo test -p oxvba-host formal_v178_coverage_normalization_assets_exist | docs/evidence/language/COVERAGE_AUDIT_V178.md | command exited with code 101 |
-| FO-V178-002 | v178 | no | todo | cargo test -p oxvba-host formal_v178_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V178.md | command exited with code 101 |
-| FO-V179-001 | v179 | no | todo | cargo test -p oxvba-host formal_v179_regression_fixtures_execute | conformance/tests/regression_cverr_error_resume_bridge.bas | command exited with code 101 |
-| FO-V179-002 | v179 | no | todo | cargo test -p oxvba-host formal_v179_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V179.md | command exited with code 101 |
-| FO-V180-001 | v180 | no | todo | cargo test -p oxvba-host formal_v180_perf_trend_report_exists | docs/evidence/profiles/v180/PERF_TREND_V166_TO_V180.md | command exited with code 101 |
-| FO-V180-002 | v180 | no | todo | cargo test -p oxvba-host formal_v180_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V180.md | command exited with code 101 |
-| FO-V181-001 | v181 | no | todo | cargo test -p oxvba-host formal_v181_integrated_correctness_artifacts_exist | docs/evidence/profiles/v181/gate_report.md | command exited with code 101 |
-| FO-V181-002 | v181 | no | todo | cargo test -p oxvba-host formal_v181_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V181.md | command exited with code 101 |
-| FO-V182-001 | v182 | no | todo | cargo test -p oxvba-host formal_v182_deferred_oracle_audit_assets_exist | docs/evidence/conformance/DEFERRED_ORACLE_AUDIT_V182.md | command exited with code 101 |
-| FO-V182-002 | v182 | no | todo | cargo test -p oxvba-host formal_v182_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V182.md | command exited with code 101 |
-| FO-V183-001 | v183 | no | todo | cargo test -p oxvba-host formal_v183_divergence_audit_report_exists | docs/evidence/divergences/DIVERGENCE_AUDIT_V183.md | command exited with code 101 |
-| FO-V183-002 | v183 | no | todo | cargo test -p oxvba-host formal_v183_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V183.md | command exited with code 101 |
-| FO-V184-001 | v184 | no | todo | cargo test -p oxvba-host formal_v184_profile_gate_runner_has_locking_and_skip_bench_switch | scripts/run-profile-gate.ps1 | command exited with code 101 |
-| FO-V184-002 | v184 | no | todo | cargo test -p oxvba-host formal_v184_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V184.md | command exited with code 101 |
-| FO-V185-001 | v185 | no | todo | cargo test -p oxvba-host formal_v185_release_candidate_gate_artifacts_exist | docs/evidence/profiles/v185/RC_GATE_SUMMARY.md | command exited with code 101 |
-| FO-V185-002 | v185 | no | todo | cargo test -p oxvba-host formal_v185_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V185.md | command exited with code 101 |
-| FO-V186-001 | v186 | no | todo | cargo test -p oxvba-host formal_v186_terminal_closure_artifacts_exist | docs/evidence/profiles/v186/BATCH2_CLOSURE.md | command exited with code 101 |
-| FO-V186-002 | v186 | no | todo | cargo test -p oxvba-host formal_v186_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V186.md | command exited with code 101 |
+| FO-V175-003 | v175 | no | pass | cargo test -p oxvba-host formal_v175_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V175.md |  |
+| FO-V176-001 | v176 | no | pass | cargo test -p oxvba-host formal_v176_deferred_gate_register_tracks_new_lanes | docs/evidence/formal/DEFERRED_GATES.md |  |
+| FO-V176-002 | v176 | no | pass | cargo test -p oxvba-host formal_v176_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V176.md |  |
+| FO-V177-001 | v177 | no | pass | cargo test -p oxvba-host formal_v177_docs_reference_non_hal_hardening_artifacts | docs/CONFORMANCE.md |  |
+| FO-V177-002 | v177 | no | pass | cargo test -p oxvba-host formal_v177_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V177.md |  |
+| FO-V178-001 | v178 | no | pass | cargo test -p oxvba-host formal_v178_coverage_normalization_assets_exist | docs/evidence/language/COVERAGE_AUDIT_V178.md |  |
+| FO-V178-002 | v178 | no | pass | cargo test -p oxvba-host formal_v178_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V178.md |  |
+| FO-V179-001 | v179 | no | pass | cargo test -p oxvba-host formal_v179_regression_fixtures_execute | conformance/tests/regression_cverr_error_resume_bridge.bas |  |
+| FO-V179-002 | v179 | no | pass | cargo test -p oxvba-host formal_v179_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V179.md |  |
+| FO-V180-001 | v180 | no | pass | cargo test -p oxvba-host formal_v180_perf_trend_report_exists | docs/evidence/profiles/v180/PERF_TREND_V166_TO_V180.md |  |
+| FO-V180-002 | v180 | no | pass | cargo test -p oxvba-host formal_v180_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V180.md |  |
+| FO-V181-001 | v181 | no | pass | cargo test -p oxvba-host formal_v181_integrated_correctness_artifacts_exist | docs/evidence/profiles/v181/gate_report.md |  |
+| FO-V181-002 | v181 | no | pass | cargo test -p oxvba-host formal_v181_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V181.md |  |
+| FO-V182-001 | v182 | no | pass | cargo test -p oxvba-host formal_v182_deferred_oracle_audit_assets_exist | docs/evidence/conformance/DEFERRED_ORACLE_AUDIT_V182.md |  |
+| FO-V182-002 | v182 | no | pass | cargo test -p oxvba-host formal_v182_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V182.md |  |
+| FO-V183-001 | v183 | no | pass | cargo test -p oxvba-host formal_v183_divergence_audit_report_exists | docs/evidence/divergences/DIVERGENCE_AUDIT_V183.md |  |
+| FO-V183-002 | v183 | no | pass | cargo test -p oxvba-host formal_v183_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V183.md |  |
+| FO-V184-001 | v184 | no | pass | cargo test -p oxvba-host formal_v184_profile_gate_runner_has_locking_and_skip_bench_switch | scripts/run-profile-gate.ps1 |  |
+| FO-V184-002 | v184 | no | pass | cargo test -p oxvba-host formal_v184_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V184.md |  |
+| FO-V185-001 | v185 | no | pass | cargo test -p oxvba-host formal_v185_release_candidate_gate_artifacts_exist | docs/evidence/profiles/v185/RC_GATE_SUMMARY.md |  |
+| FO-V185-002 | v185 | no | pass | cargo test -p oxvba-host formal_v185_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V185.md |  |
+| FO-V186-001 | v186 | no | pass | cargo test -p oxvba-host formal_v186_terminal_closure_artifacts_exist | docs/evidence/profiles/v186/BATCH2_CLOSURE.md |  |
+| FO-V186-002 | v186 | no | pass | cargo test -p oxvba-host formal_v186_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V186.md |  |
 | FO-V287-001 | v287 | no | skipped | cargo kani -p oxvba-host --harness pmr_typelib_resolution_transitions_typelib_refs_out_of_unbound | crates/oxvba-host/src/project.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V287-002 | v287 | no | skipped | cargo kani -p oxvba-host --harness pmr_active_resolution_prefers_local_symbol_before_reference_symbol | crates/oxvba-host/src/project.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
 | FO-V287-003 | v287 | no | skipped | cargo kani -p oxvba-hal --harness dynlink_contract_rejects_mismatched_selection_policy | crates/oxvba-hal/src/traits.rs | cargo-kani available via WSL; rerun with -UseWslKani (recommended via run-formal-kani-async.ps1) |
@@ -383,16 +383,16 @@
 | FO-V466-002 | v466 | no | todo | cargo test -p oxvba-compiler compile_project_rejects_implements_missing_member_coverage | crates/oxvba-compiler/src/project.rs | command exited with code 101 |
 | FO-V466-003 | v466 | no | todo | cargo test -p oxvba-compiler compile_project_rejects_raiseevent_undeclared_event | crates/oxvba-compiler/src/project.rs | command exited with code 101 |
 | FO-V466-004 | v466 | no | todo | cargo test -p oxvba-compiler compile_project_allows_raiseevent_for_declared_event | crates/oxvba-compiler/src/project.rs | command exited with code 101 |
-| FO-V466-005 | v466 | no | todo | cargo test -p oxvba-host formal_v466_feature_obligation_coverage_index_is_uniform_and_deep | docs/evidence/formal/FEATURE_OBLIGATION_COVERAGE_V1.csv | command exited with code 101 |
-| FO-V466-006 | v466 | no | todo | cargo test -p oxvba-host formal_v466_event_docs_reflect_post_gate_semantics | docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md | command exited with code 101 |
-| FO-V466-007 | v466 | no | todo | cargo test -p oxvba-host formal_v466_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V466.md | command exited with code 101 |
-| FO-V466-008 | v466 | no | todo | cargo test -p oxvba-host formal_v466_project_integration_limits_use_post_gate_diagnostics | conformance/integration/catalog.psv | command exited with code 101 |
-| FO-V466-009 | v466 | no | todo | cargo test -p oxvba-host formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts | scripts/check-governance.ps1 | command exited with code 101 |
-| FO-V466-010 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_raiseevent_dispatches_to_withevents_handlers_in_stable_order | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-011 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_dispatch_host_event_returns_bound_handlers | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-012 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_implements_prefixed_member_executes_in_class_flow | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-013 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_raiseevent_forwards_single_event_arg | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-014 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_withevents_reassignment_rebinds_non_default_instances_deterministically | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-015 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_withevents_clear_then_rebind_updates_dispatch_membership | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V466-016 | v466 | no | todo | cargo test -p oxvba-host formal_event_runtime_withevents_binding_intrinsics_roundtrip_state | crates/oxvba-host/src/engine.rs | command exited with code 101 |
-| FO-V620-001 | v620 | no | todo | cargo test -p oxvba-host formal_com_evt_b_source_interface_callback_ingress_maps_to_registered_handler_symbol | crates/oxvba-host/src/engine.rs | command exited with code 101 |
+| FO-V466-005 | v466 | no | pass | cargo test -p oxvba-host formal_v466_feature_obligation_coverage_index_is_uniform_and_deep | docs/evidence/formal/FEATURE_OBLIGATION_COVERAGE_V1.csv |  |
+| FO-V466-006 | v466 | no | pass | cargo test -p oxvba-host formal_v466_event_docs_reflect_post_gate_semantics | docs/spec/PROJECT_MODULE_REFERENCE_SPEC_V1.md |  |
+| FO-V466-007 | v466 | no | pass | cargo test -p oxvba-host formal_v466_profile_status_document_exists | docs/profile-status/PROFILE_STATUS_V466.md |  |
+| FO-V466-008 | v466 | no | pass | cargo test -p oxvba-host formal_v466_project_integration_limits_use_post_gate_diagnostics | conformance/integration/catalog.psv |  |
+| FO-V466-009 | v466 | no | pass | cargo test -p oxvba-host formal_v466_governance_doctrine_tracks_pmr_event_and_oracle_schema_contracts | scripts/check-governance.ps1 |  |
+| FO-V466-010 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_raiseevent_dispatches_to_withevents_handlers_in_stable_order | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-011 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_dispatch_host_event_returns_bound_handlers | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-012 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_implements_prefixed_member_executes_in_class_flow | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-013 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_raiseevent_forwards_single_event_arg | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-014 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_withevents_reassignment_rebinds_non_default_instances_deterministically | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-015 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_withevents_clear_then_rebind_updates_dispatch_membership | crates/oxvba-host/src/engine.rs |  |
+| FO-V466-016 | v466 | no | pass | cargo test -p oxvba-host formal_event_runtime_withevents_binding_intrinsics_roundtrip_state | crates/oxvba-host/src/engine.rs |  |
+| FO-V620-001 | v620 | no | pass | cargo test -p oxvba-host formal_com_evt_b_source_interface_callback_ingress_maps_to_registered_handler_symbol | crates/oxvba-host/src/engine.rs |  |
