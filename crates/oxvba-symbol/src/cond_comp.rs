@@ -8,10 +8,11 @@
 //! content with spaces, preserving byte offsets + line numbers for diagnostics)
 //! before the source reaches `oxvba_syntax::parse`.
 //!
-//! The constant environment layers, lowest first: the **predefined** host constants
-//! ([`predefined_cc_constants`] — `Win64`/`VBA7`/`Win32` true on a 64-bit Windows
-//! runtime), the project `DefineConstants`, and module-level `#Const`s accumulated
-//! top-to-bottom. `#If` conditions reuse the constant-expression evaluator
+//! The constant environment layers, lowest first: the **predefined** target constants
+//! ([`predefined_cc_constants_for_target`] — `VBA7` plus host/pointer-width facts
+//! such as `Win64`, `Win32`, and `Mac`), the project `DefineConstants`, and
+//! module-level `#Const`s accumulated top-to-bottom. `#If` conditions reuse the
+//! constant-expression evaluator
 //! ([`crate::const_eval`]) so their semantics match VBA `Const` semantics exactly.
 
 use std::collections::{BTreeMap, HashMap};
@@ -28,28 +29,94 @@ use crate::model::fold_identifier;
 /// Conditional-compilation constants, keyed by folded (case-insensitive) name.
 pub type CcConstants = HashMap<String, CoreConst>;
 
-/// The predefined conditional-compilation constants for a 64-bit Windows runtime.
-/// VBA `True` is `-1`; `Win32` is true on **both** 32- and 64-bit Windows (it marks
-/// the Win32 API base), while `Win64` is true only on 64-bit.
-pub fn predefined_cc_constants() -> CcConstants {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConditionalCompilationHost {
+    Windows,
+    Mac,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConditionalCompilationPointerWidth {
+    Bits32,
+    Bits64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConditionalCompilationTarget {
+    pub host: ConditionalCompilationHost,
+    pub pointer_width: ConditionalCompilationPointerWidth,
+    pub vba7: bool,
+}
+
+impl ConditionalCompilationTarget {
+    pub const fn windows_64_vba7() -> Self {
+        Self {
+            host: ConditionalCompilationHost::Windows,
+            pointer_width: ConditionalCompilationPointerWidth::Bits64,
+            vba7: true,
+        }
+    }
+
+    pub const fn windows_32_vba7() -> Self {
+        Self {
+            host: ConditionalCompilationHost::Windows,
+            pointer_width: ConditionalCompilationPointerWidth::Bits32,
+            vba7: true,
+        }
+    }
+
+    pub const fn mac_64_vba7() -> Self {
+        Self {
+            host: ConditionalCompilationHost::Mac,
+            pointer_width: ConditionalCompilationPointerWidth::Bits64,
+            vba7: true,
+        }
+    }
+}
+
+impl Default for ConditionalCompilationTarget {
+    fn default() -> Self {
+        Self::windows_64_vba7()
+    }
+}
+
+/// The predefined conditional-compilation constants for the supplied VBA target.
+/// `Win32` is true on both 32- and 64-bit Windows (it marks the Win32 API base),
+/// while `Win64` is true only on 64-bit Windows. `Mac` is true only for Mac Office.
+pub fn predefined_cc_constants_for_target(target: ConditionalCompilationTarget) -> CcConstants {
+    let is_windows = target.host == ConditionalCompilationHost::Windows;
+    let is_mac = target.host == ConditionalCompilationHost::Mac;
+    let is_64 = target.pointer_width == ConditionalCompilationPointerWidth::Bits64;
     [
-        ("vba7", true),
-        ("win64", true),
-        ("win32", true),
+        ("vba7", target.vba7),
+        ("win64", is_windows && is_64),
+        ("win32", is_windows),
         ("vba6", false),
         ("win16", false),
-        ("mac", false),
+        ("mac", is_mac),
     ]
     .into_iter()
     .map(|(name, value)| (name.to_string(), CoreConst::Bool(value)))
     .collect()
 }
 
+/// Default predefined constants for the active Windows/VBA7 x64 target.
+pub fn predefined_cc_constants() -> CcConstants {
+    predefined_cc_constants_for_target(ConditionalCompilationTarget::default())
+}
+
 /// The base conditional-compilation environment: predefined host constants plus the
 /// project's `DefineConstants`. Module-level `#Const`s are layered on per module
 /// inside [`preprocess`].
 pub fn base_cc_constants(project: &BTreeMap<String, i32>) -> CcConstants {
-    let mut cc = predefined_cc_constants();
+    base_cc_constants_for_target(project, ConditionalCompilationTarget::default())
+}
+
+pub fn base_cc_constants_for_target(
+    project: &BTreeMap<String, i32>,
+    target: ConditionalCompilationTarget,
+) -> CcConstants {
+    let mut cc = predefined_cc_constants_for_target(target);
     for (name, value) in project {
         cc.insert(fold_identifier(name), CoreConst::I32(*value));
     }
@@ -400,6 +467,38 @@ mod tests {
         )
         .expect("preprocess");
         assert!(out.contains("on") && !out.contains("off"), "{out:?}");
+    }
+
+    #[test]
+    fn target_constants_select_windows_32_branch() {
+        let out = preprocess(
+            "#If Win64 Then\nx64\n#ElseIf Win32 Then\nx86\n#Else\nother\n#End If\n",
+            &base_cc_constants_for_target(
+                &BTreeMap::new(),
+                ConditionalCompilationTarget::windows_32_vba7(),
+            ),
+        )
+        .expect("preprocess");
+        assert!(
+            out.contains("x86") && !out.contains("x64") && !out.contains("other"),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn target_constants_select_mac_branch() {
+        let out = preprocess(
+            "#If Mac Then\nmac\n#ElseIf Win64 Then\nwin64\n#Else\nother\n#End If\n",
+            &base_cc_constants_for_target(
+                &BTreeMap::new(),
+                ConditionalCompilationTarget::mac_64_vba7(),
+            ),
+        )
+        .expect("preprocess");
+        assert!(
+            out.contains("mac") && !out.contains("win64") && !out.contains("other"),
+            "{out:?}"
+        );
     }
 
     #[test]

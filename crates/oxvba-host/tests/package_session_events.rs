@@ -33,6 +33,7 @@ fn package_session_for(modules: Vec<ModuleUnit>) -> ProjectRuntimeSession {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: Default::default(),
+        conditional_compilation_target: Default::default(),
     };
     let typelibs = oxvba_symbol::CatalogTypeLibResolver;
     let program = oxvba_bind::bind_program(&manifest, &typelibs).expect("bind package");

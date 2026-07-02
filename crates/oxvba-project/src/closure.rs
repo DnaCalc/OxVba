@@ -72,6 +72,7 @@ pub fn load_project_closure_with_entry(
             references: node.references.clone(),
             reference_projects,
             conditional_constants: node.conditional_constants.clone(),
+            conditional_compilation_target: Default::default(),
         });
     }
     Ok(manifests)

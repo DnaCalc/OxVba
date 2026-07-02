@@ -38,6 +38,7 @@ fn manifest(source: &str) -> SymbolProjectManifest {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     }
 }
 
@@ -57,6 +58,7 @@ fn manifest_modules(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManife
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     }
 }
 
@@ -1590,6 +1592,7 @@ fn class_manifest(main_src: &str, class_name: &str, class_src: &str) -> SymbolPr
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     }
 }
 
@@ -2283,6 +2286,7 @@ fn new_com_coclass_lowers_to_create_object() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &WidgetTypeLibs).expect("bind_program");
     // `New Widget` resolves the coclass to its ProgID and lowers to CreateObject.
@@ -2364,6 +2368,7 @@ fn multi_manifest(modules: &[(&str, ModuleKind, &str)]) -> SymbolProjectManifest
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     }
 }
 
@@ -2687,6 +2692,7 @@ fn withevents_com_source_emits_event_route() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
 
@@ -2736,6 +2742,7 @@ fn withevents_com_source_without_handler_emits_no_route() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
     assert!(
@@ -2774,6 +2781,7 @@ fn typed_com_receiver_member_call_lowers_to_early_com() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &EventServerTypeLibs).expect("bind_program");
 
@@ -3000,6 +3008,7 @@ fn typed_com_default_member_bare_let_get_lowers_to_early_com() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &DefaultValueTypeLibs).expect("bind_program");
     let callees = top_level_callees(&program);
@@ -3052,6 +3061,7 @@ fn host_injected_default_member_bare_let_get_lowers_to_early_com() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &DefaultValueTypeLibs).expect("bind_program");
     let callees = top_level_callees(&program);
@@ -3104,6 +3114,7 @@ fn host_injected_root_object_member_lowers_through_com_metadata() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &DefaultValueTypeLibs).expect("bind_program");
     let callees = top_level_callees(&program);
@@ -3137,6 +3148,7 @@ fn host_injected_application_run_and_ontime_lower_through_com_metadata() {
         }],
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let program = bind_program(&manifest, &ApplicationTypeLibs).expect("bind_program");
     let callees = top_level_callees(&program);

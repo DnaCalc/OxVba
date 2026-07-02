@@ -32,6 +32,7 @@ fn vm3_session_for(modules: Vec<ModuleUnit>) -> oxvba_host::ProjectRuntimeSessio
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: Default::default(),
+        conditional_compilation_target: Default::default(),
     };
     let typelibs = oxvba_symbol::CatalogTypeLibResolver;
     let program = oxvba_bind::bind_program(&manifest, &typelibs).expect("bind project");

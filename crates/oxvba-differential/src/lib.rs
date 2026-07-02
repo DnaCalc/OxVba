@@ -191,6 +191,7 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: std::collections::BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let engine = Engine::new(HostConfig { enable_jit: false });
     let outcome = match executor {
@@ -225,6 +226,7 @@ pub fn run_modules(
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: std::collections::BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let engine = Engine::new(HostConfig { enable_jit: false });
     let outcome = match executor {

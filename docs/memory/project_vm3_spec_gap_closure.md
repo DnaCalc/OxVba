@@ -1657,6 +1657,43 @@
   Excel oracle shows `VarType=5`, so the native path and regressions were
   corrected to return a Variant/Double task id.
 
+## 2026-07-02 - Conditional Compilation And Library Import Guard (`bd-4ktq.47`)
+
+- Replaced the unconditional Windows x64 conditional-compilation table with an
+  explicit target model carrying host, pointer width, and VBA7 facts.
+- Host source and manifest execution now carry a conditional-compilation
+  target alongside project `DefineConstants` before binding. Explicit project
+  `DefineConstants` still win, so project policy can override defaults
+  deliberately.
+- Referenced projects use the same target predefines without inheriting
+  active-project custom `DefineConstants`, preserving project boundary behavior
+  while avoiding hardwired Windows x64 constants.
+- Mac target selection is covered by host-level execution tests; Windows target
+  behavior remains the active VBA 7.1 Windows default.
+- The vm3 `resolve_library_import` helper no longer keeps the dead non-`VBA`
+  fallback. Cross-project imports are resolved by `call_extern` before that
+  helper is reached, and a VBA-library export without a native body is now
+  reported as malformed library metadata rather than a cross-project link gap.
+- Verification completed:
+  - `cargo check -p oxvba-symbol -p oxvba-host -p oxvba-bind -p oxvba-differential -p oxvba-project -p oxvba-vm3`
+  - `cargo test -p oxvba-symbol cond_comp --quiet`
+  - `cargo test -p oxvba-host --test conditional_compilation --quiet`
+  - `cargo test -p oxvba-bind --test feature_coverage conditional_compilation --quiet`
+  - `cargo test -p oxvba-bind --test cross_project conditional_compilation --quiet`
+  - `cargo test -p oxvba-vm3 --quiet`
+  - `cargo test -p oxvba-differential --lib vm3_golden_snapshot --quiet`
+  - `cargo test -p oxvba-bind --tests --no-run`
+  - `cargo test -p oxvba-host --tests --no-run`
+  - `cargo test -p oxvba-differential --tests --no-run`
+  - `cargo test -p oxvba-symbol --tests --no-run`
+  - `rustfmt --edition 2024 --check crates/oxvba-symbol/src/cond_comp.rs crates/oxvba-symbol/src/provider.rs crates/oxvba-symbol/src/manifest.rs crates/oxvba-host/tests/conditional_compilation.rs crates/oxvba-project/src/closure.rs`
+  - `scripts/check-governance.ps1`
+  - `git diff --check`
+  - `br dep cycles --json`
+  - Fresh-eyes review rechecked the target-vs-DefineConstants split, referenced
+    project constant isolation, the vm3 import helper guard, manifest-field
+    repair sites, docs, and staged scope.
+
 ## 2026-07-01 - Statement Parser/Error-Model Slice (`bd-4ktq.39.6`)
 
 - Closed the focused statement/parser residual subset:

@@ -2086,23 +2086,18 @@ impl<'h> Vm3<'h> {
 
     /// Resolve a cross-bundle `import` to the native library function it names.
     ///
-    /// vm3 links only the synthetic `VBA` library bundle (`oxvba_bundle::vba_library_bundle`)
-    /// today — the home of every built-in function (`Strings.Left`, `Math.Abs`, the
-    /// `DateTime`/`Conversion`/`Information`/`FileSystem` members, …), which the binder lowers
-    /// to a `CallExtern` rather than a `CallNative`. A reference to another VBA *project*
-    /// needs a multi-`OxProgram` linker, which is deferred — reported as an explicit
-    /// `Unimplemented`, never silently mis-run. (Built-in object *methods*
-    /// — `Collection.Add`/… , `NativeBody::Method` — never arrive here; they are reached by
-    /// member dispatch on a `Collection` instance, which lands with the object model.)
+    /// vm3 links the synthetic `VBA` library bundle
+    /// (`oxvba_bundle::vba_library_bundle`) here: the home of every built-in
+    /// function (`Strings.Left`, `Math.Abs`, the
+    /// `DateTime`/`Conversion`/`Information`/`FileSystem` members, ...), which
+    /// the binder lowers to a `CallExtern` rather than a `CallNative`. Non-`VBA`
+    /// project references are handled by [`Self::call_extern`] before this helper
+    /// is reached.
     fn resolve_library_import(&self, import: ImportId) -> Result<(NativeImplId, bool), Vm3Error> {
         let imp = self.cur_program().imports.get(import.0).ok_or_else(|| {
             Vm3Error::Malformed(format!("CallExtern names unknown import {}", import.0))
         })?;
-        if !imp.unit.eq_ignore_ascii_case("VBA") {
-            return Err(Vm3Error::Unimplemented {
-                what: "cross-project OxProgram link",
-            });
-        }
+        debug_assert!(imp.unit.eq_ignore_ascii_case("VBA"));
         let lib = oxvba_bundle::vba_library_bundle();
         let export = lib
             .exports
@@ -2132,11 +2127,9 @@ impl<'h> Vm3<'h> {
             Some(oxvba_bundle::NativeBody::Method(_)) => Err(Vm3Error::Malformed(
                 "a native object method is not callable via CallExtern".into(),
             )),
-            // A VBA-bodied library proc would need the multi-OxProgram linker; the synthetic
-            // VBA bundle has only native bodies, so this is unreachable today.
-            None => Err(Vm3Error::Unimplemented {
-                what: "cross-project OxProgram link",
-            }),
+            None => Err(Vm3Error::Malformed(
+                "a VBA library export has no native library body".into(),
+            )),
         }
     }
 

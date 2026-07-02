@@ -304,6 +304,7 @@ fn com_source_withevents_handler_fires_through_live_dispatch_sink() {
         )],
         reference_projects: Vec::new(),
         conditional_constants: std::collections::BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     let mut engine = Engine::new(HostConfig { enable_jit: false });
     engine.set_host_policy(HostPolicy::interactive_dev());

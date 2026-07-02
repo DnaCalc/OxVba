@@ -498,6 +498,46 @@ impl Engine {
         self.runtime_profile
     }
 
+    fn conditional_compilation_target(
+        &self,
+    ) -> oxvba_symbol::cond_comp::ConditionalCompilationTarget {
+        use oxvba_symbol::cond_comp::{
+            ConditionalCompilationHost, ConditionalCompilationPointerWidth,
+            ConditionalCompilationTarget,
+        };
+        let pointer_width = if cfg!(target_pointer_width = "64") {
+            ConditionalCompilationPointerWidth::Bits64
+        } else {
+            ConditionalCompilationPointerWidth::Bits32
+        };
+        // Runtime profiles describe how OxVBA is hosted; only the Mac profile
+        // changes the Office conditional-compilation target away from Windows.
+        let host = match self.runtime_profile {
+            RuntimeProfileId::MacOsHeadless => ConditionalCompilationHost::Mac,
+            RuntimeProfileId::WindowsGui
+            | RuntimeProfileId::WindowsStdio
+            | RuntimeProfileId::WindowsHeadless
+            | RuntimeProfileId::LinuxStdio
+            | RuntimeProfileId::WasmWasiLocal
+            | RuntimeProfileId::WasmBrowserSandbox
+            | RuntimeProfileId::NullFloor => ConditionalCompilationHost::Windows,
+        };
+        ConditionalCompilationTarget {
+            host,
+            pointer_width,
+            vba7: true,
+        }
+    }
+
+    fn manifest_with_runtime_conditional_target(
+        &self,
+        manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
+    ) -> oxvba_symbol::manifest::SymbolProjectManifest {
+        let mut manifest = manifest.clone();
+        manifest.conditional_compilation_target = self.conditional_compilation_target();
+        manifest
+    }
+
     pub fn hal_descriptor(&self) -> HalDescriptor {
         self.host_services.descriptor()
     }
@@ -591,7 +631,11 @@ impl Engine {
         if self.config.enable_jit {
             return Vm3Snapshot::Unsupported("JIT execution is not implemented".to_string());
         }
-        let programs = match oxvba_bind::bind_projects(closure, &*self.typelib_resolver) {
+        let closure: Vec<_> = closure
+            .iter()
+            .map(|manifest| self.manifest_with_runtime_conditional_target(manifest))
+            .collect();
+        let programs = match oxvba_bind::bind_projects(&closure, &*self.typelib_resolver) {
             Ok(p) => p,
             Err(e) => return Vm3Snapshot::Failed(format!("bind: {e:?}")),
         };
@@ -677,6 +721,7 @@ impl Engine {
             references,
             reference_projects: Vec::new(),
             conditional_constants: std::collections::BTreeMap::new(),
+            conditional_compilation_target: self.conditional_compilation_target(),
         };
         self.execute_manifest_with_variant_snapshot(&manifest)
     }
@@ -733,6 +778,7 @@ impl Engine {
             references: Vec::new(),
             reference_projects: Vec::new(),
             conditional_constants: std::collections::BTreeMap::new(),
+            conditional_compilation_target: self.conditional_compilation_target(),
         };
         self.execute_manifest_with_variant_snapshot_vm3(&manifest)
     }
@@ -743,7 +789,8 @@ impl Engine {
         &self,
         manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
     ) -> Vm3Snapshot {
-        let program = match oxvba_bind::bind_program(manifest, &*self.typelib_resolver) {
+        let manifest = self.manifest_with_runtime_conditional_target(manifest);
+        let program = match oxvba_bind::bind_program(&manifest, &*self.typelib_resolver) {
             Ok(p) => p,
             Err(e) => return Vm3Snapshot::Failed(format!("bind: {e:?}")),
         };
@@ -785,7 +832,8 @@ impl Engine {
         &self,
         manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
     ) -> SnapshotOutcome {
-        let program = match oxvba_bind::bind_program(manifest, &*self.typelib_resolver) {
+        let manifest = self.manifest_with_runtime_conditional_target(manifest);
+        let program = match oxvba_bind::bind_program(&manifest, &*self.typelib_resolver) {
             Ok(p) => p,
             Err(e) => return SnapshotOutcome::Failed(format!("bind: {e:?}")),
         };
@@ -885,6 +933,7 @@ End Function
             references: Vec::new(),
             reference_projects: Vec::new(),
             conditional_constants: Default::default(),
+            conditional_compilation_target: Default::default(),
         };
         let engine = Engine::new(HostConfig::default());
         let mut session = vm3_session_for(&engine, &manifest);
@@ -927,6 +976,7 @@ End Sub
             references: Vec::new(),
             reference_projects: Vec::new(),
             conditional_constants: Default::default(),
+            conditional_compilation_target: Default::default(),
         };
         let engine = Engine::new(HostConfig::default());
         let mut session = vm3_session_for(&engine, &manifest);

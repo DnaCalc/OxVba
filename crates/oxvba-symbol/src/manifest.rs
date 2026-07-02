@@ -20,6 +20,7 @@ pub struct SymbolProjectManifest {
     pub reference_projects: Vec<ReferencedProjectManifest>,
     /// `#If`/`#Const` conditional-compilation constants.
     pub conditional_constants: BTreeMap<String, i32>,
+    pub conditional_compilation_target: crate::cond_comp::ConditionalCompilationTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

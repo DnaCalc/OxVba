@@ -40,6 +40,7 @@ fn manifest(source: &str) -> SymbolProjectManifest {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     }
 }
 

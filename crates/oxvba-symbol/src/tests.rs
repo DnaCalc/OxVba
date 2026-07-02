@@ -48,6 +48,7 @@ fn manifest(name: &str, modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     }
 }
 
@@ -307,6 +308,7 @@ fn referenced_project_resolves_through_its_export_surface() {
         }],
         reference_projects: vec![lib],
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
 
     let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();

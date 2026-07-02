@@ -620,10 +620,12 @@ pub fn build_resolution_environment(
 
     let mut next_descriptor_id: u32 = 0;
     let mut active_scans: Vec<ModuleScan> = Vec::new();
-    // Conditional-compilation environment for the active project: predefined host
+    // Conditional-compilation environment for the active project: predefined target
     // constants + the project's `DefineConstants`. Each module's `#If`/`#Const`
     // directives are evaluated here and inactive branches stripped before parse.
-    let active_cc = cond_comp::base_cc_constants(&manifest.conditional_constants);
+    let active_target = manifest.conditional_compilation_target;
+    let active_cc =
+        cond_comp::base_cc_constants_for_target(&manifest.conditional_constants, active_target);
     // Active-project modules: parse once, scan against the parsed CST, and retain
     // the `Parse` so the binder lowers the same tree (no second parse).
     let mut module_csts: Vec<ModuleCst> = Vec::new();
@@ -677,8 +679,8 @@ pub fn build_resolution_environment(
             Some(&referenced.project_name),
         )?;
         // A referenced project's manifest does not carry its own `DefineConstants`,
-        // so its `#If`s evaluate against the predefined host constants only.
-        let referenced_cc = cond_comp::predefined_cc_constants();
+        // so its `#If`s evaluate against the same target's predefined constants only.
+        let referenced_cc = cond_comp::predefined_cc_constants_for_target(active_target);
         let mut scans: Vec<ModuleScan> = Vec::new();
         for module in &referenced.modules {
             let source = cond_comp::preprocess(&module.source, &referenced_cc)

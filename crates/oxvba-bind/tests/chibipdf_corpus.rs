@@ -95,6 +95,7 @@ fn chibiex_class_parses_without_errors() {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
     if let Err(e) = bind_program(&manifest, &NullTypeLibs) {
         let rendered = format!("{e:?}");
@@ -140,6 +141,7 @@ fn chibiex_class_binds_and_elaborates() {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
     };
 
     let cp = bind_program(&manifest, &NullTypeLibs)
