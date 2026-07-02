@@ -17,7 +17,8 @@ use oxvba_runtime::CurrencyValue;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::model::{
-    ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolNamespace, SymbolTable, Visibility,
+    ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace,
+    SymbolTable, Visibility,
 };
 use crate::providers::vba_library;
 use crate::scanner::parameter_name_token;
@@ -108,7 +109,7 @@ pub fn fold_optional_defaults(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
     values: &HashMap<SymbolId, CoreConst>,
-) -> HashMap<(SymbolId, usize), CoreConst> {
+) -> Result<HashMap<(SymbolId, usize), CoreConst>, SymbolModelError> {
     let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
         .iter()
         .map(|(scope, root)| (*scope, module_compare_mode(*root)))
@@ -116,9 +117,9 @@ pub fn fold_optional_defaults(
     let mut out = HashMap::new();
     for (module_scope, root) in module_roots {
         let mode = mode_for_scope(symbols, *module_scope, &module_modes);
-        collect_proc_defaults(symbols, *module_scope, *root, values, mode, &mut out);
+        collect_proc_defaults(symbols, *module_scope, *root, values, mode, &mut out)?;
     }
-    out
+    Ok(out)
 }
 
 fn collect_proc_defaults(
@@ -128,7 +129,7 @@ fn collect_proc_defaults(
     values: &HashMap<SymbolId, CoreConst>,
     mode: StringCompareMode,
     out: &mut HashMap<(SymbolId, usize), CoreConst>,
-) {
+) -> Result<(), SymbolModelError> {
     if matches!(
         node.kind(),
         SyntaxKind::SubDecl | SyntaxKind::FunctionDecl | SyntaxKind::PropertyDecl
@@ -139,20 +140,34 @@ fn collect_proc_defaults(
     {
         let proc_scope = proc_scope_under(symbols, module_scope, name.text);
         for (i, param) in param_list.params().iter().enumerate() {
-            if let Some(def) = param.param_default().and_then(|d| d.first_expr_child())
-                && let ConstEval::Value(c) =
-                    eval_const_expr(symbols, module_scope, def, values, mode)
-            {
-                out.insert(
-                    (proc_sym, i),
-                    coerce_param_default_value(symbols, proc_scope, *param, c),
-                );
+            if let Some(def) = param.param_default().and_then(|d| d.first_expr_child()) {
+                let parameter = parameter_name_token(*param)
+                    .map(|t| t.text.to_string())
+                    .unwrap_or_else(|| format!("arg{}", i + 1));
+                let default = match eval_const_expr(symbols, module_scope, def, values, mode) {
+                    ConstEval::Value(c) => {
+                        coerce_param_default_value(symbols, proc_scope, *param, c).ok_or_else(
+                            || SymbolModelError::InvalidOptionalDefault {
+                                procedure: name.text.to_string(),
+                                parameter: parameter.clone(),
+                            },
+                        )?
+                    }
+                    ConstEval::Pending | ConstEval::Unresolvable => {
+                        return Err(SymbolModelError::InvalidOptionalDefault {
+                            procedure: name.text.to_string(),
+                            parameter,
+                        });
+                    }
+                };
+                out.insert((proc_sym, i), default);
             }
         }
     }
     for child in node.child_nodes() {
-        collect_proc_defaults(symbols, module_scope, child, values, mode, out);
+        collect_proc_defaults(symbols, module_scope, child, values, mode, out)?;
     }
+    Ok(())
 }
 
 /// Walk for `ConstStmt`s under `scope`; proc bodies open their own `Procedure`
@@ -209,17 +224,99 @@ fn coerce_param_default_value(
     proc_scope: Option<ScopeId>,
     param: SyntaxNode<'_>,
     value: CoreConst,
-) -> CoreConst {
+) -> Option<CoreConst> {
     let Some(scope) = proc_scope else {
-        return value;
+        return Some(value);
     };
     let Some(name) = parameter_name_token(param) else {
-        return value;
+        return Some(value);
     };
     let Ok(Some(sym)) = symbols.find_in_scope(scope, SymbolNamespace::Parameter, name.text) else {
-        return value;
+        return Some(value);
     };
-    coerce_declared_const_value(symbols, sym, value.clone()).unwrap_or(value)
+    coerce_declared_param_default_value(symbols, scope, sym, value)
+}
+
+fn coerce_declared_param_default_value(
+    symbols: &SymbolTable,
+    scope: ScopeId,
+    sym: SymbolId,
+    value: CoreConst,
+) -> Option<CoreConst> {
+    let Some(symbol) = symbols.symbol(sym) else {
+        return Some(value);
+    };
+    let SymbolImpl::DeclaredType(ty) = &symbol.imp else {
+        return Some(value);
+    };
+    if let Some(value) = coerce_const_to_declared_type(value.clone(), ty) {
+        return Some(value);
+    }
+    if let VarTypeRef::Object(name) = ty
+        && is_declared_enum_type(symbols, scope, name)
+    {
+        return coerce_const_to_declared_type(value, &VarTypeRef::Builtin(BuiltinType::Long));
+    }
+    None
+}
+
+fn is_declared_enum_type(symbols: &SymbolTable, scope: ScopeId, name: &str) -> bool {
+    let parts: Vec<&str> = name
+        .split('.')
+        .map(normalize_identifier_text)
+        .filter(|part| !part.is_empty())
+        .collect();
+    match parts.as_slice() {
+        [type_name] => symbols
+            .resolve_in_scope_chain(scope, SymbolNamespace::Type, type_name)
+            .ok()
+            .flatten()
+            .is_some_and(|sym| symbol_is_enum(symbols, sym)),
+        [module_name, type_name] => {
+            let Some(module_scope) = enclosing_module_scope(symbols, scope) else {
+                return false;
+            };
+            let Some(project_scope) = symbols.scope(module_scope).ok().and_then(|s| s.parent)
+            else {
+                return false;
+            };
+            sibling_module_scope(symbols, project_scope, module_name)
+                .and_then(|module_scope| {
+                    symbols
+                        .find_in_scope(module_scope, SymbolNamespace::Type, type_name)
+                        .ok()
+                        .flatten()
+                })
+                .is_some_and(|sym| symbol_is_enum(symbols, sym))
+        }
+        [project_name, module_name, type_name] => {
+            let Some(module_scope) = enclosing_module_scope(symbols, scope) else {
+                return false;
+            };
+            let Some(project_scope) = symbols.scope(module_scope).ok().and_then(|s| s.parent)
+            else {
+                return false;
+            };
+            if !scope_name_matches(symbols, project_scope, project_name) {
+                return false;
+            }
+            sibling_module_scope(symbols, project_scope, module_name)
+                .and_then(|module_scope| {
+                    symbols
+                        .find_in_scope(module_scope, SymbolNamespace::Type, type_name)
+                        .ok()
+                        .flatten()
+                })
+                .is_some_and(|sym| symbol_is_enum(symbols, sym))
+        }
+        _ => false,
+    }
+}
+
+fn symbol_is_enum(symbols: &SymbolTable, sym: SymbolId) -> bool {
+    symbols
+        .symbol(sym)
+        .is_some_and(|symbol| symbol.kind == SymbolKind::Enum)
 }
 
 /// Fold `Enum` members in source order: a member with an explicit initializer takes
@@ -379,10 +476,12 @@ pub(crate) fn coerce_const_to_declared_type(
                 .then_some(CoreConst::Currency(scaled as i64))
         }
         VarTypeRef::Builtin(BuiltinType::Date) => const_to_date_bits(&value).map(CoreConst::Date),
-        VarTypeRef::Object(_)
-        | VarTypeRef::Udt(_)
-        | VarTypeRef::Array(_)
-        | VarTypeRef::FixedArray { .. } => None,
+        VarTypeRef::Object(_) => match value {
+            CoreConst::Nothing => Some(CoreConst::Nothing),
+            CoreConst::I16(0) | CoreConst::I32(0) | CoreConst::I64(0) => Some(CoreConst::Nothing),
+            _ => None,
+        },
+        VarTypeRef::Udt(_) | VarTypeRef::Array(_) | VarTypeRef::FixedArray { .. } => None,
     }
 }
 
@@ -694,6 +793,7 @@ pub(crate) fn fold_const_literal(node: SyntaxNode<'_>) -> Option<CoreConst> {
                 SyntaxKind::StringLiteral => Some(CoreConst::Str(unquote(tok.text))),
                 SyntaxKind::KwTrue => Some(CoreConst::Bool(true)),
                 SyntaxKind::KwFalse => Some(CoreConst::Bool(false)),
+                SyntaxKind::KwNothing => Some(CoreConst::Nothing),
                 SyntaxKind::DateLiteral => {
                     date::parse_date_literal_serial_bits(tok.text).map(CoreConst::Date)
                 }

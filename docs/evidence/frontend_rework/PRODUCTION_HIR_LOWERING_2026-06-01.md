@@ -1513,6 +1513,19 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   --quiet`; `cargo test -p oxvba-bind --quiet`; `cargo fmt --check -p oxvba-symbol
   -p oxvba-bind`; `cargo check --workspace`; `git diff --check`;
   `./scripts/check-governance.ps1`.
+- Follow-up invalid-default work removes the raw/default-zero fallback for explicit optional
+  defaults that fail declared-type coercion. Excel/VBA oracle compile rows reject
+  `Optional ... As Long = "abc"` with `Type mismatch` and
+  `Optional ... As Long = 5000000000^` with `Overflow`, while accepting fractional numeric
+  `Long` defaults and object `Nothing`/zero defaults. The symbol model now reports
+  `SYM-E-INVALID-OPTIONAL-DEFAULT` for invalid explicit defaults instead of publishing a raw
+  carrier or silently treating the argument as defaultless. Declared enum parameters still use
+  their underlying `Long` default-coercion target. Evidence:
+  `docs/evidence/frontend_rework/OPTIONAL_DEFAULT_INVALID_FALLBACK_2026-07-02.md`;
+  `invalid_optional_defaults_reject_instead_of_falling_back`;
+  `invalid_literal_optional_default_does_not_publish_raw_metadata`;
+  `optional_object_defaults_accept_nothing_and_zero`; `invalid_optional_default_is_bind_error`;
+  `cargo test -p oxvba-symbol --quiet`; `cargo test -p oxvba-bind --quiet`.
 - Follow-up string constant-expression work evaluates string concatenation trees (`&`) over string
   literals and module constants into the existing explicit string optional-default carrier.
 - Follow-up scalar-concat default work reuses the same exact scalar-to-string operand formatting
@@ -1545,7 +1558,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   plus string/Boolean constant-expression subset, bounded Boolean comparison subset, exact
   same-string equality/inequality subset, bounded Date/Currency arithmetic numeric subset, and
   exact i64 optional-default carrier subset, plus the covered `Single` f32 metadata carrier and
-  string-to-declared-scalar default coercions.
+  string-to-declared-scalar default coercions, nor exact Excel modal text for invalid default
+  diagnostics beyond the covered reject-vs-accept behavior.
   Collation-sensitive string comparisons, `Like`/`Is`, and coercive comparison defaults remain
   FE-8.5.f residuals.
 

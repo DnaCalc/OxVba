@@ -205,6 +205,11 @@ pub enum SymbolModelError {
     UnsupportedDeclaredDecimal,
     #[error("unsupported Option Compare Database directive")]
     UnsupportedOptionCompareDatabase,
+    #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
+    InvalidOptionalDefault {
+        procedure: String,
+        parameter: String,
+    },
     #[error("Friend is only valid in object modules: `{name}`")]
     FriendNotValidInStandardModule { name: String },
     #[error("Implements is only valid in object modules: `{name}`")]
@@ -275,6 +280,19 @@ impl SymbolModelError {
                 "Option Compare Database requires Microsoft Access database collation, which this target does not implement",
             )
             .with_help("Use Option Compare Binary or Option Compare Text, or compile with an Access collation implementation."),
+            SymbolModelError::InvalidOptionalDefault {
+                procedure,
+                parameter,
+            } => Diagnostic::error(
+                "SYM-E-INVALID-OPTIONAL-DEFAULT",
+                DiagnosticPhase::Symbol,
+                format!(
+                    "invalid optional default for `{procedure}` parameter `{parameter}`"
+                ),
+            )
+            .with_help(
+                "Use a constant expression that VBA can coerce to the declared parameter type.",
+            ),
             SymbolModelError::FriendNotValidInStandardModule { name } => Diagnostic::error(
                 "SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE",
                 DiagnosticPhase::Symbol,

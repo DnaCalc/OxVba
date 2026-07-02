@@ -895,7 +895,7 @@ pub fn build_resolution_environment(
     let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
     // Optional-parameter defaults fold against the closure's const values.
     let optional_defaults =
-        crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values);
+        crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values)?;
     drop(roots);
     let ambiguous_type_names = type_index.ambiguous_type_names();
     validate_type_refs(&module_csts, &ambiguous_type_names)?;

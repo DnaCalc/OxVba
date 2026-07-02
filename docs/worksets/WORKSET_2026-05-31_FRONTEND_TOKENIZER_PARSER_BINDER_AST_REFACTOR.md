@@ -1678,6 +1678,10 @@ Candidate bead units:
   `LongLong`,
   string-to-declared-scalar optional defaults for covered Boolean, integer, Currency, and
   deterministic Date text defaults,
+  invalid explicit optional defaults that fail declared-type coercion now reject at symbol/bind
+    time instead of falling back to raw/default-zero behavior, with Excel/VBA compile oracle rows
+    for `Long = "abc"` and too-wide `Long` defaults, while enum-typed defaults retain their
+    underlying `Long` coercion and object `Nothing`/zero defaults remain accepted,
   optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
   optional `Boolean` defaults over bounded equality-based string `Like`,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,

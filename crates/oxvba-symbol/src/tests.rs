@@ -1236,6 +1236,54 @@ fn optional_single_default_preserves_f32_metadata_carrier() {
 }
 
 #[test]
+fn invalid_optional_defaults_reject_instead_of_falling_back() {
+    for (src, parameter) in [
+        (
+            "Sub S(Optional ByVal n As Long = \"abc\")\r\nEnd Sub\r\n",
+            "n",
+        ),
+        (
+            "Sub S(Optional ByVal wide As Long = 5000000000^)\r\nEnd Sub\r\n",
+            "wide",
+        ),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("invalid Optional default should not compile"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidOptionalDefault {
+                    procedure,
+                    parameter: actual,
+                } if procedure == "S" && actual == parameter
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-OPTIONAL-DEFAULT"
+        );
+    }
+}
+
+#[test]
+fn optional_object_defaults_accept_nothing_and_zero() {
+    let src = "Sub S(Optional ByVal obj As Object = Nothing, Optional ByVal zeroObj As Object = 0)\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("proc resolves");
+    let proc = binding.symbol.expect("proc symbol");
+    assert_eq!(env.optional_default(proc, 0), Some(&CoreConst::Nothing));
+    assert_eq!(env.optional_default(proc, 1), Some(&CoreConst::Nothing));
+}
+
+#[test]
 fn scanner_reads_per_declarator_types_from_structured_cst() {
     // Each declarator carries its own type (the old flat-token walker couldn't).
     let m = manifest(

@@ -623,8 +623,13 @@ impl ScanCtx<'_> {
                     .unwrap_or_default();
                 let optional = parameter_has_modifier(param, SyntaxKind::KwOptional);
                 let ty = self.param_type(param);
-                let default = default_from_param(param, &ty)
-                    .or_else(|| optional.then_some(DefaultValue::VariantMissing));
+                let default = match default_from_param(param, &ty) {
+                    ParsedParamDefault::Value(value) => Some(value),
+                    ParsedParamDefault::Invalid => None,
+                    ParsedParamDefault::Absent | ParsedParamDefault::Unparsed => {
+                        optional.then_some(DefaultValue::VariantMissing)
+                    }
+                };
                 params.push(Param {
                     name,
                     ty,
@@ -1078,12 +1083,28 @@ fn parse_user_mem_id_value(value: &str) -> Option<i32> {
 /// Parse a parameter's literal default (`Optional x As Long = 5`). With the
 /// `oxvba-syntax` parser fix, the `= default` is folded into the `Param` node, so
 /// this reads the text after the (first) `=`.
-fn default_from_param(node: SyntaxNode<'_>, ty: &VarTypeRef) -> Option<DefaultValue> {
+enum ParsedParamDefault {
+    Absent,
+    Value(DefaultValue),
+    Unparsed,
+    Invalid,
+}
+
+fn default_from_param(node: SyntaxNode<'_>, ty: &VarTypeRef) -> ParsedParamDefault {
     let text = node.text();
-    let rhs = text.split_once('=')?.1.trim();
-    let raw = parse_default_literal(rhs)?;
-    let value = crate::const_eval::coerce_const_to_declared_type(raw.clone(), ty).unwrap_or(raw);
-    default_value_from_core_const(value)
+    let Some((_, rhs)) = text.split_once('=') else {
+        return ParsedParamDefault::Absent;
+    };
+    let Some(raw) = parse_default_literal(rhs.trim()) else {
+        return ParsedParamDefault::Unparsed;
+    };
+    let Some(value) = crate::const_eval::coerce_const_to_declared_type(raw, ty) else {
+        return ParsedParamDefault::Invalid;
+    };
+    match default_value_from_core_const(value) {
+        Some(value) => ParsedParamDefault::Value(value),
+        None => ParsedParamDefault::Unparsed,
+    }
 }
 
 fn parse_default_literal(rhs: &str) -> Option<CoreConst> {
@@ -1614,6 +1635,13 @@ mod tests {
         module_kind: ModuleKind,
         source: &str,
     ) -> Result<Vec<ScannedMember>, SymbolModelError> {
+        scan_state_for_kind(module_kind, source).map(|(_, _, members)| members)
+    }
+
+    fn scan_state_for_kind(
+        module_kind: ModuleKind,
+        source: &str,
+    ) -> Result<(SymbolTable, SignatureTable, Vec<ScannedMember>), SymbolModelError> {
         let module = ModuleUnit {
             module_name: "M".into(),
             module_kind,
@@ -1640,7 +1668,7 @@ mod tests {
             parse.syntax(),
             project,
         )
-        .map(|scan| scan.members)
+        .map(|scan| (symbols, signatures, scan.members))
     }
 
     fn scan_members(source: &str) -> Vec<ScannedMember> {
@@ -1705,6 +1733,25 @@ mod tests {
             err.to_diagnostic().code.as_str(),
             "SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE"
         );
+    }
+
+    #[test]
+    fn invalid_literal_optional_default_does_not_publish_raw_metadata() {
+        let (symbols, signatures, members) = scan_state_for_kind(
+            ModuleKind::Procedural,
+            "Sub S(Optional ByVal n As Long = \"abc\")\nEnd Sub\n",
+        )
+        .expect("scan succeeds; model validation rejects the default later");
+        let member = members
+            .iter()
+            .find(|m| m.name_folded == fold_identifier("S"))
+            .expect("S scanned");
+        let symbol = symbols.symbol(member.symbol).expect("S symbol");
+        let SymbolImpl::Signature(sig_id) = symbol.imp else {
+            panic!("expected signature");
+        };
+        let signature = signatures.get(sig_id).expect("signature");
+        assert_eq!(signature.params[0].default, None);
     }
 
     #[test]
