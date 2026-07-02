@@ -7,10 +7,8 @@
 //! are L2/L3; full coverage is the re-instated `native_declare_string_marshalling_end_to_end`
 //! + SQLiteForExcel suites.)
 //!
-//! One shape — an `AddressOf` proc marshaled into a native callback slot — is a documented,
-//! intentional vm3 residual (it needs a thread-local callback-thunk table bound to the VM);
-//! vm3's *honest decline* of it is asserted by
-//! `native_declare_lane_vm3::vm3_declines_address_of_native_callback_shape`.
+//! The `AddressOf` callback slot shape is covered with a synchronous `CallWindowProcW`
+//! probe so vm3 proves the same native callback entry path real VBA code uses.
 #![cfg(target_os = "windows")]
 
 use oxvba_hal::model::HostPolicy;
@@ -200,10 +198,6 @@ fn riff_exact_rtlmovememory_typed_byref_destinations_write_back() {
 }
 
 #[test]
-#[ignore = "AddressOf proc marshaled into a native callback slot is a documented, intentional \
-            vm3 residual (needs a VM-bound thread-local callback-thunk table); vm3's honest \
-            decline is asserted by native_declare_lane_vm3::vm3_declines_address_of_native_callback_shape. \
-            vm2 (now retired) supported this shape; un-ignore when the thunk lands."]
 fn riff_shaped_callwindowproc_invokes_address_of_callback() {
     // Riff uses AddressOf plus native thunks to bridge into timer callbacks. This
     // bounded probe calls the VM callback thunk synchronously through

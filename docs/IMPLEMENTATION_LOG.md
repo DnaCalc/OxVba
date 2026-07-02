@@ -2083,3 +2083,33 @@
 - In [engine.rs](C:\Work\DnaCalc\OxVba\crates\oxvba-host\src\engine.rs), added matching host runtime evidence proving the same precedence boundary still preserves rebinding plus deterministic `Count()` witnesses tied to each returned object handle instead of falling back to the scalar host root.
 - This narrows the remaining `IP-08B` host-returned COM breadth again: active-project precedence is now explicit for the current imported scalar read, invoke, property-put/get, property-putref, indexed setter, exception-invoke, and non-parenthesized object-property-get rows on the same host-returned COM-backed object, while broader parenthesized object-property and object-result breadth still remains open.
 
+
+# 2026-07-02 - vm3 AddressOf native callback thunk for CallWindowProcW
+
+- Closed `bd-9sed.6.1` for the bounded synchronous real-VBA native callback shape:
+  `CallWindowProcW(AddressOf Callback, ...)`.
+- Added `oxvba-runtime::callback_thunks`, a scoped Windows x64 thread-local callback
+  table with generated `extern "system"` thunks, slot reuse by `(owner, proc_token)`,
+  and panic containment across the native ABI boundary.
+- Wired vm3 `Declare` invocation to replace by-value `AddressOf` `ProcRef` arguments
+  passed to `LongPtr` parameters with a temporary thunk address for the
+  `CallWindowProcW` descriptor. The callback re-enters the declared VBA procedure and
+  seeds standard-module callback arguments from slot 0 according to declared OxIR
+  types.
+- Converted the vm3 native Declare callback test from an `Unsupported` assertion into
+  executable success coverage, added a negative guard for non-callback Declare
+  descriptors, and un-ignored the shared Riff-shaped `CallWindowProcW` probe.
+- Evidence: `docs/evidence/runtime/VM3_ADDRESSOF_NATIVE_CALLBACK_THUNK_2026-07-02.md`.
+- Verification completed:
+  - `cargo fmt --all`
+  - `cargo check -p oxvba-runtime -p oxvba-vm3 -p oxvba-host`
+  - `cargo test -p oxvba-host --test native_declare_lane_vm3 -- --test-threads=1 --nocapture`
+  - `cargo test -p oxvba-host --test native_declare_lane riff_shaped_callwindowproc_invokes_address_of_callback -- --exact --test-threads=1 --nocapture`
+  - `cargo test -p oxvba-host --test native_declare_lane -- --test-threads=1`
+  - `cargo clippy -p oxvba-runtime -p oxvba-vm3 -p oxvba-host --all-targets -- -D warnings`
+- Blocked broader gate:
+  - `scripts\meta-check.ps1 -Fast -NoArtifacts` was attempted twice and timed out in
+    unrelated `cargo test --workspace` execution while
+    `oxvba-build` test `tests::wrapped_com_server_build_emits_package_descriptor_and_idl`
+    remained stuck. Running that single test directly also timed out after five
+    minutes.

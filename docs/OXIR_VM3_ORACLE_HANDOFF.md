@@ -41,6 +41,13 @@ late-bound transport `(5,2)==(5,2)`, early-bound transport `(7,0)==(7,0)`).
 
 ## Documented out-of-scope residuals (filed follow-ups, not in-scope gaps)
 
+**2026-07-02 update:** the bounded synchronous `AddressOf` native callback shape is no
+longer a vm3 out-of-scope residual. `bd-9sed.6.1` added
+`oxvba-runtime::callback_thunks` and vm3 `Declare` wiring for
+`CallWindowProcW(AddressOf ...)`, with regression coverage in
+`native_declare_lane_vm3` and `native_declare_lane`. Async timer/message-pump callback
+lifetime remains separate native interop work.
+
 Each is an explicit `Unimplemented`/`Malformed` in vm3 (never a silent wrong value), and none is
 reached by an in-scope corpus program:
 
@@ -54,9 +61,12 @@ reached by an in-scope corpus program:
    object in a statically-bare `Variant`/`Object` slot) and **`For Each` over a COM
    `IEnumVARIANT`**. Gated behind object-receiver guards no corpus program hits; partly blocked on
    (1).
-3. **`AddressOf` proc marshaled into a native callback slot** (a `ByVal LongPtr` `Declare`
-   parameter, e.g. a `SetTimer` `TimerProc`). The right fix is a VM-agnostic shared callback-thunk
-   facility in `oxvba-runtime` (not a mirror of vm2's `*mut Vm`-coupled 32-slot table).
+3. **Former residual: `AddressOf` proc marshaled into a native callback slot** (a
+   `ByVal LongPtr` `Declare` parameter). The bounded synchronous
+   `CallWindowProcW(AddressOf ...)` shape is now implemented by `bd-9sed.6.1` using a
+   VM-agnostic shared callback-thunk facility in `oxvba-runtime` rather than vm2-style
+   VM-coupled storage. Async `SetTimer`/message-pump callback lifetime is still separate
+   native interop work.
 4. **True multi-`OxProgram` cross-project linking** (project A → project B, both VBA-bodied).
    M3-1 covers the library-bundle case; true cross-project link is a named `Unimplemented`.
 5. **`GetObject`** — absent product-wide (also absent in vm2); a feature gap, not a vm3 defect.

@@ -6,6 +6,7 @@ pub mod arithmetic;
 pub mod bstr;
 pub mod builtins;
 pub mod call_frame;
+pub mod callback_thunks;
 pub mod coerce;
 pub mod collection;
 pub mod com_record;
@@ -25,6 +26,9 @@ pub use call_frame::{
     RuntimeByRefSlot, RuntimeByRefWriteback, RuntimeCallArgument, RuntimeCallContext,
     RuntimeCallError, RuntimeCallFrame, RuntimeCallKind, RuntimeCallResult, RuntimeCallSelector,
     RuntimeCallSource, RuntimeNamedArgument,
+};
+pub use callback_thunks::{
+    CallbackExecutor, CallbackRegistration, CallbackThunkError, register_callback,
 };
 pub use coerce::{print_display_text, variant_to_vba_string, write_display_text};
 pub use com_record::{ComRecord, ComRecordCloneFn, ComRecordDestroyFn};

@@ -38,6 +38,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ptr::NonNull;
 
 use oxvba_bundle::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, NativeImplId, ProjectMemberKind,
@@ -68,7 +69,10 @@ use oxvba_runtime::object_ref::{
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{RuntimeByRefSlot, Variant, VbaRecord, pointer_helpers};
+use oxvba_runtime::{
+    CallbackExecutor, CallbackRegistration, RuntimeByRefSlot, Variant, VbaRecord, pointer_helpers,
+    register_callback,
+};
 
 /// `DISP_E_PARAMNOTFOUND` — the sentinel an omitted optional argument carries into a
 /// callee slot, so `IsMissing`/`IsError` observe it exactly as vm2 does.
@@ -4022,7 +4026,7 @@ impl<'h> Vm3<'h> {
                     format!("unknown Declare descriptor {descriptor_id}"),
                 ))
             })?;
-        let arg_variants = self.native_args(args)?;
+        let mut arg_variants = self.native_args(args)?;
 
         let param_type_strings: Vec<String> = descriptor
             .param_types
@@ -4048,22 +4052,8 @@ impl<'h> Vm3<'h> {
                 .map(|rt| Cow::Owned(format!("{rt:?}"))),
         };
 
-        // An `AddressOf` proc reference passed by-value to a `LongPtr` (a native-callback
-        // parameter, e.g. a `SetTimer` `TimerProc`) needs a thread-local callback-thunk
-        // table bound to this VM — platform-specific machinery no in-scope corpus program
-        // exercises. Surface it honestly rather than marshaling a proc ref as a bogus
-        // integer; the shared-thunk extraction is a filed follow-up (see the M3-7 notes).
-        for (index, value) in arg_variants.iter().enumerate() {
-            let is_long_ptr = param_type_strings.get(index).map(String::as_str) == Some("LongPtr");
-            if is_long_ptr
-                && !descriptor.param_by_ref.get(index).copied().unwrap_or(false)
-                && value.as_proc_ref().is_some()
-            {
-                return Err(Vm3Error::Unimplemented {
-                    what: "AddressOf proc passed to a Declare callback parameter",
-                });
-            }
-        }
+        let _callback_regs =
+            self.prepare_native_callback_args(descriptor, &param_type_strings, &mut arg_variants)?;
 
         // The pointer-helper pins this call feeds (the `LongLong`-carried registry addresses
         // of `StrPtr`/`VarPtr` args). A pin's life ends with the call it feeds — VBA's "the
@@ -4159,6 +4149,156 @@ impl<'h> Vm3<'h> {
         // release them so the registry stays bounded across looping `Declare`s.
         pointer_helpers::free_pins(&pin_addrs);
         Ok(ret)
+    }
+
+    fn prepare_native_callback_args(
+        &mut self,
+        descriptor: &oxvba_bundle::ExternalCallDescriptor,
+        param_type_strings: &[String],
+        arg_variants: &mut [Variant],
+    ) -> Result<Vec<CallbackRegistration>, Vm3Error> {
+        let mut registrations = Vec::new();
+        for (index, value) in arg_variants.iter_mut().enumerate() {
+            let Some(proc_token) = value.as_proc_ref() else {
+                continue;
+            };
+            let is_long_ptr = param_type_strings.get(index).map(String::as_str) == Some("LongPtr");
+            let by_ref = descriptor.param_by_ref.get(index).copied().unwrap_or(false);
+            if !is_long_ptr || by_ref {
+                return Err(Vm3Error::Unimplemented {
+                    what: "AddressOf proc passed to an unsupported Declare parameter",
+                });
+            }
+            if !Self::is_synchronous_native_callback_descriptor(descriptor) {
+                return Err(Vm3Error::Unimplemented {
+                    what: "AddressOf proc passed to a non-synchronous Declare callback parameter",
+                });
+            }
+            let owner = self as *mut Self as usize;
+            let executor = NonNull::from(&mut *self);
+            // SAFETY: the returned registration is kept alive until the native Declare
+            // call returns, and this VM remains the same-thread callback executor for
+            // the bounded synchronous CallWindowProc callback shape.
+            let registration = unsafe { register_callback(owner, proc_token, executor) }.map_err(
+                |err| match err {
+                    oxvba_runtime::CallbackThunkError::Exhausted => {
+                        Vm3Error::Fault(Fault::new(7, err.to_string()))
+                    }
+                    oxvba_runtime::CallbackThunkError::UnsupportedPlatform => {
+                        Vm3Error::Unimplemented {
+                            what: "AddressOf native callback thunks on this platform",
+                        }
+                    }
+                },
+            )?;
+            *value = Variant::from_i64(registration.address() as i64);
+            registrations.push(registration);
+        }
+        Ok(registrations)
+    }
+
+    fn is_synchronous_native_callback_descriptor(
+        descriptor: &oxvba_bundle::ExternalCallDescriptor,
+    ) -> bool {
+        let library = descriptor.library.to_ascii_lowercase();
+        let symbol = descriptor.alias.to_ascii_lowercase();
+        matches!(library.as_str(), "user32" | "user32.dll")
+            && matches!(
+                symbol.as_str(),
+                "callwindowprocw" | "callwindowproca" | "callwindowproc"
+            )
+    }
+
+    fn run_native_callback_proc(&mut self, proc_token: usize, raw_args: &[isize]) -> isize {
+        let proc = FuncId(proc_token);
+        let target_prog = self.cur;
+        let Some(callee) = self
+            .programs
+            .get(target_prog)
+            .and_then(|program| program.program.funcs.get(proc.0))
+        else {
+            return 0;
+        };
+        let args: Vec<Variant> = callee
+            .locals
+            .iter()
+            .take(callee.param_count)
+            .zip(raw_args.iter().copied())
+            .map(|(local, raw)| Self::callback_arg_for_type(raw, &local.ty))
+            .collect();
+        match self.run_callback_proc_with_values(target_prog, proc, args, true) {
+            Ok(ret) => Self::callback_return_to_isize(&ret),
+            Err(_) => 0,
+        }
+    }
+
+    fn callback_arg_for_type(raw: isize, ty: &OxTy) -> Variant {
+        match ty {
+            OxTy::Byte => Variant::from_u8(raw as u8),
+            OxTy::Integer => Variant::from_i16(raw as i16),
+            OxTy::Long => Variant::from_i32(raw as i32),
+            OxTy::LongLong | OxTy::LongPtr => Variant::from_i64(raw as i64),
+            OxTy::Bool => Variant::from_bool(raw != 0),
+            _ => Variant::from_i64(raw as i64),
+        }
+    }
+
+    fn callback_return_to_isize(value: &Variant) -> isize {
+        if let Some(value) = value.as_i64() {
+            value as isize
+        } else if let Some(value) = value.as_i32() {
+            value as isize
+        } else if let Some(value) = value.as_i16() {
+            value as isize
+        } else if let Some(value) = value.as_u8() {
+            value as isize
+        } else if let Some(value) = value.as_bool() {
+            if value { -1 } else { 0 }
+        } else {
+            0
+        }
+    }
+
+    fn run_callback_proc_with_values(
+        &mut self,
+        target_prog: usize,
+        proc: FuncId,
+        args: Vec<Variant>,
+        suppress: bool,
+    ) -> Result<Variant, Vm3Error> {
+        self.guard_call_depth()?;
+        let saved_cur = self.cur;
+        let base = self.frames.len();
+        let mut frame = self.new_frame_in(target_prog, proc);
+        for (i, v) in args.into_iter().enumerate() {
+            if let Some(slot) = frame.locals.get_mut(i) {
+                *slot = v;
+            }
+        }
+        frame.saved_error_mode = self.error_mode;
+        frame.saved_active_error = self.active_error;
+        self.frames.push(frame);
+        self.error_mode = ErrorMode::None;
+        self.active_error = None;
+        let result = self.run_loop(base);
+        let ret = self
+            .frames
+            .get(base)
+            .and_then(|fr| fr.return_local.and_then(|rl| fr.locals.get(rl.0).cloned()))
+            .unwrap_or_else(Variant::empty);
+        if let Some(fr) = self.frames.get(base) {
+            self.error_mode = fr.saved_error_mode;
+            self.active_error = fr.saved_active_error;
+        }
+        self.frames.truncate(base);
+        self.prune_param_array_aliases_from_depth(self.frames.len());
+        self.cur = saved_cur;
+        self.maybe_drain();
+        match result {
+            Ok(()) => Ok(ret),
+            Err(Vm3Error::Fault(_)) if suppress => Ok(Variant::empty()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Bound runaway recursion at vm2's frame ceiling, raising error 28 ("Out of stack
@@ -4407,6 +4547,12 @@ impl<'h> Vm3<'h> {
             OxOperand::Const(c) => Ok(const_variant(c)),
             OxOperand::Use(p) => self.read(p),
         }
+    }
+}
+
+impl CallbackExecutor for Vm3<'_> {
+    fn invoke_callback(&mut self, proc_token: usize, args: &[isize]) -> isize {
+        self.run_native_callback_proc(proc_token, args)
     }
 }
 

@@ -50,14 +50,15 @@ no-dimension-guard}, redim-multidim-count-overflow, erase-fixed-array-in-variant
 isdate-always-false, datevalue-cdate-of-date-raises-13) were struck from the actionable head, so
 the sequence then led with user-named work (AddressOf, GetObject) plus the 3 Critical file-I/O bugs.
 
-**Terminal reconciliation (bd-ggpa, 2026-07-02):** the action rows below now
+**Terminal reconciliation (bd-ggpa, 2026-07-02; refreshed by bd-9sed.6.1):** the action rows below now
 agree with the bead graph and memory. Every actionable vm3 spec-gap row is
 closed, explicitly declined for this epic, or split to another owner. The
-native `AddressOf` callback thunk remains the explicit `addressof-native-callback-thunk`
-decline row for `bd-4ktq`; the broader implementation lane is still owned by
-the open vm3-retirement/COM-foreign work item `bd-9sed.6`. Broader PMR rows
-that remain `partial` are intentionally wider than this vm3 gap inventory and
-do not by themselves keep a `bd-4ktq` action row open.
+native `AddressOf` callback thunk was split out of `bd-4ktq` and the bounded
+synchronous `CallWindowProcW(AddressOf ...)` runtime shape is now implemented by
+`bd-9sed.6.1`; broader async/timer callback lifetime and message-pump behavior
+remain outside this inventory. Broader PMR rows that remain `partial` are
+intentionally wider than this vm3 gap inventory and do not by themselves keep a
+`bd-4ktq` action row open.
 
 **Former residual risk:** the original critique noted that no multi-module or
 multi-project differential fixtures existed yet. That follow-up surface is now
@@ -202,7 +203,7 @@ the removed `oxvba-compiler` crate.
 |---|----|-----------|-----|-----|-----------|
 |☑|redim-fixed-array-reject|Med/SilentWrong|S|`ReDim` of a fixed array silently re-dimensions instead of erroring|runtime guard in `array_redim` on `is_fixed_size()` → Fault 10 *(done; 6 corpus progs fixed to valid dynamic arrays)*|
 |☑|erase-fixed-array-in-variant-element-type|Med/SilentWrong|M|`Erase` of a fixed array in a Variant slot re-defaults to Variant/Empty, flips element type|bind-site element unless Variant, then `array_element_type_for_vartype(element_vartype())` *(done)*|
-|⊘|addressof-native-callback-thunk|Low/HonestDecline|L|`AddressOf`→native callback slot declines (vm3 lib.rs:3046)|**DECISION (explicitly split, not parity closure here):** native callback thunking remains unimplemented in `bd-4ktq`; no in-scope corpus program exercises it, and the capability needs a broader unsafe facility (thunk pool + reentrant VM callback from a C trampoline mid-FFI). Intra-VBA `AddressOf`/`CallProcRef` already works. The broader implementation path is owned by `bd-9sed.6`. Design when implemented: substitute the thunk address as the `LongPtr` arg (HAL unchanged — it marshals `LongPtr` as a pointer-sized int), copy out `self.host` so the VM is unborrowed across the FFI, re-enter via `run_proc_with_values`. Sync-only (EnumWindows-style); async (SetTimer) additionally needs a message pump + thunk outliving the call.|
+|☑|addressof-native-callback-thunk|Low/HonestDecline|L|`AddressOf`→native callback slot declined for by-value `LongPtr` Declare callback parameters|DONE later by `bd-9sed.6.1`: `oxvba-runtime::callback_thunks` now provides a scoped thread-local Windows x64 callback table, and vm3 substitutes a temporary native callback address for the bounded synchronous `CallWindowProcW(AddressOf ...)` shape. The callback re-enters the declared VBA procedure, seeds standard-module callback args from slot 0 according to declared OxIR types, returns numeric/Boolean function results as pointer-sized native values, and drops the registration when the Declare call returns. Unsupported platforms and non-synchronous callback descriptors still fail explicitly instead of mis-marshalling a `ProcRef` as an integer. Async `SetTimer`/message-pump lifetime behavior remains separate Riff-native work, not closed by this row. Evidence: `docs/evidence/runtime/VM3_ADDRESSOF_NATIVE_CALLBACK_THUNK_2026-07-02.md`.|
 |☑|getobject-absent|Low/Absent|M|`GetObject` not bindable|catalog SpecialForm + `Native(GetObject)` route; `host::get_object` → `ComHal::get_object_variant`; HAL 3-mode dispatch (omitted→`GetActiveObject`, ""→`CreateObject`, path→`CoGetObject`); bridge `get_active_object`/`bind_file_object`. LIVE-verified (Dictionary new-instance + running Excel). *(done)* NOTE: the miss `Err.Number` is now correct (429/432) — `hal-errors-flattened-to-5` fixed|
 
 ## Tier 1 — Critical SilentWrong (data loss / everyday code)

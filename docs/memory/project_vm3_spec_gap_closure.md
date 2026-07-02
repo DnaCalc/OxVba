@@ -3001,3 +3001,41 @@
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\meta-check.ps1 -Fast -NoArtifacts`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-02 - vm3 AddressOf Native Callback Thunk (`bd-9sed.6.1`)
+
+- Closed the bounded synchronous `AddressOf` native callback thunk slice that had
+  been split out of the `bd-4ktq` vm3 spec-gap inventory to `bd-9sed.6`.
+- Added `oxvba-runtime::callback_thunks`, a scoped Windows x64 thread-local
+  callback table with generated `extern "system"` thunks, slot reuse by
+  `(owner, proc_token)`, and panic containment across the native ABI boundary.
+- Wired vm3 `Declare` calls so a by-value `AddressOf` `ProcRef` passed to a
+  `LongPtr` parameter for the synchronous `CallWindowProcW` descriptor is
+  replaced with a temporary native thunk address. The callback re-enters the
+  declared VBA procedure and loads standard-module arguments from local slot 0,
+  matching real VBA callback parameter delivery for this shape.
+- Converted `native_declare_lane_vm3` from an `Unsupported` proof to executable
+  success coverage, added a negative guard for non-callback Declare descriptors,
+  and un-ignored the shared Riff-shaped `CallWindowProcW` native Declare probe.
+- Updated the VM3 gap inventory, vm3 completion plan, OXIR handoff note,
+  implementation log, and runtime evidence note so no active truth surface keeps
+  calling the synchronous `CallWindowProcW(AddressOf ...)` shape a vm3 residual.
+- Boundary: unsupported platforms and non-synchronous callback descriptors still
+  fail explicitly instead of mis-marshalling a `ProcRef` as an integer. Async
+  `SetTimer`/message-pump callback lifetime remains separate Riff-native work.
+- Fresh-eyes review checked for legacy/vm2 compatibility framing, thunk lifetime
+  leaks, ProcRef integer mis-marshalling, callback argument slot shifts, panic
+  across FFI, stale ignored tests, and stale residual wording. The review drove
+  the doc wording updates and kept the async callback boundary explicit.
+- Verification completed:
+  - `cargo fmt --all`
+  - `cargo check -p oxvba-runtime -p oxvba-vm3 -p oxvba-host`
+  - `cargo test -p oxvba-host --test native_declare_lane_vm3 -- --test-threads=1 --nocapture`
+  - `cargo test -p oxvba-host --test native_declare_lane riff_shaped_callwindowproc_invokes_address_of_callback -- --exact --test-threads=1 --nocapture`
+  - `cargo test -p oxvba-host --test native_declare_lane -- --test-threads=1`
+  - `cargo clippy -p oxvba-runtime -p oxvba-vm3 -p oxvba-host --all-targets -- -D warnings`
+- Broader gate note: `scripts\meta-check.ps1 -Fast -NoArtifacts` was attempted
+  twice and timed out in unrelated `cargo test --workspace` execution while
+  `oxvba-build` test `tests::wrapped_com_server_build_emits_package_descriptor_and_idl`
+  remained stuck. Running that single test directly also timed out after five
+  minutes.

@@ -21,7 +21,7 @@
 | G4 | `GetObject(...)` (also absent on vm2 — net-new) | W6 |
 | G5 | `WithEvents` on a COM connection-point source | W5 |
 | G6 | true cross-project link (project A → project B) | W2 |
-| G7 | `AddressOf` into a native `Declare` callback slot | W5 |
+| G7 | `AddressOf` into a native `Declare` callback slot | W5 (`CallWindowProcW` synchronous slice closed by `bd-9sed.6.1`; async timer lifetime still separate) |
 
 ## Worksets (DAG; critical path W0→…→W14)
 
@@ -57,8 +57,8 @@
 
 ### W5 — COM-foreign legs: G2-COM (`IEnumVARIANT`) + G5 (`WithEvents`) + G7 (`AddressOf`→native)
 - **Note:** the HAL/`oxvba-com` stack already exists and is live-tested under vm2 — this is mostly vm3 wiring, plus one shared facility for G7.
-- **Beads:** **G2-COM** — replace the For-Each object-arm `Unimplemented` (lib.rs:1034) with vm2's branch (`host.com().enumerate_object(obj)`); **G5** — port vm2's COM-event model (`com_subscriptions` maps + `subscribe/pump/unsubscribe_com_*`, vm2/lib.rs:1540-1644), replace `WithEvents`-COM `Unimplemented` (lib.rs:1195), deliver handler args via W0 `run_proc_with_values`, pump at statement boundaries, unsubscribe on `Set=Nothing`/teardown/Terminate; **G7** — build a **VM-agnostic shared callback-thunk facility** in `oxvba-runtime` (`callback_thunks.rs`: 32-slot thread-local, opaque proc token + `CallbackExecutor` handle, **no `*mut Vm`**, macro-generated `extern "system"` trampolines in `catch_unwind`, dedup by `(owner, token)`, Err 7 on exhaustion), and wire the `Declare` LongPtr+ProcRef arm (lib.rs:2139) to register a slot that re-enters `run_proc_with_values`.
-- **Verify:** live com_matrix For-Each-over-COM + WithEvents-COM (V7/V8, in-proc + OOP arg order) green; a `SetTimer`/`EnumWindows` callback fires the VBA proc with no host AV; `cargo check -p oxvba-runtime` names no `Vm` type; Miri-style review of the unsafe trampoline. **Depends on:** W0, W2, W4
+- **Beads:** **G2-COM** — replace the For-Each object-arm `Unimplemented` (lib.rs:1034) with vm2's branch (`host.com().enumerate_object(obj)`); **G5** — port vm2's COM-event model (`com_subscriptions` maps + `subscribe/pump/unsubscribe_com_*`, vm2/lib.rs:1540-1644), replace `WithEvents`-COM `Unimplemented` (lib.rs:1195), deliver handler args via W0 `run_proc_with_values`, pump at statement boundaries, unsubscribe on `Set=Nothing`/teardown/Terminate; **G7** — DONE for the bounded synchronous `CallWindowProcW(AddressOf ...)` shape by `bd-9sed.6.1`: `oxvba-runtime::callback_thunks` provides a VM-agnostic scoped callback-thunk facility (32-slot thread-local, opaque proc token + `CallbackExecutor`, no vm2 dependency, macro-generated `extern "system"` trampolines in `catch_unwind`, dedup by `(owner, token)`, Err 7 on exhaustion), and vm3 wires the `Declare` LongPtr+ProcRef arm to register a slot for the duration of the native call.
+- **Verify:** live com_matrix For-Each-over-COM + WithEvents-COM (V7/V8, in-proc + OOP arg order) green; the synchronous `CallWindowProcW` callback fires the VBA proc with no host AV; `cargo check -p oxvba-runtime` names no `Vm` type; Miri-style review of the unsafe trampoline. Async `SetTimer`/message-pump callbacks remain separate native-lifetime work. **Depends on:** W0, W2, W4
 
 ### W6 — G4 `GetObject` (net-new; vm2 also lacks it → superset-for-free)
 - **Beads:** front-end — `NativeImplId::GetObject` + symbol-catalog entry (SpecialForm, both args optional) + binder lowering mirroring `CreateObject`; HAL/host/com — `ComHal::get_object_variant(pathname, class)` (default = capability error) + standard-adapter impl + `oxvba-com activate_dispatch_get_object` (`GetActiveObject`/ROT for running instance; `CoGetObject`/`MkParseDisplayName`+`BindMoniker` for file/moniker) + `oxvba-lib host::get_object`; 1-arg no-instance → clean `Err 429`; moniker form reuses the M3-8 rich HRESULT→Err machinery; null/wasm/replay decline cleanly.
