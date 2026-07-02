@@ -106,7 +106,7 @@ Sub Main()
     result = "unreachable"
 End Sub
 "#;
-    assert_bind_rejected_with(source, &["VariableNotDefined"]);
+    assert_bind_rejected_with(source, &["Variable not defined"]);
 }
 
 #[test]
@@ -118,7 +118,7 @@ Sub Main()
     result = "unreachable"
 End Sub
 "#;
-    assert_bind_rejected_with(source, &["VariableNotDefined"]);
+    assert_bind_rejected_with(source, &["Variable not defined"]);
 }
 
 #[test]
@@ -132,5 +132,5 @@ Sub Main()
     result = CStr(a)
 End Sub
 "#;
-    assert_bind_rejected_with(source, &["ExpectedArray"]);
+    assert_bind_rejected_with(source, &["Expected array"]);
 }
