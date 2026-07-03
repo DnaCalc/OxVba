@@ -1,0 +1,6 @@
+2026-07-03T02:22:51.239+02:00 start excel_pid=35576 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_collection_real_vba_20260703\excel_dialog_guardian.stop
+2026-07-03T02:22:52.369+02:00 stop file observed; exiting
+2026-07-03T02:22:52.384+02:00 exit
+2026-07-03T02:26:13.751+02:00 start excel_pid=36944 poll_ms=250 max_seconds=1800 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_collection_real_vba_20260703\excel_dialog_guardian.stop
+2026-07-03T02:26:14.886+02:00 stop file observed; exiting
+2026-07-03T02:26:14.902+02:00 exit

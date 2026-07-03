@@ -1,0 +1,4 @@
+"file","oracle_status","oracle_values","golden_status","golden_values","match","notes"
+"object_collection_add_item.bas","ok","i32:9|i32:9","ok","i32:9|i32:9","true",""
+"object_collection_count_chain.bas","ok","i32:1|i32:2","ok","i32:1|i32:2","true",""
+"object_collection_remove_count.bas","ok","i32:1","ok","i32:1","true",""

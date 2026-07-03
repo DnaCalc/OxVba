@@ -47,6 +47,12 @@ retained-value follow-up work. Synthetic `CollectionAdd`/`CollectionItem`/
 `CollectionCount`/`CollectionRemove` fixtures were left as follow-up work
 because they are not real VBA language fixtures.
 
+`bd-5kqj.5` replaced those three synthetic collection fixtures with real VBA
+`Collection` source using `Dim ... As New Collection`, `.Add`, `.Item`, default
+member access, `.Count`, and `.Remove`. A targeted Excel oracle rerun captured
+the real retained scalar values and had 3 `ok`, 0 `error`, and 0 skipped rows:
+`docs/evidence/conformance/oracle_captures/conformance_oracle_collection_real_vba_20260703/`.
+
 The starting 70-mismatch surface was captured after the earlier W10 `Rnd` and
 `Single` retained-value formatter fixes; this bead reconciles that post-W10
 baseline.
@@ -60,16 +66,17 @@ with an error-5 regression.
 ## Current Gate
 
 After the oracle-backed golden refreshes, `Round` fix, the `bd-5kqj.4`
-module-level `Const` parser fix, the `bd-5kqj.3` compile-diagnostic fix, and
-the `bd-5kqj.2` CVErr/Resume-state fix:
+module-level `Const` parser fix, the `bd-5kqj.3` compile-diagnostic fix, the
+`bd-5kqj.2` CVErr/Resume-state fix, and the `bd-5kqj.5` collection-fixture
+replacement:
 
 - Command: `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-- Current result: 21 mismatches over 192 files.
-- Latest evidence: terminal output from the `bd-5kqj.2` closure run.
+- Current result: 18 mismatches over 192 files.
+- Latest evidence: terminal output from the `bd-5kqj.5` closure run.
 - Earlier 27-mismatch log before the `Const` fix:
   `target/conformance_basic_language_vm_after_remaining_oracle_20260702.log`
 
-The 21 remaining mismatch rows are classified as follows; one row
+The 18 remaining mismatch rows are classified as follows; one row
 (`for_each_array_variable_basic.bas`) intersects the composite-retained-value
 surface and the loop-variable-final-state follow-up:
 
@@ -77,10 +84,6 @@ surface and the loop-variable-final-state follow-up:
   array/`ReDim`/UDT rows where vm3 currently dumps structural SAFEARRAY/record
   debug values while the VBA-observable fixture target should be scalar or the
   oracle encoder must be extended.
-- `bd-5kqj.5` non-VBA synthetic collection fixtures:
-  `object_collection_add_item.bas`,
-  `object_collection_count_chain.bas`,
-  `object_collection_remove_count.bas`.
 - `bd-5kqj.6` `Err.Source` default naming:
   `err_surface_fields_subset.bas` reports `VBAProject` in Excel and `Main` in
   vm3.
@@ -103,20 +106,24 @@ surface and the loop-variable-final-state follow-up:
 - `cargo test -q -p oxvba-bind on_error_resume_next_caught_error_does_not_arm_resume`
 - `cargo test -q -p oxvba-bind cverr_out_of_range_raises_and_skips_assignment_under_resume_next`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern coercion_cverr_abs_normalization.bas,coercion_cverr_range_predicates.bas,error_nested_mode_transitions.bas,regression_cverr_error_resume_bridge.bas`
+- `./scripts/run-conformance-oracle.ps1 -OutputDir docs/evidence/conformance/oracle_captures/conformance_oracle_collection_real_vba_20260703 -IncludePattern object_collection_add_item.bas,object_collection_count_chain.bas,object_collection_remove_count.bas -TestTimeoutMs 15000`
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern object_collection_add_item.bas,object_collection_count_chain.bas,object_collection_remove_count.bas`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern module_const_basic.bas`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern financial_algorithm_npv_irr_mirr_subset.bas,module_const_basic.bas,object_identity_is_nothing.bas,object_identity_is_same_and_different.bas,stdlib_array_introspection_bounds.bas,stdlib_array_introspection_types.bas,stdlib_math_primitives.bas,stdlib_random_financial_expansion.bas,stdlib_rnd_isolated.bas,string_join_array_tag_count.bas`
 - `cargo test -q -p oxvba-differential --lib vm3_golden_snapshot`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <42 scalar oracle rows>`
   - Current expected result: 3 mismatches, all split to follow-up beads.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-  - Current expected result: 21 mismatches over 192 files, all classified above.
+  - Current expected result: 18 mismatches over 192 files, all classified above.
 
 ## Fresh-Eyes Review
 
 Reviewed the updated golden rows against both raw Excel captures and current
 vm3 outputs. Rows were only refreshed to real Excel targets when the generic
-oracle capture was a valid observation for that fixture shape. UDT and synthetic
-collection rows were explicitly split instead of being treated as VBA parity.
+oracle capture was a valid observation for that fixture shape. UDT rows remain
+split because the generic oracle harness still cannot encode private UDT locals
+cleanly; the synthetic collection rows were replaced with real VBA fixtures
+rather than treated as parity targets.
 The `Round(19, -1)` change was backed by the Excel runtime error 5 capture and
 by a focused differential regression. The `module_const_basic.bas` parser
 failure was traced to `Base` being tokenized as an `Option Base` keyword; VBA
@@ -137,6 +144,10 @@ assignments under `On Error Resume Next`. Fresh-eyes review also found the
 older `coercion_cverr_range_predicates.bas` golden was still blessing
 out-of-range `CVErr` as an OK value row despite the March 2026 Excel oracle
 recording runtime error 5, so that hidden legacy expectation was corrected in
-the same CVErr lane.
+the same CVErr lane. The `bd-5kqj.5` review removed the non-VBA
+`CollectionAdd`/`CollectionItem`/`CollectionCount`/`CollectionRemove` fixture
+surface from the basic-language target instead of preserving it as
+compatibility behavior; the replacement rows use real VBA `Collection`
+operations and match the targeted Excel capture exactly.
 No remaining mismatch is left only in chat; every residual category has an open
 bead.
