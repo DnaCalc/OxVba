@@ -530,6 +530,36 @@ fn const_values_fold_enum_member_references() {
 }
 
 #[test]
+fn const_values_fold_cross_module_enum_member_references() {
+    let m = manifest(
+        "Proj",
+        vec![
+            module(
+                "Types",
+                "Public Enum WebFormat\n  PlainText = 1\n  Json\nEnd Enum\n",
+            ),
+            module(
+                "Mod1",
+                "Public Const FromBare As Long = Json + 1\n\
+                 Public Const FromQualified As Long = WebFormat.Json + 2\n\
+                 Public Const FromModuleMember As Long = Types.Json + 3\n\
+                 Public Const FromProjectQualified As Long = Proj.WebFormat.Json + 4\n",
+            ),
+        ],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let scope = env.module_scope("Mod1").unwrap();
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("FromBare"), Some(CoreConst::I32(3)));
+    assert_eq!(val("FromQualified"), Some(CoreConst::I32(4)));
+    assert_eq!(val("FromModuleMember"), Some(CoreConst::I32(5)));
+    assert_eq!(val("FromProjectQualified"), Some(CoreConst::I32(6)));
+}
+
+#[test]
 fn string_typed_const_values_coerce_to_declared_scalar_carriers() {
     let m = manifest(
         "Proj",

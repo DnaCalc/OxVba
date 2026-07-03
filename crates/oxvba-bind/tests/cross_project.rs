@@ -187,6 +187,32 @@ fn cross_project_call_const_enum_new_method_and_typeof() {
 }
 
 #[test]
+fn cross_module_enum_member_consts_execute() {
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Types",
+                "Public Enum EncodingMode\nStrictUrlEncoding = 0\nFormUrlEncoding = 1\nEnd Enum\n",
+            ),
+            proc_module(
+                "Main",
+                "Public r As Long\n\
+                 Public Const FromBare As Long = FormUrlEncoding + 1\n\
+                 Public Const FromQualified As Long = EncodingMode.FormUrlEncoding + 2\n\
+                 Public Const FromModuleMember As Long = Types.FormUrlEncoding + 3\n\
+                 Public Const FromProjectQualified As Long = App.EncodingMode.FormUrlEncoding + 4\n\
+                 Sub Main()\n\
+                 \x20   r = FromBare + FromQualified + FromModuleMember + FromProjectQualified\n\
+                 End Sub\n",
+            ),
+        ],
+        vec![],
+    );
+    assert_eq!(link_run_global0_i32(&[app]), Some(2 + 3 + 4 + 5));
+}
+
+#[test]
 fn cross_project_withevents() {
     // A sink class in App holds `WithEvents src As Lib.Clock`; firing the source's
     // event (in Lib's bundle) must route to the sink's handler (in App's bundle).

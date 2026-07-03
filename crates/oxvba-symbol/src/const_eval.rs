@@ -598,10 +598,17 @@ fn eval_inner(
             let Some(tok) = node.ident_name_token() else {
                 return ConstEval::Unresolvable;
             };
-            // A project const in scope; else a `vb*` library constant.
+            // A project const in scope; else a public project enum member; else a
+            // `vb*` library constant.
             if let Ok(Some(sym)) =
                 symbols.resolve_in_scope_chain(scope, SymbolNamespace::Local, tok.text)
             {
+                match eval_resolved_const(sym, values, const_syms) {
+                    ConstEval::Unresolvable => {}
+                    resolved => return resolved,
+                }
+            }
+            if let Some(sym) = resolve_project_enum_member_by_name(symbols, scope, tok.text) {
                 match eval_resolved_const(sym, values, const_syms) {
                     ConstEval::Unresolvable => {}
                     resolved => return resolved,
@@ -674,7 +681,15 @@ fn resolve_qualified_const_symbol(
     let project_scope = symbols.scope(module_scope).ok()?.parent?;
     if let [enum_name, member_name] = parts.as_slice()
         && !module_qualifier_shadowed(symbols, scope, enum_name)
-        && let Some(sym) = enum_member_symbol(symbols, module_scope, enum_name, member_name)
+        && let Some(sym) =
+            project_enum_member_symbol(symbols, project_scope, module_scope, enum_name, member_name)
+    {
+        return Some(sym);
+    }
+    if let [project_name, enum_name, member_name] = parts.as_slice()
+        && scope_name_matches(symbols, project_scope, project_name)
+        && let Some(sym) =
+            project_enum_member_symbol(symbols, project_scope, module_scope, enum_name, member_name)
     {
         return Some(sym);
     }
@@ -735,6 +750,103 @@ fn enum_member_symbol(
                 .symbol(*sym)
                 .is_some_and(|s| s.kind == crate::model::SymbolKind::EnumMember)
         })
+}
+
+fn project_enum_member_symbol(
+    symbols: &SymbolTable,
+    project_scope: ScopeId,
+    declaring_module: ScopeId,
+    enum_name: &str,
+    member_name: &str,
+) -> Option<SymbolId> {
+    let mut matches = Vec::new();
+    for module_scope in module_scopes_under(symbols, project_scope) {
+        if !enum_type_visible(symbols, module_scope, declaring_module, enum_name) {
+            continue;
+        }
+        if let Some(sym) = enum_member_symbol(symbols, module_scope, enum_name, member_name)
+            && enum_member_visible(symbols, module_scope, declaring_module, sym)
+        {
+            matches.push(sym);
+        }
+    }
+    unique_symbol(matches)
+}
+
+fn resolve_project_enum_member_by_name(
+    symbols: &SymbolTable,
+    scope: ScopeId,
+    member_name: &str,
+) -> Option<SymbolId> {
+    let declaring_module = enclosing_module_scope(symbols, scope)?;
+    let project_scope = symbols.scope(declaring_module).ok()?.parent?;
+    let mut matches = Vec::new();
+    for module_scope in module_scopes_under(symbols, project_scope) {
+        if module_scope == declaring_module {
+            continue;
+        }
+        let Some(sym) = symbols
+            .find_in_scope(module_scope, SymbolNamespace::Local, member_name)
+            .ok()
+            .flatten()
+        else {
+            continue;
+        };
+        let Some(symbol) = symbols.symbol(sym) else {
+            continue;
+        };
+        if symbol.kind == SymbolKind::EnumMember && symbol.visibility == Some(Visibility::Public) {
+            matches.push(sym);
+        }
+    }
+    unique_symbol(matches)
+}
+
+fn enum_type_visible(
+    symbols: &SymbolTable,
+    module_scope: ScopeId,
+    declaring_module: ScopeId,
+    enum_name: &str,
+) -> bool {
+    let Some(sym) = symbols
+        .find_in_scope(module_scope, SymbolNamespace::Type, enum_name)
+        .ok()
+        .flatten()
+    else {
+        return false;
+    };
+    symbols.symbol(sym).is_some_and(|symbol| {
+        symbol.kind == SymbolKind::Enum
+            && (module_scope == declaring_module || symbol.visibility == Some(Visibility::Public))
+    })
+}
+
+fn enum_member_visible(
+    symbols: &SymbolTable,
+    module_scope: ScopeId,
+    declaring_module: ScopeId,
+    sym: SymbolId,
+) -> bool {
+    symbols.symbol(sym).is_some_and(|symbol| {
+        symbol.kind == SymbolKind::EnumMember
+            && (module_scope == declaring_module || symbol.visibility == Some(Visibility::Public))
+    })
+}
+
+fn module_scopes_under(
+    symbols: &SymbolTable,
+    project_scope: ScopeId,
+) -> impl Iterator<Item = ScopeId> + '_ {
+    symbols.scopes().iter().filter_map(move |scope| {
+        (scope.kind == ScopeKind::Module && scope.parent == Some(project_scope)).then_some(scope.id)
+    })
+}
+
+fn unique_symbol(matches: Vec<SymbolId>) -> Option<SymbolId> {
+    match matches.as_slice() {
+        [sym] => Some(*sym),
+        _ => None,
+    }
 }
 
 fn module_qualifier_shadowed(symbols: &SymbolTable, scope: ScopeId, name: &str) -> bool {

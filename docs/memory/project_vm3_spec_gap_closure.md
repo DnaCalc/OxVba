@@ -3110,3 +3110,27 @@
   - `cargo fmt --all -- --check`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-03 - Cross-Module Enum Member Const References (`bd-aprs.9.9.9`)
+
+- Same-project public enum members now participate in the symbol-layer Const
+  evaluator's project enum namespace when local lookup misses.
+- Covered forms:
+  - bare public member from a sibling module, e.g. `FormUrlEncoding`;
+  - enum-qualified form, e.g. `EncodingMode.FormUrlEncoding`;
+  - project-qualified enum form, e.g. `App.EncodingMode.FormUrlEncoding`;
+  - direct module/member form for the enum member constant, e.g.
+    `Types.FormUrlEncoding`.
+- The evaluator keeps ambiguity unresolved instead of selecting an arbitrary
+  public enum-member candidate.
+- Referenced-project enum-member Const folding is split to `bd-aprs.9.9.10`
+  because it must honor export-surface and `Option Private Module` boundaries.
+- Verification completed:
+  - `cargo test -p oxvba-symbol const_values_fold_cross_module_enum_member_references -- --nocapture`
+  - `cargo test -p oxvba-bind cross_module_enum_member_consts_execute --test cross_project -- --nocapture`
+  - `cargo test -q -p oxvba-symbol`
+  - `cargo test -q -p oxvba-bind`
+  - `cargo check --workspace`
+  - `cargo fmt --all -- --check`
+  - `git diff --check`
+  - `br dep cycles --json`
