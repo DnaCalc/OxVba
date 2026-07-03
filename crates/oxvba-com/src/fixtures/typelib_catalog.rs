@@ -2856,16 +2856,14 @@ fn map_event_metadata_to_spec(event: &TypeLibEventMetadata) -> ComEventSpec {
 #[cfg(test)]
 mod tests {
     use super::{
-        TypeLibMemberLookupResult, activation_prog_id_from_typelib_metadata,
+        TEST_DISPID_EXISTS, TypeLibMemberLookupResult, activation_prog_id_from_typelib_metadata,
         build_typelib_metadata, event_spec_from_typelib_metadata,
         known_typelib_identity_for_prog_id_name, member_spec_from_typelib_metadata,
         resolve_default_member_token_and_spec_from_typelib_metadata,
         resolve_known_typelib_identity, resolve_member_token_and_spec_from_typelib_metadata_name,
         resolve_typelib_identity_for_prog_id_name, source_interface_event_spec_supported,
     };
-    use crate::{
-        ComMemberToken, TEST_DISPID_EXISTS, TypeLibMemberInvokeKind, TypeLibResolveRequest,
-    };
+    use crate::{ComMemberToken, TypeLibMemberInvokeKind, TypeLibResolveRequest};
 
     #[test]
     fn member_spec_lookup_uses_catalog_metadata() {

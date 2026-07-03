@@ -1,6 +1,6 @@
 # OxVba — JIT Plan
 
-**Status:** Plan (design-verified 2026-07-02; two design passes + a fresh-eyes convention sweep folded in). Not yet started.
+**Status:** Plan (design-verified 2026-07-02; two design passes + a fresh-eyes convention sweep folded in). M4-0 baseline implementation is complete; evidence is recorded in `docs/evidence/perf/JIT_M4_BASELINE_20260703.md`.
 **Scope:** M4 — the Cranelift JIT backend: architecture, design, and implementation program, from IR-prep through full corpus parity, typed fast paths, JIT-generated COM vtables, and AOT PE export.
 **Companion documents:** `OXIR_VM3_ERROR_MODEL.md` (the normative error semantics this plan compiles), `AOT_CRANELIFT_PE_EXPORT_DESIGN_2026-06-20.md` (the AOT packaging substrate §11 builds on), `VM3_COMPLETION_AND_VM2_RETIREMENT_PLAN.md` (the predecessor plan whose workset idiom this document follows).
 

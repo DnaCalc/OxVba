@@ -34,12 +34,16 @@ fn bounded_demo_basproj() -> PathBuf {
 /// workbook's absolute folder. `SQLite3Initialize` `LoadLibrary`s
 /// `ThisWorkbook.Path + "\x64\SQLite3.dll"`, so the run must happen with the
 /// workspace root as the current directory for that relative path to resolve.
-fn run_bounded_demo(enable_jit: bool) -> Result<(), String> {
+fn run_bounded_demo(jit_requested: bool) -> Result<(), String> {
     std::env::set_current_dir(workspace_root())
         .map_err(|err| format!("could not set cwd to the workspace root: {err}"))?;
     let closure = oxvba_project::load_project_closure_with_entry(&bounded_demo_basproj(), None)
         .map_err(|err| format!("closure load failed: {err}"))?;
-    let mut engine = Engine::new(HostConfig { enable_jit });
+    let mut engine = Engine::new(if jit_requested {
+        HostConfig::jit()
+    } else {
+        HostConfig::vm3()
+    });
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
         .execute_project_closure_with_variant_snapshot(&closure)

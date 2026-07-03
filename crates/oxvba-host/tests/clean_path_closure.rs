@@ -100,7 +100,7 @@ fn cross_project_workspace_runs_from_disk() {
     let closure = oxvba_project::load_project_closure(&app).expect("load closure");
     assert_eq!(closure.len(), 2, "Lib + App");
 
-    let engine = Engine::new(HostConfig { enable_jit: false });
+    let engine = Engine::new(HostConfig::vm3());
     let values = engine
         .execute_project_closure_with_variant_snapshot(&closure)
         .expect("clean-path run");
@@ -145,7 +145,7 @@ fn cross_project_workspace_runs_from_disk_on_vm3() {
     let closure = oxvba_project::load_project_closure(&app).expect("load closure");
     assert_eq!(closure.len(), 2, "Lib + App");
 
-    let engine = Engine::new(HostConfig { enable_jit: false });
+    let engine = Engine::new(HostConfig::vm3());
     match engine.execute_project_closure_with_variant_snapshot_vm3(&closure) {
         oxvba_host::Vm3Snapshot::Ran(values) => {
             assert_eq!(
@@ -209,7 +209,7 @@ fn class_enum_fields_are_scalar_across_project_closure() {
     );
 
     let closure = oxvba_project::load_project_closure(&app).expect("load closure");
-    let engine = Engine::new(HostConfig { enable_jit: false });
+    let engine = Engine::new(HostConfig::vm3());
     let values = engine
         .execute_project_closure_with_variant_snapshot(&closure)
         .expect("enum field class run");
@@ -258,7 +258,7 @@ fn class_property_get_returns_me_public_field_across_project_closure() {
     );
 
     let closure = oxvba_project::load_project_closure(&app).expect("load closure");
-    let engine = Engine::new(HostConfig { enable_jit: false });
+    let engine = Engine::new(HostConfig::vm3());
     let values = engine
         .execute_project_closure_with_variant_snapshot(&closure)
         .expect("public field property get run");
@@ -348,7 +348,7 @@ fn class_method_indexed_put_on_com_field_mutates_dictionary() {
     .expect("write holder");
 
     let closure = oxvba_project::load_project_closure(&basproj).expect("load closure");
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let values = engine
         .execute_project_closure_with_variant_snapshot(&closure)

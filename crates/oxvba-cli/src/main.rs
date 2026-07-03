@@ -22,8 +22,8 @@ use oxvba_hal::model::{
     HalRuntimeClass, UiVirtualizationMode, UnsupportedFeatureMode, WasmRuntimeClass,
 };
 use oxvba_host::{
-    Engine, HostConfig, ResolvedRunnerBootstrap, RunnerBootstrapFallbacks, RunnerBootstrapOptions,
-    resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
+    Engine, ExecBackend, HostConfig, ResolvedRunnerBootstrap, RunnerBootstrapFallbacks,
+    RunnerBootstrapOptions, resolve_runner_bootstrap, resolve_runner_bootstrap_with_fallbacks,
 };
 use oxvba_runtime::{VarType, Variant};
 
@@ -45,11 +45,12 @@ fn main() {
 fn print_usage() {
     eprintln!(
         "usage:\n  \
-         oxvba run <source.bas> [--dump-values] [--jit] [bootstrap options]\n  \
-         oxvba run-project [path] [--entry <Module.Procedure>] [--dump-values] [--jit] [bootstrap options]\n  \
+         oxvba run <source.bas> [--dump-values] [--backend vm3|jit] [--jit] [bootstrap options]\n  \
+         oxvba run-project [path] [--entry <Module.Procedure>] [--dump-values] [--backend vm3|jit] [--jit] [bootstrap options]\n  \
          oxvba build <project.basproj|project.vbp> --target WrappedComServer --out-dir <dir>\n\n\
          diagnostics:\n  \
-         --diagnostic-format <human|json>\n\n\
+         --diagnostic-format <human|json>\n  \
+         --backend <vm3|jit>  (--jit is an alias for --backend jit)\n\n\
          bootstrap options:\n  \
          --profile <id>  --policy <preset>  --config <path>  --runtime-class <class>\n  \
          --allow-interaction|--allow-process-spawn|--allow-filesystem-mutation <bool>\n  \
@@ -77,7 +78,7 @@ fn run_execute(cli_args: Vec<String>) {
         .map(|a| a.diagnostic_format)
         .unwrap_or_default();
     let config = HostConfig {
-        enable_jit: args.as_ref().map(|a| a.enable_jit).unwrap_or(false),
+        backend: args.as_ref().map(|a| a.backend).unwrap_or(ExecBackend::Vm3),
     };
     let mut engine = Engine::new(config);
     if let Some(run_args) = args.as_ref() {
@@ -103,24 +104,18 @@ fn run_execute(cli_args: Vec<String>) {
         .unwrap_or_else(|| "Sub Main()\nEnd Sub".to_string());
     let dump_values = args.as_ref().map(|a| a.dump_values).unwrap_or(false);
 
-    match engine.execute_source_with_variant_snapshot_vm3(&source) {
-        oxvba_host::Vm3Snapshot::Ran(values) => {
+    match engine.execute_source_with_variant_snapshot_clean(&source) {
+        Ok(values) => {
             if dump_values {
                 print_values(&values);
             }
         }
-        oxvba_host::Vm3Snapshot::Unsupported(what) => {
-            let diagnostic = OxDiagnostic::error(
-                "VM3-E-UNSUPPORTED",
-                OxDiagnosticPhase::Host,
-                format!("vm3 does not support this program: {what}"),
+        Err(err) => {
+            emit_diagnostic(
+                "oxvba: execution failed",
+                err.diagnostic(),
+                diagnostic_format,
             );
-            emit_diagnostic("oxvba: unsupported", &diagnostic, diagnostic_format);
-            std::process::exit(1);
-        }
-        oxvba_host::Vm3Snapshot::Failed(msg) => {
-            let diagnostic = OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg);
-            emit_diagnostic("oxvba: execution failed", &diagnostic, diagnostic_format);
             std::process::exit(1);
         }
     }
@@ -167,7 +162,7 @@ fn run_project(args: Vec<String>) {
     });
 
     let mut engine = Engine::new(HostConfig {
-        enable_jit: parsed.enable_jit,
+        backend: parsed.backend,
     });
     let resolved =
         resolve_project_runner_bootstrap(&loaded, &parsed.bootstrap, |key| env::var(key).ok())
@@ -199,24 +194,18 @@ fn run_project(args: Vec<String>) {
         std::process::exit(1);
     });
 
-    match engine.execute_project_closure_with_variant_snapshot_vm3(&closure) {
-        oxvba_host::Vm3Snapshot::Ran(values) => {
+    match engine.execute_project_closure_with_variant_snapshot(&closure) {
+        Ok(values) => {
             if parsed.dump_values {
                 print_values(&values);
             }
         }
-        oxvba_host::Vm3Snapshot::Unsupported(what) => {
-            let diagnostic = OxDiagnostic::error(
-                "VM3-E-UNSUPPORTED",
-                OxDiagnosticPhase::Host,
-                format!("vm3 does not support this program: {what}"),
+        Err(err) => {
+            emit_diagnostic(
+                "oxvba run-project",
+                err.diagnostic(),
+                parsed.diagnostic_format,
             );
-            emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
-            std::process::exit(1);
-        }
-        oxvba_host::Vm3Snapshot::Failed(msg) => {
-            let diagnostic = OxDiagnostic::error("VM3-E-RUNTIME", OxDiagnosticPhase::Host, msg);
-            emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
             std::process::exit(1);
         }
     }
@@ -353,7 +342,7 @@ struct RunArgs {
     source: String,
     dump_values: bool,
     dump_bootstrap: bool,
-    enable_jit: bool,
+    backend: ExecBackend,
     diagnostic_format: DiagnosticFormat,
     bootstrap: RunnerBootstrapOptions,
 }
@@ -361,7 +350,7 @@ struct RunArgs {
 #[derive(Debug, Clone)]
 struct RunProjectArgs {
     input_path: Option<PathBuf>,
-    enable_jit: bool,
+    backend: ExecBackend,
     dump_values: bool,
     dump_bootstrap: bool,
     diagnostic_format: DiagnosticFormat,
@@ -385,7 +374,7 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
     let mut path: Option<String> = None;
     let mut dump_values = false;
     let mut dump_bootstrap = false;
-    let mut enable_jit = false;
+    let mut backend = ExecBackend::Vm3;
     let mut diagnostic_format = DiagnosticFormat::Human;
     let mut bootstrap = RunnerBootstrapOptions::default();
 
@@ -395,7 +384,11 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
         match arg {
             "--dump-values" => dump_values = true,
             "--dump-bootstrap" => dump_bootstrap = true,
-            "--jit" => enable_jit = true,
+            "--jit" => backend = ExecBackend::Jit,
+            "--backend" => {
+                i += 1;
+                backend = parse_exec_backend(collected.get(i)?)?;
+            }
             "--diagnostic-format" => {
                 i += 1;
                 diagnostic_format = parse_diagnostic_format(collected.get(i)?)?;
@@ -415,7 +408,7 @@ fn parse_run_args_from(args: Vec<String>) -> Option<RunArgs> {
         source,
         dump_values,
         dump_bootstrap,
-        enable_jit,
+        backend,
         diagnostic_format,
         bootstrap,
     })
@@ -477,7 +470,7 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
     }
     let collected: Vec<String> = iter.collect();
     let mut input_path: Option<PathBuf> = None;
-    let mut enable_jit = false;
+    let mut backend = ExecBackend::Vm3;
     let mut dump_values = false;
     let mut dump_bootstrap = false;
     let mut diagnostic_format = DiagnosticFormat::Human;
@@ -488,7 +481,11 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
     while i < collected.len() {
         let arg = collected[i].as_str();
         match arg {
-            "--jit" => enable_jit = true,
+            "--jit" => backend = ExecBackend::Jit,
+            "--backend" => {
+                i += 1;
+                backend = parse_exec_backend(collected.get(i)?)?;
+            }
             "--dump-values" => dump_values = true,
             "--dump-bootstrap" => dump_bootstrap = true,
             "--diagnostic-format" => {
@@ -513,7 +510,7 @@ fn parse_run_project_args_from(args: Vec<String>) -> Option<RunProjectArgs> {
 
     Some(RunProjectArgs {
         input_path,
-        enable_jit,
+        backend,
         dump_values,
         dump_bootstrap,
         diagnostic_format,
@@ -675,6 +672,10 @@ fn parse_diagnostic_format(value: &str) -> Option<DiagnosticFormat> {
     }
 }
 
+fn parse_exec_backend(value: &str) -> Option<ExecBackend> {
+    ExecBackend::parse(value)
+}
+
 fn parse_runtime_class(value: &str) -> Option<HalRuntimeClass> {
     match value.trim().to_ascii_lowercase().as_str() {
         "host-native" => Some(HalRuntimeClass::HostNative),
@@ -731,7 +732,30 @@ mod tests {
         ];
         let parsed = parse_run_args_from(args).expect("args should parse");
         assert!(parsed.dump_values);
-        assert!(parsed.enable_jit);
+        assert_eq!(parsed.backend, ExecBackend::Jit);
+    }
+
+    #[test]
+    fn parse_run_args_with_backend_jit() {
+        let args = vec![
+            "run".to_string(),
+            "Cargo.toml".to_string(),
+            "--backend".to_string(),
+            "jit".to_string(),
+        ];
+        let parsed = parse_run_args_from(args).expect("args should parse");
+        assert_eq!(parsed.backend, ExecBackend::Jit);
+    }
+
+    #[test]
+    fn parse_run_args_rejects_noncanonical_backend_alias() {
+        let args = vec![
+            "run".to_string(),
+            "Cargo.toml".to_string(),
+            "--backend".to_string(),
+            "vm".to_string(),
+        ];
+        assert!(parse_run_args_from(args).is_none());
     }
 
     #[test]
@@ -811,7 +835,7 @@ mod tests {
         let parsed = parse_run_project_args_from(args).expect("args should parse");
         assert_eq!(parsed.entry_point_override.as_deref(), Some("Startup.Boot"));
         assert_eq!(parsed.bootstrap.profile.as_deref(), Some("windows-stdio"));
-        assert!(parsed.enable_jit);
+        assert_eq!(parsed.backend, ExecBackend::Jit);
         assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Json);
         assert_eq!(parsed.input_path, Some(PathBuf::from(".")));
     }

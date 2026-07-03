@@ -275,6 +275,7 @@ fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
         if raw.is_null() {
             return Err("failed to allocate BSTR payload".to_string());
         }
+        crate::live_counters::bstr_allocated();
         Ok(raw.cast_mut())
     }
     #[cfg(not(target_os = "windows"))]
@@ -303,6 +304,7 @@ fn alloc_raw_bstr_from_bytes(bytes: &[u8]) -> Result<*mut u16, String> {
         if raw.is_null() {
             return Err("failed to allocate BSTR payload".to_string());
         }
+        crate::live_counters::bstr_allocated();
         Ok(raw.cast_mut())
     }
     #[cfg(not(target_os = "windows"))]
@@ -315,6 +317,7 @@ fn alloc_raw_bstr_from_bytes(bytes: &[u8]) -> Result<*mut u16, String> {
         if raw.is_null() {
             return Err("failed to allocate BSTR payload".to_string());
         }
+        crate::live_counters::bstr_allocated();
         // SAFETY: `raw` was checked non-null above and `layout` sized it for the prefix
         // plus the payload bytes and a terminating UTF-16 NUL. The prefix write, payload
         // copy, and two terminator byte writes all stay in bounds; byte writes avoid
@@ -378,6 +381,7 @@ unsafe fn free_raw_bstr(ptr: *mut u16) {
     if ptr.is_null() {
         return;
     }
+    crate::live_counters::bstr_freed();
     #[cfg(target_os = "windows")]
     {
         // SAFETY: `ptr` was checked non-null above and, per this fn's contract, the caller

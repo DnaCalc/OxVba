@@ -53,8 +53,7 @@ use crate::{
         TimeLocaleHal, UiInteractionHal,
     },
 };
-#[cfg(test)]
-#[cfg(test)]
+#[cfg(all(test, target_os = "windows"))]
 use oxvba_com::RawIDispatch;
 use oxvba_com::{
     ComBinding,
@@ -1530,7 +1529,7 @@ fn map_project_callback_error(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "windows"))]
 type ComEventSubscriptionTransport = oxvba_com::WindowsComSubscriptionTransport;
 
 #[cfg(target_os = "windows")]
@@ -1646,15 +1645,19 @@ mod tests {
     };
 
     use oxvba_com::{
-        ComInvokeArg, ComInvokeFailure, ComInvokeRequest, ComObjectToken, ComValue,
-        DynamicObjectBridge, DynamicObjectToken, RawIDispatch, VariantResultValue,
+        ComInvokeArg, ComInvokeRequest, ComObjectToken, ComValue, DynamicObjectBridge,
+        DynamicObjectToken,
+    };
+    #[cfg(target_os = "windows")]
+    use oxvba_com::{
+        ComInvokeFailure, RawIDispatch, VariantResultValue,
         add_ref_dispatch as raw_add_ref_dispatch, create_oxvba_test_dispatch,
         release_dispatch as raw_release_dispatch,
         set_variant_from_com_value as com_set_variant_from_com_value,
         take_variant_result_value as com_take_variant_result_value,
         variant_to_com_value as com_variant_to_com_value,
     };
-    use oxvba_runtime::{VarType, Variant, bstr::BStr};
+    use oxvba_runtime::{ObjectRef, VarType, Variant, bstr::BStr};
     use proptest::prelude::*;
 
     use crate::{
@@ -1670,8 +1673,6 @@ mod tests {
     };
 
     use super::StandardHostServices;
-    #[cfg(target_os = "windows")]
-    use oxvba_runtime::ObjectRef;
     #[cfg(target_os = "windows")]
     use windows_sys::Win32::System::Variant::{
         VARIANT, VT_ARRAY, VT_DISPATCH, VT_UNKNOWN, VT_VARIANT, VariantClear,
@@ -1711,6 +1712,7 @@ mod tests {
         format!("OxVba.PropSeed.{prog_id_seed}")
     }
 
+    #[cfg(target_os = "windows")]
     fn native_dispatch_is_bound(
         host: &StandardHostServices,
         object: &oxvba_runtime::ObjectRef,
@@ -1740,7 +1742,12 @@ mod tests {
         host.create_object_variant(prog_id)?
             .as_object_ref()
             .ok_or_else(|| {
-                host.com_dispatch_adapter_fault("create variant was not object".to_string())
+                crate::error::HalError::adapter_fault(
+                    host.profile,
+                    crate::model::CapabilityId::ComActivationDispatch,
+                    "create_object",
+                    "create variant was not object",
+                )
             })
     }
 
@@ -1758,7 +1765,12 @@ mod tests {
         host.release_object_variant(object)?
             .as_i32()
             .ok_or_else(|| {
-                host.com_dispatch_adapter_fault("release variant was not VT_I4".to_string())
+                crate::error::HalError::adapter_fault(
+                    host.profile,
+                    crate::model::CapabilityId::ComActivationDispatch,
+                    "release_object",
+                    "release variant was not VT_I4",
+                )
             })
     }
 
@@ -1778,6 +1790,7 @@ mod tests {
         Ok(expect_i32(host.dispatch_invoke_variant(request)?))
     }
 
+    #[cfg(target_os = "windows")]
     fn bound_member_token_by_name(
         host: &StandardHostServices,
         object: i32,
@@ -1807,6 +1820,7 @@ mod tests {
             })
     }
 
+    #[cfg(target_os = "windows")]
     fn dispatch_invoke_named(
         host: &StandardHostServices,
         object: i32,
@@ -1840,6 +1854,7 @@ mod tests {
             &self,
             request: &ComInvokeRequest,
         ) -> crate::error::HalResult<i32>;
+        #[cfg(target_os = "windows")]
         fn dispatch_invoke_named(
             &self,
             object: i32,
@@ -1878,6 +1893,7 @@ mod tests {
             dispatch_invoke_legacy_v2(self, request)
         }
 
+        #[cfg(target_os = "windows")]
         fn dispatch_invoke_named(
             &self,
             object: i32,

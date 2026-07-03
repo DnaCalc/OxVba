@@ -424,7 +424,7 @@ impl PortableDispatch for RecordingApplication {
 
 fn engine(shape: HostShape, calls: Arc<Mutex<Vec<String>>>) -> Engine {
     if shape != HostShape::HostInjectedProfile {
-        return Engine::new(HostConfig { enable_jit: false });
+        return Engine::new(HostConfig::vm3());
     }
     let projection = Arc::new(PortableComProjection::new());
     projection.register_object(
@@ -435,7 +435,7 @@ fn engine(shape: HostShape, calls: Arc<Mutex<Vec<String>>>) -> Engine {
         .with_typelib_resolver(Arc::new(VbaWebResolver))
         .with_portable_com_projection(projection)
         .with_host_policy(HostPolicy::interactive_dev());
-    Engine::new(HostConfig { enable_jit: false }).with_host_profile_provider(profile)
+    Engine::new(HostConfig::vm3()).with_host_profile_provider(profile)
 }
 
 fn run_project(path: &Path, shape: HostShape, calls: Arc<Mutex<Vec<String>>>) -> Vec<Variant> {

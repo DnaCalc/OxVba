@@ -4,9 +4,9 @@ mod windows_native_declare_string_e2e {
     use oxvba_host::{Engine, HostConfig};
     use oxvba_runtime::Variant;
 
-    fn run_windows_host_backed(source: &str, enable_jit: bool) -> Option<Vec<Variant>> {
-        if enable_jit {
-            let mut engine = Engine::new(HostConfig { enable_jit });
+    fn run_windows_host_backed(source: &str, jit_requested: bool) -> Option<Vec<Variant>> {
+        if jit_requested {
+            let mut engine = Engine::new(HostConfig::jit());
             engine.set_host_policy(HostPolicy::interactive_dev());
             let err = engine
                 .execute_source_with_variant_snapshot_clean(source)
@@ -18,7 +18,7 @@ mod windows_native_declare_string_e2e {
             return None;
         }
 
-        let mut engine = Engine::new(HostConfig { enable_jit });
+        let mut engine = Engine::new(HostConfig::vm3());
         engine.set_host_policy(HostPolicy::interactive_dev());
         Some(
             engine
@@ -54,8 +54,8 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             let handle = snapshot
@@ -64,7 +64,7 @@ End Sub
                 .expect("snapshot should contain a non-zero module handle");
             assert_ne!(
                 handle, 0,
-                "LoadLibraryA should succeed for enable_jit={enable_jit}"
+                "LoadLibraryA should succeed for jit_requested={jit_requested}"
             );
         }
     }
@@ -87,8 +87,8 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             let handle = snapshot
@@ -97,7 +97,7 @@ End Sub
                 .expect("snapshot should contain a non-zero module handle");
             assert_ne!(
                 handle, 0,
-                "GetModuleHandleExW should populate ByRef LongPtr output for enable_jit={enable_jit}"
+                "GetModuleHandleExW should populate ByRef LongPtr output for jit_requested={jit_requested}"
             );
         }
     }
@@ -124,13 +124,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 contains_string(&snapshot, "alpha"),
-                "MultiByteToWideChar should write back through StrPtr target for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "MultiByteToWideChar should write back through StrPtr target for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -157,13 +157,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 contains_string(&snapshot, "alpha"),
-                "StrPtr writeback should not depend on the declared API name for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "StrPtr writeback should not depend on the declared API name for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -182,13 +182,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 contains_string(&snapshot, "alpha"),
-                "SysReAllocString should write back through VarPtr(String) for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "SysReAllocString should write back through VarPtr(String) for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -214,13 +214,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.iter().any(|value| value.as_i32() == Some(2)),
-                "WideCharToMultiByte should write a 2-byte C string into the array slot for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "WideCharToMultiByte should write a 2-byte C string into the array slot for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -246,13 +246,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.iter().any(|value| value.as_i32() == Some(2)),
-                "VarPtr buffer writeback should not depend on the declared API name for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "VarPtr buffer writeback should not depend on the declared API name for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -268,13 +268,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.iter().any(|value| value.as_f64() == Some(12.5)),
-                "sqrt should return 12.5 through the native Double lane for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "sqrt should return 12.5 through the native Double lane for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -292,15 +292,15 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot
                     .iter()
                     .any(|value| value.as_currency_scaled_i64() == Some(1_230_000)),
-                "VarCyFromI4 should populate ByRef Currency output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "VarCyFromI4 should populate ByRef Currency output for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -317,13 +317,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.contains(&Variant::from_bool(true)),
-                "VarBoolFromI4 should populate ByRef Boolean output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "VarBoolFromI4 should populate ByRef Boolean output for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -340,13 +340,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.iter().any(|value| value.as_f64() == Some(123.0)),
-                "VarR8FromI4 should populate ByRef Double output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "VarR8FromI4 should populate ByRef Double output for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -363,13 +363,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.iter().any(|value| value.as_f32() == Some(123.0)),
-                "VarR4FromI4 should populate ByRef Single output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "VarR4FromI4 should populate ByRef Single output for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -386,13 +386,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.contains(&Variant::from_i16(123)),
-                "VarI2FromI4 should populate ByRef Integer output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "VarI2FromI4 should populate ByRef Integer output for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -411,15 +411,15 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot
                     .iter()
                     .any(|value| value.as_i64().is_some_and(|raw| raw > 0)),
-                "GetDiskFreeSpaceExW should populate ByRef LongLong outputs for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "GetDiskFreeSpaceExW should populate ByRef LongLong outputs for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -437,15 +437,15 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot
                     .iter()
                     .any(|value| value.as_date_f64() == Some(36526.0)),
-                "VarDateFromStr should populate ByRef Date output for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "VarDateFromStr should populate ByRef Date output for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -474,17 +474,17 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 contains_string(&snapshot, "alpha"),
-                "lstrcpyA should write back through the ByVal String buffer for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "lstrcpyA should write back through the ByVal String buffer for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
             assert!(
                 snapshot.iter().any(|value| value.as_i32() == Some(10)),
-                "the write-back should keep the full ANSI buffer length for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "the write-back should keep the full ANSI buffer length for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -508,15 +508,15 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot
                     .iter()
                     .any(|value| value.as_i32().is_some_and(|at| at > 0)),
-                "_get_pgmptr should populate the ByRef String with the .exe path for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "_get_pgmptr should populate the ByRef String with the .exe path for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -537,13 +537,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 contains_string(&snapshot, "alpha"),
-                "a String-returning Declare should decode the ANSI BSTR for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "a String-returning Declare should decode the ANSI BSTR for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }
@@ -563,13 +563,13 @@ Sub Main()
 End Sub
 "#;
 
-        for enable_jit in [false, true] {
-            let Some(snapshot) = run_windows_host_backed(source, enable_jit) else {
+        for jit_requested in [false, true] {
+            let Some(snapshot) = run_windows_host_backed(source, jit_requested) else {
                 continue;
             };
             assert!(
                 snapshot.iter().any(|value| value.as_i32() == Some(12345)),
-                "Err.LastDllError should read the SetLastError value for enable_jit={enable_jit}; snapshot={snapshot:?}"
+                "Err.LastDllError should read the SetLastError value for jit_requested={jit_requested}; snapshot={snapshot:?}"
             );
         }
     }

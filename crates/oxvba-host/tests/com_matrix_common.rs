@@ -95,7 +95,7 @@ fn with_leg_token(source: &str, leg: &str) -> String {
 /// leg's runner: the source uses `Dim x As Object` + `CreateObject`.
 pub fn run_clean(source: &str) -> Result<Vec<Variant>, String> {
     let source = with_leg_token(source, LEG_LATE);
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
         .execute_source_with_variant_snapshot_clean(&source)
@@ -114,7 +114,7 @@ pub fn run_clean_with_references(
     references: Vec<ProjectReference>,
 ) -> Result<Vec<Variant>, String> {
     let source = with_leg_token(source, LEG_EARLY_VTABLE);
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
         .execute_source_with_references_and_snapshot(&source, references)
@@ -135,7 +135,7 @@ pub fn run_clean_with_references_prefer_vtable(
     let source = with_leg_token(source, LEG_EARLY_VTABLE);
     let mut policy = HostPolicy::interactive_dev();
     policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(policy);
     let snapshot = engine
         .execute_source_with_references_and_snapshot(&source, references)
@@ -153,7 +153,7 @@ pub fn run_clean_with_references_prefer_vtable(
 /// dispatch against vm2's.
 pub fn run_clean_vm3(source: &str) -> Result<Vec<Variant>, String> {
     let source = with_leg_token(source, LEG_VM3_LATE);
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     match engine.execute_source_with_variant_snapshot_vm3(&source) {
         Vm3Snapshot::Ran(values) => Ok(values),
@@ -169,7 +169,7 @@ pub fn run_clean_vm3(source: &str) -> Result<Vec<Variant>, String> {
 /// the same scenario, i.e. no silent transport divergence between the two VMs.)
 pub fn run_clean_vm3_with_counts(source: &str) -> EarlyRun {
     let source = with_leg_token(source, LEG_VM3_LATE);
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snapshot = match engine.execute_source_with_variant_snapshot_vm3(&source) {
         Vm3Snapshot::Ran(values) => values,
@@ -207,7 +207,7 @@ pub fn run_clean_vm3_with_references_prefer_vtable(
     };
     let mut policy = HostPolicy::interactive_dev();
     policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(policy);
     let snapshot = match engine.execute_manifest_with_variant_snapshot_vm3(&manifest) {
         Vm3Snapshot::Ran(values) => values,
@@ -223,7 +223,7 @@ pub fn run_clean_vm3_with_references_prefer_vtable(
 /// scenario (the axis-5 no-silent-divergence oracle).
 pub fn run_clean_with_counts(source: &str) -> EarlyRun {
     let source = with_leg_token(source, LEG_LATE);
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snapshot = engine
         .execute_source_with_variant_snapshot_clean(&source)
@@ -358,7 +358,7 @@ pub fn run_clean_with_references_dispatch_only(
     let source = with_leg_token(source, LEG_EARLY_DISPATCH);
     let mut policy = HostPolicy::interactive_dev();
     policy.com_invocation_strategy = ComInvocationStrategy::DispatchOnly;
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(policy);
     let snap = engine
         .execute_source_with_references_and_snapshot(&source, references)
@@ -392,7 +392,7 @@ pub fn run_manifest(
         conditional_constants: std::collections::BTreeMap::new(),
         conditional_compilation_target: Default::default(),
     };
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     match engine.execute_manifest_with_variant_snapshot_vm3(&manifest) {
         Vm3Snapshot::Ran(values) => Ok(values),

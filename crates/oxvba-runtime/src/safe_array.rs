@@ -970,6 +970,7 @@ fn alloc_header(
     let Some(raw_owner) = NonNull::new(raw_owner) else {
         return Err("failed to allocate SAFEARRAY header".to_string());
     };
+    crate::live_counters::safearray_allocated();
     // SAFETY: `raw_owner` is a fresh zeroed allocation of
     // `owner_layout(bounds.len())`: a RawSafeArrayOwnerPrefix followed by a
     // RawSafeArray header with `bounds.len()` bounds entries (one inline plus
@@ -1564,6 +1565,7 @@ impl Drop for SafeArray {
             // `alloc_header`, and `owner_layout(self.dimensions())` recomputes
             // the layout used there (`c_dims` was written from `bounds.len()`);
             // nothing touches the allocation after this point.
+            crate::live_counters::safearray_freed();
             unsafe { std::alloc::dealloc(owner, layout) };
         }
     }

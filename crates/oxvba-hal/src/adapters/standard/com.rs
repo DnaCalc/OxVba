@@ -17,9 +17,10 @@ use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComObjectTransportKind, ComSubscriptionToken, DynamicCallKind, DynamicCallRequest,
-    DynamicMemberSelector, known_typelib_identity_for_prog_id_name,
+    DynamicMemberSelector, build_typelib_metadata, known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
-    platform::portable::PortableDispatch,
+    member_token_and_spec_from_typelib_metadata_name, platform::portable::PortableDispatch,
+    resolve_typelib_identity_for_prog_id_name,
 };
 use oxvba_runtime::{ObjectRef, VarType, Variant, variant_to_vba_string};
 use std::sync::Arc;
@@ -103,6 +104,24 @@ fn portable_dispatch_for_object(
     let capability = CapabilityId::ComActivationDispatch;
     let state = host.projection_lock(capability, "dispatch_invoke")?;
     Ok(state.portable_objects_by_handle.get(&object.raw()).cloned())
+}
+
+fn projection_member_token_by_name(
+    host: &StandardHostServices,
+    object: &ObjectRef,
+    member_name: &str,
+) -> HalResult<Option<ComMemberToken>> {
+    let Some(prog_id_name) = projection_prog_id_name(host, object)? else {
+        return Ok(None);
+    };
+    let Some(identity) = resolve_typelib_identity_for_prog_id_name(&prog_id_name) else {
+        return Ok(None);
+    };
+    let metadata = build_typelib_metadata(&identity);
+    Ok(
+        member_token_and_spec_from_typelib_metadata_name(&metadata, member_name)
+            .map(|(token, _)| token),
+    )
 }
 
 fn portable_call_args(request: &DynamicCallRequest) -> Vec<Variant> {
@@ -683,14 +702,25 @@ impl ComHal for StandardHostServices {
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
-                    return Err(HalError::adapter_fault(
-                        self.profile,
-                        capability,
-                        "dispatch_invoke",
-                        format!(
-                            "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` requires authoritative metadata resolution before COM lowering"
-                        ),
-                    ));
+                    if let Some(member_token) =
+                        projection_member_token_by_name(self, &request.object, name)?
+                    {
+                        ComInvokeRequest {
+                            object: request.object.clone(),
+                            member: member_token,
+                            args: request.args.clone().into_iter().map(Into::into).collect(),
+                            invoke_kind_hint: request.call_kind_hint.map(Into::into),
+                        }
+                    } else {
+                        return Err(HalError::adapter_fault(
+                            self.profile,
+                            capability,
+                            "dispatch_invoke",
+                            format!(
+                                "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` requires authoritative metadata resolution before COM lowering"
+                            ),
+                        ));
+                    }
                 }
             }
             DynamicMemberSelector::Token(_)

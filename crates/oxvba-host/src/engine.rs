@@ -27,8 +27,7 @@ use oxvba_symbol::{CatalogTypeLibResolver, TypeLibResolver};
 
 use crate::runner::RuntimeProfileId;
 
-const JIT_NOT_IMPLEMENTED_MESSAGE: &str =
-    "JIT execution is not implemented; the clean stack runs on the oxvba_vm3 interpreter";
+pub use oxvba_jit::JIT_NOT_IMPLEMENTED_MESSAGE;
 const DEFAULT_SINGLE_SOURCE_PROJECT_NAME: &str = "VBAProject";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,9 +153,57 @@ fn vm3_runtime_diagnostic(err: oxvba_vm3::Vm3Error) -> PhaseDiagnostic {
     ))
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExecBackend {
+    #[default]
+    Vm3,
+    Jit,
+}
+
+impl ExecBackend {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "vm3" => Some(Self::Vm3),
+            "jit" => Some(Self::Jit),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Vm3 => "vm3",
+            Self::Jit => "jit",
+        }
+    }
+
+    pub fn is_jit(self) -> bool {
+        matches!(self, Self::Jit)
+    }
+}
+
+impl std::fmt::Display for ExecBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
-    pub enable_jit: bool,
+    pub backend: ExecBackend,
+}
+
+impl HostConfig {
+    pub fn vm3() -> Self {
+        Self {
+            backend: ExecBackend::Vm3,
+        }
+    }
+
+    pub fn jit() -> Self {
+        Self {
+            backend: ExecBackend::Jit,
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -552,7 +599,7 @@ impl Engine {
         &self,
         image: oxvba_oxir::OxImage,
     ) -> Result<ProjectRuntimeSession, PhaseDiagnostic> {
-        if self.config.enable_jit {
+        if self.config.backend.is_jit() {
             return Err(jit_not_implemented_diagnostic());
         }
         image.validate().map_err(|err| {
@@ -608,7 +655,7 @@ impl Engine {
         // Honour the JIT toggle at the public entry (same as the source/manifest siblings),
         // so a JIT-enabled engine returns the standard RUN-E-JIT-NOT-IMPLEMENTED diagnostic
         // rather than the `_vm3` leg's generic VM3-E-UNIMPLEMENTED.
-        if self.config.enable_jit {
+        if self.config.backend.is_jit() {
             return Err(jit_not_implemented_diagnostic());
         }
         match self.execute_project_closure_with_variant_snapshot_vm3(closure) {
@@ -632,7 +679,7 @@ impl Engine {
         &self,
         closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
     ) -> Vm3Snapshot {
-        if self.config.enable_jit {
+        if self.config.backend.is_jit() {
             return Vm3Snapshot::Unsupported("JIT execution is not implemented".to_string());
         }
         let closure: Vec<_> = closure
@@ -709,7 +756,7 @@ impl Engine {
         source: &str,
         references: Vec<oxvba_symbol::manifest::ProjectReference>,
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
-        if self.config.enable_jit {
+        if self.config.backend.is_jit() {
             return Err(jit_not_implemented_diagnostic());
         }
         use oxvba_symbol::manifest as sym;
@@ -746,7 +793,7 @@ impl Engine {
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         // The public entry honours the JIT toggle exactly like its sibling source/closure
         // paths (the `_vm3` leg is the differential's vm3-only runner and stays unguarded).
-        if self.config.enable_jit {
+        if self.config.backend.is_jit() {
             return Err(jit_not_implemented_diagnostic());
         }
         match self.execute_manifest_with_variant_snapshot_vm3(manifest) {
@@ -911,7 +958,7 @@ mod tests {
 
     #[test]
     fn phase_diagnostic_exposes_stable_code() {
-        let engine = Engine::new(HostConfig { enable_jit: true });
+        let engine = Engine::new(HostConfig::jit());
         let err = engine
             .execute_source_with_variant_snapshot_clean("Sub Main()\nEnd Sub\n")
             .expect_err("JIT path should return a diagnostic");
@@ -922,7 +969,7 @@ mod tests {
 
     #[test]
     fn single_source_err_source_defaults_to_excel_project_name() {
-        let engine = Engine::new(HostConfig { enable_jit: false });
+        let engine = Engine::new(HostConfig::vm3());
         let snapshot = engine.execute_source_with_variant_snapshot_vm3(
             "Sub Main()\n\
              Dim sourceName As String\n\

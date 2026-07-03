@@ -1,0 +1,356 @@
+# JIT M4-0 NumericMode Census
+
+- Scope: `conformance/**/*.bas`, `examples/**/*.bas`, and explicit project arguments.
+- Compare instructions currently carry `StringCompareMode`, not `NumericMode`; this census records compare totals separately.
+
+| metric | value |
+|---|---:|
+| programs elaborated | 263 |
+| failed inputs | 66 |
+| checked arithmetic ops | 67 |
+| widening arithmetic ops | 126 |
+| checked arithmetic share | 34.72% |
+| widening arithmetic share | 65.28% |
+| compare ops | 120 |
+
+## Checked Targets
+
+| target | count |
+|---|---:|
+| `Integer` | 20 |
+| `Long` | 46 |
+| `LongLong` | 1 |
+
+## Inputs
+
+| lane | path | status | checked | widening | compare |
+|---|---|---|---:|---:|---:|
+| bas | `conformance/com/client/c2-latebound/createobject_string_prog_id_scaffold.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/com/client/c2-latebound/createobject_string_prog_id_success.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/com/client/c2-latebound/dispatch_member_name_failure_resume_next.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/client/c2-latebound/dispatch_member_name_scaffold.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/client/c2-latebound/dispatch_member_name_success.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/client/c2-latebound/dispatch_member_name_two_arg_property_get.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/early/binder/early_bind_member_exists_success.bas` | bind: unsupported construct: New oxvba.testdispatch (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/com/early/binder/early_bind_member_unknown_error.bas` | bind: unsupported construct: New oxvba.testdispatch (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/com/early/end_to_end/early_late_mix_project.bas` | bind: unsupported construct: New oxvba.testdispatch (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/com/early/runtime/early_bind_runtime_missing_arg_resume_next.bas` | bind: unsupported construct: New oxvba.testdispatch (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/com/early/runtime/early_bind_runtime_success.bas` | bind: unsupported construct: New oxvba.testdispatch (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/com/early/typelib_ingest/typelib_ingest_known_identity.bas` | bind: unsupported construct: New oxvba.testdispatch (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/com/office/access_jet/access_application_activation_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/access_jet/access_database_query_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/access_jet/access_jet_provider_boundary.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/com/office/access_jet/dao_dbengine_create_query_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/access_jet/jet_adodb_provider_activation_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_application_activation_smoke.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_dispatchinvoke_range_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_find_null_result_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_named_argument_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_range_default_member_put_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_range_value_put_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_unsupported_event_sink_boundary.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/com/office/excel/excel_workbook_range_smoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/divergences/for_loop.bas` | ok | 0 | 2 | 3 |
+| bas | `conformance/divergences/if_statement.bas` | ok | 0 | 0 | 1 |
+| bas | `conformance/integration/projects/INTP-001/main/Main.proc.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-002/main/Main.proc.bas` | bind: Variable not defined | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-002/main/MathLib.proc.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-003/main/Main.proc.bas` | bind: Variable not defined | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-003/references/LibMath/MathApi.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-004/main/Main.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-004/references/LibShadow/Ping.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-005/main/Main.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-006/main/Main.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-007/main/Main.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-008/main/Main.proc.bas` | bind: symbol model error: Implements is only valid in object modules: `IFoo` | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-009/main/Main.proc.bas` | bind: malformed construct: RaiseEvent outside a class module | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-010/main/Main.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-011/main/ArrayTools.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-011/main/Main.proc.bas` | bind: Variable not defined | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-011/main/MathTools.proc.bas` | ok | 2 | 0 | 3 |
+| bas | `conformance/integration/projects/INTP-011/references/LibMath/Boost.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-016/main/Adder.class.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-016/main/Counter.class.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-016/main/Main.proc.bas` | bind: unsupported construct: New counter (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-017/main/Main.proc.bas` | bind: Variable not defined | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-017/main/Utils.proc.bas` | ok | 1 | 0 | 1 |
+| bas | `conformance/integration/projects/INTP-019/main/Main.proc.bas` | bind: Variable not defined | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-019/references/LibA/Util.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-019/references/LibB/Util.proc.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/integration/projects/INTP-019/references/LibC/Calc.proc.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm01_integer_add_overflow.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm02_integer_sub_overflow.bas` | ok | 2 | 0 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm03_long_add_overflow.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm04_long_sub_overflow.bas` | ok | 1 | 1 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm05_currency_add_overflow.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm06_currency_multiply_overflow.bas` | ok | 0 | 2 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm07_clng_bankers_half_even.bas` | ok | 0 | 2 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm08_clng_upper_half_overflow.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm09_cint_half_boundary.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm10_int_fix_conversion_rounding.bas` | ok | 0 | 3 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm11_negative_zero_snapshot.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm12_single_double_roundtrip.bas` | ok | 0 | 0 | 1 |
+| bas | `conformance/jit_v2/numeric_micro/nm13_double_overflow_inf_compare.bas` | ok | 0 | 1 | 2 |
+| bas | `conformance/jit_v2/numeric_micro/nm14_nan_candidate_power_compare.bas` | ok | 0 | 1 | 2 |
+| bas | `conformance/jit_v2/numeric_micro/nm15_intdiv_long_min_minus_one.bas` | ok | 2 | 1 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm16_mod_long_min_minus_one.bas` | ok | 2 | 1 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm17_longlong_add_overflow.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/jit_v2/numeric_micro/nm18_variant_integer_widening.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/jit_v2/tracer_bullets/tb01_primitive_scalar_loop.bas` | ok | 2 | 1 | 4 |
+| bas | `conformance/jit_v2/tracer_bullets/tb02_udt_struct_fields.bas` | ok | 3 | 0 | 0 |
+| bas | `conformance/jit_v2/tracer_bullets/tb03_error_resume_next.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/jit_v2/tracer_bullets/tb04_bstr_lifetime_concat_len.bas` | ok | 0 | 0 | 1 |
+| bas | `conformance/jit_v2/tracer_bullets/tb05_safearray_foreach_bounds.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/jit_v2/tracer_bullets/tb06_late_bound_com_resume_next.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/jit_v2/tracer_bullets/tb07_early_bound_com_typelib.bas` | bind: unsupported construct: New oxvba.testdispatch (only project classes are creatable) | 0 | 0 | 0 |
+| bas | `conformance/jit_v2/tracer_bullets/tb08_native_declare_shared_abi.bas` | ok | 2 | 0 | 1 |
+| bas | `conformance/jit_v2/tracer_bullets/tb09_exported_callable_projection.bas` | ok | 0 | 2 | 0 |
+| bas | `conformance/tests/array_bounds_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/array_explicit_lower_bound.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/array_multidim_indexing.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/array_option_base_one_bounds.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/array_store_load.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/array_zero_index.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/assignment_set_let_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/byref_typed_mismatch_error.bas` | bind: ByRef argument type mismatch: expected Long, got Integer | 0 | 0 | 0 |
+| bas | `conformance/tests/call_coercion_mixed_variant_to_long.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/class_lifecycle_initialize_fail.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/class_lifecycle_resume_next_ok.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/class_lifecycle_terminate_fail.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/coercion_arg_object_to_long_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/coercion_assign_object_to_long_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/coercion_cverr_abs_normalization.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/tests/coercion_cverr_range_predicates.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/tests/coercion_null_empty_error_predicates.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/com_dispatch_array_argument.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/com_dispatch_createobject_invoke.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/com_dispatch_invoke_chain.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/com_dispatch_invoke_deterministic.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/conditional_compilation_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/consolidate_collection_host_mix.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/consolidate_error_intrinsics_mix.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/consolidate_for_gosub_mix.bas` | ok | 0 | 3 | 3 |
+| bas | `conformance/tests/consolidate_for_select_call.bas` | ok | 0 | 2 | 8 |
+| bas | `conformance/tests/consolidate_gosub_error_mix.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/consolidate_language_stdlib_mix.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/consolidate_nested_call_chain.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/consolidate_select_conversion.bas` | ok | 0 | 0 | 4 |
+| bas | `conformance/tests/consolidate_while_byref_mix.bas` | ok | 0 | 2 | 1 |
+| bas | `conformance/tests/conversion_cint_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/conversion_cint_to_object_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/conversion_clng_cint_chain.bas` | ok | 0 | 2 | 0 |
+| bas | `conformance/tests/conversion_extended_scalar_subset.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/conversion_nested_clng_cint.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/conversion_val_str_subset.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/declaration_collision_proc_name_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/declare_function_stub_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/declare_sub_stub_basic.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/default_type_defobj_implicit_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/default_type_param_defobj_error.bas` | bind: Type mismatch | 0 | 0 | 0 |
+| bas | `conformance/tests/diagnostic_phase_compile_wins.bas` | bind: Label not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/do_exit_do.bas` | ok | 0 | 1 | 2 |
+| bas | `conformance/tests/do_loop_until_basic.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/do_loop_while_basic.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/do_until_basic.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/do_while_basic.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/do_while_exit_condition.bas` | ok | 0 | 2 | 2 |
+| bas | `conformance/tests/duplicate_dim_error.bas` | bind: symbol model error: duplicate symbol `x` in Local namespace | 0 | 0 | 0 |
+| bas | `conformance/tests/duplicate_label_error.bas` | bind: duplicate label `marker` in current scope | 0 | 0 | 0 |
+| bas | `conformance/tests/enum_arithmetic_use.bas` | ok | 2 | 0 | 0 |
+| bas | `conformance/tests/enum_basic.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/tests/enum_select_case_use.bas` | ok | 0 | 0 | 3 |
+| bas | `conformance/tests/erase_array_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/err_clear_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/err_clear_full_surface_reset.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/err_proc_call_boundary_clears.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/err_resume_next_clears.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/err_surface_fields_subset.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/error_goto_label_resume_next.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/error_nested_mode_transitions.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/error_nested_resume_chain.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/error_raise_custom_clear_cycle.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/error_resume_function_propagation.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/financial_algorithm_npv_irr_mirr_subset.bas` | bind: Wrong number of arguments or invalid property assignment | 0 | 0 | 0 |
+| bas | `conformance/tests/financial_algorithm_rate_nper_subset.bas` | ok | 2 | 0 | 0 |
+| bas | `conformance/tests/financial_tolerance_mixed_modes.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/financial_tolerance_non_convergence.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/for_basic.bas` | ok | 0 | 2 | 3 |
+| bas | `conformance/tests/for_each_array_literal_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/for_each_array_variable_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/for_exit_for_basic.bas` | ok | 0 | 3 | 3 |
+| bas | `conformance/tests/for_nested_select_case.bas` | ok | 0 | 4 | 6 |
+| bas | `conformance/tests/for_step_negative.bas` | ok | 1 | 2 | 3 |
+| bas | `conformance/tests/for_step_positive.bas` | ok | 0 | 2 | 3 |
+| bas | `conformance/tests/for_zero_iter.bas` | ok | 0 | 2 | 3 |
+| bas | `conformance/tests/function_call_basic.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/function_return_explicit_as_precedence_error.bas` | bind: symbol model error: syntax parse failed in module function_return_explicit_as_precedence_error: [ParseError { offset: 18, message: "expected end of statement" }] | 0 | 0 | 0 |
+| bas | `conformance/tests/gosub_basic.bas` | ok | 1 | 2 | 1 |
+| bas | `conformance/tests/gosub_loop_accumulate.bas` | ok | 0 | 3 | 3 |
+| bas | `conformance/tests/gosub_missing_label_error.bas` | bind: Label not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/gosub_nested_labels.bas` | ok | 0 | 2 | 0 |
+| bas | `conformance/tests/gosub_repeated.bas` | ok | 1 | 1 | 1 |
+| bas | `conformance/tests/goto_label_basic.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/goto_line_number_statement_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/goto_missing_label_error.bas` | bind: Label not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/goto_numeric_basic.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/if_and.bas` | ok | 0 | 1 | 2 |
+| bas | `conformance/tests/if_else_path.bas` | ok | 0 | 0 | 1 |
+| bas | `conformance/tests/if_elseif_else_path.bas` | ok | 0 | 0 | 2 |
+| bas | `conformance/tests/if_elseif_path.bas` | ok | 0 | 0 | 2 |
+| bas | `conformance/tests/if_false.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/if_ge.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/if_lt.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/if_neq.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/if_or_not.bas` | ok | 0 | 1 | 2 |
+| bas | `conformance/tests/if_true.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/introspection_vartype_isnumeric_tags.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/jit_intrinsic_math_subset.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/tests/late_bound_default_member_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/late_bound_default_member_exec.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/late_bound_named_argument_exec.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/late_call_named_argument_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/line_continuation_basic.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/module_const_basic.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/tests/nested_if_for.bas` | ok | 0 | 3 | 4 |
+| bas | `conformance/tests/object_collection_add_item.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/object_collection_count_chain.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/object_collection_remove_count.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/object_identity_is_nothing.bas` | ok | 0 | 0 | 2 |
+| bas | `conformance/tests/object_identity_is_same_and_different.bas` | ok | 0 | 0 | 2 |
+| bas | `conformance/tests/on_error_default_fail.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/on_error_goto_label_missing_label_error.bas` | bind: Label not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/on_error_goto_label_resume.bas` | ok | 1 | 1 | 1 |
+| bas | `conformance/tests/on_error_goto_label_then_goto_zero_error.bas` | ok | 1 | 0 | 1 |
+| bas | `conformance/tests/on_error_goto_zero_fail.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/on_error_resume_continue.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/on_error_resume_next.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/operator_arithmetic_object_plus_error.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/operator_comparison_object_long_error.bas` | ok | 0 | 0 | 1 |
+| bas | `conformance/tests/option_explicit_error.bas` | bind: Variable not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/option_explicit_ok.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/params_byref.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/params_byref_error.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/params_byref_nested_modify.bas` | ok | 0 | 2 | 0 |
+| bas | `conformance/tests/params_byref_swap.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/params_byval.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/params_named_bind.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/params_named_optional_omit.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/params_named_positional_after_named_error.bas` | bind: unsupported construct: positional argument cannot follow named argument | 0 | 0 | 0 |
+| bas | `conformance/tests/params_optional_default.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/params_optional_override.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/params_paramarray_dispatch_boundary.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/params_paramarray_empty.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/params_paramarray_named_error.bas` | bind: unsupported construct: named argument to a ParamArray parameter | 0 | 0 | 0 |
+| bas | `conformance/tests/params_paramarray_pack.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/proc_call_chain.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/proc_call_local_scope.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/project_model_implements_requires_class_graph.bas` | bind: symbol model error: Implements is only valid in object modules: `IFoo` | 0 | 0 | 0 |
+| bas | `conformance/tests/project_model_raiseevent_requires_class_graph.bas` | bind: malformed construct: RaiseEvent outside a class module | 0 | 0 | 0 |
+| bas | `conformance/tests/project_model_withevents_requires_class_graph.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/property_get_declaration_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/property_get_expression_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/property_let_byref_route.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/property_set_byref_route.bas` | bind: invalid assignment: property `Obj` has no Property Let accessor | 0 | 0 | 0 |
+| bas | `conformance/tests/redim_expand_allows_new_index.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/redim_preserve_illegal_non_last_dim_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/redim_preserve_keeps_values.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/redim_preserve_multidim_last_dimension.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/redim_preserve_shrink_expand_clears_tail.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/redim_shrink_bounds_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/redim_without_preserve_resets.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/regression_cverr_error_resume_bridge.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/tests/regression_cverr_predicate_domain.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/resume_label_basic.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/resume_next_statement_ok.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/resume_statement_basic.bas` | ok | 0 | 2 | 2 |
+| bas | `conformance/tests/select_case_basic.bas` | ok | 0 | 0 | 2 |
+| bas | `conformance/tests/select_case_else.bas` | ok | 0 | 0 | 2 |
+| bas | `conformance/tests/select_case_is_range.bas` | ok | 0 | 0 | 4 |
+| bas | `conformance/tests/select_case_multi.bas` | ok | 0 | 0 | 2 |
+| bas | `conformance/tests/smoke.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/stdlib_advanced_instrrev_like.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_advanced_replace_trim.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_advanced_split_join.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_advanced_strcomp.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_array_introspection_bounds.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_array_introspection_types.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_date_add_diff.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_date_serial_value.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_date_string_policy.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_datetime_expansion.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_error_cverr_identity.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_error_err_raise_fail.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_error_err_raise_resume.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_file_stub_intrinsics.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_financial_zero_rate.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_format_core.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_host_sensitive_mix.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_host_sensitive_shell_environ_dir.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_host_sensitive_zero_fallback.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_instr_case_ops.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_introspection_expansion.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_len_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_math_primitives.bas` | ok | 3 | 0 | 0 |
+| bas | `conformance/tests/stdlib_math_transcendental_identity.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_numeric_expansion.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_random_financial_expansion.bas` | bind: Wrong number of arguments or invalid property assignment | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_rnd_isolated.bas` | ok | 1 | 2 | 0 |
+| bas | `conformance/tests/stdlib_slice_ops.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_string_expansion_core.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_time_serial_value.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/stdlib_variant_predicates.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_compare_option_binary.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_compare_option_text.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_join_array_tag_count.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_mid_statement_mutation.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_slice_ops_dollar.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_vbnullstring_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_vbnullstring_long_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_vbnullstring_object_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/string_vbnullstring_predicates.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/subtract.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/typechar_explicit_as_precedence_error.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/typed_fastpath_hotloop.bas` | ok | 2 | 0 | 3 |
+| bas | `conformance/tests/typeof_is_condition_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/udt_declaration_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/udt_field_access_basic.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/udt_whole_assignment_copy.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/udt_whole_assignment_overwrite.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/tests/while_nested_if_chain.bas` | ok | 0 | 4 | 3 |
+| bas | `conformance/tests/while_wend_basic.bas` | ok | 0 | 1 | 1 |
+| bas | `conformance/tests/with_block_basic.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/tests/with_block_member_target_chain.bas` | ok | 0 | 1 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr01_identity_main_scalar.bas` | ok | 1 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr01_identity_typed_function.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr02_descriptor_primitive_string_variant.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr02_descriptor_udt_field_slots.bas` | ok | 2 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr03_signature_call_binding.bas` | ok | 3 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_byref_expression_forms.bas` | ok | 2 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_call_argument_binding.bas` | ok | 2 | 1 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_call_diagnostic_descriptor_baseline.bas` | bind: unsupported construct: positional argument cannot follow named argument | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_diag_duplicate_mapping.bas` | bind: unsupported construct: duplicate argument for parameter target | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_diag_missing_required.bas` | bind: Argument not optional: target | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_diag_named_paramarray.bas` | bind: unsupported construct: named argument to a ParamArray parameter | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_diag_positional_after_named.bas` | bind: unsupported construct: positional argument cannot follow named argument | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_diag_too_many_args.bas` | bind: Wrong number of arguments or invalid property assignment | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr04_diag_unknown_named_arg.bas` | bind: unresolved name `missing` (named argument) | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr05_array_shape_bounds.bas` | bind: symbol model error: syntax parse failed in module vmr05_array_shape_bounds: [ParseError { offset: 566, message: "unexpected statement" }, ParseError { offset: 587, message: "unexpected statement" }, ParseError { offset: 736, message: "expected expression" }, ParseError { offset: 736, message: "expected `)`" }, ParseError { offset: 769, message: "expected expression" }, ParseError { offset: 769, message: "expected `)`" }, ParseError { offset: 859, message: "expected expression" }] | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr05_object_descriptor_identity.bas` | ok | 0 | 0 | 0 |
+| bas | `conformance/vm_package/identity_seed/vmr05_udt_descriptor_members.bas` | bind: unresolved name `Scores_1` (member assignment target) | 0 | 0 | 0 |
+| bas | `examples/basic/arithmetic.bas` | ok | 2 | 0 | 0 |
+| bas | `examples/basic/arrays.bas` | ok | 0 | 1 | 0 |
+| bas | `examples/basic/conditionals.bas` | ok | 0 | 0 | 1 |
+| bas | `examples/basic/errors.bas` | ok | 0 | 0 | 0 |
+| bas | `examples/basic/loops.bas` | ok | 0 | 2 | 3 |
+| bas | `examples/basic/procedures.bas` | ok | 0 | 1 | 0 |
+| bas | `examples/basic/projects/simple/Main.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `examples/basic/projects/simple/Math.bas` | ok | 0 | 1 | 0 |
+| bas | `examples/basic/strings.bas` | ok | 0 | 0 | 0 |
+| bas | `examples/reflection_wrapper/business_calc/BusinessCalc.bas` | ok | 1 | 3 | 0 |
+| bas | `examples/reflection_wrapper/engineering_math/EngineeringMath.bas` | ok | 2 | 4 | 0 |
+| bas | `examples/xll/application_addin/ApplicationExports.bas` | bind: Sub or Function not defined | 0 | 0 | 0 |
+| bas | `examples/xll/array_addin/ArrayExports.bas` | ok | 0 | 1 | 0 |
+| bas | `examples/xll/scalar_addin/ScalarExports.bas` | ok | 1 | 1 | 0 |
+| project | `examples/reflection_wrapper/business_calc/BusinessCalc.basproj` | ok | 1 | 3 | 0 |
+| project | `examples/reflection_wrapper/engineering_math/EngineeringMath.basproj` | ok | 2 | 4 | 0 |
+| project | `examples/xll/scalar_addin/ScalarAddin.basproj` | ok | 1 | 1 | 0 |

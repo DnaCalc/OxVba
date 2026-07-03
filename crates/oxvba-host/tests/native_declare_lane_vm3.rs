@@ -11,7 +11,7 @@ use oxvba_hal::model::HostPolicy;
 use oxvba_host::{Engine, HostConfig, Vm3Snapshot};
 
 fn engine() -> Engine {
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
 }

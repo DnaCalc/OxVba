@@ -10,7 +10,7 @@ use oxvba_hal::model::HostPolicy;
 use oxvba_host::{Engine, HostConfig};
 
 fn run_clean(source: &str) -> Result<(), String> {
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
         .execute_source_with_variant_snapshot_clean(source)
@@ -54,7 +54,7 @@ fn filecopy_and_filelen_round_trip() {
         src = vba_literal(&src),
         dst = vba_literal(&dst),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let copied = dst.is_file();
@@ -115,7 +115,7 @@ fn getattr_and_setattr_round_trip() {
         dir = vba_literal(&dir),
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     clear_readonly(&file); // ensure teardown can delete it
@@ -153,7 +153,7 @@ fn filedatetime_reads_a_files_modification_time() {
          Sub Main()\n    gap = Abs(Now() - FileDateTime(\"{file}\"))\nEnd Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
@@ -198,7 +198,7 @@ fn binary_seek_and_loc_are_one_based() {
          End Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
@@ -246,7 +246,7 @@ fn seek_past_eof_does_not_extend_the_file() {
          End Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let on_disk_len = std::fs::metadata(&file).map(|m| m.len()).ok();
@@ -300,7 +300,7 @@ fn random_loc_and_seek_are_record_numbers() {
          End Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
@@ -367,7 +367,7 @@ fn append_reports_fresh_cursor_but_writes_at_eof() {
          End Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
@@ -415,7 +415,7 @@ fn write_input_roundtrips_date_and_null_fields() {
          End Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
@@ -537,7 +537,7 @@ fn width_hash_rejects_values_outside_vba_range() {
          End Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);
@@ -607,7 +607,7 @@ fn sequential_loc_is_byte_position_over_128() {
          End Sub\n",
         file = vba_literal(&file),
     );
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let snap = engine.execute_source_with_variant_snapshot_clean(&source);
     let _ = std::fs::remove_dir_all(&dir);

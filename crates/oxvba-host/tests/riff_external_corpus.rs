@@ -79,7 +79,7 @@ fn run_harness(harness_source: &str) -> Vec<Variant> {
     let project = temp_project(harness_source);
     let closure = oxvba_project::load_project_closure_with_entry(&project, None)
         .expect("load Riff project closure");
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::deterministic_runtime());
     engine
         .execute_project_closure_with_variant_snapshot(&closure)
@@ -258,7 +258,7 @@ End Sub
     let project = temp_project(harness);
     let closure = oxvba_project::load_project_closure_with_entry(&project, None)
         .expect("load Riff project closure");
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::deterministic_runtime());
     let err = engine
         .execute_project_closure_with_variant_snapshot(&closure)

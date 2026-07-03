@@ -1,7 +1,7 @@
 use oxvba_host::{Engine, HostConfig, RuntimeProfileId};
 
 fn run_with_profile(profile: RuntimeProfileId, source: &str) -> i32 {
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_runtime_profile(profile);
     let snapshot = engine
         .execute_source_with_variant_snapshot_clean(source)
@@ -62,7 +62,7 @@ fn explicit_project_constants_override_runtime_target_defaults() {
         conditional_compilation_target: Default::default(),
     };
 
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_runtime_profile(RuntimeProfileId::MacOsHeadless);
     let snapshot = engine
         .execute_manifest_with_variant_snapshot(&manifest)
@@ -130,7 +130,7 @@ fn referenced_project_uses_runtime_target_predefines_without_active_project_cons
         conditional_compilation_target: Default::default(),
     };
 
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_runtime_profile(RuntimeProfileId::MacOsHeadless);
     let snapshot = engine
         .execute_project_closure_with_variant_snapshot(&[lib_manifest, manifest])

@@ -47,8 +47,12 @@ impl HostCallbacks for ConsoleCallbacks {
     }
 }
 
-fn run(source: &str, enable_jit: bool, callbacks: Arc<dyn HostCallbacks>) -> Result<(), String> {
-    let mut engine = Engine::new(HostConfig { enable_jit });
+fn run(source: &str, jit_requested: bool, callbacks: Arc<dyn HostCallbacks>) -> Result<(), String> {
+    let mut engine = Engine::new(if jit_requested {
+        HostConfig::jit()
+    } else {
+        HostConfig::vm3()
+    });
     engine.set_runtime_profile(RuntimeProfileId::WindowsStdio);
     engine.set_host_callbacks(Some(callbacks));
     engine
@@ -112,7 +116,7 @@ fn debug_assert_evaluates_without_breaking_in_headless_runtime() {
 #[test]
 fn debug_assert_condition_is_evaluated_in_headless_runtime() {
     let callbacks = Arc::new(ConsoleCallbacks::default());
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_runtime_profile(RuntimeProfileId::WindowsStdio);
     engine.set_host_callbacks(Some(callbacks.clone()));
     let snap = engine

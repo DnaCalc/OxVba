@@ -669,6 +669,7 @@ pub fn finish_pending_termination(instance_id: i32) -> bool {
         }
         (*owner).fields.borrow_mut().clear();
         (*owner).native_state.borrow_mut().take();
+        crate::live_counters::object_box_freed();
         drop(Box::from_raw(owner));
         true
     }
@@ -693,6 +694,7 @@ pub fn reset_pending_terminations() {
                 }
                 (*owner).fields.borrow_mut().clear();
                 (*owner).native_state.borrow_mut().take();
+                crate::live_counters::object_box_freed();
                 drop(Box::from_raw(owner));
             }
         }
@@ -756,6 +758,7 @@ unsafe extern "C" fn compat_release(this: *mut c_void) -> u32 {
         unsafe {
             (*owner).fields.borrow_mut().clear();
             (*owner).native_state.borrow_mut().take();
+            crate::live_counters::object_box_freed();
             drop(Box::from_raw(owner));
         }
     }
@@ -858,6 +861,7 @@ impl ObjectRef {
             terminated: Cell::new(false),
         });
         let raw = Box::into_raw(boxed);
+        crate::live_counters::object_box_allocated();
         // SAFETY: `raw` came from `Box::into_raw` of the freshly allocated `CompatObjectBase`
         // above, so projecting a pointer to its first field (`unknown`) is in-bounds and
         // non-null; the box stays alive until the refcount started at 1 here drains to zero.

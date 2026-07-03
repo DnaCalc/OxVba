@@ -276,6 +276,7 @@ impl VbaRecord {
             layout,
             data: vec![0; words],
         };
+        crate::live_counters::record_buffer_allocated();
         let fields = record.layout.fields().to_vec();
         for field in &fields {
             // SAFETY: the buffer is sized to `layout.size()`, and each field offset
@@ -543,6 +544,7 @@ impl Clone for VbaRecord {
             layout: self.layout.clone(),
             data: vec![0; self.data.len()],
         };
+        crate::live_counters::record_buffer_allocated();
         let fields = self.layout.fields().to_vec();
         for field in &fields {
             // SAFETY: source and destination are distinct buffers with the same
@@ -571,6 +573,7 @@ impl Drop for VbaRecord {
                 drop_field_at(ptr, &field.kind);
             }
         }
+        crate::live_counters::record_buffer_freed();
     }
 }
 

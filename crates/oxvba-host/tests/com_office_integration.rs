@@ -36,7 +36,7 @@ use oxvba_symbol::manifest::ProjectReference;
 /// interactive-dev policy (which permits real COM activation), returning the
 /// snapshot (module globals followed by `Main`'s locals).
 fn run_clean(source: &str) -> Result<Vec<Variant>, String> {
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
         .execute_source_with_variant_snapshot_clean(source)
@@ -50,7 +50,7 @@ fn run_clean_with_references(
     source: &str,
     references: Vec<ProjectReference>,
 ) -> Result<Vec<Variant>, String> {
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
         .execute_source_with_references_and_snapshot(source, references)
@@ -68,7 +68,7 @@ fn run_clean_with_references_prefer_vtable(
 ) -> Result<(Vec<Variant>, (u64, u64)), String> {
     let mut policy = HostPolicy::interactive_dev();
     policy.com_invocation_strategy = ComInvocationStrategy::PreferVtable;
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(policy);
     let snapshot = engine
         .execute_source_with_references_and_snapshot(source, references)
@@ -306,7 +306,7 @@ fn com_source_withevents_handler_fires_through_live_dispatch_sink() {
         conditional_constants: std::collections::BTreeMap::new(),
         conditional_compilation_target: Default::default(),
     };
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let result = engine
         .execute_manifest_with_variant_snapshot(&manifest)

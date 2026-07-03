@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+live-counters = []
+
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true

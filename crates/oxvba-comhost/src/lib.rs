@@ -33,7 +33,7 @@ use oxvba_com::{
     disp_params_to_runtime_call_frame, runtime_call_error_to_excepinfo,
     runtime_call_result_to_variant, variant_to_com_value,
 };
-use oxvba_host::{Engine, HostConfig, ProjectRuntimeSession, RuntimeProfileId};
+use oxvba_host::{Engine, ExecBackend, HostConfig, ProjectRuntimeSession, RuntimeProfileId};
 use oxvba_runtime::{
     ObjectRef, RuntimeCallError, RuntimeCallResult, RuntimeCallSource, Variant, bstr::BStr,
     safe_array::SafeArray,
@@ -2980,6 +2980,16 @@ fn descriptor() -> Result<&'static ComServerDescriptor, i32> {
         .map_err(|_| E_FAIL)
 }
 
+fn comhost_host_config() -> Result<HostConfig, String> {
+    let backend = match env::var("OXVBA_BACKEND") {
+        Ok(value) => ExecBackend::parse(&value)
+            .ok_or_else(|| format!("invalid OXVBA_BACKEND value {value:?}; expected vm3 or jit"))?,
+        Err(env::VarError::NotPresent) => ExecBackend::Vm3,
+        Err(err) => return Err(format!("could not read OXVBA_BACKEND: {err}")),
+    };
+    Ok(HostConfig { backend })
+}
+
 fn with_session<R>(
     f: impl FnOnce(&mut ProjectRuntimeSession) -> Result<R, String>,
 ) -> Result<R, String> {
@@ -2987,7 +2997,7 @@ fn with_session<R>(
         let needs_init = slot.borrow().is_none();
         if needs_init {
             let image_bytes = artifact_image_bytes()?;
-            let mut engine = Engine::new(HostConfig { enable_jit: false })
+            let mut engine = Engine::new(comhost_host_config()?)
                 .with_runtime_profile(RuntimeProfileId::WindowsHeadless);
             engine.enable_host_native_runtime();
             let mut session = engine

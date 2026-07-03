@@ -19,7 +19,7 @@ use oxvba_runtime::{VarType, Variant};
 /// enables native dynamic linking). The snapshot is the module globals + `Main`'s
 /// locals.
 fn run(source: &str) -> Vec<Variant> {
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     engine
         .execute_source_with_variant_snapshot_clean(source)
@@ -27,7 +27,7 @@ fn run(source: &str) -> Vec<Variant> {
 }
 
 fn run_err(source: &str) -> String {
-    let mut engine = Engine::new(HostConfig { enable_jit: false });
+    let mut engine = Engine::new(HostConfig::vm3());
     engine.set_host_policy(HostPolicy::interactive_dev());
     match engine.execute_source_with_variant_snapshot_clean(source) {
         Ok(snapshot) => panic!("native declare probe should have failed, got {snapshot:?}"),
@@ -521,7 +521,7 @@ fn riff_shaped_dispcallfunc_vtable_call_writes_variant_result() {
 
 #[test]
 fn native_declare_rejects_jit_without_falling_back() {
-    let mut engine = Engine::new(HostConfig { enable_jit: true });
+    let mut engine = Engine::new(HostConfig::jit());
     engine.set_host_policy(HostPolicy::interactive_dev());
     let err = engine
         .execute_source_with_variant_snapshot_clean(

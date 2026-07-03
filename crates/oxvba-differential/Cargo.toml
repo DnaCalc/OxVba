@@ -9,9 +9,23 @@ description = "Differential oracle harness: runs a program under two executors a
 
 [dependencies]
 oxvba-host.workspace = true
-oxvba-runtime.workspace = true
+oxvba-runtime = { workspace = true, features = ["live-counters"] }
 oxvba-symbol.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+criterion = "0.5"
+oxvba-bind.workspace = true
+oxvba-bundle.workspace = true
+oxvba-com = { workspace = true, features = ["fixture-typelibs"] }
+oxvba-hal.workspace = true
+oxvba-oxir.workspace = true
+oxvba-project.workspace = true
+oxvba-vm3.workspace = true
+
+[[bench]]
+name = "jit_m4_baseline"
+harness = false
 
 [lints]
 workspace = true

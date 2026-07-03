@@ -24,9 +24,21 @@
 
 pub mod oracle;
 
-use oxvba_host::{Engine, FinalErr, HostConfig, SnapshotOutcome, Vm3Snapshot};
+use oxvba_host::{
+    Engine, FinalErr, HostConfig, JIT_NOT_IMPLEMENTED_MESSAGE, RuntimeProfileId, SnapshotOutcome,
+    Vm3Snapshot,
+};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{Variant, variant_to_vba_string};
+use oxvba_runtime::{HandleBalance, Variant, live_handle_counts, variant_to_vba_string};
+
+fn balance_measurement_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
+fn vm3_oracle_engine() -> Engine {
+    Engine::new(HostConfig::vm3()).with_runtime_profile(RuntimeProfileId::WindowsHeadless)
+}
 
 /// A canonical, comparable projection of a runtime [`Variant`].
 ///
@@ -126,6 +138,8 @@ pub fn canon(v: &Variant) -> Canon {
 pub enum Executor {
     /// The typed-OxIR interpreter — the product runtime and the JIT oracle.
     Vm3,
+    /// The M4 Cranelift backend. During M4-0 it exists only as a standard clean decline.
+    Jit,
 }
 
 /// The observable outcome of one run, for differential comparison.
@@ -148,9 +162,21 @@ pub struct RunOutcome {
     /// not yet implement. Such a program is SKIPPED by the corpus comparison — out of the
     /// executor's current scope, not a divergence.
     pub unsupported: Option<String>,
+    /// Live-handle delta over this run after snapshot values have been canonicalized and dropped.
+    pub handle_balance: Option<HandleBalance>,
 }
 
 impl RunOutcome {
+    fn unsupported(what: impl Into<String>) -> Self {
+        RunOutcome {
+            result: Ok(Vec::new()),
+            err: FinalErr::default(),
+            raised: false,
+            unsupported: Some(what.into()),
+            handle_balance: None,
+        }
+    }
+
     fn from_snapshot(outcome: SnapshotOutcome) -> Self {
         match outcome {
             SnapshotOutcome::Completed { values, err } => RunOutcome {
@@ -158,26 +184,35 @@ impl RunOutcome {
                 err,
                 raised: false,
                 unsupported: None,
+                handle_balance: None,
             },
             SnapshotOutcome::Raised { err } => RunOutcome {
                 result: Err(format!("VBA error {}", err.number)),
                 err,
                 raised: true,
                 unsupported: None,
+                handle_balance: None,
             },
             SnapshotOutcome::Unsupported(what) => RunOutcome {
                 result: Ok(Vec::new()),
                 err: FinalErr::default(),
                 raised: false,
                 unsupported: Some(what),
+                handle_balance: None,
             },
             SnapshotOutcome::Failed(msg) => RunOutcome {
                 result: Err(msg),
                 err: FinalErr::default(),
                 raised: false,
                 unsupported: None,
+                handle_balance: None,
             },
         }
+    }
+
+    fn with_handle_balance(mut self, before: oxvba_runtime::LiveHandleCounts) -> Self {
+        self.handle_balance = Some(before.balance_to(live_handle_counts()));
+        self
     }
 }
 
@@ -206,11 +241,18 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
         conditional_constants: std::collections::BTreeMap::new(),
         conditional_compilation_target: Default::default(),
     };
-    let engine = Engine::new(HostConfig { enable_jit: false });
+    let _balance_guard = balance_measurement_lock()
+        .lock()
+        .expect("balance measurement lock poisoned");
+    let before = live_handle_counts();
+    let engine = vm3_oracle_engine();
     let outcome = match executor {
-        Executor::Vm3 => engine.execute_manifest_snapshot_with_err_vm3(&manifest),
+        Executor::Vm3 => {
+            RunOutcome::from_snapshot(engine.execute_manifest_snapshot_with_err_vm3(&manifest))
+        }
+        Executor::Jit => RunOutcome::unsupported(JIT_NOT_IMPLEMENTED_MESSAGE),
     };
-    RunOutcome::from_snapshot(outcome)
+    outcome.with_handle_balance(before)
 }
 
 /// Run a multi-module project under `executor` (e.g. a procedural `Main` plus a class module),
@@ -241,11 +283,18 @@ pub fn run_modules(
         conditional_constants: std::collections::BTreeMap::new(),
         conditional_compilation_target: Default::default(),
     };
-    let engine = Engine::new(HostConfig { enable_jit: false });
+    let _balance_guard = balance_measurement_lock()
+        .lock()
+        .expect("balance measurement lock poisoned");
+    let before = live_handle_counts();
+    let engine = vm3_oracle_engine();
     let outcome = match executor {
-        Executor::Vm3 => engine.execute_manifest_snapshot_with_err_vm3(&manifest),
+        Executor::Vm3 => {
+            RunOutcome::from_snapshot(engine.execute_manifest_snapshot_with_err_vm3(&manifest))
+        }
+        Executor::Jit => RunOutcome::unsupported(JIT_NOT_IMPLEMENTED_MESSAGE),
     };
-    RunOutcome::from_snapshot(outcome)
+    outcome.with_handle_balance(before)
 }
 
 /// Run a leaf-first project closure under `executor` and capture the entry project's globals.
@@ -258,32 +307,40 @@ pub fn run_project_closure(
     executor: Executor,
     closure_leaf_first: &[oxvba_symbol::manifest::SymbolProjectManifest],
 ) -> RunOutcome {
-    let engine = Engine::new(HostConfig { enable_jit: false });
+    let _balance_guard = balance_measurement_lock()
+        .lock()
+        .expect("balance measurement lock poisoned");
+    let before = live_handle_counts();
+    let engine = vm3_oracle_engine();
     let outcome = match executor {
         Executor::Vm3 => {
-            engine.execute_project_closure_with_variant_snapshot_vm3(closure_leaf_first)
+            match engine.execute_project_closure_with_variant_snapshot_vm3(closure_leaf_first) {
+                Vm3Snapshot::Ran(values) => RunOutcome {
+                    result: Ok(values.iter().map(canon).collect()),
+                    err: FinalErr::default(),
+                    raised: false,
+                    unsupported: None,
+                    handle_balance: None,
+                },
+                Vm3Snapshot::Unsupported(what) => RunOutcome {
+                    result: Ok(Vec::new()),
+                    err: FinalErr::default(),
+                    raised: false,
+                    unsupported: Some(what),
+                    handle_balance: None,
+                },
+                Vm3Snapshot::Failed(msg) => RunOutcome {
+                    result: Err(msg),
+                    err: FinalErr::default(),
+                    raised: false,
+                    unsupported: None,
+                    handle_balance: None,
+                },
+            }
         }
+        Executor::Jit => RunOutcome::unsupported(JIT_NOT_IMPLEMENTED_MESSAGE),
     };
-    match outcome {
-        Vm3Snapshot::Ran(values) => RunOutcome {
-            result: Ok(values.iter().map(canon).collect()),
-            err: FinalErr::default(),
-            raised: false,
-            unsupported: None,
-        },
-        Vm3Snapshot::Unsupported(what) => RunOutcome {
-            result: Ok(Vec::new()),
-            err: FinalErr::default(),
-            raised: false,
-            unsupported: Some(what),
-        },
-        Vm3Snapshot::Failed(msg) => RunOutcome {
-            result: Err(msg),
-            err: FinalErr::default(),
-            raised: false,
-            unsupported: None,
-        },
-    }
+    outcome.with_handle_balance(before)
 }
 
 /// Run `source` under `executor` (as project `project_name`) on a worker thread with a
@@ -321,6 +378,11 @@ mod tests {
             o.unsupported.is_none(),
             "vm3 unexpectedly skipped an in-scope program ({:?}):\n{source}",
             o.unsupported
+        );
+        assert!(
+            o.handle_balance.is_some_and(HandleBalance::is_zero),
+            "vm3 handle imbalance {:?}:\n{source}",
+            o.handle_balance
         );
         o.result
             .unwrap_or_else(|e| panic!("vm3 run failed: {e}\n{source}"))
@@ -450,6 +512,11 @@ mod tests {
             o.unsupported.is_none(),
             "vm3 unexpectedly skipped an in-scope object program ({:?})",
             o.unsupported
+        );
+        assert!(
+            o.handle_balance.is_some_and(HandleBalance::is_zero),
+            "vm3 object handle imbalance {:?}",
+            o.handle_balance
         );
         o.result
             .unwrap_or_else(|e| panic!("vm3 object run failed: {e}"))
@@ -723,6 +790,11 @@ mod tests {
     /// `Err` + completion shape), for the vm3 golden snapshot. `{:?}` on the `Err` keeps it on
     /// one line (newlines in a description escape to `\n`).
     fn render_outcome(o: &RunOutcome) -> String {
+        assert!(
+            o.handle_balance.is_some_and(HandleBalance::is_zero),
+            "vm3 corpus handle imbalance: {:?} for outcome {o:?}",
+            o.handle_balance
+        );
         if let Some(what) = &o.unsupported {
             return format!("unsupported({what})");
         }
