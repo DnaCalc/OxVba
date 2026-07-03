@@ -1,0 +1,3 @@
+"file","oracle_status","oracle_values","golden_status","golden_values","match","notes"
+"zz_probe_variant_neg_bool.bas","ok","bool:true|i16:1","","","",""
+"zz_probe_variant_neg_byte.bas","ok","u8:1|i16:-1","","","",""

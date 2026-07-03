@@ -1,0 +1,297 @@
+# Conformance Oracle Run
+
+- Timestamp (UTC): 2026-07-03T00:52:49Z
+- Excel version: 16.0
+- Excel process id: 36176
+- Dialog guardian enabled: True
+- Dialog guardian log: C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\excel_dialog_guardian.log
+- Output CSV: C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\results.csv
+
+## Summary
+
+| Metric | Count |
+|--------|-------|
+| Total tests | 215 |
+| Oracle OK | 148 |
+| Oracle error | 55 |
+| Skipped | 12 |
+| **Match** | **137** |
+| **Mismatch** | **53** |
+
+## Mismatches
+
+| File | Oracle | Golden | Notes |
+|------|--------|--------|-------|
+| consolidate_for_gosub_mix.bas | ok: `i16:30|i16:5` | ok: `i32:30|i32:5` | oracle=ok/i16:30|i16:5 golden=ok/i32:30|i32:5 |
+| consolidate_for_select_call.bas | ok: `i16:32|i16:6` | ok: `i32:32|i32:6` | oracle=ok/i16:32|i16:6 golden=ok/i32:32|i32:6 |
+| consolidate_gosub_error_mix.bas | ok: `i16:10|i32:77` | ok: `i32:10|i32:77` | oracle=ok/i16:10|i32:77 golden=ok/i32:10|i32:77 |
+| consolidate_nested_call_chain.bas | ok: `i16:10` | ok: `i32:10` | oracle=ok/i16:10 golden=ok/i32:10 |
+| consolidate_while_byref_mix.bas | ok: `i16:128|i16:7` | ok: `i32:128|i32:7` | oracle=ok/i16:128|i16:7 golden=ok/i32:128|i32:7 |
+| do_exit_do.bas | ok: `i16:4` | ok: `i32:4` | oracle=ok/i16:4 golden=ok/i32:4 |
+| do_loop_until_basic.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+| do_loop_while_basic.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+| do_until_basic.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+| do_while_basic.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+| do_while_exit_condition.bas | ok: `i16:64|i16:6` | ok: `i32:64|i32:6` | oracle=ok/i16:64|i16:6 golden=ok/i32:64|i32:6 |
+| err_surface_fields_subset.bas | ok: `i32:9|string:"Subscript out of range"|string:"VBAProject"|i32:1000009|string:"C:\Program Files\Common Files\Microsoft Shared\VBA\VBA7.1\1033\VbLR6.chm"|i32:0` | ok: `i32:9|string:"Subscript out of range"|string:"VBAProject"|i32:1000009|string:"C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm"|i32:0` | oracle=ok/i32:9|string:"Subscript out of range"|string:"VBAProject"|i32:1000009|string:"C:\Program Files\Common Files\Microsoft Shared\VBA\VBA7.1\1033\VbLR6.chm"|i32:0 golden=ok/i32:9|string:"Subscript out of range"|string:"VBAProject"|i32:1000009|string:"C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm"|i32:0 |
+| for_basic.bas | ok: `i16:6|i16:4` | ok: `i32:6|i32:4` | oracle=ok/i16:6|i16:4 golden=ok/i32:6|i32:4 |
+| for_nested_select_case.bas | ok: `i16:21|i16:5` | ok: `i32:21|i32:5` | oracle=ok/i16:21|i16:5 golden=ok/i32:21|i32:5 |
+| for_step_negative.bas | ok: `i16:3|i16:-1` | ok: `i32:3|i32:-1` | oracle=ok/i16:3|i16:-1 golden=ok/i32:3|i32:-1 |
+| for_step_positive.bas | ok: `i16:6|i16:7` | ok: `i32:6|i32:7` | oracle=ok/i16:6|i16:7 golden=ok/i32:6|i32:7 |
+| function_call_basic.bas | ok: `i16:9` | ok: `i32:9` | oracle=ok/i16:9 golden=ok/i32:9 |
+| gosub_basic.bas | ok: `i16:4` | ok: `i32:4` | oracle=ok/i16:4 golden=ok/i32:4 |
+| gosub_loop_accumulate.bas | ok: `i16:60|i16:4` | ok: `i32:60|i32:4` | oracle=ok/i16:60|i16:4 golden=ok/i32:60|i32:4 |
+| gosub_nested_labels.bas | ok: `i16:15` | ok: `i32:15` | oracle=ok/i16:15 golden=ok/i32:15 |
+| gosub_repeated.bas | ok: `i16:5` | ok: `i32:5` | oracle=ok/i16:5 golden=ok/i32:5 |
+| goto_label_basic.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+| goto_numeric_basic.bas | ok: `i16:5` | ok: `i32:5` | oracle=ok/i16:5 golden=ok/i32:5 |
+| if_and.bas | ok: `i16:7` | ok: `i32:7` | oracle=ok/i16:7 golden=ok/i32:7 |
+| if_ge.bas | ok: `i16:5` | ok: `i32:5` | oracle=ok/i16:5 golden=ok/i32:5 |
+| if_lt.bas | ok: `i16:4` | ok: `i32:4` | oracle=ok/i16:4 golden=ok/i32:4 |
+| if_neq.bas | ok: `i16:11` | ok: `i32:11` | oracle=ok/i16:11 golden=ok/i32:11 |
+| if_or_not.bas | ok: `i16:9` | ok: `i32:9` | oracle=ok/i16:9 golden=ok/i32:9 |
+| if_true.bas | ok: `i16:7` | ok: `i32:7` | oracle=ok/i16:7 golden=ok/i32:7 |
+| line_continuation_basic.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+| nested_if_for.bas | ok: `i16:5|i16:3` | ok: `i32:5|i32:3` | oracle=ok/i16:5|i16:3 golden=ok/i32:5|i32:3 |
+| on_error_goto_label_resume.bas | ok: `i16:100` | ok: `i32:100` | oracle=ok/i16:100 golden=ok/i32:100 |
+| on_error_resume_continue.bas | ok: `i16:2` | ok: `i32:2` | oracle=ok/i16:2 golden=ok/i32:2 |
+| option_explicit_ok.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+| params_byref_nested_modify.bas | ok: `i16:111` | ok: `i32:111` | oracle=ok/i16:111 golden=ok/i32:111 |
+| params_byref.bas | ok: `i16:2` | ok: `i32:2` | oracle=ok/i16:2 golden=ok/i32:2 |
+| proc_call_chain.bas | ok: `i16:1` | ok: `i32:1` | oracle=ok/i16:1 golden=ok/i32:1 |
+| proc_call_local_scope.bas | ok: `i16:2` | ok: `i32:2` | oracle=ok/i16:2 golden=ok/i32:2 |
+| resume_statement_basic.bas | ok: `i16:2` | ok: `i32:2` | oracle=ok/i16:2 golden=ok/i32:2 |
+| smoke.bas | ok: `i16:15` | ok: `i32:15` | oracle=ok/i16:15 golden=ok/i32:15 |
+| stdlib_advanced_strcomp.bas | ok: `i16:-1|i16:0` | ok: `i32:-1|i32:0` | oracle=ok/i16:-1|i16:0 golden=ok/i32:-1|i32:0 |
+| stdlib_date_string_policy.bas | ok: `i16:2000|i16:1|i16:1|bool:true|bool:false` | ok: `i32:2000|i32:1|i32:1|bool:true|bool:false` | oracle=ok/i16:2000|i16:1|i16:1|bool:true|bool:false golden=ok/i32:2000|i32:1|i32:1|bool:true|bool:false |
+| stdlib_datetime_expansion.bas | ok: `i16:2024|i16:2|i16:3|i16:7` | ok: `i32:2024|i32:2|i32:3|i32:7` | oracle=ok/i16:2024|i16:2|i16:3|i16:7 golden=ok/i32:2024|i32:2|i32:3|i32:7 |
+| stdlib_len_basic.bas | error: `` | ok: `i32:4` | oracle=error/ golden=ok/i32:4; 0x800A9C68 |
+| stdlib_string_expansion_core.bas | ok: `string:"    "|string:"AAA"|string:"B"|i16:66|string:"777"` | ok: `string:"    "|string:"AAA"|string:"B"|i32:66|string:"777"` | oracle=ok/string:"    "|string:"AAA"|string:"B"|i16:66|string:"777" golden=ok/string:"    "|string:"AAA"|string:"B"|i32:66|string:"777" |
+| string_compare_option_binary.bas | ok: `i32:3|i16:-1` | ok: `i32:3|i32:-1` | oracle=ok/i32:3|i16:-1 golden=ok/i32:3|i32:-1 |
+| string_compare_option_text.bas | ok: `i32:3|i16:-1` | ok: `i32:3|i32:-1` | oracle=ok/i32:3|i16:-1 golden=ok/i32:3|i32:-1 |
+| subtract.bas | ok: `i16:16` | ok: `i32:16` | oracle=ok/i16:16 golden=ok/i32:16 |
+| udt_field_access_basic.bas | error: `` | ok: `empty|i32:7|i32:7|i32:7` | oracle=error/ golden=ok/empty|i32:7|i32:7|i32:7; 0x800A9C68 |
+| udt_whole_assignment_copy.bas | error: `` | ok: `empty|i32:7|i32:9|empty|i32:7|i32:9|i32:9` | oracle=error/ golden=ok/empty|i32:7|i32:9|empty|i32:7|i32:9|i32:9; 0x800A9C68 |
+| udt_whole_assignment_overwrite.bas | error: `` | ok: `empty|i32:7|i32:6|empty|i32:7|i32:6` | oracle=error/ golden=ok/empty|i32:7|i32:6|empty|i32:7|i32:6; Cannot run the macro 'RunProbe'. The macro may not be available in this workbook or all macros may be disabled. |
+| while_nested_if_chain.bas | ok: `i16:12|i16:211` | ok: `i32:12|i32:211` | oracle=ok/i16:12|i16:211 golden=ok/i32:12|i32:211 |
+| while_wend_basic.bas | ok: `i16:3` | ok: `i32:3` | oracle=ok/i16:3 golden=ok/i32:3 |
+
+## All Results
+
+| File | Oracle Status | Oracle Values | Golden Status | Golden Values | Match |
+|------|-------------|-------------|--------------|-------------|-------|
+| array_bounds_error.bas | error | `` | error | `` | true |
+| array_explicit_lower_bound.bas | ok | `empty|i16:11` | ok | `empty|i16:11` | true |
+| array_multidim_indexing.bas | ok | `empty|i16:17` | ok | `empty|i16:17` | true |
+| array_option_base_one_bounds.bas | ok | `empty|i16:4|i16:9` | ok | `empty|i16:4|i16:9` | true |
+| array_store_load.bas | ok | `empty|i16:7` | ok | `empty|i16:7` | true |
+| array_zero_index.bas | ok | `empty|i16:3` | ok | `empty|i16:3` | true |
+| assignment_set_let_basic.bas | error | `` | error | `` | true |
+| byref_typed_mismatch_error.bas | error | `` | error | `` | true |
+| call_coercion_mixed_variant_to_long.bas | ok | `i16:5` | ok | `i16:5` | true |
+| class_lifecycle_initialize_fail.bas | ok | `i16:1` | ok | `i16:1` | true |
+| class_lifecycle_resume_next_ok.bas | ok | `i16:3` | ok | `i16:3` | true |
+| class_lifecycle_terminate_fail.bas | ok | `i16:1` | ok | `i16:1` | true |
+| coercion_arg_object_to_long_error.bas | error | `` | error | `` | true |
+| coercion_assign_object_to_long_error.bas | error | `` | error | `` | true |
+| coercion_cverr_abs_normalization.bas | error | `` | error | `` | true |
+| coercion_cverr_range_predicates.bas | error | `` | error | `` | true |
+| coercion_null_empty_error_predicates.bas | ok | `bool:true|bool:true|bool:true|bool:false|bool:false` | ok | `bool:true|bool:true|bool:true|bool:false|bool:false` | true |
+| com_dispatch_array_argument.bas | skip | `` |  | `` |  |
+| com_dispatch_createobject_invoke.bas | skip | `` |  | `` |  |
+| com_dispatch_invoke_chain.bas | skip | `` |  | `` |  |
+| com_dispatch_invoke_deterministic.bas | skip | `` |  | `` |  |
+| conditional_compilation_basic.bas | ok | `i16:8` | ok | `i16:8` | true |
+| consolidate_collection_host_mix.bas | skip | `` |  | `` |  |
+| consolidate_error_intrinsics_mix.bas | ok | `i32:12|error:4|bool:true` | ok | `i32:12|error:4|bool:true` | true |
+| consolidate_for_gosub_mix.bas | ok | `i16:30|i16:5` | ok | `i32:30|i32:5` | false |
+| consolidate_for_select_call.bas | ok | `i16:32|i16:6` | ok | `i32:32|i32:6` | false |
+| consolidate_gosub_error_mix.bas | ok | `i16:10|i32:77` | ok | `i32:10|i32:77` | false |
+| consolidate_language_stdlib_mix.bas | skip | `` |  | `` |  |
+| consolidate_nested_call_chain.bas | ok | `i16:10` | ok | `i32:10` | false |
+| consolidate_select_conversion.bas | ok | `i16:7|i16:20` | ok | `i16:7|i16:20` | true |
+| consolidate_while_byref_mix.bas | ok | `i16:128|i16:7` | ok | `i32:128|i32:7` | false |
+| conversion_cint_basic.bas | ok | `i16:5` | ok | `i16:5` | true |
+| conversion_cint_to_object_error.bas | error | `` | error | `` | true |
+| conversion_clng_cint_chain.bas | ok | `i16:7|i32:10|i16:8` | ok | `i16:7|i32:10|i16:8` | true |
+| conversion_extended_scalar_subset.bas | ok | `f64:7|u8:8|currency:9|decimal:10` | ok | `f64:7|u8:8|currency:9|decimal:10` | true |
+| conversion_nested_clng_cint.bas | ok | `i32:7` | ok | `i32:7` | true |
+| conversion_val_str_subset.bas | ok | `f64:9` | ok | `f64:9` | true |
+| declaration_collision_proc_name_error.bas | ok | `i16:1` | ok | `i16:1` | true |
+| declare_function_stub_basic.bas | skip | `` | error | `` |  |
+| declare_sub_stub_basic.bas | skip | `` | error | `` |  |
+| default_type_defobj_implicit_error.bas | error | `` | error | `` | true |
+| default_type_param_defobj_error.bas | error | `` | error | `` | true |
+| diagnostic_phase_compile_wins.bas | error | `` | error | `` | true |
+| do_exit_do.bas | ok | `i16:4` | ok | `i32:4` | false |
+| do_loop_until_basic.bas | ok | `i16:3` | ok | `i32:3` | false |
+| do_loop_while_basic.bas | ok | `i16:3` | ok | `i32:3` | false |
+| do_until_basic.bas | ok | `i16:3` | ok | `i32:3` | false |
+| do_while_basic.bas | ok | `i16:3` | ok | `i32:3` | false |
+| do_while_exit_condition.bas | ok | `i16:64|i16:6` | ok | `i32:64|i32:6` | false |
+| duplicate_dim_error.bas | error | `` | error | `` | true |
+| duplicate_label_error.bas | error | `` | error | `` | true |
+| enum_arithmetic_use.bas | ok | `i32:6|i32:9` | ok | `i32:6|i32:9` | true |
+| enum_basic.bas | ok | `i32:5` | ok | `i32:5` | true |
+| enum_select_case_use.bas | ok | `i16:20|i32:2` | ok | `i16:20|i32:2` | true |
+| erase_array_basic.bas | ok | `empty|empty` | ok | `empty|empty` | true |
+| err_clear_basic.bas | ok | `i32:0` | ok | `i32:0` | true |
+| err_clear_full_surface_reset.bas | ok | `i32:0|string:""|string:""|i32:0|string:""|i32:0` | ok | `i32:0|string:""|string:""|i32:0|string:""|i32:0` | true |
+| err_proc_call_boundary_clears.bas | ok | `i32:7` | ok | `i32:7` | true |
+| err_resume_next_clears.bas | ok | `i32:20` | ok | `i32:20` | true |
+| err_surface_fields_subset.bas | ok | `i32:9|string:"Subscript out of range"|string:"VBAProject"|i32:1000009|string:"C:\Program Files\Common Files\Microsoft Shared\VBA\VBA7.1\1033\VbLR6.chm"|i32:0` | ok | `i32:9|string:"Subscript out of range"|string:"VBAProject"|i32:1000009|string:"C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm"|i32:0` | false |
+| error_goto_label_resume_next.bas | ok | `i16:20|i32:42` | ok | `i16:20|i32:42` | true |
+| error_nested_mode_transitions.bas | ok | `i32:5|i32:20|i32:0|i32:6` | ok | `i32:5|i32:20|i32:0|i32:6` | true |
+| error_nested_resume_chain.bas | ok | `i16:5|i32:55` |  | `` |  |
+| error_raise_custom_clear_cycle.bas | ok | `i32:100|i32:0|i32:200` | ok | `i32:100|i32:0|i32:200` | true |
+| error_resume_function_propagation.bas | ok | `i32:42|i16:7` |  | `` |  |
+| financial_algorithm_npv_irr_mirr_subset.bas | error | `` | error | `` | true |
+| financial_algorithm_rate_nper_subset.bas | ok | `f64:0.029228540769134|f64:10` | ok | `f64:0.029228540769134|f64:10` | true |
+| financial_tolerance_mixed_modes.bas | error | `` | error | `` | true |
+| financial_tolerance_non_convergence.bas | error | `` | error | `` | true |
+| for_basic.bas | ok | `i16:6|i16:4` | ok | `i32:6|i32:4` | false |
+| for_each_array_literal_basic.bas | ok | `i16:3|empty` | ok | `i16:3|empty` | true |
+| for_each_array_variable_basic.bas | ok | `empty|i16:6|empty` | ok | `empty|i16:6|empty` | true |
+| for_exit_for_basic.bas | ok | `i16:1|i16:1` | ok | `i16:1|i16:1` | true |
+| for_nested_select_case.bas | ok | `i16:21|i16:5` | ok | `i32:21|i32:5` | false |
+| for_step_negative.bas | ok | `i16:3|i16:-1` | ok | `i32:3|i32:-1` | false |
+| for_step_positive.bas | ok | `i16:6|i16:7` | ok | `i32:6|i32:7` | false |
+| for_zero_iter.bas | ok | `i16:5|i16:5` | ok | `i16:5|i16:5` | true |
+| function_call_basic.bas | ok | `i16:9` | ok | `i32:9` | false |
+| function_return_explicit_as_precedence_error.bas | error | `` | error | `` | true |
+| gosub_basic.bas | ok | `i16:4` | ok | `i32:4` | false |
+| gosub_loop_accumulate.bas | ok | `i16:60|i16:4` | ok | `i32:60|i32:4` | false |
+| gosub_missing_label_error.bas | error | `` | error | `` | true |
+| gosub_nested_labels.bas | ok | `i16:15` | ok | `i32:15` | false |
+| gosub_repeated.bas | ok | `i16:5` | ok | `i32:5` | false |
+| goto_label_basic.bas | ok | `i16:3` | ok | `i32:3` | false |
+| goto_line_number_statement_basic.bas | ok | `i16:5` | ok | `i16:5` | true |
+| goto_missing_label_error.bas | error | `` | error | `` | true |
+| goto_numeric_basic.bas | ok | `i16:5` | ok | `i32:5` | false |
+| if_and.bas | ok | `i16:7` | ok | `i32:7` | false |
+| if_else_path.bas | ok | `i16:20` | ok | `i16:20` | true |
+| if_elseif_else_path.bas | ok | `i16:99` | ok | `i16:99` | true |
+| if_elseif_path.bas | ok | `i16:30` | ok | `i16:30` | true |
+| if_false.bas | ok | `i16:0` | ok | `i16:0` | true |
+| if_ge.bas | ok | `i16:5` | ok | `i32:5` | false |
+| if_lt.bas | ok | `i16:4` | ok | `i32:4` | false |
+| if_neq.bas | ok | `i16:11` | ok | `i32:11` | false |
+| if_or_not.bas | ok | `i16:9` | ok | `i32:9` | false |
+| if_true.bas | ok | `i16:7` | ok | `i32:7` | false |
+| introspection_vartype_isnumeric_tags.bas | ok | `i32:8|i32:1|i32:10|i32:2|bool:false|bool:false|bool:false|bool:true` | ok | `i32:8|i32:1|i32:10|i32:2|bool:false|bool:false|bool:false|bool:true` | true |
+| jit_intrinsic_math_subset.bas | ok | `i16:1` | ok | `i16:1` | true |
+| late_bound_default_member_error.bas | error | `` |  | `` |  |
+| late_bound_default_member_exec.bas | error | `` |  | `` |  |
+| late_bound_named_argument_exec.bas | error | `` |  | `` |  |
+| late_call_named_argument_error.bas | error | `` |  | `` |  |
+| line_continuation_basic.bas | ok | `i16:3` | ok | `i32:3` | false |
+| module_const_basic.bas | ok | `i16:7` | ok | `i16:7` | true |
+| nested_if_for.bas | ok | `i16:5|i16:3` | ok | `i32:5|i32:3` | false |
+| object_collection_add_item.bas | ok | `i32:9|i32:9` | ok | `i32:9|i32:9` | true |
+| object_collection_count_chain.bas | ok | `i32:1|i32:2` | ok | `i32:1|i32:2` | true |
+| object_collection_remove_count.bas | ok | `i32:1` | ok | `i32:1` | true |
+| object_identity_is_nothing.bas | ok | `bool:true|bool:true` | ok | `bool:true|bool:true` | true |
+| object_identity_is_same_and_different.bas | ok | `bool:true|bool:false` | ok | `bool:true|bool:false` | true |
+| on_error_default_fail.bas | error | `` | error | `` | true |
+| on_error_goto_label_missing_label_error.bas | error | `` | error | `` | true |
+| on_error_goto_label_resume.bas | ok | `i16:100` | ok | `i32:100` | false |
+| on_error_goto_label_then_goto_zero_error.bas | error | `` | error | `` | true |
+| on_error_goto_zero_fail.bas | error | `` | error | `` | true |
+| on_error_resume_continue.bas | ok | `i16:2` | ok | `i32:2` | false |
+| on_error_resume_next.bas | ok | `i32:5` | ok | `i32:5` | true |
+| operator_arithmetic_object_plus_error.bas | error | `` | error | `` | true |
+| operator_comparison_object_long_error.bas | error | `` | error | `` | true |
+| option_explicit_error.bas | error | `` | error | `` | true |
+| option_explicit_ok.bas | ok | `i16:3` | ok | `i32:3` | false |
+| params_byref_error.bas | ok | `` | ok | `` | true |
+| params_byref_nested_modify.bas | ok | `i16:111` | ok | `i32:111` | false |
+| params_byref_swap.bas | ok | `i16:10|i16:5` | ok | `i16:10|i16:5` | true |
+| params_byref.bas | ok | `i16:2` | ok | `i32:2` | false |
+| params_byval.bas | ok | `i16:1` | ok | `i16:1` | true |
+| params_named_bind.bas | ok | `i16:9` | ok | `i16:9` | true |
+| params_named_optional_omit.bas | ok | `i16:7` | ok | `i16:7` | true |
+| params_named_positional_after_named_error.bas | error | `` | error | `` | true |
+| params_optional_default.bas | ok | `i16:7` | ok | `i16:7` | true |
+| params_optional_override.bas | ok | `i16:9` | ok | `i16:9` | true |
+| params_paramarray_dispatch_boundary.bas | skip | `` |  | `` |  |
+| params_paramarray_empty.bas | ok | `i32:-1` | ok | `i32:-1` | true |
+| params_paramarray_named_error.bas | error | `` | error | `` | true |
+| params_paramarray_pack.bas | ok | `i32:2` | ok | `i32:2` | true |
+| proc_call_chain.bas | ok | `i16:1` | ok | `i32:1` | false |
+| proc_call_local_scope.bas | ok | `i16:2` | ok | `i32:2` | false |
+| project_model_implements_requires_class_graph.bas | error | `` |  | `` |  |
+| project_model_raiseevent_requires_class_graph.bas | error | `` |  | `` |  |
+| project_model_withevents_requires_class_graph.bas | error | `` |  | `` |  |
+| property_get_declaration_basic.bas | ok | `i16:4` | ok | `i16:4` | true |
+| property_get_expression_basic.bas | ok | `i16:9` | ok | `i16:9` | true |
+| property_let_byref_route.bas | ok | `i16:1` | ok | `i16:1` | true |
+| property_set_byref_route.bas | error | `` | error | `` | true |
+| redim_expand_allows_new_index.bas | ok | `empty|i16:5` | ok | `empty|i16:5` | true |
+| redim_preserve_illegal_non_last_dim_error.bas | error | `` | error | `` | true |
+| redim_preserve_keeps_values.bas | ok | `empty|i16:7` | ok | `empty|i16:7` | true |
+| redim_preserve_multidim_last_dimension.bas | ok | `empty|i16:7` | ok | `empty|i16:7` | true |
+| redim_preserve_shrink_expand_clears_tail.bas | ok | `empty|empty` | ok | `empty|empty` | true |
+| redim_shrink_bounds_error.bas | error | `` | error | `` | true |
+| redim_without_preserve_resets.bas | ok | `empty|empty` | ok | `empty|empty` | true |
+| regression_cverr_error_resume_bridge.bas | ok | `i32:11|i32:20|empty|empty|bool:false` | ok | `i32:11|i32:20|empty|empty|bool:false` | true |
+| regression_cverr_predicate_domain.bas | ok | `bool:true|bool:true|bool:false|i32:0|empty` | ok | `bool:true|bool:true|bool:false|i32:0|empty` | true |
+| resume_label_basic.bas | ok | `i32:6` | ok | `i32:6` | true |
+| resume_next_statement_ok.bas | ok | `i16:1` | ok | `i16:1` | true |
+| resume_statement_basic.bas | ok | `i16:2` | ok | `i32:2` | false |
+| select_case_basic.bas | ok | `i16:20` | ok | `i16:20` | true |
+| select_case_else.bas | ok | `i16:99` | ok | `i16:99` | true |
+| select_case_is_range.bas | ok | `i16:22` | ok | `i16:22` | true |
+| select_case_multi.bas | ok | `i16:30` | ok | `i16:30` | true |
+| smoke.bas | ok | `i16:15` | ok | `i32:15` | false |
+| stdlib_advanced_instrrev_like.bas | ok | `i32:4|i16:1` | ok | `i32:4|i16:1` | true |
+| stdlib_advanced_replace_trim.bas | ok | `string:"16745"|string:"456"|string:"321"` | ok | `string:"16745"|string:"456"|string:"321"` | true |
+| stdlib_advanced_split_join.bas | error | `` | error | `` | true |
+| stdlib_advanced_strcomp.bas | ok | `i16:-1|i16:0` | ok | `i32:-1|i32:0` | false |
+| stdlib_array_introspection_bounds.bas | ok | `i32:0|i32:2` | ok | `i32:0|i32:2` | true |
+| stdlib_array_introspection_types.bas | ok | `i32:8204|string:"Variant()"` | ok | `i32:8204|string:"Variant()"` | true |
+| stdlib_date_add_diff.bas | error | `` | error | `` | true |
+| stdlib_date_serial_value.bas | ok | `f64:46081|f64:46081` | ok | `f64:46081|f64:46081` | true |
+| stdlib_date_string_policy.bas | ok | `i16:2000|i16:1|i16:1|bool:true|bool:false` | ok | `i32:2000|i32:1|i32:1|bool:true|bool:false` | false |
+| stdlib_datetime_expansion.bas | ok | `i16:2024|i16:2|i16:3|i16:7` | ok | `i32:2024|i32:2|i32:3|i32:7` | false |
+| stdlib_error_cverr_identity.bas | ok | `error:17` | ok | `error:17` | true |
+| stdlib_error_err_raise_fail.bas | error | `` | error | `` | true |
+| stdlib_error_err_raise_resume.bas | ok | `i32:11` | ok | `i32:11` | true |
+| stdlib_file_stub_intrinsics.bas | error | `` |  | `` |  |
+| stdlib_financial_zero_rate.bas | ok | `f64:-11|f64:-11|f64:-3` | ok | `f64:-11|f64:-11|f64:-3` | true |
+| stdlib_format_core.bas | ok | `i32:5|i32:3` | ok | `i32:5|i32:3` | true |
+| stdlib_host_sensitive_mix.bas | skip | `` |  | `` |  |
+| stdlib_host_sensitive_shell_environ_dir.bas | skip | `` |  | `` |  |
+| stdlib_host_sensitive_zero_fallback.bas | skip | `` |  | `` |  |
+| stdlib_instr_case_ops.bas | ok | `i32:3|string:"789"|string:"654"` | ok | `i32:3|string:"789"|string:"654"` | true |
+| stdlib_introspection_expansion.bas | error | `` |  | `` |  |
+| stdlib_len_basic.bas | error | `` | ok | `i32:4` | false |
+| stdlib_math_primitives.bas | error | `` | error | `` | true |
+| stdlib_math_transcendental_identity.bas | ok | `f64:0|f64:1|f64:0|f64:1` | ok | `f64:0|f64:1|f64:0|f64:1` | true |
+| stdlib_numeric_expansion.bas | ok | `string:"1F"|string:"21"|f64:1.460139105621|f64:-225.950846454195` | ok | `string:"1F"|string:"21"|f64:1.460139105621|f64:-225.950846454195` | true |
+| stdlib_random_financial_expansion.bas | error | `` | error | `` | true |
+| stdlib_rnd_isolated.bas | ok | `f64:33|f64:6` | ok | `f64:33|f64:6` | true |
+| stdlib_slice_ops.bas | ok | `string:"12"|string:"45"|string:"234"` | ok | `string:"12"|string:"45"|string:"234"` | true |
+| stdlib_string_expansion_core.bas | ok | `string:"    "|string:"AAA"|string:"B"|i16:66|string:"777"` | ok | `string:"    "|string:"AAA"|string:"B"|i32:66|string:"777"` | false |
+| stdlib_time_serial_value.bas | ok | `f64:4.30902777777778E-02|f64:4.30902777777778E-02` | ok | `f64:4.30902777777778E-02|f64:4.30902777777778E-02` | true |
+| stdlib_variant_predicates.bas | ok | `bool:true|bool:true|bool:false` | ok | `bool:true|bool:true|bool:false` | true |
+| string_compare_option_binary.bas | ok | `i32:3|i16:-1` | ok | `i32:3|i32:-1` | false |
+| string_compare_option_text.bas | ok | `i32:3|i16:-1` | ok | `i32:3|i32:-1` | false |
+| string_join_array_tag_count.bas | ok | `string:"10203"` | ok | `string:"10203"` | true |
+| string_mid_statement_mutation.bas | ok | `string:"19945"` | ok | `string:"19945"` | true |
+| string_slice_ops_dollar.bas | ok | `string:"12"|string:"45"|string:"234"` | ok | `string:"12"|string:"45"|string:"234"` | true |
+| string_vbnullstring_basic.bas | ok | `string:""` | ok | `string:""` | true |
+| string_vbnullstring_long_error.bas | error | `` | error | `` | true |
+| string_vbnullstring_object_error.bas | error | `` | error | `` | true |
+| string_vbnullstring_predicates.bas | ok | `string:""|bool:false|bool:false|bool:false` | ok | `string:""|bool:false|bool:false|bool:false` | true |
+| subtract.bas | ok | `i16:16` | ok | `i32:16` | false |
+| typechar_explicit_as_precedence_error.bas | error | `` | error | `` | true |
+| typed_fastpath_hotloop.bas | ok | `i32:300|i32:101` | ok | `i32:300|i32:101` | true |
+| typeof_is_condition_basic.bas | error | `` |  | `` |  |
+| udt_declaration_basic.bas | ok | `i16:9` | ok | `i16:9` | true |
+| udt_field_access_basic.bas | error | `` | ok | `empty|i32:7|i32:7|i32:7` | false |
+| udt_whole_assignment_copy.bas | error | `` | ok | `empty|i32:7|i32:9|empty|i32:7|i32:9|i32:9` | false |
+| udt_whole_assignment_overwrite.bas | error | `` | ok | `empty|i32:7|i32:6|empty|i32:7|i32:6` | false |
+| while_nested_if_chain.bas | ok | `i16:12|i16:211` | ok | `i32:12|i32:211` | false |
+| while_wend_basic.bas | ok | `i16:3` | ok | `i32:3` | false |
+| with_block_basic.bas | error | `` | error | `` | true |
+| with_block_member_target_chain.bas | error | `` |  | `` |  |

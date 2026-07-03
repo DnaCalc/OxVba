@@ -1,0 +1,130 @@
+2026-07-03T02:49:20.1317492+02:00 start excel_pid=33748 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:49:24.3411767+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:24.8615037+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:26.6420649+02:00 stop file observed
+2026-07-03T02:49:26.6550660+02:00 exit
+2026-07-03T02:49:28.9020478+02:00 start excel_pid=19340 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:49:29.1832701+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:29.7071580+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:31.3392129+02:00 stop file observed
+2026-07-03T02:49:31.3489608+02:00 exit
+2026-07-03T02:49:34.1010276+02:00 start excel_pid=13364 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:49:40.1472326+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:40.6779538+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:42.3321988+02:00 stop file observed
+2026-07-03T02:49:42.3440251+02:00 exit
+2026-07-03T02:49:44.7635725+02:00 start excel_pid=11012 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:49:45.0680293+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:45.5957588+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:47.1914713+02:00 stop file observed
+2026-07-03T02:49:47.2013719+02:00 exit
+2026-07-03T02:49:49.3971960+02:00 start excel_pid=32584 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:49:50.5878749+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:51.1011637+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:52.6972302+02:00 stop file observed
+2026-07-03T02:49:52.7091716+02:00 exit
+2026-07-03T02:49:54.9848252+02:00 start excel_pid=36244 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:49:55.2585177+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:55.7829137+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:49:57.2665953+02:00 stop file observed
+2026-07-03T02:49:57.2805706+02:00 exit
+2026-07-03T02:49:59.7192169+02:00 start excel_pid=34176 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:50:02.8148752+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:03.3323142+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:05.0062668+02:00 stop file observed
+2026-07-03T02:50:05.0179372+02:00 exit
+2026-07-03T02:50:07.2837346+02:00 start excel_pid=34916 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:50:13.2753290+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:13.8000095+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:15.5105309+02:00 stop file observed
+2026-07-03T02:50:15.5242491+02:00 exit
+2026-07-03T02:50:17.7962917+02:00 start excel_pid=21168 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:50:33.0026670+02:00 deadline exceeded — killing excel pid=21168
+2026-07-03T02:50:33.0216147+02:00 exit
+2026-07-03T02:50:36.8238163+02:00 start excel_pid=7172 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:50:39.2150470+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:39.7296677+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:43.8365349+02:00 start excel_pid=16380 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:50:44.0698536+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:44.5905887+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:49.2388449+02:00 stop file observed
+2026-07-03T02:50:49.2519374+02:00 exit
+2026-07-03T02:50:51.4128516+02:00 start excel_pid=35012 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:50:53.4294420+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:53.9414710+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:50:55.5831987+02:00 stop file observed
+2026-07-03T02:50:55.5942042+02:00 exit
+2026-07-03T02:50:58.3485112+02:00 start excel_pid=37840 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:51:13.0052183+02:00 deadline exceeded — killing excel pid=37840
+2026-07-03T02:51:13.0182979+02:00 exit
+2026-07-03T02:51:16.7246822+02:00 start excel_pid=32924 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:51:31.3724594+02:00 deadline exceeded — killing excel pid=32924
+2026-07-03T02:51:31.3859169+02:00 exit
+2026-07-03T02:51:35.1645563+02:00 start excel_pid=22300 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:51:35.5164467+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:36.0233856+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:37.6613289+02:00 stop file observed
+2026-07-03T02:51:37.6790657+02:00 exit
+2026-07-03T02:51:39.8093808+02:00 start excel_pid=36800 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:51:41.5217146+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:42.0470612+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:43.7310188+02:00 stop file observed
+2026-07-03T02:51:43.7438156+02:00 exit
+2026-07-03T02:51:46.0562823+02:00 start excel_pid=24564 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:51:46.4927196+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:47.0011142+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:48.6267340+02:00 stop file observed
+2026-07-03T02:51:48.6395757+02:00 exit
+2026-07-03T02:51:50.7013360+02:00 start excel_pid=34700 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:51:51.3657996+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:51.8821479+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:53.5455338+02:00 stop file observed
+2026-07-03T02:51:53.5541948+02:00 exit
+2026-07-03T02:51:56.1289523+02:00 start excel_pid=35876 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:51:56.3956264+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:56.9146114+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:51:58.5335932+02:00 stop file observed
+2026-07-03T02:51:58.5458050+02:00 exit
+2026-07-03T02:52:00.5515601+02:00 start excel_pid=35356 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:01.1210348+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:01.6494403+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:03.2611673+02:00 stop file observed
+2026-07-03T02:52:03.2712554+02:00 exit
+2026-07-03T02:52:05.5578882+02:00 start excel_pid=6292 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:13.3793538+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:13.8977588+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:15.5171572+02:00 stop file observed
+2026-07-03T02:52:15.5263227+02:00 exit
+2026-07-03T02:52:17.6731832+02:00 start excel_pid=33940 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:18.0131602+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:18.5468648+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:20.1723318+02:00 stop file observed
+2026-07-03T02:52:20.1820566+02:00 exit
+2026-07-03T02:52:22.6727260+02:00 start excel_pid=24460 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:23.2743903+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:23.7924165+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:25.4323544+02:00 stop file observed
+2026-07-03T02:52:25.4414473+02:00 exit
+2026-07-03T02:52:27.5559883+02:00 start excel_pid=13316 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:30.5930029+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:31.1150752+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:32.6238233+02:00 stop file observed
+2026-07-03T02:52:32.6373953+02:00 exit
+2026-07-03T02:52:34.8735041+02:00 start excel_pid=22924 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:35.1744973+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:35.6880178+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:37.3220256+02:00 stop file observed
+2026-07-03T02:52:37.3309397+02:00 exit
+2026-07-03T02:52:39.2833507+02:00 start excel_pid=22728 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:39.6301050+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:40.1563256+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:41.8010239+02:00 stop file observed
+2026-07-03T02:52:41.8107539+02:00 exit
+2026-07-03T02:52:43.8516614+02:00 start excel_pid=20104 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:44.1234835+02:00 clicked compile-error OK: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:44.6396754+02:00 sent WM_CLOSE to VBE: window='Microsoft Visual Basic for Applications - [OracleHarness (Code)]'
+2026-07-03T02:52:46.2984020+02:00 stop file observed
+2026-07-03T02:52:46.3086489+02:00 exit
+2026-07-03T02:52:48.7989856+02:00 start excel_pid=36176 poll_ms=200 stop_file=C:\Work\DnaCalc\OxVba\docs\evidence\conformance\oracle_captures\conformance_oracle_variant_ladder_full_20260703\vba_dialog_handler.stop
+2026-07-03T02:52:49.7469915+02:00 stop file observed
+2026-07-03T02:52:49.7584666+02:00 exit

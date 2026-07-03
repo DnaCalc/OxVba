@@ -57,6 +57,15 @@ the real retained scalar values and had 3 `ok`, 0 `error`, and 0 skipped rows:
 VBProject name, so source-less runtime faults now default `Err.Source` to
 `VBAProject` instead of the synthetic module name `Main`.
 
+`bd-5kqj.7` replaced the legacy vm3 broad-`Long` fallback for retained Variant
+small-integer arithmetic with the Excel-observed subtype ladder. Integral
+Variant arithmetic now returns the smallest carrier at least as wide as the
+operands that can hold the result (`Byte` -> `Integer` -> `Long` -> `Double`,
+with `Boolean` joining the `Integer` lane), while `LongLong` remains
+`LongLong` unless it overflows to `Double`. The implicit default `For ... Next`
+step literal now uses an `Integer` carrier, matching Excel's retained subtype
+for the affected loop row.
+
 The starting 70-mismatch surface was captured after the earlier W10 `Rnd` and
 `Single` retained-value formatter fixes; this bead reconciles that post-W10
 baseline.
@@ -72,15 +81,16 @@ with an error-5 regression.
 After the oracle-backed golden refreshes, `Round` fix, the `bd-5kqj.4`
 module-level `Const` parser fix, the `bd-5kqj.3` compile-diagnostic fix, the
 `bd-5kqj.2` CVErr/Resume-state fix, and the `bd-5kqj.5` collection-fixture
-replacement, and the `bd-5kqj.6` `Err.Source` default-name fix:
+replacement, the `bd-5kqj.6` `Err.Source` default-name fix, and the
+`bd-5kqj.7` Variant small-integer arithmetic fix:
 
 - Command: `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-- Current result: 17 mismatches over 192 files.
-- Latest evidence: terminal output from the `bd-5kqj.6` closure run.
+- Current result: 16 mismatches over 192 files.
+- Latest evidence: terminal output from the `bd-5kqj.7` closure run.
 - Earlier 27-mismatch log before the `Const` fix:
   `target/conformance_basic_language_vm_after_remaining_oracle_20260702.log`
 
-The 17 remaining mismatch rows are classified as follows; one row
+The 16 remaining mismatch rows are classified as follows; one row
 (`for_each_array_variable_basic.bas`) intersects the composite-retained-value
 surface and the loop-variable-final-state follow-up:
 
@@ -88,8 +98,6 @@ surface and the loop-variable-final-state follow-up:
   array/`ReDim`/UDT rows where vm3 currently dumps structural SAFEARRAY/record
   debug values while the VBA-observable fixture target should be scalar or the
   oracle encoder must be extended.
-- `bd-5kqj.7` Variant small-integer arithmetic subtype:
-  `for_exit_for_basic.bas`.
 - `bd-5kqj.8` `For Each` array loop-variable final state:
   `for_each_array_literal_basic.bas` and the loop-variable part of
   `for_each_array_variable_basic.bas`.
@@ -113,11 +121,17 @@ surface and the loop-variable-final-state follow-up:
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern err_surface_fields_subset.bas`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern module_const_basic.bas`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern financial_algorithm_npv_irr_mirr_subset.bas,module_const_basic.bas,object_identity_is_nothing.bas,object_identity_is_same_and_different.bas,stdlib_array_introspection_bounds.bas,stdlib_array_introspection_types.bas,stdlib_math_primitives.bas,stdlib_random_financial_expansion.bas,stdlib_rnd_isolated.bas,string_join_array_tag_count.bas`
+- `./scripts/run-conformance-oracle.ps1 -OutputDir docs/evidence/conformance/oracle_captures/conformance_oracle_variant_integer_probe2_20260703 -IncludePattern zz_probe_variant_integer_arithmetic2.bas -TestTimeoutMs 15000`
+- `./scripts/run-conformance-oracle.ps1 -OutputDir docs/evidence/conformance/oracle_captures/conformance_oracle_variant_integer_unary_probe_20260703 -IncludePattern zz_probe_variant_unary_and_byte.bas -TestTimeoutMs 15000`
+- `./scripts/run-conformance-oracle.ps1 -OutputDir docs/evidence/conformance/oracle_captures/conformance_oracle_variant_ladder_full_20260703 -TestTimeoutMs 15000`
+- `cargo test -q -p oxvba-runtime arithmetic`
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern for_exit_for_basic.bas`
+- `cargo test -q -p oxvba-differential --test for_counter_overflow_vm3`
 - `cargo test -q -p oxvba-differential --lib vm3_golden_snapshot`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <42 scalar oracle rows>`
   - Current expected result: 3 mismatches, all split to follow-up beads.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-  - Current expected result: 17 mismatches over 192 files, all classified above.
+  - Current expected result: 16 mismatches over 192 files, all classified above.
 
 ## Fresh-Eyes Review
 
@@ -156,6 +170,12 @@ review found the VM already defaults `Err.Source` from the runtime project name;
 the mismatch was the host/CLI single-source wrapper naming the synthetic project
 `Main`. That wrapper now uses `VBAProject`, matching Excel's default VBProject
 name, while explicit multi-project manifests still keep their declared project
-names for cross-project origin behavior.
+names for cross-project origin behavior. The `bd-5kqj.7` review checked that
+the prior broad `Long` promotion was a legacy OxVBA fallback, not a VBA
+compatibility target. The targeted Excel probes and the full guarded oracle
+capture agree on the small-integer ladder, and golden rows were updated only
+where current vm3 output matched those Excel observations; the remaining
+array/UDT and `For Each` residuals were left on their existing beads instead of
+being hidden by scalar arithmetic changes.
 No remaining mismatch is left only in chat; every residual category has an open
 bead.
