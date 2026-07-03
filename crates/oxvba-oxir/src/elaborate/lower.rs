@@ -1129,7 +1129,7 @@ impl<'a> Lowerer<'a> {
         let step_t = self.new_temp();
         let step_op = match step {
             Some(s) => self.lower_value(s)?.0,
-            None => OxOperand::Const(OxConst::I32(1)),
+            None => OxOperand::Const(OxConst::I16(1)),
         };
         self.emit(OxInst::Assign {
             dst: OxPlace::Temp(step_t),

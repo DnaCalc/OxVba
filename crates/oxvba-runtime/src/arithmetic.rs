@@ -1,10 +1,12 @@
 use crate::{Variant, coerce::coerce_to, variant::VarType};
 
-/// VBA **Variant** integer-arithmetic promotion: compute in the operands' integer
-/// width and widen to `Double` only when the result leaves that width. `Integer`-pair
-/// arithmetic promotes to `Long`; `Long`/`LongLong` pairs stay in place unless they
-/// overflow. Used by the widening regime ([`oxvba_bundle::NumericMode::Widening`]); the
-/// *fixed* regime is handled in the VM with an Overflow error instead of widening.
+/// VBA **Variant** integer-arithmetic promotion: compute integral operands exactly
+/// and return the smallest carrier at least as wide as the operands that can hold
+/// the result (`Byte` -> `Integer` -> `Long` -> `Double`, with `Boolean` joining
+/// the `Integer` lane). `LongLong` operands stay in the `LongLong` lane unless
+/// they overflow, where VBA widens to `Double`. Used by the widening regime
+/// ([`oxvba_bundle::NumericMode::Widening`]); the *fixed* regime is handled in
+/// the VM with an Overflow error instead of widening.
 fn widen_double(
     lhs: &Variant,
     rhs: &Variant,
@@ -18,14 +20,6 @@ fn widen_double(
     )))
 }
 
-fn i32_or_double(v: i64) -> Variant {
-    if (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&v) {
-        Variant::from_i32(v as i32)
-    } else {
-        Variant::from_f64(v as f64)
-    }
-}
-
 fn i64_or_double(v: Option<i64>, lossy: impl Fn() -> f64) -> Variant {
     match v {
         Some(n) => Variant::from_i64(n),
@@ -33,89 +27,121 @@ fn i64_or_double(v: Option<i64>, lossy: impl Fn() -> f64) -> Variant {
     }
 }
 
-/// The integer arithmetic lane an operand belongs to, with its exact value.
-/// Per the Excel oracle (OVERFLOW_ARITHMETIC_ORACLE_2026-05-31), the operation
-/// result type is the `numeric_join` of the operand ranks (`Byte` promotes to
-/// `Integer`; `Boolean` computes as `Integer` with `True = -1`), widening only
-/// on overflow — so any pair of sub-`LongLong` integers computes exactly and
-/// carries the `Long` result tag (the documented deferred carrier model), and
-/// a `LongLong` operand joins to the `LongLong` lane.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum IntFloor {
+    Byte,
+    Integer,
+    Long,
+    LongLong,
+}
+
 enum IntLane {
-    /// Byte / Boolean / Integer / Long: values fit i32, results carry Long.
-    Long(i64),
-    /// LongLong involved: compute checked in i64, lossy Double on overflow.
-    LongLong(i64),
+    Integral { value: i64, floor: IntFloor },
 }
 
 fn int_lane(v: &Variant) -> Option<IntLane> {
-    match v.vtype() {
-        VarType::Byte => Some(IntLane::Long(i64::from(v.as_u8().unwrap_or(0)))),
-        VarType::Boolean => Some(IntLane::Long(if v.as_bool().unwrap_or(false) {
-            -1
-        } else {
-            0
-        })),
-        VarType::Integer => Some(IntLane::Long(i64::from(v.as_i16().unwrap_or(0)))),
-        VarType::Long => Some(IntLane::Long(i64::from(v.as_i32().unwrap_or(0)))),
-        VarType::LongLong => Some(IntLane::LongLong(v.as_i64().unwrap_or(0))),
-        _ => None,
+    let (value, floor) = match v.vtype() {
+        VarType::Byte => (i64::from(v.as_u8().unwrap_or(0)), IntFloor::Byte),
+        VarType::Boolean => (
+            if v.as_bool().unwrap_or(false) { -1 } else { 0 },
+            IntFloor::Integer,
+        ),
+        VarType::Integer => (i64::from(v.as_i16().unwrap_or(0)), IntFloor::Integer),
+        VarType::Long => (i64::from(v.as_i32().unwrap_or(0)), IntFloor::Long),
+        VarType::LongLong => (v.as_i64().unwrap_or(0), IntFloor::LongLong),
+        _ => return None,
+    };
+    Some(IntLane::Integral { value, floor })
+}
+
+fn integer_or_wider(value: i64, floor: IntFloor) -> Variant {
+    if floor <= IntFloor::Byte && (0..=i64::from(u8::MAX)).contains(&value) {
+        Variant::from_u8(value as u8)
+    } else if floor <= IntFloor::Integer
+        && (i64::from(i16::MIN)..=i64::from(i16::MAX)).contains(&value)
+    {
+        Variant::from_i16(value as i16)
+    } else if floor <= IntFloor::Long
+        && (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&value)
+    {
+        Variant::from_i32(value as i32)
+    } else {
+        Variant::from_f64(value as f64)
+    }
+}
+
+fn int_binop(
+    lhs: IntLane,
+    rhs: IntLane,
+    checked: impl Fn(i64, i64) -> Option<i64>,
+    lossy: impl Fn(i64, i64) -> f64,
+) -> Variant {
+    let (
+        IntLane::Integral {
+            value: a,
+            floor: af,
+        },
+        IntLane::Integral {
+            value: b,
+            floor: bf,
+        },
+    ) = (lhs, rhs);
+    let floor = af.max(bf);
+    if floor == IntFloor::LongLong {
+        i64_or_double(checked(a, b), || lossy(a, b))
+    } else if let Some(value) = checked(a, b) {
+        integer_or_wider(value, floor)
+    } else {
+        Variant::from_f64(lossy(a, b))
     }
 }
 
 pub fn add(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
     if let (Some(l), Some(r)) = (int_lane(lhs), int_lane(rhs)) {
-        return Ok(match (l, r) {
-            (IntLane::Long(a), IntLane::Long(b)) => i32_or_double(a + b),
-            (IntLane::Long(a) | IntLane::LongLong(a), IntLane::Long(b) | IntLane::LongLong(b)) => {
-                i64_or_double(a.checked_add(b), || a as f64 + b as f64)
-            }
-        });
+        return Ok(int_binop(
+            l,
+            r,
+            |a, b| a.checked_add(b),
+            |a, b| a as f64 + b as f64,
+        ));
     }
     widen_double(lhs, rhs, |a, b| a + b)
 }
 
 pub fn sub(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
     if let (Some(l), Some(r)) = (int_lane(lhs), int_lane(rhs)) {
-        return Ok(match (l, r) {
-            (IntLane::Long(a), IntLane::Long(b)) => i32_or_double(a - b),
-            (IntLane::Long(a) | IntLane::LongLong(a), IntLane::Long(b) | IntLane::LongLong(b)) => {
-                i64_or_double(a.checked_sub(b), || a as f64 - b as f64)
-            }
-        });
+        return Ok(int_binop(
+            l,
+            r,
+            |a, b| a.checked_sub(b),
+            |a, b| a as f64 - b as f64,
+        ));
     }
     widen_double(lhs, rhs, |a, b| a - b)
 }
 
 pub fn mul(lhs: &Variant, rhs: &Variant) -> Result<Variant, String> {
     if let (Some(l), Some(r)) = (int_lane(lhs), int_lane(rhs)) {
-        return Ok(match (l, r) {
-            (IntLane::Long(a), IntLane::Long(b)) => i32_or_double(a * b),
-            (IntLane::Long(a) | IntLane::LongLong(a), IntLane::Long(b) | IntLane::LongLong(b)) => {
-                i64_or_double(a.checked_mul(b), || a as f64 * b as f64)
-            }
-        });
+        return Ok(int_binop(
+            l,
+            r,
+            |a, b| a.checked_mul(b),
+            |a, b| a as f64 * b as f64,
+        ));
     }
     widen_double(lhs, rhs, |a, b| a * b)
 }
 
 pub fn neg(v: &Variant) -> Result<Variant, String> {
-    match v.vtype() {
-        VarType::Byte => Ok(Variant::from_i32(-i32::from(v.as_u8().unwrap_or(0)))),
-        VarType::Boolean => Ok(Variant::from_i32(if v.as_bool().unwrap_or(false) {
-            1
+    if let Some(IntLane::Integral { value, floor }) = int_lane(v) {
+        return Ok(if floor == IntFloor::LongLong {
+            i64_or_double(value.checked_neg(), || -(value as f64))
         } else {
-            0
-        })),
-        VarType::Integer => Ok(Variant::from_i32(-i32::from(v.as_i16().unwrap_or(0)))),
-        VarType::Long => Ok(i32_or_double(-i64::from(v.as_i32().unwrap_or(0)))),
-        VarType::LongLong => Ok(i64_or_double(v.as_i64().unwrap_or(0).checked_neg(), || {
-            -(v.as_i64().unwrap_or(0) as f64)
-        })),
-        _ => {
-            let d = coerce_to(v, VarType::Double)?;
-            Ok(Variant::from_f64(-d.as_f64().unwrap_or(0.0)))
-        }
+            integer_or_wider(-value, floor)
+        });
     }
+    let d = coerce_to(v, VarType::Double)?;
+    Ok(Variant::from_f64(-d.as_f64().unwrap_or(0.0)))
 }
 
 #[cfg(test)]
@@ -124,11 +150,19 @@ mod tests {
     use crate::Variant;
 
     #[test]
-    fn integer_add_promotes_to_long() {
+    fn integer_add_keeps_integer_when_in_range() {
         let lhs = Variant::from_i16(10);
         let rhs = Variant::from_i16(12);
         let out = add(&lhs, &rhs).expect("add should succeed");
-        assert_eq!(out.as_i32(), Some(22));
+        assert_eq!(out.as_i16(), Some(22));
+    }
+
+    #[test]
+    fn integer_add_promotes_to_long_at_boundary() {
+        let lhs = Variant::from_i16(i16::MAX);
+        let rhs = Variant::from_i16(1);
+        let out = add(&lhs, &rhs).expect("add should succeed");
+        assert_eq!(out.as_i32(), Some(32768));
     }
 
     #[test]
@@ -152,12 +186,14 @@ mod tests {
 
     #[test]
     fn byte_and_boolean_compute_as_integers() {
-        // Byte promotes to the integer lane (no Byte arithmetic in VBA);
+        // Byte stays Byte when the result fits and then widens through Integer;
         // Boolean computes as Integer with True = -1.
+        let out = add(&Variant::from_u8(1), &Variant::from_u8(2)).expect("add");
+        assert_eq!(out.as_u8(), Some(3), "Byte + Byte stays Byte in range");
         let out = add(&Variant::from_u8(200), &Variant::from_u8(100)).expect("add");
-        assert_eq!(out.as_i32(), Some(300), "Byte + Byte widens past Byte");
+        assert_eq!(out.as_i16(), Some(300), "Byte + Byte widens to Integer");
         let out = add(&Variant::from_bool(true), &Variant::from_i16(1)).expect("add");
-        assert_eq!(out.as_i32(), Some(0), "True + 1 = 0");
+        assert_eq!(out.as_i16(), Some(0), "True + 1 = 0");
     }
 
     #[test]
@@ -169,9 +205,9 @@ mod tests {
     #[test]
     fn neg_byte_and_boolean_stay_integral() {
         let out = super::neg(&Variant::from_u8(5)).expect("neg");
-        assert_eq!(out.as_i32(), Some(-5), "-Byte(5) must stay integral");
+        assert_eq!(out.as_i16(), Some(-5), "-Byte(5) must widen to Integer");
         let out = super::neg(&Variant::from_bool(true)).expect("neg");
-        assert_eq!(out.as_i32(), Some(1), "-True = 1");
+        assert_eq!(out.as_i16(), Some(1), "-True = 1");
     }
 }
 
@@ -183,14 +219,20 @@ mod proptests {
     use proptest::prelude::*;
 
     proptest! {
-        /// Integer+Integer must promote to Long and produce the correct sum.
+        /// Integer+Integer must keep Integer in range and promote when necessary.
         #[test]
-        fn prop_integer_add_promotes_to_long(a: i16, b: i16) {
+        fn prop_integer_add_uses_excel_variant_ladder(a: i16, b: i16) {
             let lhs = Variant::from_i16(a);
             let rhs = Variant::from_i16(b);
             let result = add(&lhs, &rhs).expect("Integer+Integer should succeed");
-            prop_assert_eq!(result.vtype(), VarType::Long);
-            prop_assert_eq!(result.as_i32(), Some(a as i32 + b as i32));
+            let sum = a as i32 + b as i32;
+            if (i32::from(i16::MIN)..=i32::from(i16::MAX)).contains(&sum) {
+                prop_assert_eq!(result.vtype(), VarType::Integer);
+                prop_assert_eq!(result.as_i16(), Some(sum as i16));
+            } else {
+                prop_assert_eq!(result.vtype(), VarType::Long);
+                prop_assert_eq!(result.as_i32(), Some(sum));
+            }
         }
 
         /// Long+Long must produce Long when the sum fits, or Double on overflow.
