@@ -60,24 +60,23 @@ with an error-5 regression.
 ## Current Gate
 
 After the oracle-backed golden refreshes, `Round` fix, the `bd-5kqj.4`
-module-level `Const` parser fix, and the `bd-5kqj.3` compile-diagnostic fix:
+module-level `Const` parser fix, the `bd-5kqj.3` compile-diagnostic fix, and
+the `bd-5kqj.2` CVErr/Resume-state fix:
 
 - Command: `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-- Current result: 24 mismatches over 192 files.
-- Latest evidence: terminal output from the `bd-5kqj.3` closure run.
+- Current result: 21 mismatches over 192 files.
+- Latest evidence: terminal output from the `bd-5kqj.2` closure run.
 - Earlier 27-mismatch log before the `Const` fix:
   `target/conformance_basic_language_vm_after_remaining_oracle_20260702.log`
 
-The 24 remaining mismatches are classified and split as follows:
+The 21 remaining mismatch rows are classified as follows; one row
+(`for_each_array_variable_basic.bas`) intersects the composite-retained-value
+surface and the loop-variable-final-state follow-up:
 
 - `bd-5kqj.1` composite retained-value dump shape:
   array/`ReDim`/UDT rows where vm3 currently dumps structural SAFEARRAY/record
   debug values while the VBA-observable fixture target should be scalar or the
   oracle encoder must be extended.
-- `bd-5kqj.2` CVErr and error-state edge semantics:
-  `coercion_cverr_abs_normalization.bas`,
-  `error_nested_mode_transitions.bas`,
-  `regression_cverr_error_resume_bridge.bas`.
 - `bd-5kqj.5` non-VBA synthetic collection fixtures:
   `object_collection_add_item.bas`,
   `object_collection_count_chain.bas`,
@@ -100,13 +99,17 @@ The 24 remaining mismatches are classified and split as follows:
 - `cargo test -q -p oxvba-syntax function_type_suffix_rejects_explicit_return_type`
 - `cargo test -q -p oxvba-bind byval_object_param`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern default_type_param_defobj_error.bas,function_return_explicit_as_precedence_error.bas`
+- `cargo test -q -p oxvba-lib cverr_accepts_unsigned_error_code_range_only`
+- `cargo test -q -p oxvba-bind on_error_resume_next_caught_error_does_not_arm_resume`
+- `cargo test -q -p oxvba-bind cverr_out_of_range_raises_and_skips_assignment_under_resume_next`
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern coercion_cverr_abs_normalization.bas,coercion_cverr_range_predicates.bas,error_nested_mode_transitions.bas,regression_cverr_error_resume_bridge.bas`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern module_const_basic.bas`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern financial_algorithm_npv_irr_mirr_subset.bas,module_const_basic.bas,object_identity_is_nothing.bas,object_identity_is_same_and_different.bas,stdlib_array_introspection_bounds.bas,stdlib_array_introspection_types.bas,stdlib_math_primitives.bas,stdlib_random_financial_expansion.bas,stdlib_rnd_isolated.bas,string_join_array_tag_count.bas`
 - `cargo test -q -p oxvba-differential --lib vm3_golden_snapshot`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <42 scalar oracle rows>`
   - Current expected result: 3 mismatches, all split to follow-up beads.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-  - Current expected result: 24 mismatches over 192 files, all classified above.
+  - Current expected result: 21 mismatches over 192 files, all classified above.
 
 ## Fresh-Eyes Review
 
@@ -125,5 +128,15 @@ UI Automation modal capture in
 `DefObj A-Z` plus scalar call to an implicit `Object` parameter reports
 `Compile error: Type mismatch` at `Call Use(1)`, and `Function alpha%() As
 Object` reports `Compile error: Expected: end of statement` with `As` selected.
+The `bd-5kqj.2` CVErr/error-state rows now match the Excel captures:
+`On Error Resume Next` records the trapped error but does not arm a later
+`Resume`, so the explicit `Resume Next` raises error 20 while preserving the
+first `Err.Number` capture; out-of-range `CVErr` raises VBA error 5 with the
+standard `Invalid procedure call or argument` description and skips target
+assignments under `On Error Resume Next`. Fresh-eyes review also found the
+older `coercion_cverr_range_predicates.bas` golden was still blessing
+out-of-range `CVErr` as an OK value row despite the March 2026 Excel oracle
+recording runtime error 5, so that hidden legacy expectation was corrected in
+the same CVErr lane.
 No remaining mismatch is left only in chat; every residual category has an open
 bead.
