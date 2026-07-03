@@ -825,6 +825,7 @@ impl<'a> Lowerer<'a> {
                 self.cur_fault = for_pad;
                 let item_t = self.new_temp();
                 let has_t = self.new_temp();
+                let exhausted_blk = self.reserve();
                 self.emit(OxInst::ForEachNext {
                     iter: OxPlace::Temp(iter),
                     item: OxPlace::Temp(item_t),
@@ -834,7 +835,7 @@ impl<'a> Lowerer<'a> {
                     OxTerminator::Branch {
                         cond: OxOperand::temp(has_t),
                         then_blk: body_blk,
-                        else_blk: s_next,
+                        else_blk: exhausted_blk,
                     },
                     body_blk,
                 );
@@ -847,7 +848,10 @@ impl<'a> Lowerer<'a> {
                 });
                 self.lower_block(body)?;
                 self.loops.pop();
-                self.finish_to(OxTerminator::Jump(head), s_next);
+                self.finish_to(OxTerminator::Jump(head), exhausted_blk);
+                self.cur_fault = for_pad;
+                self.store_to_place(item, OxOperand::Const(OxConst::Empty))?;
+                self.finish_to(OxTerminator::Jump(s_next), s_next);
                 Ok(())
             }
             CoreStmt::RaiseEvent {

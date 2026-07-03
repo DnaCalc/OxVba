@@ -69,3 +69,23 @@ fn foreach_over_collection_control_still_iterates() {
         canon(&Variant::from_i32(5))
     );
 }
+
+#[test]
+fn foreach_over_array_clears_variant_item_on_completion() {
+    assert_eq!(
+        value(
+            "    Dim item As Variant\n    For Each item In Array(1, 2, 3)\n    Next item\n    r = item\n"
+        ),
+        canon(&Variant::empty())
+    );
+}
+
+#[test]
+fn foreach_over_collection_clears_variant_item_on_completion() {
+    assert_eq!(
+        value(
+            "    Dim item As Variant\n    Dim c As New Collection\n    c.Add 2\n    c.Add 3\n    For Each item In c\n    Next item\n    r = item\n"
+        ),
+        canon(&Variant::empty())
+    );
+}
