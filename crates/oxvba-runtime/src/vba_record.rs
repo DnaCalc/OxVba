@@ -12,7 +12,6 @@ pub enum VbaRecordFieldKind {
     Integer,
     Long,
     LongLong,
-    LongPtr,
     Byte,
     Single,
     Double,
@@ -181,7 +180,6 @@ impl VbaRecordFieldKind {
             Self::Integer => (core::mem::size_of::<i16>(), core::mem::align_of::<i16>()),
             Self::Long => (core::mem::size_of::<i32>(), core::mem::align_of::<i32>()),
             Self::LongLong => (core::mem::size_of::<i64>(), core::mem::align_of::<i64>()),
-            Self::LongPtr => pointer_shape,
             Self::Byte => (core::mem::size_of::<u8>(), core::mem::align_of::<u8>()),
             Self::Single => (core::mem::size_of::<f32>(), core::mem::align_of::<f32>()),
             Self::Double | Self::Currency | Self::Date => {
@@ -215,7 +213,6 @@ impl VbaRecordFieldKind {
             Self::Integer
             | Self::Long
             | Self::LongLong
-            | Self::LongPtr
             | Self::Byte
             | Self::Single
             | Self::Double
@@ -254,7 +251,6 @@ impl VbaRecordFieldKind {
             Self::Integer
             | Self::Long
             | Self::LongLong
-            | Self::LongPtr
             | Self::Byte
             | Self::Single
             | Self::Double
@@ -731,15 +727,6 @@ unsafe fn read_field_variant_at(
         VbaRecordFieldKind::Long => Variant::from_i32(unsafe { *ptr.cast::<i32>() }),
         // SAFETY: slot is an aligned `i64`.
         VbaRecordFieldKind::LongLong => Variant::from_i64(unsafe { *ptr.cast::<i64>() }),
-        VbaRecordFieldKind::LongPtr => {
-            if core::mem::size_of::<usize>() == 8 {
-                // SAFETY: LongPtr uses the pointer-sized carrier; slot is an aligned `isize`.
-                Variant::from_i64(unsafe { *ptr.cast::<isize>() as i64 })
-            } else {
-                // SAFETY: slot is an aligned `isize` (pointer-sized carrier).
-                Variant::from_i32(unsafe { *ptr.cast::<isize>() as i32 })
-            }
-        }
         // SAFETY: slot is a `u8`.
         VbaRecordFieldKind::Byte => Variant::from_u8(unsafe { *ptr.cast::<u8>() }),
         // SAFETY: slot is an aligned `f32`.
@@ -840,21 +827,6 @@ unsafe fn write_field_variant_at(
                 .ok_or_else(|| "LongLong record field requires LongLong value".to_string())?;
             // SAFETY: slot is an aligned `i64` (Copy scalar — direct overwrite).
             unsafe { ptr.cast::<i64>().write(value) };
-        }
-        VbaRecordFieldKind::LongPtr => {
-            if core::mem::size_of::<usize>() == 8 {
-                let value = value
-                    .as_i64()
-                    .ok_or_else(|| "LongPtr record field requires LongLong value".to_string())?;
-                // SAFETY: LongPtr uses the pointer-sized carrier; slot is an aligned `isize`.
-                unsafe { ptr.cast::<isize>().write(value as isize) };
-            } else {
-                let value = value
-                    .as_i32()
-                    .ok_or_else(|| "LongPtr record field requires Long value".to_string())?;
-                // SAFETY: slot is an aligned `isize` (pointer-sized carrier).
-                unsafe { ptr.cast::<isize>().write(value as isize) };
-            }
         }
         VbaRecordFieldKind::Byte => {
             let value = value

@@ -2233,7 +2233,6 @@ fn lset_record_field_is_byte_copyable(field: &ArrayElementType) -> bool {
         ArrayElementType::Integer
         | ArrayElementType::Long
         | ArrayElementType::LongLong
-        | ArrayElementType::LongPtr
         | ArrayElementType::Byte
         | ArrayElementType::Single
         | ArrayElementType::Double

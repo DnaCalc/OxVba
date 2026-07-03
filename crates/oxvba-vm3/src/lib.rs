@@ -416,24 +416,30 @@ impl<'h> Vm3<'h> {
     /// Initial slot value for a statically typed VBA variable. Dynamic array variables are
     /// arrays before allocation for `IsArray`, but have no SAFEARRAY descriptor/bounds until
     /// `ReDim`.
-    fn initial_value_for_type(ty: &OxTy) -> Variant {
+    fn initial_value_for_slot(ty: &OxTy, array_element: Option<&ArrayElementType>) -> Variant {
         match ty {
             OxTy::Array(element, _) => {
-                let element = Self::array_element_type_for_ox_ty(element);
+                let element = array_element
+                    .cloned()
+                    .or_else(|| Self::array_element_type_for_ox_ty(element))
+                    .unwrap_or(ArrayElementType::Variant);
                 Variant::unallocated_array(safearray_vartype_for_element(&element))
             }
             _ => Variant::empty(),
         }
     }
 
-    fn array_element_type_for_ox_ty(ty: &OxTy) -> ArrayElementType {
-        match ty {
+    fn array_element_type_for_ox_ty(ty: &OxTy) -> Option<ArrayElementType> {
+        let element = match ty {
             OxTy::Bool => ArrayElementType::Boolean,
             OxTy::Byte => ArrayElementType::Byte,
             OxTy::Integer => ArrayElementType::Integer,
             OxTy::Long => ArrayElementType::Long,
             OxTy::LongLong => ArrayElementType::LongLong,
-            OxTy::LongPtr => ArrayElementType::LongPtr,
+            // `OxTy` has no VBA target-width fact. Clean binder output supplies
+            // `array_element` metadata for declared arrays; targetless old IR falls
+            // back to Variant instead of manufacturing host-sized LongPtr storage.
+            OxTy::LongPtr => return None,
             OxTy::Single => ArrayElementType::Single,
             OxTy::Double => ArrayElementType::Double,
             OxTy::Currency => ArrayElementType::Currency,
@@ -442,7 +448,8 @@ impl<'h> Vm3<'h> {
             OxTy::FixedStr(len) => ArrayElementType::FixedString(*len as usize),
             OxTy::Variant => ArrayElementType::Variant,
             _ => ArrayElementType::Variant,
-        }
+        };
+        Some(element)
     }
 
     /// Build a program's mutable runtime tables: one leaked `&'static` runtime descriptor per
@@ -469,7 +476,9 @@ impl<'h> Vm3<'h> {
             globals: program
                 .globals
                 .iter()
-                .map(|global| Self::initial_value_for_type(&global.ty))
+                .map(|global| {
+                    Self::initial_value_for_slot(&global.ty, global.array_element.as_ref())
+                })
                 .collect(),
             class_descriptors,
             predeclared_singletons: HashMap::new(),
@@ -773,7 +782,7 @@ impl<'h> Vm3<'h> {
             locals: f
                 .locals
                 .iter()
-                .map(|local| Self::initial_value_for_type(&local.ty))
+                .map(|local| Self::initial_value_for_slot(&local.ty, local.array_element.as_ref()))
                 .collect(),
             temps: HashMap::new(),
             aliases: HashMap::new(),
@@ -2083,7 +2092,7 @@ impl<'h> Vm3<'h> {
         let mut locals: Vec<Variant> = callee
             .locals
             .iter()
-            .map(|local| Self::initial_value_for_type(&local.ty))
+            .map(|local| Self::initial_value_for_slot(&local.ty, local.array_element.as_ref()))
             .collect();
         let mut aliases = HashMap::new();
         let frame_index = self.frames.len();
@@ -5931,6 +5940,7 @@ mod tests {
             OxLocal {
                 name: name.into(),
                 ty,
+                array_element: None,
                 param,
                 escaped: false,
             }

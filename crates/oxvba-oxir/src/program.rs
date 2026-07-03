@@ -9,8 +9,8 @@
 use serde::{Deserialize, Serialize};
 
 use oxvba_bundle::{
-    BundleExport, BundleImport, ComClassExport, EventRoute, ExternalCallDescriptor, ProcedureKind,
-    ProjectMemberKind,
+    ArrayElementType, BundleExport, BundleImport, ComClassExport, EventRoute,
+    ExternalCallDescriptor, ProcedureKind, ProjectMemberKind,
 };
 
 use oxvba_com::TypeLibMemberMetadata;
@@ -35,6 +35,11 @@ pub struct OxParamInfo {
 pub struct OxLocal {
     pub name: String,
     pub ty: OxTy,
+    /// Element layout for declared array slots. This comes from the binder's
+    /// target-aware metadata; `OxTy::Array` alone does not know platform-sized
+    /// carriers such as `LongPtr`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub array_element: Option<ArrayElementType>,
     /// `Some` if this local is a parameter.
     pub param: Option<OxParamInfo>,
     /// Address-taken (`VarPtr`/`StrPtr`) or aliased ByRef into a project proc — must
@@ -48,6 +53,9 @@ pub struct OxLocal {
 pub struct OxGlobal {
     pub name: String,
     pub ty: OxTy,
+    /// Element layout for declared array slots; see [`OxLocal::array_element`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub array_element: Option<ArrayElementType>,
 }
 
 /// A compiled procedure: its typed frame and its basic-block CFG.

@@ -22,7 +22,7 @@
 //! | `Integer` | `i16` | `Integer` |
 //! | `Long` | `i32` | `Long` |
 //! | `LongLong` | `i64` | `LongLong` |
-//! | `LongPtr` | `i32`/`i64` by target | `Long`/`LongLong` by target |
+//! | `LongPtr` | target-width scalar lane; target-specific storage comes from binder metadata | `Long`/`LongLong` by target |
 //! | `Single` | `f32` | `Single` |
 //! | `Double` | `f64` | `Double` |
 //! | `Currency` | `i64` (scaled ×10_000) | `Currency` |
@@ -96,7 +96,8 @@ pub enum OxTy {
     Integer,
     Long,
     LongLong,
-    /// Target-width integer (`i32` on 32-bit, `i64` on Win64).
+    /// Target-width integer. OxIR itself carries no platform target, so target-specific
+    /// storage decisions must arrive from binder/elaboration metadata.
     LongPtr,
     Single,
     Double,

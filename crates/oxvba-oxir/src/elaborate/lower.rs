@@ -105,6 +105,7 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         .map(|g| OxGlobal {
             name: g.name.clone(),
             ty: lower_var_type(&g.ty, &resolver),
+            array_element: g.array_element.clone(),
         })
         .collect();
 
@@ -301,6 +302,7 @@ fn elaborate_proc(
         locals.push(OxLocal {
             name: p.name.clone(),
             ty: lower_var_type(&p.ty, resolver),
+            array_element: None,
             param: Some(OxParamInfo {
                 by_ref: p.by_ref,
                 variadic: p.variadic,
@@ -312,6 +314,7 @@ fn elaborate_proc(
         locals.push(OxLocal {
             name: l.name.clone(),
             ty: lower_var_type(&l.ty, resolver),
+            array_element: l.array_element.clone(),
             param: None,
             escaped: false,
         });
@@ -1112,7 +1115,9 @@ impl<'a> Lowerer<'a> {
             OxTy::Byte => NumericMode::Checked(NumericCoerceTarget::Byte),
             OxTy::Integer => NumericMode::Checked(NumericCoerceTarget::Integer),
             OxTy::Long => NumericMode::Checked(NumericCoerceTarget::Long),
-            // vm3 targets Win64, where `LongPtr` is 64-bit.
+            // TODO(bd-aprs.9.9.7): `OxTy::LongPtr` is targetless here; binder-stamped
+            // scalar ops already carry width, but For-counter mode still needs an
+            // explicit target-width fact.
             OxTy::LongLong | OxTy::LongPtr => NumericMode::Checked(NumericCoerceTarget::LongLong),
             _ => NumericMode::Widening,
         };

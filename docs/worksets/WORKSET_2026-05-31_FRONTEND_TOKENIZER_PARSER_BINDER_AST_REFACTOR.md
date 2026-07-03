@@ -769,15 +769,17 @@ Required newly explicit delivery beads:
   continuation applies the same target context to clean-bind array/record metadata: dynamic and
   fixed-array `LongPtr` elements, UDT `LongPtr` fields, fixed-array `Erase` defaults, and `VarPtr`
   scalar write-back now use `Long`-sized metadata under Win32 targets while preserving Win64
-  `LongLong`-sized behavior.
+  `LongLong`-sized behavior. A subsequent 2026-07-03 cleanup carries that target-aware array
+  metadata into OxIR locals/globals for unallocated array descriptors and removes the legacy
+  host-sized `ArrayElementType::LongPtr` / `VbaRecordFieldKind::LongPtr` storage fallback.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic and
   deterministic string-Date store subset,
   compile-time `LongPtr` `Const`/optional-default validation under non-Win64 targets
-  (`bd-aprs.9.9.5`), removal of remaining legacy host-width `ArrayElementType::LongPtr` /
-  `VbaRecordFieldKind::LongPtr` fallback surfaces (`bd-aprs.9.9.6`),
+  (`bd-aprs.9.9.5`), target-width scalar OxIR/vm3 `LongPtr` paths not already governed by
+  binder-stamped coercion/arithmetic metadata (`bd-aprs.9.9.7`),
   lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
@@ -1674,8 +1676,11 @@ Candidate bead units:
   array/UDT metadata and `VarPtr` scalar write-back are then covered by the follow-up 2026-07-03
   runtime-metadata slice for dynamic and fixed arrays, UDT fields, and fixed-array `Erase`.
   Remaining legacy host-width `ArrayElementType::LongPtr` / `VbaRecordFieldKind::LongPtr`
-  fallback removal is split to `bd-aprs.9.9.6`. Compile-time
-  `Const`/optional-default validation under non-Win64 targets is split to `bd-aprs.9.9.5`.
+  fallback removal is covered by the subsequent 2026-07-03 OxIR metadata cleanup, which carries
+  array element metadata into OxIR locals/globals and deletes those host-sized storage variants.
+  Compile-time `Const`/optional-default validation under non-Win64 targets is split to
+  `bd-aprs.9.9.5`; target-width scalar OxIR/vm3 `LongPtr` lanes not already governed by
+  binder-stamped metadata are split to `bd-aprs.9.9.7`.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding

@@ -97,6 +97,7 @@ mod tests {
             locals: vec![OxLocal {
                 name: "n".to_string(),
                 ty: OxTy::Long,
+                array_element: None,
                 param: None,
                 escaped: false,
             }],
@@ -250,12 +251,14 @@ mod tests {
                 OxLocal {
                     name: "r".to_string(),
                     ty: OxTy::Object(ObjClass::ComIface(IfaceId(0))),
+                    array_element: None,
                     param: None,
                     escaped: false,
                 },
                 OxLocal {
                     name: "result".to_string(),
                     ty: OxTy::Variant,
+                    array_element: None,
                     param: None,
                     escaped: false,
                 },

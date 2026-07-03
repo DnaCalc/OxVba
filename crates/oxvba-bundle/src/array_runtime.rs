@@ -63,13 +63,6 @@ pub fn safearray_vartype_for_element(element_type: &ArrayElementType) -> u16 {
         ArrayElementType::FixedArray { .. } => VT_VARIANT_VALUE,
         ArrayElementType::Integer => VT_I2_VALUE,
         ArrayElementType::Long => VT_I4_VALUE,
-        ArrayElementType::LongPtr => {
-            if core::mem::size_of::<usize>() == 8 {
-                VT_I8_VALUE
-            } else {
-                VT_I4_VALUE
-            }
-        }
         ArrayElementType::LongLong => VT_I8_VALUE,
         ArrayElementType::Byte => VT_UI1_VALUE,
         ArrayElementType::Single => VT_R4_VALUE,
@@ -115,13 +108,6 @@ pub fn default_array_element(element_type: &ArrayElementType) -> Variant {
         ArrayElementType::Variant => Variant::empty(),
         ArrayElementType::Integer => Variant::from_i16(0),
         ArrayElementType::Long => Variant::from_i32(0),
-        ArrayElementType::LongPtr => {
-            if core::mem::size_of::<usize>() == 8 {
-                Variant::from_i64(0)
-            } else {
-                Variant::from_i32(0)
-            }
-        }
         ArrayElementType::LongLong => Variant::from_i64(0),
         ArrayElementType::Byte => Variant::from_u8(0),
         ArrayElementType::Single => Variant::from_f32(0.0),
@@ -163,7 +149,6 @@ pub fn vba_record_field_kind(
         ArrayElementType::Integer => VbaRecordFieldKind::Integer,
         ArrayElementType::Long => VbaRecordFieldKind::Long,
         ArrayElementType::LongLong => VbaRecordFieldKind::LongLong,
-        ArrayElementType::LongPtr => VbaRecordFieldKind::LongPtr,
         ArrayElementType::Byte => VbaRecordFieldKind::Byte,
         ArrayElementType::Single => VbaRecordFieldKind::Single,
         ArrayElementType::Double => VbaRecordFieldKind::Double,

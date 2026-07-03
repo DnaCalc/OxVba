@@ -388,6 +388,48 @@ fn longptr_dynamic_array_elements_follow_win32_target_width() {
 }
 
 #[test]
+fn longptr_unallocated_dynamic_array_vartype_follows_win32_target_width() {
+    let snap = run_result_with_target(
+        "Sub Main()\n\
+         Dim a() As LongPtr\n\
+         Dim vt\n\
+         vt = VarType(a)\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 LongPtr array metadata should report vbArray + vbLong");
+    assert_eq!(snap[1], Variant::from_i32(0x2000 | 3));
+}
+
+#[test]
+fn global_longptr_unallocated_dynamic_array_vartype_follows_win32_target_width() {
+    let snap = run_result_with_target(
+        "Public a() As LongPtr\n\
+         Sub Main()\n\
+         Dim vt\n\
+         vt = VarType(a)\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 global LongPtr array metadata should report vbArray + vbLong");
+    assert_eq!(snap[1], Variant::from_i32(0x2000 | 3));
+}
+
+#[test]
+fn longptr_unallocated_dynamic_array_vartype_keeps_win64_width() {
+    let snap = run_result_with_target(
+        "Sub Main()\n\
+         Dim a() As LongPtr\n\
+         Dim vt\n\
+         vt = VarType(a)\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_64_vba7(),
+    )
+    .expect("Win64 LongPtr array metadata should report vbArray + vbLongLong");
+    assert_eq!(snap[1], Variant::from_i32(0x2000 | 20));
+}
+
+#[test]
 fn longptr_dynamic_array_element_overflows_above_long_on_win32_target() {
     let err = run_result_with_target(
         "Sub Main()\n\

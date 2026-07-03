@@ -92,7 +92,6 @@ pub enum ArrayElementType {
     Integer,
     Long,
     LongLong,
-    LongPtr,
     Byte,
     Single,
     Double,
