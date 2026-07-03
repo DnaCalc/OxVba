@@ -713,11 +713,15 @@ pub fn terminator_operands(t: &OxTerminator) -> Vec<&OxOperand> {
             number,
             source,
             description,
+            help_file,
+            help_context,
             ..
         } => {
             let mut ops = vec![number];
             ops.extend(source.iter());
             ops.extend(description.iter());
+            ops.extend(help_file.iter());
+            ops.extend(help_context.iter());
             ops
         }
         _ => Vec::new(),

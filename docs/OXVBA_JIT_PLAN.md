@@ -1,6 +1,6 @@
 # OxVba — JIT Plan
 
-**Status:** Plan (design-verified 2026-07-02; two design passes + a fresh-eyes convention sweep folded in). M4-0 baseline implementation is complete; evidence is recorded in `docs/evidence/perf/JIT_M4_BASELINE_20260703.md`.
+**Status:** Plan (design-verified 2026-07-02; two design passes + a fresh-eyes convention sweep folded in). M4-0 baseline implementation is complete; evidence is recorded in `docs/evidence/perf/JIT_M4_BASELINE_20260703.md`. M4-1 IR-prep implementation is complete; evidence is recorded in `docs/evidence/jit/JIT_M4_IR_PREP_20260703.md`.
 **Scope:** M4 — the Cranelift JIT backend: architecture, design, and implementation program, from IR-prep through full corpus parity, typed fast paths, JIT-generated COM vtables, and AOT PE export.
 **Companion documents:** `OXIR_VM3_ERROR_MODEL.md` (the normative error semantics this plan compiles), `AOT_CRANELIFT_PE_EXPORT_DESIGN_2026-06-20.md` (the AOT packaging substrate §11 builds on), `VM3_COMPLETION_AND_VM2_RETIREMENT_PLAN.md` (the predecessor plan whose workset idiom this document follows).
 
@@ -592,6 +592,7 @@ Criterion suite + vm3 numbers recorded to `docs/evidence/perf/`; corpus wall-clo
 ### M4-1 — IR-prep passes (L)
 Temp type table on `OxFunc` (`temps: Vec<OxTy>`; elaboration records at `new_temp`; `.oxi` version bump); escape analysis per §5.3 (+ escaped-temps analysis set); Assign-normalization Box/Unbox/Coerce insertion (§5.4); fixed-array shape refinement where declaration bounds are static; verifier extensions (escape soundness, Assign representation-preservation, Bool never identity-fused, fault-closure/dispatch-set domains, temp typing). **Passes always-on for both engines — one canonical image** (a JIT-only IR pipeline would mean the differential compares different programs; disqualifying).
 **Verify:** vm3 golden **byte-identical** with passes on; verifier green over every corpus image; escape corner unit tests (ParamArray alias, AsNew, ByRef-of-element). **Depends:** M4-0. ∥ M4-2.
+**Implementation note (2026-07-03):** Complete in `bd-h4oh.2`; evidence is recorded in `docs/evidence/jit/JIT_M4_IR_PREP_20260703.md`. The remaining record-layout identity cleanup needed to remove the temporary `Object(Untyped) <- Variant` assign-normalization exception is split to M4-7 follow-up bead `bd-h4oh.9.1`. The only non-green lane is the non-blocking formal runner, which could not start in the current Linux environment because PowerShell is not installed.
 
 ### M4-2 — `oxvba-rt-abi`: ExecState, ErrEngine, kernels, shims v1 (L)
 New crate per §1; extract `ErrEngine` (cells + `route_fault`) and `ExecState` (§4.1 table) out of vm3, re-point vm3; ProcInvoker seam with the vm3 adapter; run-protocol contract documented (the §2 driver sequencing); extract `maybe_drain` core, ByRef/ParamArray copy-out, and native-call marshaling out of `Vm3` methods into shared functions; **`oxvba-eval` typed-kernel facade refactor** (checked-i64 / currency-i128 / f64 kernels as public typed entry points; Variant facades delegate — one semantic kernel, two facades); shim surface v1: typed families for Checked lanes + Variant shims for Widening/dynamic, clone/release (incl. type-specific handle releases), `rt_lib_invoke`, `rt_maybe_drain`, err shims.
@@ -619,6 +620,7 @@ Generator per §9; finds land as permanent corpus programs.
 ### M4-7 — Arrays and records (M)
 SAFEARRAY element load/store (typed + Variant lanes), Bound, ReDim(Preserve), Erase, unallocated semantics; record field get/set, With receivers.
 **Verify:** array+record corpus green + balance; `array_loop`/`udt_fields` benches recorded. **Depends:** M4-6.
+**Split-in from M4-1:** bead `bd-h4oh.9.1` owns threading record-layout identities into OxIR typing and removing the temporary `Object(Untyped) <- Variant` assign-normalization exception.
 
 ### M4-8 — Objects, classes, lifecycle (L)
 New/AsNew, predeclared singletons, Is/TypeOf, member dispatch on project classes, Release{may_terminate}, DrainTerminations fixpoint through ProcInvoker (Terminate runs **compiled** code re-entrantly), project RaiseEvent → WithEvents fan-out.
@@ -684,6 +686,6 @@ Option B thunk exports for the WrappedComServer `.dll`; Option A PE-surgery expo
 
 ## Implementation-time confirmations (carried forward)
 
-1. **ParamArray element-alias copy-out**: confirm the IR (`ArrayLiteral { aliases }`) carries enough for fully caller-side static copy-out; if not, a small IR-prep addition lands in M4-1.
+1. **ParamArray element-alias copy-out**: confirmed in M4-1. `ArrayLiteral { aliases }` carries enough for caller-side static copy-out; no IR extension was needed.
 2. **`Me`-receiver convention**: mirror vm3's class-method call path exactly (hidden receiver parameter placement per §6.1).
 3. **Cranelift version pin**: record the exact crate versions at M4-3 in this document.

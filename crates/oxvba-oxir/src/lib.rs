@@ -9,6 +9,8 @@
 //! kernel.
 //!
 //! Layers:
+//! - [`analysis`] — shared backend/verifier facts derived from canonical OxIR.
+//! - [`passes`] — canonical behavior-preserving IR normalization passes.
 //! - [`ty`] — the type lattice ([`OxTy`]): the static type each value/local carries
 //!   (the information the legacy `linearize` discards).
 //! - [`ids`] — structural index newtypes.
@@ -23,23 +25,30 @@
 //!   structures from the binder's resolved tree (landing incrementally, starting with
 //!   the `VarTypeRef → OxTy` type lowering).
 
+pub mod analysis;
 pub mod com;
 pub mod elaborate;
 pub mod ids;
 pub mod image;
 pub mod inst;
+pub mod passes;
 pub mod program;
 pub mod ty;
 pub mod value;
 pub mod verify;
 
+pub use analysis::{EscapeFacts, apply_escape_analysis, escape_facts};
 pub use com::{ComInterface, ComMethodRef, ProjectIfaceMethod, ProjectInterface};
-pub use elaborate::{NameResolver, ResolvedTypeName, lower_var_type_with_longptr_width};
+pub use elaborate::{
+    NameResolver, ResolvedTypeName, lower_declared_var_type_with_longptr_width,
+    lower_var_type_with_longptr_width,
+};
 pub use ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 pub use image::{OX_IMAGE_FORMAT, OX_IMAGE_VERSION, OxImage, OxImageError};
 pub use inst::{
     ErrorHandler, OxBlock, OxInst, OxTerminator, terminator_operands, terminator_successors,
 };
+pub use passes::normalize_assigns;
 pub use program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
 pub use ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy, RecordLayoutId};
 pub use value::{
@@ -101,6 +110,7 @@ mod tests {
                 param: None,
                 escaped: false,
             }],
+            temps: vec![OxTy::Long],
             param_count: 0,
             return_local: None,
             blocks: vec![entry, landing, exit],
@@ -164,6 +174,116 @@ mod tests {
             errs.iter()
                 .any(|e| matches!(e, VerifyError::BadSuccessor { target: 42, .. })),
             "expected BadSuccessor, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_bad_fault_dispatch_seed() {
+        let mut p = sample_program();
+        p.funcs[0].blocks[1].terminator = OxTerminator::FaultDispatch {
+            resume: BlockId(99),
+            resume_next: BlockId(2),
+        };
+        let errs = verify_program(&p).expect_err("dangling fault seed must be rejected");
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, VerifyError::BadSuccessor { target: 99, .. })),
+            "expected BadSuccessor, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_bad_gosub_return_target() {
+        let mut p = sample_program();
+        p.funcs[0].blocks[0].terminator = OxTerminator::GoSub {
+            target: BlockId(1),
+            ret: BlockId(99),
+        };
+        let errs = verify_program(&p).expect_err("dangling GoSub return must be rejected");
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, VerifyError::BadSuccessor { target: 99, .. })),
+            "expected BadSuccessor, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_bad_temp_ref() {
+        let mut p = sample_program();
+        p.funcs[0].temps.clear();
+        let errs = verify_program(&p).expect_err("dangling temp must be rejected");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadTempRef {
+                    temp: 0,
+                    temps: 0,
+                    ..
+                }
+            )),
+            "expected BadTempRef, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_bad_stmt_boundary_temp_floor() {
+        let mut p = sample_program();
+        p.funcs[0].blocks[0].instrs[0] = OxInst::StmtBoundary {
+            stmt: 0,
+            clear_temps_from: 99,
+        };
+        let errs = verify_program(&p).expect_err("out-of-range temp clear floor must be rejected");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadStmtBoundaryTemp {
+                    clear_temps_from: 99,
+                    temps: 1,
+                    ..
+                }
+            )),
+            "expected BadStmtBoundaryTemp, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_stale_escape_flag() {
+        let mut p = sample_program();
+        p.funcs[0].locals[0].escaped = true;
+        let errs = verify_program(&p).expect_err("stale escape flag must be rejected");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadEscapedLocal {
+                    local: 0,
+                    expected: false,
+                    actual: true,
+                    ..
+                }
+            )),
+            "expected BadEscapedLocal, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_raw_representation_changing_assign() {
+        let mut p = sample_program();
+        p.funcs[0].blocks[0].instrs[1] = OxInst::Assign {
+            dst: OxPlace::Local(LocalId(0)),
+            value: OxOperand::Const(OxConst::Str("7".to_string())),
+        };
+        let errs =
+            verify_program(&p).expect_err("raw representation-changing Assign must be rejected");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadAssignRepresentation {
+                    dst: OxTy::Long,
+                    src: OxTy::Str,
+                    ..
+                }
+            )),
+            "expected BadAssignRepresentation, got {errs:?}"
         );
     }
 
@@ -263,6 +383,7 @@ mod tests {
                     escaped: false,
                 },
             ],
+            temps: Vec::new(),
             param_count: 0,
             return_local: None,
             blocks: vec![entry, landing],

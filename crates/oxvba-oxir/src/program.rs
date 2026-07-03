@@ -65,6 +65,9 @@ pub struct OxFunc {
     pub kind: ProcedureKind,
     /// Frame locals (parameters first), indexed by [`LocalId`].
     pub locals: Vec<OxLocal>,
+    /// Compiler temporaries, indexed by [`crate::ids::TempId`].
+    #[serde(default)]
+    pub temps: Vec<OxTy>,
     /// How many of `locals` are parameters.
     pub param_count: usize,
     /// The local holding the function/property-get result (`None` for a `Sub`).

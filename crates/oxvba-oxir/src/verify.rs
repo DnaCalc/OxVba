@@ -3,17 +3,17 @@
 //! It checks CFG well-formedness — block-id consistency, in-range terminator /
 //! fault-target / label targets, a fault landing pad for every block that contains a
 //! fallible instruction, valid entry/return/param shape, in-range func/import/class
-//! references, and that every `ComCallEarly`'s [`crate::com::ComMethodRef`] resolves
-//! (interface in range, a COM — not project — interface, member in range).
-//! Operand-level local/global/temp bounds checking, and full `OxTy`-reference checking
-//! (e.g. that an `ObjClass::ComIface(IfaceId)` indexes the interface table), are a
-//! planned addition (they need an operand/type walk over every instruction and local);
-//! this verifier establishes the graph-integrity invariants the interpreter and
-//! backend rely on.
+//! references, in-range local/global/temp references, and that every `ComCallEarly`'s
+//! [`crate::com::ComMethodRef`] resolves (interface in range, a COM — not project —
+//! interface, member in range).
 
+use crate::analysis::escape_facts;
 use crate::com::{ComInterface, ComMethodRef};
-use crate::inst::{ErrorHandler, OxAsNew, OxInst, terminator_successors};
+use crate::inst::{ErrorHandler, OxAsNew, OxInst, terminator_operands, terminator_successors};
+use crate::passes::{assign_repr_preserving, operand_ty, place_ty};
 use crate::program::{OxFunc, OxProgram};
+use crate::ty::OxTy;
+use crate::value::{OxArg, OxCallArg, OxNativeCallee, OxOperand, OxPlace};
 
 /// A single structural defect found by [`verify_program`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +64,54 @@ pub enum VerifyError {
         func: usize,
         local: usize,
         locals: usize,
+    },
+    /// A place or operand names a local outside the function frame.
+    BadLocalRef {
+        func: usize,
+        block: usize,
+        inst: Option<usize>,
+        local: usize,
+        locals: usize,
+    },
+    /// A place or operand names a global outside the program global table.
+    BadGlobalRef {
+        func: usize,
+        block: usize,
+        inst: Option<usize>,
+        global: usize,
+        globals: usize,
+    },
+    /// A place or operand names a temp outside the function temp table.
+    BadTempRef {
+        func: usize,
+        block: usize,
+        inst: Option<usize>,
+        temp: usize,
+        temps: usize,
+    },
+    /// A statement-boundary temp clear floor is beyond the function temp table.
+    BadStmtBoundaryTemp {
+        func: usize,
+        block: usize,
+        inst: usize,
+        clear_temps_from: usize,
+        temps: usize,
+    },
+    /// A local's stored escape flag disagrees with the shared escape analysis.
+    BadEscapedLocal {
+        func: usize,
+        local: usize,
+        expected: bool,
+        actual: bool,
+    },
+    /// An `Assign` copies between different machine representations without an explicit
+    /// `Box`/`Unbox`/`Coerce`.
+    BadAssignRepresentation {
+        func: usize,
+        block: usize,
+        inst: usize,
+        dst: OxTy,
+        src: OxTy,
     },
     /// A `CallProc` names a function that does not exist.
     BadProcRef {
@@ -140,6 +188,13 @@ pub enum VerifyError {
     },
 }
 
+fn site(block: usize, inst: Option<usize>) -> String {
+    match inst {
+        Some(inst) => format!("block {block} inst {inst}"),
+        None => format!("block {block} terminator"),
+    }
+}
+
 impl std::fmt::Display for VerifyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -198,6 +253,68 @@ impl std::fmt::Display for VerifyError {
             } => write!(
                 f,
                 "func {func}: return local {local} out of range ({locals} locals)"
+            ),
+            VerifyError::BadLocalRef {
+                func,
+                block,
+                inst,
+                local,
+                locals,
+            } => write!(
+                f,
+                "func {func} {}: local {local} out of range ({locals} locals)",
+                site(*block, *inst)
+            ),
+            VerifyError::BadGlobalRef {
+                func,
+                block,
+                inst,
+                global,
+                globals,
+            } => write!(
+                f,
+                "func {func} {}: global {global} out of range ({globals} globals)",
+                site(*block, *inst)
+            ),
+            VerifyError::BadTempRef {
+                func,
+                block,
+                inst,
+                temp,
+                temps,
+            } => write!(
+                f,
+                "func {func} {}: temp {temp} out of range ({temps} temps)",
+                site(*block, *inst)
+            ),
+            VerifyError::BadStmtBoundaryTemp {
+                func,
+                block,
+                inst,
+                clear_temps_from,
+                temps,
+            } => write!(
+                f,
+                "func {func} block {block} inst {inst}: StmtBoundary clear_temps_from {clear_temps_from} out of range ({temps} temps)"
+            ),
+            VerifyError::BadEscapedLocal {
+                func,
+                local,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "func {func}: local {local} escaped={actual} but escape analysis expects {expected}"
+            ),
+            VerifyError::BadAssignRepresentation {
+                func,
+                block,
+                inst,
+                dst,
+                src,
+            } => write!(
+                f,
+                "func {func} block {block} inst {inst}: Assign copies {src:?} into {dst:?} without an explicit representation conversion"
             ),
             VerifyError::BadProcRef {
                 func,
@@ -379,10 +496,22 @@ fn check_com_call_early(
 fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<VerifyError>) {
     let blocks = func.blocks.len();
     let locals = func.locals.len();
+    let temps = func.temps.len();
     let funcs = program.funcs.len();
+    let globals = program.globals.len();
     let imports = program.imports.len();
     let classes = program.classes.len();
     let com_interfaces = program.com_interfaces.as_slice();
+    let local_tys = func
+        .locals
+        .iter()
+        .map(|local| local.ty.clone())
+        .collect::<Vec<_>>();
+    let global_tys = program
+        .globals
+        .iter()
+        .map(|global| global.ty.clone())
+        .collect::<Vec<_>>();
 
     if func.entry.0 >= blocks {
         errors.push(VerifyError::BadEntry {
@@ -406,6 +535,17 @@ fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<V
             local: ret.0,
             locals,
         });
+    }
+    let escape_facts = escape_facts(func);
+    for (local_idx, (local, expected)) in func.locals.iter().zip(escape_facts.locals).enumerate() {
+        if local.escaped != expected {
+            errors.push(VerifyError::BadEscapedLocal {
+                func: fi,
+                local: local_idx,
+                expected,
+                actual: local.escaped,
+            });
+        }
     }
 
     for (bi, block) in func.blocks.iter().enumerate() {
@@ -456,6 +596,11 @@ fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<V
                 blocks,
                 errors,
             );
+            verify_inst_places(fi, bi, ii, inst, locals, globals, temps, errors);
+            verify_assign_representation(fi, bi, ii, inst, &local_tys, &global_tys, func, errors);
+        }
+        for op in terminator_operands(&block.terminator) {
+            check_operand(fi, bi, None, op, locals, globals, temps, errors);
         }
         // A fallible terminator (`Raise`/`Resume*`/`GoSubReturn`) likewise needs a fault
         // pad so the raised error can reach the enclosing statement's `On Error` handler.
@@ -549,6 +694,466 @@ fn verify_inst_refs(
         OxInst::ComCallEarly { method, .. } => {
             check_com_call_early(fi, bi, ii, *method, com_interfaces, errors);
         }
+        _ => {}
+    }
+}
+
+fn verify_assign_representation(
+    fi: usize,
+    bi: usize,
+    ii: usize,
+    inst: &OxInst,
+    locals: &[OxTy],
+    globals: &[OxTy],
+    func: &OxFunc,
+    errors: &mut Vec<VerifyError>,
+) {
+    let OxInst::Assign { dst, value } = inst else {
+        return;
+    };
+    if matches!(value, OxOperand::Const(crate::value::OxConst::Empty)) {
+        return;
+    }
+    let Some(dst_ty) = place_ty(dst, locals, globals, &func.temps) else {
+        return;
+    };
+    let Some(src_ty) = operand_ty(value, locals, globals, &func.temps) else {
+        return;
+    };
+    if !assign_repr_preserving(&dst_ty, &src_ty) {
+        errors.push(VerifyError::BadAssignRepresentation {
+            func: fi,
+            block: bi,
+            inst: ii,
+            dst: dst_ty,
+            src: src_ty,
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_inst_places(
+    fi: usize,
+    bi: usize,
+    ii: usize,
+    inst: &OxInst,
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    let site = Some(ii);
+    match inst {
+        OxInst::AsNew { place, .. } => {
+            check_place(fi, bi, site, place, locals, globals, temps, errors);
+        }
+        OxInst::Assign { dst, value } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, value, locals, globals, temps, errors);
+        }
+        OxInst::Box { dst, src, .. }
+        | OxInst::Unbox { dst, src, .. }
+        | OxInst::Coerce { dst, src, .. }
+        | OxInst::Truthy { dst, src }
+        | OxInst::Neg { dst, src, .. }
+        | OxInst::Not { dst, src }
+        | OxInst::TypeOfIs {
+            dst, object: src, ..
+        }
+        | OxInst::Ptr { dst, src, .. } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, src, locals, globals, temps, errors);
+        }
+        OxInst::ValidateAssignment { src, .. }
+        | OxInst::PredeclaredSet { value: src, .. }
+        | OxInst::PredeclaredExternSet { value: src, .. }
+        | OxInst::AddRef { object: src }
+        | OxInst::Release { object: src, .. }
+        | OxInst::ErrFieldSet { src, .. } => {
+            check_operand(fi, bi, site, src, locals, globals, temps, errors);
+        }
+        OxInst::LoadProcRef { dst, .. }
+        | OxInst::NewObject { dst, .. }
+        | OxInst::NewExtern { dst, .. }
+        | OxInst::Predeclared { dst, .. }
+        | OxInst::PredeclaredExtern { dst, .. }
+        | OxInst::NewRecord { dst, .. }
+        | OxInst::ErrFieldGet { dst, .. }
+        | OxInst::ErlGet { dst }
+        | OxInst::WithEventsNextOwner { dst } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+        }
+        OxInst::VariantChanged {
+            dst,
+            current,
+            original,
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, current, locals, globals, temps, errors);
+            check_operand(fi, bi, site, original, locals, globals, temps, errors);
+        }
+        OxInst::Arith { dst, lhs, rhs, .. }
+        | OxInst::Div { dst, lhs, rhs }
+        | OxInst::Pow { dst, lhs, rhs }
+        | OxInst::Concat { dst, lhs, rhs }
+        | OxInst::Compare { dst, lhs, rhs, .. }
+        | OxInst::CompareObjectIs { dst, lhs, rhs }
+        | OxInst::Logical { dst, lhs, rhs, .. } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, lhs, locals, globals, temps, errors);
+            check_operand(fi, bi, site, rhs, locals, globals, temps, errors);
+        }
+        OxInst::CallProc { dst, args, .. }
+        | OxInst::CallProcRef { dst, args, .. }
+        | OxInst::CallExtern { dst, args, .. } => {
+            check_opt_place(fi, bi, site, dst, locals, globals, temps, errors);
+            for arg in args {
+                check_arg(fi, bi, site, arg, locals, globals, temps, errors);
+            }
+            if let OxInst::CallProcRef { target, .. } = inst {
+                check_operand(fi, bi, site, target, locals, globals, temps, errors);
+            }
+        }
+        OxInst::CallNative {
+            dst, callee, args, ..
+        } => {
+            check_opt_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_native_callee(fi, bi, site, callee, locals, globals, temps, errors);
+            for arg in args {
+                check_call_arg(fi, bi, site, arg, locals, globals, temps, errors);
+            }
+        }
+        OxInst::CallByName {
+            dst,
+            object,
+            name,
+            calltype,
+            args,
+        } => {
+            check_opt_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, object, locals, globals, temps, errors);
+            check_operand(fi, bi, site, name, locals, globals, temps, errors);
+            check_operand(fi, bi, site, calltype, locals, globals, temps, errors);
+            for arg in args {
+                check_call_arg(fi, bi, site, arg, locals, globals, temps, errors);
+            }
+        }
+        OxInst::ComCallEarly {
+            dst, recv, args, ..
+        }
+        | OxInst::ComCallLate {
+            dst, recv, args, ..
+        } => {
+            check_opt_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, recv, locals, globals, temps, errors);
+            for arg in args {
+                check_call_arg(fi, bi, site, arg, locals, globals, temps, errors);
+            }
+        }
+        OxInst::FieldGet { dst, object, .. } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, object, locals, globals, temps, errors);
+        }
+        OxInst::FieldSet { object, value, .. } => {
+            check_operand(fi, bi, site, object, locals, globals, temps, errors);
+            check_operand(fi, bi, site, value, locals, globals, temps, errors);
+        }
+        OxInst::RecordGet { dst, record, .. } | OxInst::RecordArrayGet { dst, record, .. } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, record, locals, globals, temps, errors);
+            if let OxInst::RecordArrayGet { indices, .. } = inst {
+                check_operands(fi, bi, site, indices, locals, globals, temps, errors);
+            }
+        }
+        OxInst::RecordSet { record, value, .. }
+        | OxInst::RecordLSet { record, value }
+        | OxInst::RecordArraySet { record, value, .. } => {
+            check_place(fi, bi, site, record, locals, globals, temps, errors);
+            check_operand(fi, bi, site, value, locals, globals, temps, errors);
+            if let OxInst::RecordArraySet { indices, .. } = inst {
+                check_operands(fi, bi, site, indices, locals, globals, temps, errors);
+            }
+        }
+        OxInst::ArrayLiteral {
+            dst,
+            values,
+            aliases,
+            ..
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operands(fi, bi, site, values, locals, globals, temps, errors);
+            for place in aliases.iter().flatten() {
+                check_place(fi, bi, site, place, locals, globals, temps, errors);
+            }
+        }
+        OxInst::ArrayAppend { dst, array, item } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, array, locals, globals, temps, errors);
+            check_operand(fi, bi, site, item, locals, globals, temps, errors);
+        }
+        OxInst::ArrayRedim {
+            dst,
+            upper_bounds,
+            lower_bounds,
+            ..
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operands(fi, bi, site, upper_bounds, locals, globals, temps, errors);
+            check_operands(fi, bi, site, lower_bounds, locals, globals, temps, errors);
+        }
+        OxInst::ArrayGet {
+            dst,
+            array,
+            indices,
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, array, locals, globals, temps, errors);
+            check_operands(fi, bi, site, indices, locals, globals, temps, errors);
+        }
+        OxInst::ArraySet {
+            array,
+            indices,
+            value,
+        } => {
+            check_place(fi, bi, site, array, locals, globals, temps, errors);
+            check_operands(fi, bi, site, indices, locals, globals, temps, errors);
+            check_operand(fi, bi, site, value, locals, globals, temps, errors);
+        }
+        OxInst::FieldArrayGet {
+            dst,
+            object,
+            indices,
+            ..
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, object, locals, globals, temps, errors);
+            check_operands(fi, bi, site, indices, locals, globals, temps, errors);
+        }
+        OxInst::FieldArraySet {
+            object,
+            indices,
+            value,
+            ..
+        } => {
+            check_operand(fi, bi, site, object, locals, globals, temps, errors);
+            check_operands(fi, bi, site, indices, locals, globals, temps, errors);
+            check_operand(fi, bi, site, value, locals, globals, temps, errors);
+        }
+        OxInst::ArrayErase { array, .. } => {
+            check_place(fi, bi, site, array, locals, globals, temps, errors);
+        }
+        OxInst::Bound {
+            dst,
+            array,
+            dimension,
+            ..
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, array, locals, globals, temps, errors);
+            if let Some(dimension) = dimension {
+                check_operand(fi, bi, site, dimension, locals, globals, temps, errors);
+            }
+        }
+        OxInst::ForEachInit { iter, source } => {
+            check_place(fi, bi, site, iter, locals, globals, temps, errors);
+            check_operand(fi, bi, site, source, locals, globals, temps, errors);
+        }
+        OxInst::ForEachNext {
+            iter,
+            item,
+            has_value,
+        } => {
+            check_place(fi, bi, site, iter, locals, globals, temps, errors);
+            check_place(fi, bi, site, item, locals, globals, temps, errors);
+            check_place(fi, bi, site, has_value, locals, globals, temps, errors);
+        }
+        OxInst::WithEventsGet { dst, owner, .. }
+        | OxInst::WithEventsClearOwner { dst, owner }
+        | OxInst::WithEventsFirstOwner {
+            dst, source: owner, ..
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, owner, locals, globals, temps, errors);
+        }
+        OxInst::WithEventsSet {
+            dst, owner, value, ..
+        } => {
+            check_place(fi, bi, site, dst, locals, globals, temps, errors);
+            check_operand(fi, bi, site, owner, locals, globals, temps, errors);
+            check_operand(fi, bi, site, value, locals, globals, temps, errors);
+        }
+        OxInst::RaiseEvent { source, args, .. } => {
+            check_operand(fi, bi, site, source, locals, globals, temps, errors);
+            for arg in args {
+                check_arg(fi, bi, site, arg, locals, globals, temps, errors);
+            }
+        }
+        OxInst::StmtBoundary {
+            clear_temps_from, ..
+        } => {
+            if *clear_temps_from > temps {
+                errors.push(VerifyError::BadStmtBoundaryTemp {
+                    func: fi,
+                    block: bi,
+                    inst: ii,
+                    clear_temps_from: *clear_temps_from,
+                    temps,
+                });
+            }
+        }
+        OxInst::SetErrorHandler(_)
+        | OxInst::ClearErr
+        | OxInst::SetLineNumber { .. }
+        | OxInst::DrainTerminations => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_native_callee(
+    fi: usize,
+    bi: usize,
+    site: Option<usize>,
+    callee: &OxNativeCallee,
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    if let OxNativeCallee::Declare { ptr_writebacks, .. } = callee {
+        for writeback in ptr_writebacks {
+            check_place(
+                fi,
+                bi,
+                site,
+                &writeback.target,
+                locals,
+                globals,
+                temps,
+                errors,
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_arg(
+    fi: usize,
+    bi: usize,
+    site: Option<usize>,
+    arg: &OxArg,
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    match arg {
+        OxArg::ByVal(value) => check_operand(fi, bi, site, value, locals, globals, temps, errors),
+        OxArg::ByRef(place) => check_place(fi, bi, site, place, locals, globals, temps, errors),
+        OxArg::Omitted => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_call_arg(
+    fi: usize,
+    bi: usize,
+    site: Option<usize>,
+    arg: &OxCallArg,
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    match arg {
+        OxCallArg::Operand(value) | OxCallArg::Named { value, .. } => {
+            check_operand(fi, bi, site, value, locals, globals, temps, errors)
+        }
+        OxCallArg::ByRef(place) => check_place(fi, bi, site, place, locals, globals, temps, errors),
+        OxCallArg::Omitted | OxCallArg::Const(_) => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_operands(
+    fi: usize,
+    bi: usize,
+    site: Option<usize>,
+    operands: &[OxOperand],
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    for operand in operands {
+        check_operand(fi, bi, site, operand, locals, globals, temps, errors);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_operand(
+    fi: usize,
+    bi: usize,
+    site: Option<usize>,
+    operand: &OxOperand,
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    if let OxOperand::Use(place) = operand {
+        check_place(fi, bi, site, place, locals, globals, temps, errors);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_opt_place(
+    fi: usize,
+    bi: usize,
+    site: Option<usize>,
+    place: &Option<OxPlace>,
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    if let Some(place) = place {
+        check_place(fi, bi, site, place, locals, globals, temps, errors);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_place(
+    fi: usize,
+    bi: usize,
+    site: Option<usize>,
+    place: &OxPlace,
+    locals: usize,
+    globals: usize,
+    temps: usize,
+    errors: &mut Vec<VerifyError>,
+) {
+    match place {
+        OxPlace::Local(local) if local.0 >= locals => errors.push(VerifyError::BadLocalRef {
+            func: fi,
+            block: bi,
+            inst: site,
+            local: local.0,
+            locals,
+        }),
+        OxPlace::Global(global) if global.0 >= globals => errors.push(VerifyError::BadGlobalRef {
+            func: fi,
+            block: bi,
+            inst: site,
+            global: global.0,
+            globals,
+        }),
+        OxPlace::Temp(temp) if temp.0 >= temps => errors.push(VerifyError::BadTempRef {
+            func: fi,
+            block: bi,
+            inst: site,
+            temp: temp.0,
+            temps,
+        }),
         _ => {}
     }
 }

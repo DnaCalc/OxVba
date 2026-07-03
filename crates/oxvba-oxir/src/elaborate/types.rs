@@ -70,6 +70,36 @@ pub fn lower_var_type_with_longptr_width(
     }
 }
 
+/// Lower a declared variable/parameter/global type.
+///
+/// [`VarTypeRef::FixedArray`] is ambiguous in the bundle layer: for UDT fields it
+/// denotes inline record payload, while for ordinary declarations it denotes a
+/// fixed-size SAFEARRAY slot initialized from the declaration bounds. This helper is
+/// for the latter path, where the static rank is part of the OxIR slot type.
+pub fn lower_declared_var_type_with_longptr_width(
+    ty: &VarTypeRef,
+    r: &impl NameResolver,
+    long_ptr_width: CoreLongPtrWidth,
+) -> OxTy {
+    match ty {
+        VarTypeRef::FixedArray { element, bounds } => OxTy::Array(
+            Box::new(lower_var_type_with_longptr_width(
+                element,
+                r,
+                long_ptr_width,
+            )),
+            ArrayShape::Fixed {
+                rank: fixed_array_rank(bounds.len()),
+            },
+        ),
+        other => lower_var_type_with_longptr_width(other, r, long_ptr_width),
+    }
+}
+
+fn fixed_array_rank(rank: usize) -> u8 {
+    u8::try_from(rank).unwrap_or(u8::MAX)
+}
+
 fn lower_builtin(b: BuiltinType, long_ptr_width: CoreLongPtrWidth) -> OxTy {
     match b {
         BuiltinType::Boolean => OxTy::Bool,
@@ -129,6 +159,10 @@ mod tests {
 
     fn lower_var_type_win64(ty: &VarTypeRef, r: &impl NameResolver) -> OxTy {
         lower_var_type_with_longptr_width(ty, r, CoreLongPtrWidth::Bits64)
+    }
+
+    fn lower_declared_var_type_win64(ty: &VarTypeRef, r: &impl NameResolver) -> OxTy {
+        lower_declared_var_type_with_longptr_width(ty, r, CoreLongPtrWidth::Bits64)
     }
 
     #[test]
@@ -240,5 +274,21 @@ mod tests {
             bounds: vec![oxvba_bundle::FixedArrayBound { lower: 0, len: 4 }],
         };
         assert_eq!(lower_var_type_win64(&ty, &r), OxTy::Variant);
+    }
+
+    #[test]
+    fn declared_fixed_array_lowers_to_fixed_rank_safearray() {
+        let r = resolver();
+        let ty = VarTypeRef::FixedArray {
+            element: Box::new(VarTypeRef::Builtin(BuiltinType::Long)),
+            bounds: vec![
+                oxvba_bundle::FixedArrayBound { lower: 1, len: 4 },
+                oxvba_bundle::FixedArrayBound { lower: 0, len: 2 },
+            ],
+        };
+        assert_eq!(
+            lower_declared_var_type_win64(&ty, &r),
+            OxTy::Array(Box::new(OxTy::Long), ArrayShape::Fixed { rank: 2 })
+        );
     }
 }

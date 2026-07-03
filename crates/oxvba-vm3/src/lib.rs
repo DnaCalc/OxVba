@@ -1157,6 +1157,22 @@ impl<'h> Vm3<'h> {
                 let v = self.operand(value)?;
                 self.store(dst, v)?;
             }
+            OxInst::Box { dst, src, .. } => {
+                let v = self.operand(src)?;
+                self.store(dst, v)?;
+            }
+            OxInst::Unbox {
+                dst,
+                src,
+                to,
+                checked,
+            } => {
+                let v = self.operand(src)?;
+                if *checked && !variant_matches_ox_ty(&v, to) {
+                    return Err(Vm3Error::Fault(Fault::new(13, "type mismatch")));
+                }
+                self.store(dst, v)?;
+            }
             // `dst := (current != original)` — VBA-`Variant`-equality change detection that
             // guards a compound `ByRef` copy-out (mirrors vm2's `Op::VariantChanged`, which
             // compares with `Variant`'s `PartialEq`).
@@ -4741,6 +4757,27 @@ fn const_variant(c: &OxConst) -> Variant {
     }
 }
 
+fn variant_matches_ox_ty(value: &Variant, ty: &OxTy) -> bool {
+    match ty {
+        OxTy::Variant => true,
+        OxTy::Bool => value.vtype() == VarType::Boolean,
+        OxTy::Byte => value.vtype() == VarType::Byte,
+        OxTy::Integer => value.vtype() == VarType::Integer,
+        OxTy::Long => value.vtype() == VarType::Long,
+        OxTy::LongLong => value.vtype() == VarType::LongLong,
+        OxTy::Single => value.vtype() == VarType::Single,
+        OxTy::Double => value.vtype() == VarType::Double,
+        OxTy::Currency => value.vtype() == VarType::Currency,
+        OxTy::Date => value.vtype() == VarType::Date,
+        OxTy::Decimal => value.vtype() == VarType::Decimal,
+        OxTy::Str | OxTy::FixedStr(_) => value.vtype() == VarType::String,
+        OxTy::Object(_) => value.vtype() == VarType::Object,
+        OxTy::Record(_) => value.vtype() == VarType::Record,
+        OxTy::Array(_, _) => value.vtype() == VarType::ArrayVariant,
+        OxTy::ProcRef => value.vtype() == VarType::ProcRef,
+    }
+}
+
 /// A short label for an instruction kind (for the `Unimplemented` message).
 fn inst_kind(inst: &OxInst) -> &'static str {
     match inst {
@@ -5953,6 +5990,7 @@ mod tests {
                 ox_local("f", OxTy::ProcRef, None), // Local 1 (the AddressOf value)
                 ox_local("n", OxTy::Long, None),    // Local 2 (result, snapshot slot 2)
             ],
+            temps: Vec::new(),
             param_count: 0,
             return_local: None,
             blocks: vec![OxBlock {
@@ -5991,6 +6029,7 @@ mod tests {
                 ), // Local 0 (param)
                 ox_local("Double", OxTy::Long, None), // Local 1 (return)
             ],
+            temps: Vec::new(),
             param_count: 1,
             return_local: Some(LocalId(1)),
             blocks: vec![OxBlock {

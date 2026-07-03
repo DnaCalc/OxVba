@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// On-disk format tag for an `OxImage` artifact (rejects a stale/foreign blob via its header).
 pub const OX_IMAGE_FORMAT: &str = "oxvba.ox-image";
 /// On-disk schema version.
-pub const OX_IMAGE_VERSION: u32 = 1;
+pub const OX_IMAGE_VERSION: u32 = 2;
 
 /// A linkable image: the elaborated programs of a project closure plus the entry index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

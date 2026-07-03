@@ -55,10 +55,14 @@ use oxvba_bundle::{
 
 use oxvba_com::{TypeLibInterfaceMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata};
 
+use crate::analysis::apply_escape_analysis;
 use crate::com::{ComInterface, ComMethodRef};
-use crate::elaborate::{NameResolver, ResolvedTypeName, lower_var_type_with_longptr_width};
+use crate::elaborate::{
+    NameResolver, ResolvedTypeName, lower_declared_var_type_with_longptr_width,
+};
 use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxAsNew, OxBlock, OxInst, OxTerminator};
+use crate::passes::normalize_assigns;
 use crate::program::{
     OxClass, OxClassAsNewField, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram,
 };
@@ -104,7 +108,11 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         .iter()
         .map(|g| OxGlobal {
             name: g.name.clone(),
-            ty: lower_var_type_with_longptr_width(&g.ty, &resolver, program.long_ptr_width),
+            ty: lower_declared_var_type_with_longptr_width(
+                &g.ty,
+                &resolver,
+                program.long_ptr_width,
+            ),
             array_element: g.array_element.clone(),
         })
         .collect();
@@ -126,7 +134,7 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
 
     let classes = program.classes.iter().map(lower_class).collect();
 
-    Ok(OxProgram {
+    let mut ox_program = OxProgram {
         funcs,
         globals,
         classes,
@@ -154,7 +162,9 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         com_class_exports: program.com_class_exports.clone(),
         exports: program.exports.clone(),
         imports: program.imports.clone(),
-    })
+    };
+    normalize_assigns(&mut ox_program);
+    Ok(ox_program)
 }
 
 /// Lower a Core IR project class to its OxIR form (the index is its [`ClassId`]; the
@@ -307,7 +317,7 @@ fn elaborate_proc(
     for p in &proc.params {
         locals.push(OxLocal {
             name: p.name.clone(),
-            ty: lower_var_type_with_longptr_width(&p.ty, resolver, long_ptr_width),
+            ty: lower_declared_var_type_with_longptr_width(&p.ty, resolver, long_ptr_width),
             array_element: None,
             param: Some(OxParamInfo {
                 by_ref: p.by_ref,
@@ -319,7 +329,7 @@ fn elaborate_proc(
     for l in &proc.locals {
         locals.push(OxLocal {
             name: l.name.clone(),
-            ty: lower_var_type_with_longptr_width(&l.ty, resolver, long_ptr_width),
+            ty: lower_declared_var_type_with_longptr_width(&l.ty, resolver, long_ptr_width),
             array_element: l.array_element.clone(),
             param: None,
             escaped: false,
@@ -378,6 +388,7 @@ struct Lowerer<'a> {
     /// and of fall-through past the body.
     epilogue: BlockId,
     locals: Vec<OxLocal>,
+    temps: Vec<OxTy>,
     param_count: usize,
     next_temp: usize,
     loops: Vec<LoopCtx>,
@@ -414,6 +425,7 @@ impl<'a> Lowerer<'a> {
             cur_fault: BlockId(1),
             epilogue: BlockId(1),
             locals,
+            temps: Vec::new(),
             param_count,
             next_temp: 0,
             loops: Vec::new(),
@@ -440,8 +452,9 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn new_temp(&mut self) -> TempId {
+    fn new_temp(&mut self, ty: OxTy) -> TempId {
         let t = TempId(self.next_temp);
+        self.temps.push(ty);
         self.next_temp += 1;
         t
     }
@@ -567,15 +580,18 @@ impl<'a> Lowerer<'a> {
             .map(|b| b.ok_or_else(|| ElaborateError::Malformed("unfilled reserved block".into())))
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(OxFunc {
+        let mut func = OxFunc {
             name: proc.name.clone(),
             kind: proc.kind,
             locals: self.locals,
+            temps: self.temps,
             param_count: self.param_count,
             return_local: proc.return_local.map(|l| LocalId(l.0)),
             blocks,
             entry: BlockId(0),
-        })
+        };
+        apply_escape_analysis(&mut func);
+        Ok(func)
     }
 
     // ── Statements ───────────────────────────────────────────────────────────
@@ -758,8 +774,8 @@ impl<'a> Lowerer<'a> {
                     // `Preserve` needs the base's current array as the temp's starting
                     // value; a plain `ReDim` overwrites it, but seeding the temp keeps the
                     // redim's element type / preserve logic uniform with the simple path.
-                    let cur = self.place_as_operand(array)?;
-                    let t = self.new_temp();
+                    let (cur, arr_ty) = self.lower_place_load(array)?;
+                    let t = self.new_temp(arr_ty);
                     self.emit(OxInst::Assign {
                         dst: OxPlace::Temp(t),
                         value: cur,
@@ -793,8 +809,8 @@ impl<'a> Lowerer<'a> {
                 // element-type-aware erase for both dynamic and fixed member arrays.
                 let compound = !Self::is_simple_place(array);
                 let arr = if compound {
-                    let cur = self.place_as_operand(array)?;
-                    let t = self.new_temp();
+                    let (cur, arr_ty) = self.lower_place_load(array)?;
+                    let t = self.new_temp(arr_ty);
                     self.emit(OxInst::Assign {
                         dst: OxPlace::Temp(t),
                         value: cur,
@@ -815,8 +831,8 @@ impl<'a> Lowerer<'a> {
             }
             CoreStmt::With { id, receiver, body } => {
                 // Evaluate the receiver once into a temp the body's `WithTemp(id)` reads.
-                let (recv, _) = self.lower_value(receiver)?;
-                let t = self.new_temp();
+                let (recv, recv_ty) = self.lower_value(receiver)?;
+                let t = self.new_temp(recv_ty);
                 self.emit(OxInst::Assign {
                     dst: OxPlace::Temp(t),
                     value: recv,
@@ -838,7 +854,7 @@ impl<'a> Lowerer<'a> {
             CoreStmt::ForEach { item, source, body } => {
                 let for_pad = self.cur_fault;
                 let (src, _) = self.lower_value(source)?;
-                let iter = self.new_temp();
+                let iter = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::ForEachInit {
                     iter: OxPlace::Temp(iter),
                     source: src,
@@ -848,8 +864,8 @@ impl<'a> Lowerer<'a> {
                 self.finish_to(OxTerminator::Jump(head), head);
                 // head: advance the iterator, branch on whether a value was produced.
                 self.cur_fault = for_pad;
-                let item_t = self.new_temp();
-                let has_t = self.new_temp();
+                let item_t = self.new_temp(OxTy::Variant);
+                let has_t = self.new_temp(OxTy::Bool);
                 let exhausted_blk = self.reserve();
                 self.emit(OxInst::ForEachNext {
                     iter: OxPlace::Temp(iter),
@@ -998,7 +1014,7 @@ impl<'a> Lowerer<'a> {
     /// the enclosing statement's pad — *not* out of the pure terminator). The redundant
     /// `Truthy` on an already-Boolean comparison result is idempotent and cheap.
     fn truthy_cond(&mut self, cond: OxOperand) -> OxOperand {
-        let t = self.new_temp();
+        let t = self.new_temp(OxTy::Bool);
         self.emit(OxInst::Truthy {
             dst: OxPlace::Temp(t),
             src: cond,
@@ -1100,9 +1116,10 @@ impl<'a> Lowerer<'a> {
     /// truthiness coercion, so vm3's branch-taken value is `is_truthy(<continuation>)` —
     /// matching vm2's `JumpIfZero` truthiness on the same continuation operand.
     fn lower_loop_condition(&mut self, condition: &CoreValue, until: bool) -> Result<OxOperand> {
-        let (cond, _) = self.lower_value(condition)?;
+        let (cond, cond_ty) = self.lower_value(condition)?;
         let cond = if until {
-            let t = self.new_temp();
+            let not_ty = not_result_type(&cond_ty);
+            let t = self.new_temp(not_ty);
             self.emit(OxInst::Not {
                 dst: OxPlace::Temp(t),
                 src: cond,
@@ -1133,7 +1150,7 @@ impl<'a> Lowerer<'a> {
         // type's max (`For i As Integer = ... To 32767` raises Err 6 after the body
         // runs for 32767). A `Variant` counter promotes instead (Integer→Long), and
         // float counters effectively never hit their bound — both keep widening.
-        let step_mode = match counter_ty {
+        let step_mode = match &counter_ty {
             OxTy::Byte => NumericMode::Checked(NumericCoerceTarget::Byte),
             OxTy::Integer => NumericMode::Checked(NumericCoerceTarget::Integer),
             OxTy::Long => NumericMode::Checked(NumericCoerceTarget::Long),
@@ -1148,24 +1165,24 @@ impl<'a> Lowerer<'a> {
             value: start_op,
         });
         // limit and step are evaluated once into temps.
-        let (end_op, _) = self.lower_value(end)?;
-        let limit = self.new_temp();
+        let (end_op, end_ty) = self.lower_value(end)?;
+        let limit = self.new_temp(end_ty.clone());
         self.emit(OxInst::Assign {
             dst: OxPlace::Temp(limit),
             value: end_op,
         });
-        let step_t = self.new_temp();
-        let step_op = match step {
-            Some(s) => self.lower_value(s)?.0,
-            None => OxOperand::Const(OxConst::I16(1)),
+        let (step_op, step_ty) = match step {
+            Some(s) => self.lower_value(s)?,
+            None => (OxOperand::Const(OxConst::I16(1)), OxTy::Integer),
         };
+        let step_t = self.new_temp(step_ty.clone());
         self.emit(OxInst::Assign {
             dst: OxPlace::Temp(step_t),
             value: step_op,
         });
 
         // step >= 0 ? (fixed at entry — the step sign never changes)
-        let nonneg = self.new_temp();
+        let nonneg = self.new_temp(compare_result_type(&step_ty, &OxTy::Long));
         self.emit(OxInst::Compare {
             dst: OxPlace::Temp(nonneg),
             op: CmpOp::Ge,
@@ -1194,7 +1211,7 @@ impl<'a> Lowerer<'a> {
             asc,
         );
         // ascending: counter <= limit
-        let cond_t = self.new_temp();
+        let cond_t = self.new_temp(compare_result_type(&counter_ty, &end_ty));
         self.emit(OxInst::Compare {
             dst: OxPlace::Temp(cond_t),
             op: CmpOp::Le,
@@ -1257,9 +1274,9 @@ impl<'a> Lowerer<'a> {
         // The selector and every case's clause comparisons belong to the Select
         // statement (fault to its pad); the case bodies have their own pads.
         let select_pad = self.cur_fault;
-        let (sel, _) = self.lower_value(selector)?;
+        let (sel, sel_ty) = self.lower_value(selector)?;
         // Evaluate the selector once into a temp so each case can compare against it.
-        let sel_t = self.new_temp();
+        let sel_t = self.new_temp(sel_ty);
         self.emit(OxInst::Assign {
             dst: OxPlace::Temp(sel_t),
             value: sel,
@@ -1309,7 +1326,7 @@ impl<'a> Lowerer<'a> {
         let (sel_raw, _) = self.lower_value(selector)?;
         // Evaluate once into a temp, coerced to Long (VBA rounds the selector; a
         // non-numeric selector faults to this statement's pad — error 13).
-        let sel_t = self.new_temp();
+        let sel_t = self.new_temp(OxTy::Long);
         self.emit(OxInst::Coerce {
             dst: OxPlace::Temp(sel_t),
             src: sel_raw,
@@ -1317,7 +1334,7 @@ impl<'a> Lowerer<'a> {
         });
         let sel_op = OxOperand::temp(sel_t);
 
-        let neg_t = self.new_temp();
+        let neg_t = self.new_temp(OxTy::Bool);
         self.emit(OxInst::Compare {
             dst: OxPlace::Temp(neg_t),
             op: CmpOp::Lt,
@@ -1351,7 +1368,7 @@ impl<'a> Lowerer<'a> {
         for (i, label) in targets.iter().enumerate() {
             self.cur_fault = pad;
             let k = (i + 1) as i32;
-            let cmp_t = self.new_temp();
+            let cmp_t = self.new_temp(OxTy::Bool);
             self.emit(OxInst::Compare {
                 dst: OxPlace::Temp(cmp_t),
                 op: CmpOp::Eq,
@@ -1410,7 +1427,7 @@ impl<'a> Lowerer<'a> {
             acc = Some(match acc {
                 None => clause_bool,
                 Some(prev) => {
-                    let t = self.new_temp();
+                    let t = self.new_temp(OxTy::Variant);
                     self.emit(OxInst::Logical {
                         dst: OxPlace::Temp(t),
                         op: LogicalOp::Or,
@@ -1433,7 +1450,7 @@ impl<'a> Lowerer<'a> {
         match clause {
             coreir::CaseClause::Value(v) => {
                 let (val, _) = self.lower_value(v)?;
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::Compare {
                     dst: OxPlace::Temp(t),
                     op: CmpOp::Eq,
@@ -1445,7 +1462,7 @@ impl<'a> Lowerer<'a> {
             }
             coreir::CaseClause::Range { lo, hi } => {
                 let (lo_op, _) = self.lower_value(lo)?;
-                let ge = self.new_temp();
+                let ge = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::Compare {
                     dst: OxPlace::Temp(ge),
                     op: CmpOp::Ge,
@@ -1454,7 +1471,7 @@ impl<'a> Lowerer<'a> {
                     mode,
                 });
                 let (hi_op, _) = self.lower_value(hi)?;
-                let le = self.new_temp();
+                let le = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::Compare {
                     dst: OxPlace::Temp(le),
                     op: CmpOp::Le,
@@ -1462,7 +1479,7 @@ impl<'a> Lowerer<'a> {
                     rhs: hi_op,
                     mode,
                 });
-                let both = self.new_temp();
+                let both = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::Logical {
                     dst: OxPlace::Temp(both),
                     op: LogicalOp::And,
@@ -1476,7 +1493,7 @@ impl<'a> Lowerer<'a> {
                 let cmp = bin_cmp(*op).ok_or(ElaborateError::Malformed(
                     "Case Is with a non-comparison operator".into(),
                 ))?;
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::Compare {
                     dst: OxPlace::Temp(t),
                     op: cmp,
@@ -1522,41 +1539,42 @@ impl<'a> Lowerer<'a> {
                 let t = self.with_temps.get(id).copied().ok_or_else(|| {
                     ElaborateError::Malformed(format!("unbound With receiver temp {id}"))
                 })?;
-                // The receiver's static type is the object step's concern; Variant here.
-                Ok((OxOperand::temp(t), OxTy::Variant))
+                let ty = self.temps.get(t.0).cloned().unwrap_or(OxTy::Variant);
+                Ok((OxOperand::temp(t), ty))
             }
             CoreValue::Ptr { kind, value } => {
                 let (src, _) = self.lower_value(value)?;
-                let t = self.new_temp();
+                let ty = self.long_ptr_ty();
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::Ptr {
                     dst: OxPlace::Temp(t),
                     kind: *kind,
                     src,
                 });
                 // VarPtr/StrPtr/ObjPtr yield a pointer-width integer.
-                Ok((OxOperand::temp(t), self.long_ptr_ty()))
+                Ok((OxOperand::temp(t), ty))
             }
             CoreValue::ErrField(field) => {
-                let t = self.new_temp();
-                self.emit(OxInst::ErrFieldGet {
-                    dst: OxPlace::Temp(t),
-                    field: *field,
-                });
                 let ty = match field {
                     ErrField::Number | ErrField::HelpContext | ErrField::LastDllError => OxTy::Long,
                     ErrField::Description | ErrField::Source | ErrField::HelpFile => OxTy::Str,
                 };
+                let t = self.new_temp(ty.clone());
+                self.emit(OxInst::ErrFieldGet {
+                    dst: OxPlace::Temp(t),
+                    field: *field,
+                });
                 Ok((OxOperand::temp(t), ty))
             }
             CoreValue::Erl => {
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Long);
                 self.emit(OxInst::ErlGet {
                     dst: OxPlace::Temp(t),
                 });
                 Ok((OxOperand::temp(t), OxTy::Long))
             }
             CoreValue::AddressOf(proc) => {
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::ProcRef);
                 self.emit(OxInst::LoadProcRef {
                     dst: OxPlace::Temp(t),
                     proc: FuncId(proc.0),
@@ -1567,28 +1585,30 @@ impl<'a> Lowerer<'a> {
             // object reference (the binder's `New`s on the active project carry a
             // resolved `ClassId`). `Class_Initialize` runs at construction (fallible).
             CoreValue::New(class) => {
-                let t = self.new_temp();
                 let class = ClassId(class.0);
+                let ty = OxTy::Object(ObjClass::Class(class));
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::NewObject {
                     dst: OxPlace::Temp(t),
                     class,
                 });
-                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Class(class))))
+                Ok((OxOperand::temp(t), ty))
             }
             // `New <referenced class>` — an instance of a class in another bundle. Its
             // class table is unavailable here, so the receiver is an untyped reference
             // (dispatched late / cross-bundle).
             CoreValue::NewExtern { import } => {
-                let t = self.new_temp();
+                let ty = OxTy::Object(ObjClass::Untyped);
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::NewExtern {
                     dst: OxPlace::Temp(t),
                     import: ImportId(*import),
                 });
-                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
+                Ok((OxOperand::temp(t), ty))
             }
             CoreValue::TypeOfIs { object, type_name } => {
                 let (obj, _) = self.lower_value(object)?;
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Bool);
                 self.emit(OxInst::TypeOfIs {
                     dst: OxPlace::Temp(t),
                     object: obj,
@@ -1623,7 +1643,7 @@ impl<'a> Lowerer<'a> {
                     Some(d) => Some(self.lower_value(d)?.0),
                     None => None,
                 };
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Long);
                 self.emit(OxInst::Bound {
                     dst: OxPlace::Temp(t),
                     which: *which,
@@ -1633,7 +1653,7 @@ impl<'a> Lowerer<'a> {
                 Ok((OxOperand::temp(t), OxTy::Long))
             }
             CoreValue::NewRecord { fields } => {
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::NewRecord {
                     dst: OxPlace::Temp(t),
                     fields: fields.clone(),
@@ -1644,21 +1664,23 @@ impl<'a> Lowerer<'a> {
             }
             // A `VB_PredeclaredId` class → its lazily-created global singleton instance.
             CoreValue::Predeclared { class } => {
-                let t = self.new_temp();
                 let class = ClassId(class.0);
+                let ty = OxTy::Object(ObjClass::Class(class));
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::Predeclared {
                     dst: OxPlace::Temp(t),
                     class,
                 });
-                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Class(class))))
+                Ok((OxOperand::temp(t), ty))
             }
             CoreValue::PredeclaredExtern { import } => {
-                let t = self.new_temp();
+                let ty = OxTy::Object(ObjClass::Untyped);
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::PredeclaredExtern {
                     dst: OxPlace::Temp(t),
                     import: ImportId(*import),
                 });
-                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
+                Ok((OxOperand::temp(t), ty))
             }
         }
     }
@@ -1670,34 +1692,25 @@ impl<'a> Lowerer<'a> {
         num: NumericMode,
     ) -> Result<(OxOperand, OxTy)> {
         let (src, src_ty) = self.lower_value(expr)?;
-        let t = self.new_temp();
-        let (inst, ty) = match op {
-            CoreUnOp::Negate => (
-                OxInst::Neg {
-                    dst: OxPlace::Temp(t),
-                    src,
-                    mode: num,
-                },
-                numeric_result_type(num),
-            ),
+        let ty = match op {
+            CoreUnOp::Negate => numeric_result_type(num),
+            CoreUnOp::Not => not_result_type(&src_ty),
+        };
+        let t = self.new_temp(ty.clone());
+        let inst = match op {
+            CoreUnOp::Negate => OxInst::Neg {
+                dst: OxPlace::Temp(t),
+                src,
+                mode: num,
+            },
             // `Not` is logical on a Boolean (→ Boolean) and bitwise otherwise: a
             // non-integer operand is coerced to an integer, so the result is `Long`
             // (matching the binder), never the operand's own type — and `Variant` stays
             // `Variant` (a `Not Null` is `Null`).
-            CoreUnOp::Not => {
-                let ty = match src_ty {
-                    OxTy::Bool => OxTy::Bool,
-                    OxTy::Variant => OxTy::Variant,
-                    _ => OxTy::Long,
-                };
-                (
-                    OxInst::Not {
-                        dst: OxPlace::Temp(t),
-                        src,
-                    },
-                    ty,
-                )
-            }
+            CoreUnOp::Not => OxInst::Not {
+                dst: OxPlace::Temp(t),
+                src,
+            },
         };
         self.emit(inst);
         Ok((OxOperand::temp(t), ty))
@@ -1713,10 +1726,30 @@ impl<'a> Lowerer<'a> {
     ) -> Result<(OxOperand, OxTy)> {
         let (l, l_ty) = self.lower_value(lhs)?;
         let (r, r_ty) = self.lower_value(rhs)?;
-        let t = self.new_temp();
+        let ty = match op {
+            CoreBinOp::Add
+            | CoreBinOp::Sub
+            | CoreBinOp::Mul
+            | CoreBinOp::IntDiv
+            | CoreBinOp::Mod => numeric_result_type(num),
+            CoreBinOp::Div | CoreBinOp::Pow => OxTy::Double,
+            CoreBinOp::Concat => OxTy::Str,
+            CoreBinOp::Eq
+            | CoreBinOp::Ne
+            | CoreBinOp::Lt
+            | CoreBinOp::Le
+            | CoreBinOp::Gt
+            | CoreBinOp::Ge => compare_result_type(&l_ty, &r_ty),
+            CoreBinOp::And | CoreBinOp::Or | CoreBinOp::Xor | CoreBinOp::Eqv | CoreBinOp::Imp => {
+                OxTy::Variant
+            }
+            CoreBinOp::Is => OxTy::Bool,
+            CoreBinOp::Like => OxTy::Variant,
+        };
+        let t = self.new_temp(ty.clone());
         let dst = OxPlace::Temp(t);
 
-        let ty = match op {
+        match op {
             CoreBinOp::Add
             | CoreBinOp::Sub
             | CoreBinOp::Mul
@@ -1730,7 +1763,6 @@ impl<'a> Lowerer<'a> {
                     rhs: r,
                     mode: num,
                 });
-                numeric_result_type(num)
             }
             CoreBinOp::Div => {
                 self.emit(OxInst::Div {
@@ -1738,7 +1770,6 @@ impl<'a> Lowerer<'a> {
                     lhs: l,
                     rhs: r,
                 });
-                OxTy::Double
             }
             CoreBinOp::Pow => {
                 self.emit(OxInst::Pow {
@@ -1746,7 +1777,6 @@ impl<'a> Lowerer<'a> {
                     lhs: l,
                     rhs: r,
                 });
-                OxTy::Double
             }
             CoreBinOp::Concat => {
                 self.emit(OxInst::Concat {
@@ -1754,7 +1784,6 @@ impl<'a> Lowerer<'a> {
                     lhs: l,
                     rhs: r,
                 });
-                OxTy::Str
             }
             CoreBinOp::Eq
             | CoreBinOp::Ne
@@ -1770,13 +1799,6 @@ impl<'a> Lowerer<'a> {
                     rhs: r,
                     mode,
                 });
-                // A comparison yields Boolean for non-Variant operands, but can yield
-                // Null (a Variant) when an operand could be Null.
-                if l_ty.is_variant() || r_ty.is_variant() {
-                    OxTy::Variant
-                } else {
-                    OxTy::Bool
-                }
             }
             CoreBinOp::And | CoreBinOp::Or | CoreBinOp::Xor | CoreBinOp::Eqv | CoreBinOp::Imp => {
                 let lop = logical_op(op).expect("logical op");
@@ -1786,9 +1808,6 @@ impl<'a> Lowerer<'a> {
                     lhs: l,
                     rhs: r,
                 });
-                // Bitwise-or-logical result type follows the numeric/bool lattice;
-                // conservatively Variant (refined when the typed lattice lands).
-                OxTy::Variant
             }
             CoreBinOp::Is => {
                 self.emit(OxInst::CompareObjectIs {
@@ -1796,7 +1815,6 @@ impl<'a> Lowerer<'a> {
                     lhs: l,
                     rhs: r,
                 });
-                OxTy::Bool
             }
             CoreBinOp::Like => {
                 // vm2 routes `a Like b` to the bespoke native `Like` builtin with a trailing
@@ -1815,7 +1833,6 @@ impl<'a> Lowerer<'a> {
                         OxCallArg::Const(mode_flag),
                     ],
                 });
-                OxTy::Variant
             }
         };
         Ok((OxOperand::temp(t), ty))
@@ -1843,7 +1860,7 @@ impl<'a> Lowerer<'a> {
                 (OxCoerceTarget::ImplicitVariant, OxTy::Variant)
             }
         };
-        let t = self.new_temp();
+        let t = self.new_temp(ty.clone());
         self.emit(OxInst::Coerce {
             dst: OxPlace::Temp(t),
             src,
@@ -1860,7 +1877,7 @@ impl<'a> Lowerer<'a> {
         callee: &coreir::CoreCallee,
         args: &[CoreArg],
     ) -> Result<(OxOperand, OxTy)> {
-        let t = self.new_temp();
+        let t = self.new_temp(OxTy::Variant);
         self.lower_call_into(Some(OxPlace::Temp(t)), callee, args)?;
         Ok((OxOperand::temp(t), OxTy::Variant))
     }
@@ -2017,13 +2034,13 @@ impl<'a> Lowerer<'a> {
             // Copy the place's current value into a fresh temp (the aliased ByRef slot), and
             // a SECOND `original` snapshot temp captured at copy-in, so the post-call
             // write-back can be change-gated (vm2's `Op::Copy` of `tmp` into `original`).
-            let value = self.place_as_operand(place)?;
-            let t = self.new_temp();
+            let (value, value_ty) = self.lower_place_load(place)?;
+            let t = self.new_temp(value_ty.clone());
             self.emit(OxInst::Assign {
                 dst: OxPlace::Temp(t),
                 value,
             });
-            let orig = self.new_temp();
+            let orig = self.new_temp(value_ty);
             self.emit(OxInst::Assign {
                 dst: OxPlace::Temp(orig),
                 value: OxOperand::Use(OxPlace::Temp(t)),
@@ -2114,7 +2131,7 @@ impl<'a> Lowerer<'a> {
     /// store-block when changed (else straight to the merge), then a merge continuation.
     fn emit_arg_writebacks(&mut self, writebacks: Vec<ArgWriteback>) -> Result<()> {
         for wb in writebacks {
-            let changed = self.new_temp();
+            let changed = self.new_temp(OxTy::Bool);
             self.emit(OxInst::VariantChanged {
                 dst: OxPlace::Temp(changed),
                 current: OxOperand::Use(wb.temp),
@@ -2171,7 +2188,7 @@ impl<'a> Lowerer<'a> {
                 None => lowered_aliases.push(None),
             }
         }
-        let t = self.new_temp();
+        let t = self.new_temp(OxTy::Array(Box::new(OxTy::Variant), ArrayShape::Dynamic));
         self.emit(OxInst::ArrayLiteral {
             dst: OxPlace::Temp(t),
             values: ops,
@@ -2216,7 +2233,7 @@ impl<'a> Lowerer<'a> {
                 if let coreir::CorePlace::Field { object, field } = array.as_ref() {
                     let obj = self.lower_value(object)?.0;
                     let indices = self.lower_indices(indices)?;
-                    let t = self.new_temp();
+                    let t = self.new_temp(OxTy::Variant);
                     self.emit(OxInst::FieldArrayGet {
                         dst: OxPlace::Temp(t),
                         object: obj,
@@ -2231,7 +2248,7 @@ impl<'a> Lowerer<'a> {
                 if let coreir::CorePlace::RecordField { base, index } = array.as_ref() {
                     let rec = self.lower_place_load(base)?.0;
                     let indices = self.lower_indices(indices)?;
-                    let t = self.new_temp();
+                    let t = self.new_temp(OxTy::Variant);
                     self.emit(OxInst::RecordArrayGet {
                         dst: OxPlace::Temp(t),
                         record: rec,
@@ -2247,7 +2264,7 @@ impl<'a> Lowerer<'a> {
                     OxTy::Array(elem, _) => *elem,
                     _ => OxTy::Variant,
                 };
-                let t = self.new_temp();
+                let t = self.new_temp(elem_ty.clone());
                 self.emit(OxInst::ArrayGet {
                     dst: OxPlace::Temp(t),
                     array: arr,
@@ -2257,7 +2274,7 @@ impl<'a> Lowerer<'a> {
             }
             coreir::CorePlace::RecordField { base, index } => {
                 let rec = self.lower_place_load(base)?.0;
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::RecordGet {
                     dst: OxPlace::Temp(t),
                     record: rec,
@@ -2268,7 +2285,7 @@ impl<'a> Lowerer<'a> {
             }
             coreir::CorePlace::Field { object, field } => {
                 let obj = self.lower_value(object)?.0;
-                let t = self.new_temp();
+                let t = self.new_temp(OxTy::Variant);
                 self.emit(OxInst::FieldGet {
                     dst: OxPlace::Temp(t),
                     object: obj,
@@ -2280,31 +2297,34 @@ impl<'a> Lowerer<'a> {
             }
             coreir::CorePlace::WithEvents { owner, binding } => {
                 let own = self.lower_value(owner)?.0;
-                let t = self.new_temp();
+                let ty = OxTy::Object(ObjClass::Untyped);
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::WithEventsGet {
                     dst: OxPlace::Temp(t),
                     owner: own,
                     binding: *binding,
                 });
                 // The sink holds an object reference.
-                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
+                Ok((OxOperand::temp(t), ty))
             }
             coreir::CorePlace::Predeclared { class } => {
-                let t = self.new_temp();
                 let class = ClassId(class.0);
+                let ty = OxTy::Object(ObjClass::Class(class));
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::Predeclared {
                     dst: OxPlace::Temp(t),
                     class,
                 });
-                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Class(class))))
+                Ok((OxOperand::temp(t), ty))
             }
             coreir::CorePlace::PredeclaredExtern { import } => {
-                let t = self.new_temp();
+                let ty = OxTy::Object(ObjClass::Untyped);
+                let t = self.new_temp(ty.clone());
                 self.emit(OxInst::PredeclaredExtern {
                     dst: OxPlace::Temp(t),
                     import: ImportId(*import),
                 });
-                Ok((OxOperand::temp(t), OxTy::Object(ObjClass::Untyped)))
+                Ok((OxOperand::temp(t), ty))
             }
         }
     }
@@ -2400,7 +2420,7 @@ impl<'a> Lowerer<'a> {
                 let own = self.lower_value(owner)?.0;
                 // The sink store yields the previously-bound sink (released by the
                 // assignment); a fresh temp receives it.
-                let dst = self.new_temp();
+                let dst = self.new_temp(OxTy::Object(ObjClass::Untyped));
                 self.emit(OxInst::WithEventsSet {
                     dst: OxPlace::Temp(dst),
                     owner: own,
@@ -2478,18 +2498,14 @@ impl<'a> Lowerer<'a> {
         if Self::is_simple_place(base) {
             Ok((self.simple_place(base)?, false))
         } else {
-            let value = self.place_as_operand(base)?;
-            let t = self.new_temp();
+            let (value, value_ty) = self.lower_place_load(base)?;
+            let t = self.new_temp(value_ty);
             self.emit(OxInst::Assign {
                 dst: OxPlace::Temp(t),
                 value,
             });
             Ok((OxPlace::Temp(t), true))
         }
-    }
-
-    fn place_as_operand(&mut self, place: &coreir::CorePlace) -> Result<OxOperand> {
-        Ok(self.lower_place_load(place)?.0)
     }
 }
 
@@ -2540,6 +2556,22 @@ fn numeric_result_type(mode: NumericMode) -> OxTy {
     match mode {
         NumericMode::Checked(t) => numeric_coerce_type(t),
         NumericMode::Widening => OxTy::Variant,
+    }
+}
+
+fn not_result_type(src: &OxTy) -> OxTy {
+    match src {
+        OxTy::Bool => OxTy::Bool,
+        OxTy::Variant => OxTy::Variant,
+        _ => OxTy::Long,
+    }
+}
+
+fn compare_result_type(lhs: &OxTy, rhs: &OxTy) -> OxTy {
+    if lhs.is_variant() || rhs.is_variant() {
+        OxTy::Variant
+    } else {
+        OxTy::Bool
     }
 }
 
@@ -2601,8 +2633,9 @@ mod tests {
         ErrField, ErrorOp, LocalId as CoreLocalId, ProcId as CoreProcId, PtrKind,
     };
     use oxvba_bundle::{
-        ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, NativeImplId,
-        NumericCoerceTarget, ProcedureKind, ProjectMemberKind, StringCompareMode, VarTypeRef,
+        ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, FixedArrayBound,
+        NativeImplId, NumericCoerceTarget, ProcedureKind, ProjectMemberKind, StringCompareMode,
+        VarTypeRef,
     };
 
     fn long_local(name: &str) -> CoreLocal {
@@ -3244,6 +3277,27 @@ mod tests {
         assert_eq!(
             f.locals[0].ty,
             OxTy::Array(Box::new(OxTy::Long), ArrayShape::Dynamic)
+        );
+    }
+
+    #[test]
+    fn fixed_array_declaration_records_static_rank() {
+        let locals = vec![CoreLocal {
+            name: "a".to_string(),
+            ty: VarTypeRef::FixedArray {
+                element: Box::new(VarTypeRef::Builtin(BuiltinType::Long)),
+                bounds: vec![
+                    FixedArrayBound { lower: 1, len: 3 },
+                    FixedArrayBound { lower: 0, len: 4 },
+                ],
+            },
+            array_element: Some(ArrayElementType::Long),
+        }];
+        let oxp = elaborate(&program(sub("Main", locals, Vec::new()))).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+        assert_eq!(
+            oxp.funcs[0].locals[0].ty,
+            OxTy::Array(Box::new(OxTy::Long), ArrayShape::Fixed { rank: 2 })
         );
     }
 
