@@ -53,15 +53,19 @@ use oxvba_eval::arith::{self, ArithError};
 use oxvba_eval::collection::{CollectionError, CollectionMethod, dispatch_collection};
 use oxvba_hal::HostServices;
 use oxvba_hal::traits::DynLinkDescriptorView;
-use oxvba_lib::LibContext;
 use oxvba_oxir::inst::OxAsNew;
 use oxvba_oxir::value::{
     ArithOp, BoundWhich, CmpOp, ErrField, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
     OxNativeCallee, OxOperand, OxPlace, PtrKind, PtrWritebackKind,
 };
 use oxvba_oxir::{
-    BlockId, ErrorHandler, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator,
-    OxTy,
+    BlockId, FuncId, ImportId, LocalId, OxBlock, OxInst, OxProgram, OxTerminator, OxTy,
+};
+use oxvba_rt_abi::{
+    ComEventSink, ErrorMode, EventBinding, ExecState, Fault, FaultAction, LoadedProgram,
+    MarshalArgRef, ProcInvoker, ResumePoint, ResumeTarget, SavedErrState, apply_byref_writebacks,
+    apply_optional_byref_writebacks, marshal_ox_args, marshal_ox_call_args, take_termination_batch,
+    variant_changed,
 };
 use oxvba_runtime::object_ref::{
     ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassDescriptor,
@@ -91,77 +95,6 @@ static VBA_COLLECTION_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescripto
     interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
 };
 
-/// Project-instance ids start above any class route key (a class's route key is its index),
-/// so `compat_identity != route_key` — every allocation reads as a true project instance, not
-/// a template/compat object. Mirrors vm2's `INSTANCE_ID_BASE`.
-const INSTANCE_ID_BASE: i32 = 0x1000_0000;
-
-/// A run-time fault carrying the `Err` state it populates: the VBA error code
-/// (`Err.Number`), message (`Err.Description`), and optional explicit rich fields.
-/// Missing fields take VBA defaults at raise time, unless `Err.Raise` inheritance
-/// supplied them before the fault was routed.
-#[derive(Debug, Clone)]
-pub struct Fault {
-    pub code: i32,
-    pub message: String,
-    pub source: Option<String>,
-    pub help_file: Option<String>,
-    pub help_context: Option<i32>,
-}
-
-impl Fault {
-    /// A fault with an explicit VBA error code and message (no explicit `Err.Source`, so it
-    /// takes the raise-time default — the project name). Used by the array/record ops, which
-    /// raise specific codes (subscript out of range 9, type mismatch 13, out of memory 7).
-    fn new(code: i32, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-            source: None,
-            help_file: None,
-            help_context: None,
-        }
-    }
-    fn from_arith(e: ArithError) -> Self {
-        Self {
-            code: e.code,
-            message: e.message,
-            source: None,
-            help_file: None,
-            help_context: None,
-        }
-    }
-    /// A bare untyped runtime-helper message (e.g. a pointer-registry failure) — VBA
-    /// type mismatch (13), matching vm2's `Fault::from_string`.
-    fn from_string(message: String) -> Self {
-        Self::new(13, message)
-    }
-    /// A built-in library error already carries its VBA error code structurally.
-    fn from_lib(e: oxvba_lib::LibError) -> Self {
-        Self {
-            code: e.code,
-            message: e.message,
-            source: None,
-            help_file: None,
-            help_context: None,
-        }
-    }
-    /// A HAL fault (a `Declare Lib` native call, and — from M3-8 — a COM dispatch) carries
-    /// the real VBA `Err.Number` it recovered from the underlying HRESULT/`EXCEPINFO` in
-    /// `host_error_code`; absent one, fall back to VBA error 5 ("invalid procedure call or
-    /// argument"). This threads the rich number through — never flattening every host fault
-    /// to 5 — exactly as vm2's `Fault::from_hal`.
-    fn from_hal(e: oxvba_hal::HalError) -> Self {
-        Self {
-            code: e.host_error_code.unwrap_or(5),
-            message: e.message,
-            source: None,
-            help_file: None,
-            help_context: None,
-        }
-    }
-}
-
 /// A failure to execute an OxIR program on vm3.
 #[derive(Debug, Clone)]
 pub enum Vm3Error {
@@ -186,35 +119,6 @@ impl std::fmt::Display for Vm3Error {
 }
 
 impl std::error::Error for Vm3Error {}
-
-/// The active `On Error` **handler policy** of a procedure activation (MS-VBAL §5.4.4).
-/// This is the spec's policy only — the orthogonal "active error" liveness is the
-/// separate [`Vm3::active_error`] latch (vm2 conflates the two, the root of several
-/// divergences; see `docs/OXIR_VM3_ERROR_MODEL.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ErrorMode {
-    /// Default: an unhandled fault propagates to the caller.
-    None,
-    /// `On Error Resume Next`.
-    ResumeNext,
-    /// `On Error GoTo <label>` — the handler block.
-    Goto(BlockId),
-}
-
-/// The seeds a `Resume`/`Resume Next` uses, captured from the firing `FaultDispatch`:
-/// `resume` is the faulting statement's start block, `resume_next` the next statement's.
-/// Holding `Some` is exactly the spec's "active error" liveness for the activation.
-#[derive(Debug, Clone, Copy)]
-struct ResumePoint {
-    resume: BlockId,
-    resume_next: BlockId,
-    /// The handler policy active when the error was caught. A `Goto` catch demotes
-    /// `error_mode` to `None` (single-shot *while in the handler*, so a re-raise there
-    /// propagates); `Resume`/`Resume Next`/`Resume <label>` then RE-ARM this handler on
-    /// the way out, so a fault after the resume is caught again (standard VBA — the
-    /// demotion is only for the duration of the handler).
-    handler: ErrorMode,
-}
 
 /// A resolved runtime storage location on the frame stack — what an [`OxPlace`]
 /// denotes once ByRef aliasing is applied. `Local`/`Temp` name a specific frame by
@@ -249,17 +153,6 @@ fn is_cleared_temp(loc: Loc, frame_index: usize, first_temp: usize) -> bool {
 struct ForEachState {
     elements: Vec<Variant>,
     position: usize,
-}
-
-/// A `WithEvents` binding: the sink instance that declared `WithEvents` (`owner`, the `me`
-/// a fired handler runs against), the event-source object it currently holds (`source`), and
-/// the current subscription sequence (`order`). Reassigning the same field creates a fresh
-/// subscription order, matching VBA fan-out.
-/// Keyed in [`Vm3::withevents`] by `withevents_key(owner, binding-token)`.
-struct EventBinding {
-    owner: Variant,
-    source: Variant,
-    order: u64,
 }
 
 /// One procedure activation: its dispatch position, value slots, ByRef aliasing, and
@@ -304,67 +197,15 @@ struct Frame {
     gosub_stack: Vec<BlockId>,
 }
 
-/// The `Err` object's observable state.
-#[derive(Debug, Clone, Default)]
-struct ErrState {
-    number: i32,
-    description: String,
-    source: String,
-    help_file: String,
-    help_context: i32,
-    inherit_fields: bool,
-}
-
-/// A live host (COM) event subscription: which sink handler to invoke when the host delivers a
-/// callback for this subscription. Mirrors vm2's `ComEventSink`.
-struct ComEventSink {
-    owner: Variant,
-    handler: usize,
-}
-
-/// One linked program's mutable runtime tables (one per VBA project). A whole VBA *project*
-/// is exactly one `OxProgram`, so the common case is a single `LoadedProgram`; the vector in
-/// [`Vm3`] exists so cross-project references (project A → project B's classes/procs) can
-/// co-reside in one VM — the remaining W2 work layers program-aware dispatch on top of this.
-struct LoadedProgram<'h> {
-    program: &'h OxProgram,
-    /// Module-global slots (dense, sized `program.globals.len()`).
-    globals: Vec<Variant>,
-    /// Per-class leaked `&'static` runtime descriptors (1:1 with `program.classes`) —
-    /// `ObjectRef::from_project_instance` requires a `'static` descriptor (vm2 leaks the same).
-    class_descriptors: Vec<&'static RuntimeClassDescriptor>,
-    /// `VB_PredeclaredId` singleton cache, keyed by class index (allocate-once + run
-    /// `Class_Initialize` once), mirroring vm2's per-bundle `predeclared_singletons`.
-    predeclared_singletons: HashMap<usize, Variant>,
-    /// `(binding-token, event-id) → handler proc index`, built from `program.event_routes`.
-    event_routes: HashMap<(i32, i32), usize>,
-}
-
 /// The vm3 interpreter over one or more typed OxIR programs.
 pub struct Vm3<'h> {
-    /// The linked programs (one per VBA project). `cur` selects the executing one.
-    programs: Vec<LoadedProgram<'h>>,
     /// Index into `programs` of the executing program (`0` for single-project activation).
     cur: usize,
-    host: &'h dyn HostServices,
-    lib: LibContext,
+    /// Shared runtime state below vm3 and the JIT.
+    exec: ExecState<'h>,
     /// The activation stack. `frames[0]` is the entry (`Main`) frame and is never
     /// popped — it backs the result snapshot; deeper frames are `CallProc` callees.
     frames: Vec<Frame>,
-    /// The current activation's `On Error` handler policy (saved/restored per frame).
-    error_mode: ErrorMode,
-    /// The current activation's "active error" latch (the spec's per-activation fault
-    /// state): `Some` while an error is being handled, carrying the `Resume` seeds.
-    /// Gates `Resume` legality (empty ⇒ error 20) and is cleared by `Resume*`/`Exit *`.
-    active_error: Option<ResumePoint>,
-    err: ErrState,
-    /// The standalone VBA `Erl` value: line number of the most recent trapped error
-    /// in the catching activation, or 0 before any trapped error.
-    erl_line: i32,
-    /// `Err.LastDllError` — refreshed after a `Declare Lib` call (M3); `0` until then.
-    last_dll_error: i32,
-    /// The fault currently being routed (set when a fallible op transfers to a pad).
-    pending_fault: Option<Fault>,
     /// `For Each` iterator state, keyed by the loop variable's resolved [`Loc`] (so
     /// reentrant/nested loops that reuse a slot number never alias) — mirrors vm2's
     /// `for_each` map.
@@ -375,34 +216,6 @@ pub struct Vm3<'h> {
     /// `As New` object slots, keyed by the resolved storage location. A read of
     /// one of these slots creates a fresh instance when the slot is Empty/Nothing.
     as_new_slots: HashMap<Loc, OxAsNew>,
-    /// Monotonic project-instance id counter (starts at [`INSTANCE_ID_BASE`]).
-    next_instance_id: i32,
-    /// Re-entrancy guard for [`Vm3::maybe_drain`] (a `Class_Terminate` can itself drop the
-    /// last reference to another object — the guard keeps the drain a single fixpoint loop).
-    draining: bool,
-    /// Live `WithEvents` bindings, keyed by `withevents_key(owner, binding-token)`.
-    withevents: HashMap<i64, EventBinding>,
-    /// Monotonic sequence for live `WithEvents` project-source fan-out. VBA dispatches sinks in
-    /// current subscription order; rebinding a field moves that subscription to the end.
-    next_withevents_order: u64,
-    /// Live host (COM) event subscriptions: subscription-token raw → sink handler (mirrors vm2's
-    /// `com_subscriptions`). Populated when a `WithEvents` field binds a COM source.
-    com_subscriptions: HashMap<i32, ComEventSink>,
-    /// COM subscription tokens grouped by `withevents` key, for teardown on rebind / clear /
-    /// terminate (mirrors vm2's `com_subscriptions_by_key`).
-    com_subscriptions_by_key: HashMap<i64, Vec<i32>>,
-    /// Re-entrancy guard for [`Vm3::pump_com_events`] (a delivered handler can re-enter the loop).
-    pumping: bool,
-    /// `For Each obj In <WithEvents owners>` iterator stack (the `WithEventsFirstOwner`/
-    /// `NextOwner` cursor) — a stack so nested owner-iterations never alias.
-    withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
-    /// Optional host event sink (W7): the COM server registers this to receive every project
-    /// `RaiseEvent` as `(source, event id, args)` for delivery to its connection-point clients.
-    /// `None` (the default) means project events only fan out to internal `WithEvents`
-    /// subscribers. Mirrors vm2's `project_event_sink`.
-    #[allow(clippy::type_complexity)]
-    project_event_sink:
-        Option<Box<dyn FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h>>,
 }
 
 impl<'h> Vm3<'h> {
@@ -410,7 +223,7 @@ impl<'h> Vm3<'h> {
     /// can hold it across `&mut self` mutations exactly as the old `self.program` field allowed.
     #[inline]
     fn cur_program(&self) -> &'h OxProgram {
-        self.programs[self.cur].program
+        self.exec.programs[self.cur].program
     }
 
     /// Initial slot value for a statically typed VBA variable. Dynamic array variables are
@@ -485,7 +298,8 @@ impl<'h> Vm3<'h> {
     /// The index of the loaded program declaring unit `name` (its `unit_name`), for resolving a
     /// cross-project import/reference.
     fn program_index_by_unit(&self, unit: &str) -> Option<usize> {
-        self.programs
+        self.exec
+            .programs
             .iter()
             .position(|lp| lp.program.unit_name.eq_ignore_ascii_case(unit))
     }
@@ -494,7 +308,7 @@ impl<'h> Vm3<'h> {
     /// is unresolved — reported naming the missing unit (never a silent mis-link). `VBA` imports
     /// are the synthetic built-in library, resolved separately in `call_extern`.
     fn validate_links(&self) -> Result<(), Vm3Error> {
-        for lp in &self.programs {
+        for lp in &self.exec.programs {
             for imp in &lp.program.imports {
                 if imp.unit.eq_ignore_ascii_case("VBA") {
                     continue;
@@ -536,37 +350,22 @@ impl<'h> Vm3<'h> {
             ));
         }
         let entry = programs.len() - 1;
+        let mut exec = ExecState::new(host);
+        exec.programs = programs.iter().map(|p| Self::build_loaded(p)).collect();
         let mut vm = Vm3 {
-            programs: programs.iter().map(|p| Self::build_loaded(p)).collect(),
             cur: entry,
-            host,
-            lib: LibContext::default(),
+            exec,
             frames: Vec::new(),
-            error_mode: ErrorMode::None,
-            active_error: None,
-            err: ErrState::default(),
-            erl_line: 0,
-            last_dll_error: 0,
-            pending_fault: None,
             for_each: HashMap::new(),
             param_array_aliases: HashMap::new(),
             as_new_slots: HashMap::new(),
-            next_instance_id: INSTANCE_ID_BASE,
-            draining: false,
-            withevents: HashMap::new(),
-            next_withevents_order: 0,
-            com_subscriptions: HashMap::new(),
-            com_subscriptions_by_key: HashMap::new(),
-            pumping: false,
-            withevents_iters: Vec::new(),
-            project_event_sink: None,
         };
         // Every cross-project reference must resolve before any code runs.
         vm.validate_links()?;
         // Run each program's module-global initializer in ITS OWN program context (cur = i), so
         // a global write lands in that program's globals (the entry's initializer runs last).
-        for i in 0..vm.programs.len() {
-            if let Some(init) = vm.programs[i].program.global_initializer {
+        for i in 0..vm.exec.programs.len() {
+            if let Some(init) = vm.exec.programs[i].program.global_initializer {
                 vm.cur = i;
                 let frame = vm.new_frame(init);
                 vm.frames.push(frame);
@@ -618,6 +417,7 @@ impl<'h> Vm3<'h> {
         // Resolve + run in the object's OWN program (bundle_id), not the executing cur.
         let obj_bundle = object.bundle_id() as usize;
         let program = self
+            .exec
             .programs
             .get(obj_bundle)
             .map(|lp| lp.program)
@@ -689,12 +489,12 @@ impl<'h> Vm3<'h> {
     where
         F: FnMut(ObjectRef, i32, Vec<Variant>) -> Result<(), String> + 'h,
     {
-        self.project_event_sink = Some(Box::new(sink));
+        self.exec.events.project_event_sink = Some(Box::new(sink));
     }
 
     /// Remove the host event sink (W7).
     pub fn clear_project_event_sink(&mut self) {
-        self.project_event_sink = None;
+        self.exec.events.project_event_sink = None;
     }
 
     /// Build the VM for a SINGLE program and run its module-global initializer, but do NOT run
@@ -731,9 +531,9 @@ impl<'h> Vm3<'h> {
     /// The result snapshot slot `i`: module globals occupy `[0, globals.len())`; higher
     /// indices are the entry (`Main`) frame's locals (the same layout vm2 exposes).
     pub fn slot(&self, i: usize) -> Option<Variant> {
-        let global_count = self.programs[self.cur].globals.len();
+        let global_count = self.exec.programs[self.cur].globals.len();
         if i < global_count {
-            self.programs[self.cur].globals.get(i).cloned()
+            self.exec.programs[self.cur].globals.get(i).cloned()
         } else {
             let rel = i - global_count;
             self.frames.first()?.locals.get(rel).cloned()
@@ -742,21 +542,21 @@ impl<'h> Vm3<'h> {
 
     /// The final `Err` state (number / description / source) for the error axis.
     pub fn err_number(&self) -> i32 {
-        self.err.number
+        self.exec.err_engine.err.number
     }
     pub fn err_description(&self) -> &str {
-        &self.err.description
+        &self.exec.err_engine.err.description
     }
     pub fn err_source(&self) -> &str {
-        &self.err.source
+        &self.exec.err_engine.err.source
     }
     pub fn erl(&self) -> i32 {
-        self.erl_line
+        self.exec.err_engine.erl_line
     }
     /// `Err.LastDllError` — the OS last-error captured after the most recent `Declare Lib`
     /// call (M3-7); `0` until a Declare runs.
     pub fn last_dll_error(&self) -> i32 {
-        self.last_dll_error
+        self.exec.err_engine.last_dll_error
     }
 
     fn new_frame(&self, func: FuncId) -> Frame {
@@ -769,7 +569,7 @@ impl<'h> Vm3<'h> {
     /// object method, or a referenced project's proc) whose ARGUMENTS are resolved in the
     /// caller's program (`cur`) BEFORE this frame runs — matching vm2's resolve-then-switch.
     fn new_frame_in(&self, prog: usize, func: FuncId) -> Frame {
-        let f = &self.programs[prog].program.funcs[func.0];
+        let f = &self.exec.programs[prog].program.funcs[func.0];
         Frame {
             prog,
             func,
@@ -872,77 +672,35 @@ impl<'h> Vm3<'h> {
                 OxTerminator::FaultDispatch {
                     resume,
                     resume_next,
-                } => {
-                    let rp = ResumePoint {
-                        resume: *resume,
-                        resume_next: *resume_next,
-                        // Captured before the Goto arm demotes `error_mode`, so a later
-                        // `Resume*` re-arms the handler that was active at the catch.
-                        handler: self.error_mode,
-                    };
-                    match self.error_mode {
-                        // Default: no enabled handler ⇒ propagate to the caller (or, at the
-                        // base, out of the run). A pad is only entered via `route_fault`
-                        // (which always `raise`s), so a missing fault is a structural defect.
-                        ErrorMode::None => {
-                            let fault = self.pending_fault.take().ok_or_else(|| {
-                                Vm3Error::Malformed(
-                                    "FaultDispatch reached with no pending fault".into(),
-                                )
-                            })?;
-                            self.propagate_fault(fault, base)?;
-                        }
-                        // Caught by `On Error Resume Next`: consume the fault and continue past
-                        // the faulting statement. VBA does not arm a later `Resume` here; a
-                        // following bare `Resume Next` raises error 20 under the still-active
-                        // handler instead of resuming the already-skipped statement.
-                        ErrorMode::ResumeNext => {
-                            self.pending_fault = None;
-                            self.erl_line = self.frames[top].current_line;
-                            self.active_error = None;
-                            self.goto(top, *resume_next);
-                        }
-                        // Caught by `On Error GoTo h`: the handler is single-shot — demote
-                        // the policy to Default before entering it (so a re-raise inside the
-                        // handler propagates to the caller, not back into the same handler),
-                        // latch the active error, transfer to the handler block.
-                        ErrorMode::Goto(handler) => {
-                            self.pending_fault = None;
-                            self.error_mode = ErrorMode::None;
-                            self.erl_line = self.frames[top].current_line;
-                            self.active_error = Some(rp);
-                            self.goto(top, handler);
-                        }
+                } => match self
+                    .exec
+                    .err_engine
+                    .dispatch_fault(*resume, *resume_next, self.frames[top].current_line)
+                    .map_err(|msg| Vm3Error::Malformed(msg.into()))?
+                {
+                    FaultAction::Propagate(fault) => self.propagate_fault(fault, base)?,
+                    FaultAction::ResumeNext(block) | FaultAction::Handle(block) => {
+                        self.goto(top, block);
                     }
-                }
+                },
                 // The three `Resume` forms (R6/R7/R8): with no active error, raise error 20
                 // ("Resume without error"); otherwise reset `Err`, clear the latch, RE-ARM
                 // the handler that caught the error (so a fault after the resume is caught
                 // again), and transfer.
-                OxTerminator::Resume => match self.active_error.take() {
-                    Some(rp) => {
-                        self.err = ErrState::default();
-                        self.error_mode = rp.handler;
-                        self.goto(top, rp.resume);
-                    }
-                    None => self.raise_runtime_error(20)?,
+                OxTerminator::Resume => match self.exec.err_engine.resume(ResumeTarget::Same) {
+                    Ok(block) => self.goto(top, block),
+                    Err(fault) => self.route_fault(fault)?,
                 },
-                OxTerminator::ResumeNext => match self.active_error.take() {
-                    Some(rp) => {
-                        self.err = ErrState::default();
-                        self.error_mode = rp.handler;
-                        self.goto(top, rp.resume_next);
-                    }
-                    None => self.raise_runtime_error(20)?,
+                OxTerminator::ResumeNext => match self.exec.err_engine.resume(ResumeTarget::Next) {
+                    Ok(block) => self.goto(top, block),
+                    Err(fault) => self.route_fault(fault)?,
                 },
-                OxTerminator::ResumeLabel(b) => match self.active_error.take() {
-                    Some(rp) => {
-                        self.err = ErrState::default();
-                        self.error_mode = rp.handler;
-                        self.goto(top, *b);
+                OxTerminator::ResumeLabel(b) => {
+                    match self.exec.err_engine.resume(ResumeTarget::Label(*b)) {
+                        Ok(block) => self.goto(top, block),
+                        Err(fault) => self.route_fault(fault)?,
                     }
-                    None => self.raise_runtime_error(20)?,
-                },
+                }
                 // `Err.Raise Number[, Source][, Description]` / `Error n`: build the `Err`
                 // state from the number plus any explicit Source/Description, then route
                 // through the statement pad so an active `On Error` can catch it (R11).
@@ -969,20 +727,20 @@ impl<'h> Vm3<'h> {
                             // §9071 inherit applies only to `Err.Raise` (inherit=true);
                             // the legacy `Error <n>` statement (inherit=false) never
                             // inherits — oracle-confirmed.
-                            let inherit = *inherit && self.err.inherit_fields;
+                            let inherit = *inherit && self.exec.err_engine.err.inherit_fields;
                             let message = match description {
                                 Some(op) => self.operand_string(op)?,
-                                None if inherit => self.err.description.clone(),
+                                None if inherit => self.exec.err_engine.err.description.clone(),
                                 None => default_error_message(code),
                             };
                             let source = match source {
                                 Some(op) => Some(self.operand_string(op)?),
-                                None if inherit => Some(self.err.source.clone()),
+                                None if inherit => Some(self.exec.err_engine.err.source.clone()),
                                 None => None, // -> project name in `raise`
                             };
                             let help_file = match help_file {
                                 Some(op) => Some(self.operand_string(op)?),
-                                None if inherit => Some(self.err.help_file.clone()),
+                                None if inherit => Some(self.exec.err_engine.err.help_file.clone()),
                                 None => None,
                             };
                             let help_context = match help_context {
@@ -996,7 +754,7 @@ impl<'h> Vm3<'h> {
                                     .map_err(Vm3Error::Fault)?;
                                     Some(coerced.as_i32().unwrap_or(0))
                                 }
-                                None if inherit => Some(self.err.help_context),
+                                None if inherit => Some(self.exec.err_engine.err.help_context),
                                 None => None,
                             };
                             self.route_fault(Fault {
@@ -1064,8 +822,7 @@ impl<'h> Vm3<'h> {
             return Err(Vm3Error::Fault(fault));
         }
         let callee = self.frames.pop().expect("frame to unwind");
-        self.error_mode = callee.saved_error_mode;
-        self.active_error = callee.saved_active_error;
+        self.restore_err_from_frame(&callee);
         self.prune_param_array_aliases_from_depth(self.frames.len());
         // The caller's `CallProc` faulted: route to *its* block's fault pad.
         self.route_fault(fault)
@@ -1075,8 +832,7 @@ impl<'h> Vm3<'h> {
     /// function's return value (true aliasing already propagated ByRef writes live).
     fn do_return(&mut self) -> Result<(), Vm3Error> {
         let callee = self.frames.pop().expect("returning frame");
-        self.error_mode = callee.saved_error_mode;
-        self.active_error = callee.saved_active_error;
+        self.restore_err_from_frame(&callee);
         if let (Some(loc), Some(rl)) = (callee.dst, callee.return_local)
             && let Some(v) = callee.locals.get(rl.0).cloned()
         {
@@ -1090,38 +846,22 @@ impl<'h> Vm3<'h> {
         Ok(())
     }
 
+    fn restore_err_from_frame(&mut self, frame: &Frame) {
+        self.exec.err_engine.restore(SavedErrState {
+            error_mode: frame.saved_error_mode,
+            active_error: frame.saved_active_error,
+        });
+    }
+
     /// Populate `Err` from a raised fault and stash it for the landing pad. Number and
     /// Description come from the fault; `Err.Source` is the fault's explicit source if it
     /// carries one (`Err.Raise … Source`), else the **project name** — the VBA default
     /// for any error generated within the project, matching the Excel/VBA 7.1 oracle
     /// (`Err.Source = "VBAProject"`; see `docs/VBA_ERROR_MODEL_ORACLE_FINDINGS.md`).
-    fn raise(&mut self, mut fault: Fault) {
-        self.err.number = fault.code;
-        self.err.description = fault.message.clone();
-        self.err.inherit_fields = true;
-        // The source is the fault's explicit one (`Err.Raise … Source`) or, on the FIRST raise
-        // of a source-less fault, the ORIGIN project's name. Persisting it back onto the fault is
-        // what keeps the origin as the fault propagates: a cross-program unwind re-routes (and
-        // re-`raise`s) the SAME pending fault, so without this the source would be re-stamped with
-        // each catching project's name instead of the project where it was raised.
-        let source = fault
-            .source
-            .clone()
-            .unwrap_or_else(|| self.cur_program().unit_name.clone());
-        self.err.source = source.clone();
-        fault.source = Some(source);
-        let help_file = fault
-            .help_file
-            .clone()
-            .unwrap_or_else(default_error_help_file);
-        self.err.help_file = help_file.clone();
-        fault.help_file = Some(help_file);
-        let help_context = fault
-            .help_context
-            .unwrap_or_else(|| default_error_help_context(fault.code));
-        self.err.help_context = help_context;
-        fault.help_context = Some(help_context);
-        self.pending_fault = Some(fault);
+    fn raise(&mut self, fault: Fault) {
+        self.exec
+            .err_engine
+            .raise(fault, self.cur_program().unit_name.clone());
     }
 
     /// Evaluate an operand and coerce it to its VBA string form — used for an explicit
@@ -1181,7 +921,7 @@ impl<'h> Vm3<'h> {
                 current,
                 original,
             } => {
-                let changed = self.operand(current)? != self.operand(original)?;
+                let changed = variant_changed(&self.operand(current)?, &self.operand(original)?);
                 self.store(dst, Variant::from_bool(changed))?;
             }
             OxInst::Arith {
@@ -1325,31 +1065,32 @@ impl<'h> Vm3<'h> {
             // (doc rule R5) — unconditionally resets the `Err` object. (The active-error
             // latch is cleared only by `Resume`/`Exit`, not here.)
             OxInst::SetErrorHandler(handler) => {
-                self.err = ErrState::default();
-                match handler {
-                    // `On Error GoTo -1` clears the active-error latch (so the current
-                    // handler can re-catch) but KEEPS the handler policy — unlike the
-                    // others, it does not set `error_mode` (R13; oracle `oe_goto_minus1`).
-                    ErrorHandler::GotoMinus1 => self.active_error = None,
-                    ErrorHandler::ResumeNext => self.error_mode = ErrorMode::ResumeNext,
-                    ErrorHandler::Goto0 => self.error_mode = ErrorMode::None,
-                    ErrorHandler::GotoLabel(b) => self.error_mode = ErrorMode::Goto(*b),
-                }
+                self.exec.err_engine.set_error_handler(handler);
             }
             // Read an `Err` property.
             OxInst::ErrFieldGet { dst, field } => {
                 let v = match field {
-                    ErrField::Number => Variant::from_i32(self.err.number),
-                    ErrField::Description => Variant::from_string(self.err.description.clone()),
-                    ErrField::Source => Variant::from_string(self.err.source.clone()),
-                    ErrField::HelpFile => Variant::from_string(self.err.help_file.clone()),
-                    ErrField::HelpContext => Variant::from_i32(self.err.help_context),
-                    ErrField::LastDllError => Variant::from_i32(self.last_dll_error),
+                    ErrField::Number => Variant::from_i32(self.exec.err_engine.err.number),
+                    ErrField::Description => {
+                        Variant::from_string(self.exec.err_engine.err.description.clone())
+                    }
+                    ErrField::Source => {
+                        Variant::from_string(self.exec.err_engine.err.source.clone())
+                    }
+                    ErrField::HelpFile => {
+                        Variant::from_string(self.exec.err_engine.err.help_file.clone())
+                    }
+                    ErrField::HelpContext => {
+                        Variant::from_i32(self.exec.err_engine.err.help_context)
+                    }
+                    ErrField::LastDllError => {
+                        Variant::from_i32(self.exec.err_engine.last_dll_error)
+                    }
                 };
                 self.store(dst, v)?;
             }
             OxInst::ErlGet { dst } => {
-                self.store(dst, Variant::from_i32(self.erl_line))?;
+                self.store(dst, Variant::from_i32(self.exec.err_engine.erl_line))?;
             }
             // Write an `Err` property. `Err.LastDllError` is read-only; accepted user
             // assignments to it should have been rejected by the binder.
@@ -1361,36 +1102,36 @@ impl<'h> Vm3<'h> {
                             arith::coerce_numeric(&value, oxvba_bundle::NumericCoerceTarget::Long)
                                 .map_err(Fault::from_arith)
                                 .map_err(Vm3Error::Fault)?;
-                        self.err.number = coerced.as_i32().unwrap_or(0);
+                        self.exec.err_engine.err.number = coerced.as_i32().unwrap_or(0);
                     }
                     ErrField::Description => {
                         let coerced = arith::coerce_string(&value)
                             .map_err(Fault::from_arith)
                             .map_err(Vm3Error::Fault)?;
-                        self.err.description = arith::as_string(&coerced);
-                        self.err.inherit_fields = true;
+                        self.exec.err_engine.err.description = arith::as_string(&coerced);
+                        self.exec.err_engine.err.inherit_fields = true;
                     }
                     ErrField::Source => {
                         let coerced = arith::coerce_string(&value)
                             .map_err(Fault::from_arith)
                             .map_err(Vm3Error::Fault)?;
-                        self.err.source = arith::as_string(&coerced);
-                        self.err.inherit_fields = true;
+                        self.exec.err_engine.err.source = arith::as_string(&coerced);
+                        self.exec.err_engine.err.inherit_fields = true;
                     }
                     ErrField::HelpFile => {
                         let coerced = arith::coerce_string(&value)
                             .map_err(Fault::from_arith)
                             .map_err(Vm3Error::Fault)?;
-                        self.err.help_file = arith::as_string(&coerced);
-                        self.err.inherit_fields = true;
+                        self.exec.err_engine.err.help_file = arith::as_string(&coerced);
+                        self.exec.err_engine.err.inherit_fields = true;
                     }
                     ErrField::HelpContext => {
                         let coerced =
                             arith::coerce_numeric(&value, oxvba_bundle::NumericCoerceTarget::Long)
                                 .map_err(Fault::from_arith)
                                 .map_err(Vm3Error::Fault)?;
-                        self.err.help_context = coerced.as_i32().unwrap_or(0);
-                        self.err.inherit_fields = true;
+                        self.exec.err_engine.err.help_context = coerced.as_i32().unwrap_or(0);
+                        self.exec.err_engine.err.inherit_fields = true;
                     }
                     ErrField::LastDllError => {
                         return Err(Vm3Error::Malformed("Err.LastDllError is read-only".into()));
@@ -1398,7 +1139,7 @@ impl<'h> Vm3<'h> {
                 }
             }
             // `Err.Clear` → reset the `Err` object.
-            OxInst::ClearErr => self.err = ErrState::default(),
+            OxInst::ClearErr => self.exec.err_engine.clear_err(),
 
             // ── Pointer helpers (M3-7) ───────────────────────────────────────────────
             // `StrPtr`/`VarPtr` pin a cloned cell in the process-global pointer registry and
@@ -1835,6 +1576,8 @@ impl<'h> Vm3<'h> {
                 let owner_ref = variant_to_object(&owner_value)?;
                 let key = withevents_key(&owner_ref, *binding as i64);
                 let value = self
+                    .exec
+                    .events
                     .withevents
                     .get(&key)
                     .map(|b| b.source.clone())
@@ -1854,7 +1597,7 @@ impl<'h> Vm3<'h> {
                 // Replacing a binding tears down its old host (COM) subscriptions first.
                 self.unsubscribe_com_key(key);
                 if is_nothing(&v) {
-                    self.withevents.remove(&key);
+                    self.exec.events.withevents.remove(&key);
                 } else {
                     // A COM/foreign source is wired through the host's connection points (the
                     // shared, live-tested HAL `subscribe_event`); a project source dispatches
@@ -1865,9 +1608,10 @@ impl<'h> Vm3<'h> {
                     {
                         self.subscribe_com_events(key, *binding, &owner_value, &source);
                     }
-                    let order = self.next_withevents_order;
-                    self.next_withevents_order = self.next_withevents_order.wrapping_add(1);
-                    self.withevents.insert(
+                    let order = self.exec.events.next_withevents_order;
+                    self.exec.events.next_withevents_order =
+                        self.exec.events.next_withevents_order.wrapping_add(1);
+                    self.exec.events.withevents.insert(
                         key,
                         EventBinding {
                             owner: owner_value,
@@ -1882,7 +1626,9 @@ impl<'h> Vm3<'h> {
                 let owner_ref = variant_to_object(&self.operand(owner)?)?;
                 let owner_raw = owner_ref.raw();
                 self.unsubscribe_com_owner(owner_raw);
-                self.withevents
+                self.exec
+                    .events
+                    .withevents
                     .retain(|key, _| withevents_owner(*key).raw() != owner_raw);
                 self.store(dst, Variant::from_i32(0))?;
             }
@@ -1894,7 +1640,7 @@ impl<'h> Vm3<'h> {
                 let source = self.operand(source)?;
                 let mut owners: Vec<(u64, ObjectRef)> = Vec::new();
                 if !is_nothing(&source) {
-                    for (key, binding_data) in &self.withevents {
+                    for (key, binding_data) in &self.exec.events.withevents {
                         if withevents_binding(*key) == (*binding as i64 & 0xFFFF_FFFF)
                             && object_identity(&binding_data.source) == object_identity(&source)
                             && let Some(owner) = binding_data.owner.as_object_ref()
@@ -1907,24 +1653,29 @@ impl<'h> Vm3<'h> {
                 let owners: Vec<ObjectRef> = owners.into_iter().map(|(_, owner)| owner).collect();
                 match owners.first().cloned() {
                     Some(first) => {
-                        self.withevents_iters.push((owners, 1));
+                        self.exec.events.withevents_iters.push((owners, 1));
                         self.store(dst, Variant::from_object_ref(first))?;
                     }
                     None => self.store(dst, Variant::from_i32(0))?,
                 }
             }
             OxInst::WithEventsNextOwner { dst } => {
-                let next = self.withevents_iters.last_mut().and_then(|(owners, pos)| {
-                    let value = owners.get(*pos).cloned();
-                    if value.is_some() {
-                        *pos += 1;
-                    }
-                    value
-                });
+                let next =
+                    self.exec
+                        .events
+                        .withevents_iters
+                        .last_mut()
+                        .and_then(|(owners, pos)| {
+                            let value = owners.get(*pos).cloned();
+                            if value.is_some() {
+                                *pos += 1;
+                            }
+                            value
+                        });
                 match next {
                     Some(owner) => self.store(dst, Variant::from_object_ref(owner))?,
                     None => {
-                        self.withevents_iters.pop();
+                        self.exec.events.withevents_iters.pop();
                         self.store(dst, Variant::from_i32(0))?;
                     }
                 }
@@ -1941,7 +1692,7 @@ impl<'h> Vm3<'h> {
                 // then run each handler in VBA subscription order with the sink as `me` and
                 // the event args; an unhandled error propagates to the raiser.
                 let mut targets: Vec<(u64, Variant, usize, usize)> = Vec::new();
-                for (key, binding) in &self.withevents {
+                for (key, binding) in &self.exec.events.withevents {
                     if object_identity(&binding.source) != source_id {
                         continue;
                     }
@@ -1954,7 +1705,7 @@ impl<'h> Vm3<'h> {
                         .as_object_ref()
                         .map(|o| o.bundle_id() as usize)
                         .unwrap_or(self.cur);
-                    if let Some(&handler) = self.programs[owner_bundle]
+                    if let Some(&handler) = self.exec.programs[owner_bundle]
                         .event_routes
                         .get(&(token, event_id))
                     {
@@ -1969,11 +1720,16 @@ impl<'h> Vm3<'h> {
                 // the COM server forwards the event to its connection-point clients. Take the
                 // sink out across the call so it does not alias `&mut self` (a host sink calls
                 // back into the host, not the VM), then restore it.
-                if self.project_event_sink.is_some() {
+                if self.exec.events.project_event_sink.is_some() {
                     let values = self.extern_args(args)?;
-                    let mut sink = self.project_event_sink.take().expect("sink present");
+                    let mut sink = self
+                        .exec
+                        .events
+                        .project_event_sink
+                        .take()
+                        .expect("sink present");
                     let outcome = sink(source_object.clone(), event_id, values);
-                    self.project_event_sink = Some(sink);
+                    self.exec.events.project_event_sink = Some(sink);
                     outcome.map_err(|msg| Vm3Error::Fault(Fault::new(5, msg)))?;
                 }
             }
@@ -2094,7 +1850,7 @@ impl<'h> Vm3<'h> {
         // The callee runs against `target_prog` (its own program for a cross-project call); the
         // arguments + result dst are resolved below in the CALLER's context (`cur`), so a ByRef
         // alias / the dst stay bound to the caller's program (see `Loc::Global` tagging).
-        let program = self.programs[target_prog].program;
+        let program = self.exec.programs[target_prog].program;
         let callee = program
             .funcs
             .get(proc.0)
@@ -2140,6 +1896,7 @@ impl<'h> Vm3<'h> {
         // handler, and the caller's mode is restored from the frame when it returns. The
         // dispatch loop runs the callee and `do_return`/`propagate_fault` pops it — there
         // is no native recursion here, so the call depth is heap-bounded.
+        let saved_err = self.exec.err_engine.enter_activation();
         self.frames.push(Frame {
             prog: target_prog,
             func: proc,
@@ -2151,16 +1908,13 @@ impl<'h> Vm3<'h> {
             dst: dst_loc,
             return_local,
             current_line: 0,
-            saved_error_mode: self.error_mode,
-            saved_active_error: self.active_error,
+            saved_error_mode: saved_err.error_mode,
+            saved_active_error: saved_err.active_error,
             gosub_stack: Vec::new(),
         });
         for (loc, aliases) in pending_param_array_aliases {
             self.param_array_aliases.insert(loc, aliases);
         }
-        // Each procedure starts with no handler and no active error (restored on return).
-        self.error_mode = ErrorMode::None;
-        self.active_error = None;
         Ok(())
     }
 
@@ -2187,7 +1941,7 @@ impl<'h> Vm3<'h> {
             let b = self.program_index_by_unit(&imp.unit).ok_or_else(|| {
                 Vm3Error::Malformed(format!("unresolved reference to unit '{}'", imp.unit))
             })?;
-            let proc = self.programs[b]
+            let proc = self.exec.programs[b]
                 .program
                 .exports
                 .iter()
@@ -2268,13 +2022,14 @@ impl<'h> Vm3<'h> {
     /// body reads positional values (a ByRef argument by its *value*), and an omitted
     /// optional is `Empty` — matching vm2's `extern_native_args`.
     fn extern_args(&mut self, args: &[OxArg]) -> Result<Vec<Variant>, Vm3Error> {
-        args.iter()
-            .map(|a| match a {
-                OxArg::ByVal(op) => self.operand(op),
-                OxArg::ByRef(place) => self.read(place),
-                OxArg::Omitted => Ok(Variant::empty()),
-            })
-            .collect()
+        marshal_ox_args(
+            args,
+            |arg| match arg {
+                MarshalArgRef::Operand(op) => self.operand(op),
+                MarshalArgRef::ByRef(place) => self.read(place),
+            },
+            Variant::empty,
+        )
     }
 
     /// Build SAFEARRAY bounds from `ReDim` upper/lower-bound operands, with
@@ -2798,7 +2553,7 @@ impl<'h> Vm3<'h> {
                     .next()
                     .unwrap_or(target_type_name);
                 if obj.is_project_instance()
-                    && let Some(lp) = self.programs.get(obj.bundle_id() as usize)
+                    && let Some(lp) = self.exec.programs.get(obj.bundle_id() as usize)
                 {
                     let target_is_project = lp.program.classes.iter().any(|c| {
                         c.name.eq_ignore_ascii_case(bare_target)
@@ -2836,7 +2591,7 @@ impl<'h> Vm3<'h> {
     /// (bundle id is always 0 — vm3 runs one program). The instance's `has_terminate` flag is
     /// what later parks it for `Class_Terminate` when its last reference drops.
     fn new_project_instance(&mut self, class_idx: usize) -> Result<Variant, Vm3Error> {
-        let descriptor = *self.programs[self.cur]
+        let descriptor = *self.exec.programs[self.cur]
             .class_descriptors
             .get(class_idx)
             .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
@@ -2847,8 +2602,8 @@ impl<'h> Vm3<'h> {
             .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
         let has_terminate = class.terminate.is_some();
         let initialize = class.initialize;
-        let instance_id = self.next_instance_id;
-        self.next_instance_id += 1;
+        let instance_id = self.exec.next_instance_id;
+        self.exec.next_instance_id += 1;
         let object = ObjectRef::from_project_instance(
             instance_id,
             class_idx as i32,
@@ -2867,13 +2622,13 @@ impl<'h> Vm3<'h> {
     /// singleton + run `Class_Initialize` on first access, then reuse the cached instance.
     /// Mirrors vm2's `predeclared_instance`.
     fn predeclared_instance(&mut self, class_idx: usize) -> Result<Variant, Vm3Error> {
-        if let Some(existing) = self.programs[self.cur]
+        if let Some(existing) = self.exec.programs[self.cur]
             .predeclared_singletons
             .get(&class_idx)
         {
             return Ok(existing.clone());
         }
-        let descriptor = *self.programs[self.cur]
+        let descriptor = *self.exec.programs[self.cur]
             .class_descriptors
             .get(class_idx)
             .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
@@ -2884,8 +2639,8 @@ impl<'h> Vm3<'h> {
             .ok_or_else(|| Vm3Error::Malformed(format!("unknown class {class_idx}")))?;
         let has_terminate = class.terminate.is_some();
         let initialize = class.initialize;
-        let instance_id = self.next_instance_id;
-        self.next_instance_id += 1;
+        let instance_id = self.exec.next_instance_id;
+        self.exec.next_instance_id += 1;
         let object = ObjectRef::from_project_instance(
             instance_id,
             class_idx as i32,
@@ -2894,7 +2649,7 @@ impl<'h> Vm3<'h> {
             descriptor,
         );
         let value = Variant::from_object_ref(object);
-        self.programs[self.cur]
+        self.exec.programs[self.cur]
             .predeclared_singletons
             .insert(class_idx, value.clone());
         if let Some(init) = initialize {
@@ -2915,6 +2670,7 @@ impl<'h> Vm3<'h> {
         value: Variant,
     ) -> Result<(), Vm3Error> {
         let program = self
+            .exec
             .programs
             .get_mut(program_index)
             .ok_or_else(|| Vm3Error::Malformed(format!("unknown program {program_index}")))?;
@@ -2986,14 +2742,13 @@ impl<'h> Vm3<'h> {
                 }
             }
         }
-        frame.saved_error_mode = self.error_mode;
-        frame.saved_active_error = self.active_error;
+        let saved_err = self.exec.err_engine.enter_activation();
+        frame.saved_error_mode = saved_err.error_mode;
+        frame.saved_active_error = saved_err.active_error;
         self.frames.push(frame);
         for (loc, aliases) in pending_param_array_aliases {
             self.param_array_aliases.insert(loc, aliases);
         }
-        self.error_mode = ErrorMode::None;
-        self.active_error = None;
         let result = self.run_loop(base);
         // The function result is the pushed frame's return local (the nested `run_loop` broke
         // at the frame's `Return` without copying it out). Capture it before unwinding.
@@ -3002,9 +2757,12 @@ impl<'h> Vm3<'h> {
             .get(base)
             .and_then(|fr| fr.return_local.and_then(|rl| fr.locals.get(rl.0).cloned()))
             .unwrap_or_else(Variant::empty);
-        if let Some(fr) = self.frames.get(base) {
-            self.error_mode = fr.saved_error_mode;
-            self.active_error = fr.saved_active_error;
+        let saved_err = self.frames.get(base).map(|fr| SavedErrState {
+            error_mode: fr.saved_error_mode,
+            active_error: fr.saved_active_error,
+        });
+        if let Some(saved_err) = saved_err {
+            self.exec.err_engine.restore(saved_err);
         }
         self.frames.truncate(base);
         self.prune_param_array_aliases_from_depth(self.frames.len());
@@ -3055,11 +2813,10 @@ impl<'h> Vm3<'h> {
                 *slot = v;
             }
         }
-        frame.saved_error_mode = self.error_mode;
-        frame.saved_active_error = self.active_error;
+        let saved_err = self.exec.err_engine.enter_activation();
+        frame.saved_error_mode = saved_err.error_mode;
+        frame.saved_active_error = saved_err.active_error;
         self.frames.push(frame);
-        self.error_mode = ErrorMode::None;
-        self.active_error = None;
         let result = self.run_loop(base);
         // Capture the result from the pushed frame's return local before unwinding (the nested
         // `run_loop` broke at the frame's `Return` without copying it out) — same as
@@ -3069,9 +2826,12 @@ impl<'h> Vm3<'h> {
             .get(base)
             .and_then(|fr| fr.return_local.and_then(|rl| fr.locals.get(rl.0).cloned()))
             .unwrap_or_else(Variant::empty);
-        if let Some(fr) = self.frames.get(base) {
-            self.error_mode = fr.saved_error_mode;
-            self.active_error = fr.saved_active_error;
+        let saved_err = self.frames.get(base).map(|fr| SavedErrState {
+            error_mode: fr.saved_error_mode,
+            active_error: fr.saved_active_error,
+        });
+        if let Some(saved_err) = saved_err {
+            self.exec.err_engine.restore(saved_err);
         }
         self.frames.truncate(base);
         self.prune_param_array_aliases_from_depth(self.frames.len());
@@ -3091,45 +2851,32 @@ impl<'h> Vm3<'h> {
     /// vm2's `maybe_drain`. The `draining` guard makes a re-entrant release (a Terminate that
     /// drops another object) fold into the same loop rather than nest.
     fn maybe_drain(&mut self) {
-        if self.draining {
+        if self.exec.draining {
             return;
         }
-        self.draining = true;
+        self.exec.draining = true;
         while oxvba_runtime::has_pending_terminations() {
-            for (instance_id, bundle_id, route_key) in oxvba_runtime::take_pending_terminations() {
+            for work in take_termination_batch(&self.exec) {
                 // A terminating object's `Class_Terminate` lives in ITS OWN program (the one that
-                // minted it — stamped into `bundle_id`), not necessarily the executing `cur`.
-                let bundle = bundle_id as usize;
-                let terminate = self
-                    .programs
-                    .get(bundle)
-                    .and_then(|lp| lp.program.classes.get(route_key as usize))
-                    .and_then(|c| c.terminate);
-                if let (Some(proc), Some(object)) = (
-                    terminate,
-                    oxvba_runtime::retained_parked_termination_object(instance_id),
-                ) {
+                // minted it), not necessarily the executing `cur`.
+                if let (Some(proc), Some(object)) = (work.terminate, work.object) {
                     // Run the finalizer in the object's program (target_prog = bundle), so its
                     // globals/funcs resolve there. A fault in `Class_Terminate` is swallowed
                     // (suppress); a `Malformed` defect would still surface — drop it to match
                     // vm2's `let _ = …`.
-                    let _ = self.run_proc_with_me(
-                        bundle,
-                        proc,
-                        Variant::from_object_ref(object),
-                        &[],
-                        true,
-                    );
+                    let _ = self.run_proc_with_me(work.bundle, proc, object, &[], true);
                 }
-                oxvba_runtime::finish_pending_termination(instance_id);
+                oxvba_runtime::finish_pending_termination(work.instance_id);
                 // Drop any `WithEvents` bindings + host (COM) subscriptions the terminated
                 // instance owned (it can no longer sink events) — mirrors vm2's teardown.
-                self.unsubscribe_com_owner(instance_id);
-                self.withevents
-                    .retain(|key, _| withevents_owner(*key).raw() != instance_id);
+                self.unsubscribe_com_owner(work.instance_id);
+                self.exec
+                    .events
+                    .withevents
+                    .retain(|key, _| withevents_owner(*key).raw() != work.instance_id);
             }
         }
-        self.draining = false;
+        self.exec.draining = false;
     }
 
     /// Subscribe a `WithEvents` sink (`owner`) to a COM `source`'s events for `binding_token`:
@@ -3143,7 +2890,7 @@ impl<'h> Vm3<'h> {
         owner: &Variant,
         source: &ObjectRef,
     ) {
-        let routes: Vec<(i32, usize)> = self.programs[self.cur]
+        let routes: Vec<(i32, usize)> = self.exec.programs[self.cur]
             .event_routes
             .iter()
             .filter(|((binding, _), _)| *binding == binding_token)
@@ -3151,18 +2898,21 @@ impl<'h> Vm3<'h> {
             .collect();
         for (event, handler) in routes {
             if let Ok(subscription) = self
+                .exec
                 .host
                 .com()
                 .subscribe_event(source.clone(), ComMemberToken::new(event))
             {
-                self.com_subscriptions.insert(
+                self.exec.events.com_subscriptions.insert(
                     subscription.raw(),
                     ComEventSink {
                         owner: owner.clone(),
                         handler,
                     },
                 );
-                self.com_subscriptions_by_key
+                self.exec
+                    .events
+                    .com_subscriptions_by_key
                     .entry(key)
                     .or_default()
                     .push(subscription.raw());
@@ -3172,13 +2922,14 @@ impl<'h> Vm3<'h> {
 
     /// Tear down every host (COM) subscription a `withevents` key holds (rebind / Set Nothing).
     fn unsubscribe_com_key(&mut self, key: i64) {
-        if let Some(tokens) = self.com_subscriptions_by_key.remove(&key) {
+        if let Some(tokens) = self.exec.events.com_subscriptions_by_key.remove(&key) {
             for raw in tokens {
                 let _ = self
+                    .exec
                     .host
                     .com()
                     .unsubscribe_event_variant(ComSubscriptionToken::new(raw));
-                self.com_subscriptions.remove(&raw);
+                self.exec.events.com_subscriptions.remove(&raw);
             }
         }
     }
@@ -3186,6 +2937,8 @@ impl<'h> Vm3<'h> {
     /// Tear down every host (COM) subscription owned by `owner_raw` (owner cleared / terminated).
     fn unsubscribe_com_owner(&mut self, owner_raw: i32) {
         let keys: Vec<i64> = self
+            .exec
+            .events
             .com_subscriptions_by_key
             .keys()
             .copied()
@@ -3201,18 +2954,20 @@ impl<'h> Vm3<'h> {
     /// handler faults are suppressed (events arrive out-of-band from the raiser). Mirrors vm2's
     /// `pump_com_events`; called at statement boundaries.
     fn pump_com_events(&mut self) {
-        if self.pumping {
+        if self.exec.events.pumping {
             return;
         }
-        self.pumping = true;
+        self.exec.events.pumping = true;
         loop {
-            let payload = match self.host.com().poll_event_callback() {
+            let payload = match self.exec.host.com().poll_event_callback() {
                 Ok(Some(payload)) => payload,
                 // `Ok(None)` = nothing pending; `Err` = the host has no event delivery (the null
                 // host) — either way, stop pumping.
                 _ => break,
             };
             let sink = self
+                .exec
+                .events
                 .com_subscriptions
                 .get(&payload.subscription.raw())
                 .map(|sink| (sink.owner.clone(), sink.handler));
@@ -3227,15 +2982,22 @@ impl<'h> Vm3<'h> {
                     .as_object_ref()
                     .map(|o| o.bundle_id() as usize)
                     .unwrap_or(self.cur);
-                let _ =
-                    self.run_proc_with_values(owner_bundle, FuncId(handler), owner, values, true);
+                let _ = <Self as ProcInvoker>::invoke_proc_with_values(
+                    self,
+                    owner_bundle,
+                    FuncId(handler),
+                    owner,
+                    values,
+                    true,
+                );
             }
             let _ = self
+                .exec
                 .host
                 .com()
                 .release_event_callback_variant(payload.callback);
         }
-        self.pumping = false;
+        self.exec.events.pumping = false;
     }
 
     /// `TypeOf <object> Is <Type>`: for a project instance, match the bare type name against
@@ -3258,6 +3020,7 @@ impl<'h> Vm3<'h> {
         }
         if obj.is_project_instance() {
             return Ok(self
+                .exec
                 .programs
                 .get(obj.bundle_id() as usize)
                 .and_then(|lp| lp.program.classes.get(obj.route_key() as usize))
@@ -3269,7 +3032,7 @@ impl<'h> Vm3<'h> {
                             .any(|i| i.eq_ignore_ascii_case(bare))
                 }));
         }
-        if let Ok(Some(name)) = self.host.com().object_type_name(obj.clone())
+        if let Ok(Some(name)) = self.exec.host.com().object_type_name(obj.clone())
             && (name.eq_ignore_ascii_case(type_name) || name.eq_ignore_ascii_case(bare))
         {
             return Ok(true);
@@ -3286,12 +3049,14 @@ impl<'h> Vm3<'h> {
         }
         if object.is_project_instance() {
             return self
+                .exec
                 .programs
                 .get(object.bundle_id() as usize)
                 .and_then(|lp| lp.program.classes.get(object.route_key() as usize))
                 .map(|c| c.name.clone());
         }
-        self.host
+        self.exec
+            .host
             .com()
             .object_type_name(object.clone())
             .ok()
@@ -3305,6 +3070,7 @@ impl<'h> Vm3<'h> {
         args: &[OxCallArg],
     ) -> Result<Vec<OxArg>, Vm3Error> {
         let callee = self
+            .exec
             .programs
             .get(target_prog)
             .and_then(|lp| lp.program.funcs.get(proc.0))
@@ -3372,6 +3138,7 @@ impl<'h> Vm3<'h> {
         kind: ProjectMemberKind,
     ) -> Result<FuncId, Vm3Error> {
         let program = self
+            .exec
             .programs
             .get(obj_bundle)
             .map(|lp| lp.program)
@@ -3460,6 +3227,7 @@ impl<'h> Vm3<'h> {
         // program boundary. Resolve the member there, and run the body in that program.
         let obj_bundle = object.bundle_id() as usize;
         let program = self
+            .exec
             .programs
             .get(obj_bundle)
             .map(|lp| lp.program)
@@ -3526,8 +3294,8 @@ impl<'h> Vm3<'h> {
         }
         // Built-in library class (Collection): native-backed, reserved sentinel route key.
         let descriptor = self.resolve_extern_class(import)?;
-        let instance_id = self.next_instance_id;
-        self.next_instance_id += 1;
+        let instance_id = self.exec.next_instance_id;
+        self.exec.next_instance_id += 1;
         let object = ObjectRef::from_project_instance(
             instance_id,
             VBA_COLLECTION_ROUTE_KEY,
@@ -3547,7 +3315,7 @@ impl<'h> Vm3<'h> {
         let b = self.program_index_by_unit(&imp.unit).ok_or_else(|| {
             Vm3Error::Malformed(format!("unresolved reference to unit '{}'", imp.unit))
         })?;
-        let class_idx = self.programs[b]
+        let class_idx = self.exec.programs[b]
             .program
             .exports
             .iter()
@@ -3706,8 +3474,8 @@ impl<'h> Vm3<'h> {
         let snapshot = object
             .with_native_collection(|data| data.clone())
             .ok_or_else(|| Vm3Error::Fault(Fault::new(424, "Object required")))?;
-        let instance_id = self.next_instance_id;
-        self.next_instance_id += 1;
+        let instance_id = self.exec.next_instance_id;
+        self.exec.next_instance_id += 1;
         let enumerator = ObjectRef::from_project_instance(
             instance_id,
             VBA_COLLECTION_ROUTE_KEY,
@@ -3746,7 +3514,8 @@ impl<'h> Vm3<'h> {
         if obj.is_project_instance() {
             return self.project_class_enumerator_elements(obj, depth + 1);
         }
-        self.host
+        self.exec
+            .host
             .com()
             .enumerate_object(obj)
             .map_err(Fault::from_hal)
@@ -3761,6 +3530,7 @@ impl<'h> Vm3<'h> {
         let class_idx = object.route_key() as usize;
         let obj_bundle = object.bundle_id() as usize;
         let program = self
+            .exec
             .programs
             .get(obj_bundle)
             .map(|lp| lp.program)
@@ -3879,6 +3649,7 @@ impl<'h> Vm3<'h> {
             call_kind_hint: Some(invoke_kind_to_dynamic(invoke_kind)),
         };
         let (ret, _) = self
+            .exec
             .host
             .com()
             .dispatch_invoke_dynamic_variant_with_writebacks(&request)
@@ -3946,6 +3717,7 @@ impl<'h> Vm3<'h> {
             call_kind_hint: Some(invoke_kind_to_dynamic(invoke_kind)),
         };
         let (ret, writebacks) = self
+            .exec
             .host
             .com()
             .dispatch_invoke_dynamic_variant_with_writebacks(&request)
@@ -3953,13 +3725,9 @@ impl<'h> Vm3<'h> {
         // Apply COM `[out]`/`[in,out]` write-backs to the ByRef call-site places; only a
         // `ByRef` arg (marked from the typelib's param directions) is written back — a
         // force-ByVal `(x)` / non-l-value is lowered to `Operand` and correctly skipped.
-        for (j, wb) in writebacks.into_iter().enumerate() {
-            if let Some(value) = wb
-                && let Some(OxCallArg::ByRef(place)) = args.get(j)
-            {
-                self.store(place, value)?;
-            }
-        }
+        apply_optional_byref_writebacks(args, &writebacks, |place, value| {
+            self.store(place, value)
+        })?;
         Ok(ret)
     }
 
@@ -3994,7 +3762,9 @@ impl<'h> Vm3<'h> {
             return Err(Vm3Error::Fault(Fault::new(94, "invalid use of Null")));
         }
         if id == NativeImplId::ErrorText && argv.is_empty() {
-            return Ok(Variant::from_string(self.err.description.clone()));
+            return Ok(Variant::from_string(
+                self.exec.err_engine.err.description.clone(),
+            ));
         }
         if id == NativeImplId::TypeName
             && let Some(object) = argv.first().and_then(|a| a.as_object_ref())
@@ -4005,7 +3775,7 @@ impl<'h> Vm3<'h> {
             // pure body (which yields the generic "Object"), exactly as vm2 does.
             return Ok(Variant::from_string(name));
         }
-        oxvba_lib::invoke(id, argv, self.host, &mut self.lib)
+        oxvba_lib::invoke(id, argv, self.exec.host, &mut self.exec.lib)
             .map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))
     }
 
@@ -4013,15 +3783,14 @@ impl<'h> Vm3<'h> {
     /// *value* of a ByRef argument (matching vm2's `native_args`), and an omitted one is
     /// `Empty`.
     fn native_args(&mut self, args: &[OxCallArg]) -> Result<Vec<Variant>, Vm3Error> {
-        args.iter()
-            .map(|a| match a {
-                OxCallArg::Operand(op) => self.operand(op),
-                OxCallArg::ByRef(place) => self.read(place),
-                OxCallArg::Omitted => Ok(Variant::empty()),
-                OxCallArg::Named { value, .. } => self.operand(value),
-                OxCallArg::Const(n) => Ok(Variant::from_i32(*n)),
-            })
-            .collect()
+        marshal_ox_call_args(
+            args,
+            |arg| match arg {
+                MarshalArgRef::Operand(op) => self.operand(op),
+                MarshalArgRef::ByRef(place) => self.read(place),
+            },
+            Variant::empty,
+        )
     }
 
     /// Marshal a `Declare Lib` external call through the host's dynamic-link HAL — the
@@ -4085,12 +3854,13 @@ impl<'h> Vm3<'h> {
         // across looping `Declare`s.
         let pin_addrs: Vec<i64> = arg_variants.iter().filter_map(Variant::as_i64).collect();
         let invoke = self
+            .exec
             .host
             .dynlink()
             .invoke_descriptor_variants(&view, &arg_variants);
         // VBA refreshes `Err.LastDllError` after every `Declare` call (the OS last-error the
         // HAL captured immediately after the native call); non-native lanes report 0.
-        self.last_dll_error = self.host.dynlink().last_dll_error();
+        self.exec.err_engine.last_dll_error = self.exec.host.dynlink().last_dll_error();
         let (ret, wb_values) = match invoke {
             Ok(pair) => pair,
             Err(err) => {
@@ -4101,13 +3871,7 @@ impl<'h> Vm3<'h> {
         // Copy each ByRef argument's marshaled-back value to its caller slot. The dynlink host
         // returns `wb_values` aligned to `args`; only `ByRef` args write back (a force-ByVal
         // `(x)` / non-l-value is lowered to `Operand`, so it is correctly left unchanged).
-        for (i, arg) in args.iter().enumerate() {
-            if let OxCallArg::ByRef(place) = arg
-                && let Some(value) = wb_values.get(i)
-            {
-                self.store(place, value.clone())?;
-            }
-        }
+        apply_byref_writebacks(args, &wb_values, |place, value| self.store(place, value))?;
         // Pointer-helper write-back: a `StrPtr(x)`/`VarPtr(x)` argument over an l-value reads
         // the pinned buffer (the native call may have mutated it) back into the source
         // variable. The argument value is the registered pointer; the runtime registry
@@ -4236,6 +4000,7 @@ impl<'h> Vm3<'h> {
         let proc = FuncId(proc_token);
         let target_prog = self.cur;
         let Some(callee) = self
+            .exec
             .programs
             .get(target_prog)
             .and_then(|program| program.program.funcs.get(proc.0))
@@ -4249,7 +4014,13 @@ impl<'h> Vm3<'h> {
             .zip(raw_args.iter().copied())
             .map(|(local, raw)| Self::callback_arg_for_type(raw, &local.ty))
             .collect();
-        match self.run_callback_proc_with_values(target_prog, proc, args, true) {
+        match <Self as ProcInvoker>::invoke_callback_proc_with_values(
+            self,
+            target_prog,
+            proc,
+            args,
+            true,
+        ) {
             Ok(ret) => Self::callback_return_to_isize(&ret),
             Err(_) => 0,
         }
@@ -4298,20 +4069,22 @@ impl<'h> Vm3<'h> {
                 *slot = v;
             }
         }
-        frame.saved_error_mode = self.error_mode;
-        frame.saved_active_error = self.active_error;
+        let saved_err = self.exec.err_engine.enter_activation();
+        frame.saved_error_mode = saved_err.error_mode;
+        frame.saved_active_error = saved_err.active_error;
         self.frames.push(frame);
-        self.error_mode = ErrorMode::None;
-        self.active_error = None;
         let result = self.run_loop(base);
         let ret = self
             .frames
             .get(base)
             .and_then(|fr| fr.return_local.and_then(|rl| fr.locals.get(rl.0).cloned()))
             .unwrap_or_else(Variant::empty);
-        if let Some(fr) = self.frames.get(base) {
-            self.error_mode = fr.saved_error_mode;
-            self.active_error = fr.saved_active_error;
+        let saved_err = self.frames.get(base).map(|fr| SavedErrState {
+            error_mode: fr.saved_error_mode,
+            active_error: fr.saved_active_error,
+        });
+        if let Some(saved_err) = saved_err {
+            self.exec.err_engine.restore(saved_err);
         }
         self.frames.truncate(base);
         self.prune_param_array_aliases_from_depth(self.frames.len());
@@ -4389,7 +4162,7 @@ impl<'h> Vm3<'h> {
     /// `Temp` absence is the SSA write-before-read contract (sparse map → `Empty`).
     fn read_loc(&self, loc: Loc) -> Result<Variant, Vm3Error> {
         match loc {
-            Loc::Global(p, g) => self.programs[p]
+            Loc::Global(p, g) => self.exec.programs[p]
                 .globals
                 .get(g)
                 .cloned()
@@ -4414,7 +4187,7 @@ impl<'h> Vm3<'h> {
         self.param_array_aliases.remove(&loc);
         match loc {
             Loc::Global(p, g) => {
-                *self.programs[p].globals.get_mut(g).ok_or_else(|| {
+                *self.exec.programs[p].globals.get_mut(g).ok_or_else(|| {
                     Vm3Error::Malformed(format!("global [{p}][{g}] out of range"))
                 })? = v;
             }
@@ -4445,7 +4218,7 @@ impl<'h> Vm3<'h> {
     /// `None`, so the caller falls back to the cloning path.
     fn read_loc_ref(&self, loc: Loc) -> Result<Option<&Variant>, Vm3Error> {
         match loc {
-            Loc::Global(p, g) => self.programs[p]
+            Loc::Global(p, g) => self.exec.programs[p]
                 .globals
                 .get(g)
                 .map(Some)
@@ -4466,7 +4239,7 @@ impl<'h> Vm3<'h> {
     /// `Temp` absent from the sparse map yields `None` (caller falls back).
     fn read_loc_mut(&mut self, loc: Loc) -> Result<Option<&mut Variant>, Vm3Error> {
         match loc {
-            Loc::Global(p, g) => self.programs[p]
+            Loc::Global(p, g) => self.exec.programs[p]
                 .globals
                 .get_mut(g)
                 .map(Some)
@@ -4513,7 +4286,7 @@ impl<'h> Vm3<'h> {
         bundle: usize,
         binding: OxAsNew,
     ) -> Result<Variant, Vm3Error> {
-        if bundle >= self.programs.len() {
+        if bundle >= self.exec.programs.len() {
             return Err(Vm3Error::Malformed(format!(
                 "unknown As New owner bundle {bundle}"
             )));
@@ -4535,7 +4308,8 @@ impl<'h> Vm3<'h> {
         if !object.is_project_instance() || object.route_key() == VBA_COLLECTION_ROUTE_KEY {
             return None;
         }
-        self.programs
+        self.exec
+            .programs
             .get(object.bundle_id() as usize)?
             .program
             .classes
@@ -4579,23 +4353,39 @@ impl CallbackExecutor for Vm3<'_> {
     }
 }
 
+impl<'h> ProcInvoker for Vm3<'h> {
+    type Error = Vm3Error;
+
+    fn invoke_proc_with_values(
+        &mut self,
+        target_prog: usize,
+        proc: FuncId,
+        me: Variant,
+        args: Vec<Variant>,
+        suppress: bool,
+    ) -> Result<Variant, Self::Error> {
+        self.run_proc_with_values(target_prog, proc, me, args, suppress)
+    }
+
+    fn invoke_callback_proc_with_values(
+        &mut self,
+        target_prog: usize,
+        proc: FuncId,
+        args: Vec<Variant>,
+        suppress: bool,
+    ) -> Result<Variant, Self::Error> {
+        self.run_callback_proc_with_values(target_prog, proc, args, suppress)
+    }
+
+    fn maybe_drain(&mut self) {
+        Vm3::maybe_drain(self);
+    }
+}
+
 /// The default VBA message for a run-time error code, used as `Err.Description` when a
 /// raised error has no explicit Description.
 fn default_error_message(code: i32) -> String {
     oxvba_runtime::default_error_message(code).to_string()
-}
-
-fn default_error_help_file() -> String {
-    "C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\1033\\VbLR6.chm".to_string()
-}
-
-fn default_error_help_context(code: i32) -> i32 {
-    let message = oxvba_runtime::default_error_message(code);
-    if message == "Application-defined or object-defined error" {
-        1_000_095
-    } else {
-        1_000_000 + code
-    }
 }
 
 fn cmp_op(op: CmpOp) -> arith::CmpOp {

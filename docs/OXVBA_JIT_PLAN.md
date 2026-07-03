@@ -1,8 +1,8 @@
 # OxVba — JIT Plan
 
-**Status:** Plan (design-verified 2026-07-02; two design passes + a fresh-eyes convention sweep folded in). M4-0 baseline implementation is complete; evidence is recorded in `docs/evidence/perf/JIT_M4_BASELINE_20260703.md`. M4-1 IR-prep implementation is complete; evidence is recorded in `docs/evidence/jit/JIT_M4_IR_PREP_20260703.md`.
+**Status:** Plan (design-verified 2026-07-02; two design passes + a fresh-eyes convention sweep folded in). M4-0 baseline implementation is complete; evidence is recorded in `docs/evidence/perf/JIT_M4_BASELINE_20260703.md`. M4-1 IR-prep implementation is complete; evidence is recorded in `docs/evidence/jit/JIT_M4_IR_PREP_20260703.md`. M4-2 runtime ABI implementation is complete; evidence is recorded in `docs/evidence/jit/JIT_M4_RT_ABI_20260703.md`.
 **Scope:** M4 — the Cranelift JIT backend: architecture, design, and implementation program, from IR-prep through full corpus parity, typed fast paths, JIT-generated COM vtables, and AOT PE export.
-**Companion documents:** `OXIR_VM3_ERROR_MODEL.md` (the normative error semantics this plan compiles), `AOT_CRANELIFT_PE_EXPORT_DESIGN_2026-06-20.md` (the AOT packaging substrate §11 builds on), `VM3_COMPLETION_AND_VM2_RETIREMENT_PLAN.md` (the predecessor plan whose workset idiom this document follows).
+**Companion documents:** `OXIR_VM3_ERROR_MODEL.md` (the normative error semantics this plan compiles), `spec/JIT_V2_RUN_PROTOCOL_V1.md` (the shared vm3/JIT activation and entry sequencing contract), `AOT_CRANELIFT_PE_EXPORT_DESIGN_2026-06-20.md` (the AOT packaging substrate §11 builds on), `VM3_COMPLETION_AND_VM2_RETIREMENT_PLAN.md` (the predecessor plan whose workset idiom this document follows).
 
 ---
 
@@ -597,6 +597,7 @@ Temp type table on `OxFunc` (`temps: Vec<OxTy>`; elaboration records at `new_tem
 ### M4-2 — `oxvba-rt-abi`: ExecState, ErrEngine, kernels, shims v1 (L)
 New crate per §1; extract `ErrEngine` (cells + `route_fault`) and `ExecState` (§4.1 table) out of vm3, re-point vm3; ProcInvoker seam with the vm3 adapter; run-protocol contract documented (the §2 driver sequencing); extract `maybe_drain` core, ByRef/ParamArray copy-out, and native-call marshaling out of `Vm3` methods into shared functions; **`oxvba-eval` typed-kernel facade refactor** (checked-i64 / currency-i128 / f64 kernels as public typed entry points; Variant facades delegate — one semantic kernel, two facades); shim surface v1: typed families for Checked lanes + Variant shims for Widening/dynamic, clone/release (incl. type-specific handle releases), `rt_lib_invoke`, `rt_maybe_drain`, err shims.
 **Verify:** vm3 golden byte-identical after extraction (the behavior-preservation proof); balance still 0; shim unit tests incl. property-test equality of typed and Variant facades over the same kernels; `cargo tree`: no cycle, vm3 cranelift-free. **Depends:** M4-0. ∥ M4-1.
+**Implementation note (2026-07-03):** Complete in `bd-h4oh.3`; evidence is recorded in `docs/evidence/jit/JIT_M4_RT_ABI_20260703.md`. The only non-green lane is the non-blocking formal runner, which could not start in the current Linux environment because PowerShell is not installed.
 
 ### M4-3 — Cranelift skeleton: straight-line code runs (M)
 Pinned cranelift deps in `oxvba-jit` only; `Backend` trait over `JITModule`; JitRun/frame layout + dynamic-entry ABI; lower StmtBoundary/Assign/consts/arith-via-shims/Return; host compiles the image when `backend == Jit`; `jit_scope.snap` ratchet live.

@@ -27,3 +27,4 @@
 
 pub mod arith;
 pub mod collection;
+pub mod typed;

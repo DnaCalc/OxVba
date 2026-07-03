@@ -11,5 +11,8 @@ description = "The OxVBA semantic kernel: value-core op meanings over a ValueOps
 oxvba-runtime.workspace = true
 oxvba-bundle.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true

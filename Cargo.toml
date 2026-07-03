@@ -16,6 +16,7 @@ members = [
     "crates/oxvba-symbol",
     "crates/oxvba-bind",
     "crates/oxvba-oxir",
+    "crates/oxvba-rt-abi",
     "crates/oxvba-eval",
     "crates/oxvba-vm3",
     "crates/oxvba-differential",
@@ -63,6 +64,7 @@ oxvba-lib = { path = "crates/oxvba-lib" }
 oxvba-symbol = { path = "crates/oxvba-symbol" }
 oxvba-bind = { path = "crates/oxvba-bind" }
 oxvba-oxir = { path = "crates/oxvba-oxir" }
+oxvba-rt-abi = { path = "crates/oxvba-rt-abi" }
 oxvba-eval = { path = "crates/oxvba-eval" }
 oxvba-vm3 = { path = "crates/oxvba-vm3" }
 oxvba-differential = { path = "crates/oxvba-differential" }

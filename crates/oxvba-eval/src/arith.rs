@@ -10,6 +10,7 @@
 //! types go through `f64`. Errors carry their VBA code structurally ([`ArithError`]),
 //! so `Err.Number` / uncaught codes are right without string matching.
 
+use crate::typed::{self, CheckedIntBinOp};
 use oxvba_bundle::{NumericCoerceTarget, NumericMode, StringCompareMode};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{
@@ -17,10 +18,6 @@ use oxvba_runtime::{
     coerce::{coerce_to, parse_vba_numeric_string},
     variant_to_vba_string,
 };
-
-const CURRENCY_SCALE: i128 = 10_000;
-const CURRENCY_MIN: i128 = i64::MIN as i128;
-const CURRENCY_MAX: i128 = i64::MAX as i128;
 
 /// An arithmetic/coercion error carrying its VBA run-time error code.
 #[derive(Debug, Clone)]
@@ -218,14 +215,14 @@ fn checked_binop(
     l: &Variant,
     r: &Variant,
     ty: NumericCoerceTarget,
-    int_op: impl Fn(i64, i64) -> Option<i64>,
+    int_op: CheckedIntBinOp,
     float_op: impl Fn(f64, f64) -> f64,
 ) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
     let raw = if is_integer_target(ty) {
-        Variant::from_i64(int_op(int(l)?, int(r)?).ok_or_else(ArithError::overflow)?)
+        Variant::from_i64(typed::checked_i64_binop(int_op, int(l)?, int(r)?)?)
     } else {
         Variant::from_f64(float_op(num(l)?, num(r)?))
     };
@@ -235,7 +232,7 @@ fn checked_binop(
 pub fn add(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     match mode {
         NumericMode::Checked(NumericCoerceTarget::Currency) => currency_add(l, r),
-        NumericMode::Checked(ty) => checked_binop(l, r, ty, |a, b| a.checked_add(b), |a, b| a + b),
+        NumericMode::Checked(ty) => checked_binop(l, r, ty, CheckedIntBinOp::Add, typed::f64_add),
         NumericMode::Widening => widening_add(l, r),
     }
 }
@@ -243,7 +240,7 @@ pub fn add(l: &Variant, r: &Variant, mode: NumericMode) -> R {
 pub fn sub(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     match mode {
         NumericMode::Checked(NumericCoerceTarget::Currency) => currency_sub(l, r),
-        NumericMode::Checked(ty) => checked_binop(l, r, ty, |a, b| a.checked_sub(b), |a, b| a - b),
+        NumericMode::Checked(ty) => checked_binop(l, r, ty, CheckedIntBinOp::Sub, typed::f64_sub),
         NumericMode::Widening => widening_sub(l, r),
     }
 }
@@ -251,7 +248,7 @@ pub fn sub(l: &Variant, r: &Variant, mode: NumericMode) -> R {
 pub fn mul(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     match mode {
         NumericMode::Checked(NumericCoerceTarget::Currency) => currency_mul(l, r),
-        NumericMode::Checked(ty) => checked_binop(l, r, ty, |a, b| a.checked_mul(b), |a, b| a * b),
+        NumericMode::Checked(ty) => checked_binop(l, r, ty, CheckedIntBinOp::Mul, typed::f64_mul),
         NumericMode::Widening => widening_mul(l, r),
     }
 }
@@ -261,10 +258,9 @@ pub fn neg(v: &Variant, mode: NumericMode) -> R {
         return Ok(Variant::null());
     }
     match mode {
-        NumericMode::Checked(ty) if is_integer_target(ty) => coerce_numeric(
-            &Variant::from_i64(int(v)?.checked_neg().ok_or_else(ArithError::overflow)?),
-            ty,
-        ),
+        NumericMode::Checked(ty) if is_integer_target(ty) => {
+            coerce_numeric(&Variant::from_i64(typed::checked_i64_neg(int(v)?)?), ty)
+        }
         NumericMode::Checked(ty) => coerce_numeric(&Variant::from_f64(-num(v)?), ty),
         NumericMode::Widening if is_object_nothing(v) => Err(ArithError::object_not_set()),
         NumericMode::Widening => rt::neg(v).map_err(ArithError::from),
@@ -287,7 +283,7 @@ pub fn int_div(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     if b == 0 {
         return Err(ArithError::div_by_zero());
     }
-    let q = int(l)?.checked_div(b).ok_or_else(ArithError::overflow)?;
+    let q = typed::checked_i64_binop(CheckedIntBinOp::Div, int(l)?, b)?;
     coerce_numeric(&Variant::from_i64(q), int_result_type(mode))
 }
 
@@ -299,7 +295,7 @@ pub fn modulo(l: &Variant, r: &Variant, mode: NumericMode) -> R {
     if b == 0 {
         return Err(ArithError::div_by_zero());
     }
-    let m = int(l)?.checked_rem(b).ok_or_else(ArithError::overflow)?;
+    let m = typed::checked_i64_binop(CheckedIntBinOp::Rem, int(l)?, b)?;
     coerce_numeric(&Variant::from_i64(m), int_result_type(mode))
 }
 
@@ -315,17 +311,11 @@ fn widen(l: &Variant, r: &Variant, f: impl Fn(&Variant, &Variant) -> Result<Vari
 }
 
 fn checked_currency(scaled: i128) -> R {
-    if !(CURRENCY_MIN..=CURRENCY_MAX).contains(&scaled) {
-        return Err(ArithError::overflow());
-    }
-    Ok(Variant::from_currency_scaled_i64(scaled as i64))
+    typed::currency_checked_scaled_i128(scaled).map(Variant::from_currency_scaled_i64)
 }
 
 fn scale_integer_to_currency(value: i128) -> Result<i128, ArithError> {
-    value
-        .checked_mul(CURRENCY_SCALE)
-        .filter(|scaled| (CURRENCY_MIN..=CURRENCY_MAX).contains(scaled))
-        .ok_or_else(ArithError::overflow)
+    typed::currency_scale_integer_to_scaled(value)
 }
 
 fn exact_currency_operand(v: &Variant) -> Option<Result<i128, ArithError>> {
@@ -333,7 +323,7 @@ fn exact_currency_operand(v: &Variant) -> Option<Result<i128, ArithError>> {
         VarType::Empty => 0,
         VarType::Boolean => {
             if v.as_bool().unwrap_or(false) {
-                -CURRENCY_SCALE
+                -typed::CURRENCY_SCALE
             } else {
                 0
             }
@@ -402,48 +392,24 @@ fn currency_add(l: &Variant, r: &Variant) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
-    checked_currency(
-        currency_operand(l)?
-            .checked_add(currency_operand(r)?)
-            .ok_or_else(ArithError::overflow)?,
-    )
+    typed::currency_add_scaled_i128(currency_operand(l)?, currency_operand(r)?)
+        .map(Variant::from_currency_scaled_i64)
 }
 
 fn currency_sub(l: &Variant, r: &Variant) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
-    checked_currency(
-        currency_operand(l)?
-            .checked_sub(currency_operand(r)?)
-            .ok_or_else(ArithError::overflow)?,
-    )
-}
-
-fn div_round_ties_even(numerator: i128, denominator: i128) -> i128 {
-    debug_assert!(denominator > 0);
-    let negative = numerator < 0;
-    let magnitude = if negative { -numerator } else { numerator };
-    let quotient = magnitude / denominator;
-    let remainder = magnitude % denominator;
-    let twice_remainder = remainder * 2;
-    let rounded =
-        if twice_remainder > denominator || (twice_remainder == denominator && quotient % 2 != 0) {
-            quotient + 1
-        } else {
-            quotient
-        };
-    if negative { -rounded } else { rounded }
+    typed::currency_sub_scaled_i128(currency_operand(l)?, currency_operand(r)?)
+        .map(Variant::from_currency_scaled_i64)
 }
 
 fn currency_mul(l: &Variant, r: &Variant) -> R {
     if is_null(l) || is_null(r) {
         return Ok(Variant::null());
     }
-    let product = currency_operand(l)?
-        .checked_mul(currency_operand(r)?)
-        .ok_or_else(ArithError::overflow)?;
-    checked_currency(div_round_ties_even(product, CURRENCY_SCALE))
+    typed::currency_mul_scaled_i128(currency_operand(l)?, currency_operand(r)?)
+        .map(Variant::from_currency_scaled_i64)
 }
 
 /// Is this operand a `Date`? `Date` arithmetic re-tags its (otherwise `Double`) result
@@ -859,12 +825,7 @@ pub fn coerce_numeric(v: &Variant, target: NumericCoerceTarget) -> R {
             if let Some(scaled) = exact_currency_operand(v) {
                 return checked_currency(scaled?);
             }
-            let scaled = (num(v)? * 10_000.0).round_ties_even();
-            if scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64 {
-                Ok(Variant::from_currency_scaled_i64(scaled as i64))
-            } else {
-                Err(ArithError::overflow())
-            }
+            typed::currency_from_f64(num(v)?).map(Variant::from_currency_scaled_i64)
         }
         NumericCoerceTarget::Date => {
             if v.vtype() == VarType::String {
