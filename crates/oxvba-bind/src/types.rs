@@ -11,7 +11,31 @@
 
 use oxvba_bundle::coreir::{CoerceTarget, CoreBinOp, CoreValue};
 use oxvba_bundle::{ArrayElementType, AssignmentTargetKind, NumericCoerceTarget, NumericMode};
+use oxvba_symbol::cond_comp::{ConditionalCompilationPointerWidth, ConditionalCompilationTarget};
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TypeContext {
+    long_ptr_width: ConditionalCompilationPointerWidth,
+}
+
+impl TypeContext {
+    pub(crate) fn from_target(target: ConditionalCompilationTarget) -> Self {
+        Self {
+            long_ptr_width: target.pointer_width,
+        }
+    }
+
+    pub(crate) fn longptr_is_64(self) -> bool {
+        self.long_ptr_width == ConditionalCompilationPointerWidth::Bits64
+    }
+}
+
+impl Default for TypeContext {
+    fn default() -> Self {
+        Self::from_target(ConditionalCompilationTarget::default())
+    }
+}
 
 // ── Type → coreir mappings (frame builder + ReDim) ──────────────────────────
 
@@ -104,24 +128,24 @@ fn fixed_array_bounds_name(bounds: &[oxvba_bundle::FixedArrayBound]) -> String {
 
 /// The coercion target when storing into a declared scalar type, or `None` when
 /// the VM's store coercion suffices (`Variant`/`Object`/array).
-pub fn coerce_target(to: &VarTypeRef) -> Option<CoerceTarget> {
+pub(crate) fn coerce_target_with(ctx: TypeContext, to: &VarTypeRef) -> Option<CoerceTarget> {
     match to {
         VarTypeRef::Builtin(BuiltinType::String) => Some(CoerceTarget::String),
-        VarTypeRef::Builtin(b) => numeric_target(*b).map(CoerceTarget::Numeric),
+        VarTypeRef::Builtin(b) => numeric_target(ctx, *b).map(CoerceTarget::Numeric),
         // Assigning to a fixed-length string pads/truncates to its length.
         VarTypeRef::FixedString(len) => Some(CoerceTarget::FixedString(*len as usize)),
         _ => None,
     }
 }
 
-fn numeric_target(b: BuiltinType) -> Option<NumericCoerceTarget> {
+fn numeric_target(ctx: TypeContext, b: BuiltinType) -> Option<NumericCoerceTarget> {
     Some(match b {
         // Storing into a `Boolean` is `CBool`: non-zero → `True`, zero → `False`.
         BuiltinType::Boolean => NumericCoerceTarget::Boolean,
         BuiltinType::Byte => NumericCoerceTarget::Byte,
         BuiltinType::Integer => NumericCoerceTarget::Integer,
-        // LongPtr is LongLong on 64-bit Office (the modern default).
         BuiltinType::Long => NumericCoerceTarget::Long,
+        BuiltinType::LongPtr if !ctx.longptr_is_64() => NumericCoerceTarget::Long,
         BuiltinType::LongPtr | BuiltinType::LongLong => NumericCoerceTarget::LongLong,
         BuiltinType::Single => NumericCoerceTarget::Single,
         BuiltinType::Double => NumericCoerceTarget::Double,
@@ -139,7 +163,7 @@ fn numeric_target(b: BuiltinType) -> Option<NumericCoerceTarget> {
 /// so the binder picks it here and stamps it on the op; the VM and JIT read it back.
 /// `Boolean`/`String`/`Date`/`Variant` results map to `Widening` (non-arithmetic or
 /// already-widest), as does `Double`.
-pub fn numeric_mode(ty: &VarTypeRef) -> NumericMode {
+pub(crate) fn numeric_mode_with(ctx: TypeContext, ty: &VarTypeRef) -> NumericMode {
     let VarTypeRef::Builtin(b) = ty else {
         return NumericMode::Widening;
     };
@@ -147,7 +171,7 @@ pub fn numeric_mode(ty: &VarTypeRef) -> NumericMode {
         BuiltinType::Double | BuiltinType::Boolean | BuiltinType::Date | BuiltinType::String => {
             NumericMode::Widening
         }
-        other => numeric_target(*other).map_or(NumericMode::Widening, NumericMode::Checked),
+        other => numeric_target(ctx, *other).map_or(NumericMode::Widening, NumericMode::Checked),
     }
 }
 
@@ -158,8 +182,8 @@ pub fn numeric_mode(ty: &VarTypeRef) -> NumericMode {
 /// Double-biased and integer literals carry a `Long` payload). No-op for
 /// `Object`/`Variant`/array targets (their store needs no scalar coercion). Skips
 /// re-wrapping a value already coerced to the same target.
-pub fn coerce_store(value: CoreValue, to: &VarTypeRef) -> CoreValue {
-    let Some(target) = coerce_target(to) else {
+pub(crate) fn coerce_store_with(ctx: TypeContext, value: CoreValue, to: &VarTypeRef) -> CoreValue {
+    let Some(target) = coerce_target_with(ctx, to) else {
         return value;
     };
     if let CoreValue::Coerce { to: existing, .. } = &value
@@ -175,7 +199,12 @@ pub fn coerce_store(value: CoreValue, to: &VarTypeRef) -> CoreValue {
 
 /// Coerce `value` (of type `from`) to type `to`, wrapping in a `Coerce` node only
 /// when a scalar conversion is actually needed (skips identity conversions).
-pub fn coerce(value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue {
+pub(crate) fn coerce_with(
+    ctx: TypeContext,
+    value: CoreValue,
+    from: &VarTypeRef,
+    to: &VarTypeRef,
+) -> CoreValue {
     if from == to {
         return value;
     }
@@ -186,7 +215,7 @@ pub fn coerce(value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue
     if matches!(from, VarTypeRef::Array(_)) {
         return value;
     }
-    match coerce_target(to) {
+    match coerce_target_with(ctx, to) {
         Some(target) => CoreValue::Coerce {
             value: Box::new(value),
             to: target,
@@ -195,17 +224,20 @@ pub fn coerce(value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue
     }
 }
 
-pub fn is_longlong(ty: &VarTypeRef) -> bool {
-    matches!(
-        ty,
-        VarTypeRef::Builtin(BuiltinType::LongLong | BuiltinType::LongPtr)
-    )
+pub(crate) fn is_longlong_with(ctx: TypeContext, ty: &VarTypeRef) -> bool {
+    matches!(ty, VarTypeRef::Builtin(BuiltinType::LongLong))
+        || (matches!(ty, VarTypeRef::Builtin(BuiltinType::LongPtr)) && ctx.longptr_is_64())
 }
 
 // ── Operator result lattice ─────────────────────────────────────────────────
 
 /// The (over-approximated) result type of a binary operator.
-pub fn result_type(op: CoreBinOp, lhs: &VarTypeRef, rhs: &VarTypeRef) -> VarTypeRef {
+pub(crate) fn result_type_with(
+    ctx: TypeContext,
+    op: CoreBinOp,
+    lhs: &VarTypeRef,
+    rhs: &VarTypeRef,
+) -> VarTypeRef {
     use CoreBinOp::*;
     match op {
         Eq | Ne | Lt | Le | Gt | Ge | Is | Like => builtin(BuiltinType::Boolean),
@@ -227,28 +259,26 @@ pub fn result_type(op: CoreBinOp, lhs: &VarTypeRef, rhs: &VarTypeRef) -> VarType
                 builtin(BuiltinType::Double)
             }
         }
-        Add | Sub | Mul => arith_result(lhs, rhs),
+        Add | Sub | Mul => arith_result(ctx, lhs, rhs),
     }
 }
 
 /// Numeric-widening result for `+`/`-`/`*` (Variant when either side isn't a
 /// plain numeric builtin — safe over-approximation).
-fn arith_result(lhs: &VarTypeRef, rhs: &VarTypeRef) -> VarTypeRef {
-    match (numeric_rank(lhs), numeric_rank(rhs)) {
+fn arith_result(ctx: TypeContext, lhs: &VarTypeRef, rhs: &VarTypeRef) -> VarTypeRef {
+    match (numeric_rank(ctx, lhs), numeric_rank(ctx, rhs)) {
         (Some(a), Some(b)) => builtin(rank_to_builtin(a.max(b))),
         _ => VarTypeRef::Variant,
     }
 }
 
-fn numeric_rank(ty: &VarTypeRef) -> Option<u8> {
+fn numeric_rank(ctx: TypeContext, ty: &VarTypeRef) -> Option<u8> {
     match ty {
         VarTypeRef::Builtin(b) => match b {
             BuiltinType::Byte => Some(0),
             BuiltinType::Integer => Some(1),
             BuiltinType::Long => Some(2),
-            // On the Win64 runtime target `LongPtr` is a 64-bit type, so it
-            // widens with `LongLong` — ranking it with `Long` would compute a
-            // pointer-sized operand's arithmetic in 32 bits and overflow.
+            BuiltinType::LongPtr if !ctx.longptr_is_64() => Some(2),
             BuiltinType::LongLong | BuiltinType::LongPtr => Some(3),
             BuiltinType::Currency => Some(4),
             BuiltinType::Single => Some(5),
@@ -298,27 +328,40 @@ mod tests {
         builtin(BuiltinType::Long)
     }
 
+    fn ctx() -> TypeContext {
+        TypeContext::default()
+    }
+
     #[test]
     fn widening_picks_the_wider_type() {
         assert_eq!(
-            result_type(
+            result_type_with(
+                ctx(),
                 CoreBinOp::Add,
                 &builtin(BuiltinType::Integer),
                 &builtin(BuiltinType::Double)
             ),
             builtin(BuiltinType::Double)
         );
-        assert_eq!(result_type(CoreBinOp::Mul, &long(), &long()), long());
+        assert_eq!(
+            result_type_with(ctx(), CoreBinOp::Mul, &long(), &long()),
+            long()
+        );
     }
 
     #[test]
     fn comparisons_and_concat_have_fixed_result() {
         assert_eq!(
-            result_type(CoreBinOp::Lt, &long(), &long()),
+            result_type_with(ctx(), CoreBinOp::Lt, &long(), &long()),
             builtin(BuiltinType::Boolean)
         );
         assert_eq!(
-            result_type(CoreBinOp::Concat, &long(), &builtin(BuiltinType::String)),
+            result_type_with(
+                ctx(),
+                CoreBinOp::Concat,
+                &long(),
+                &builtin(BuiltinType::String)
+            ),
             builtin(BuiltinType::String)
         );
     }
@@ -326,7 +369,7 @@ mod tests {
     #[test]
     fn variant_operand_propagates() {
         assert_eq!(
-            result_type(CoreBinOp::Add, &VarTypeRef::Variant, &long()),
+            result_type_with(ctx(), CoreBinOp::Add, &VarTypeRef::Variant, &long()),
             VarTypeRef::Variant
         );
     }
@@ -336,19 +379,19 @@ mod tests {
         let v = CoreValue::Const(oxvba_bundle::coreir::CoreConst::I32(5));
         // Long → Long: no node.
         assert!(matches!(
-            coerce(v.clone(), &long(), &long()),
+            coerce_with(ctx(), v.clone(), &long(), &long()),
             CoreValue::Const(_)
         ));
         // Long → Integer: a Coerce node.
         assert!(matches!(
-            coerce(v, &long(), &builtin(BuiltinType::Integer)),
+            coerce_with(ctx(), v, &long(), &builtin(BuiltinType::Integer)),
             CoreValue::Coerce { .. }
         ));
         assert!(matches!(
-            coerce_target(&builtin(BuiltinType::String)),
+            coerce_target_with(ctx(), &builtin(BuiltinType::String)),
             Some(CoerceTarget::String)
         ));
         // Currency target: now expressible.
-        assert!(coerce_target(&builtin(BuiltinType::Currency)).is_some());
+        assert!(coerce_target_with(ctx(), &builtin(BuiltinType::Currency)).is_some());
     }
 }

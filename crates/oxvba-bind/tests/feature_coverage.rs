@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_runtime::{Variant, bstr::BStr};
+use oxvba_symbol::cond_comp::ConditionalCompilationTarget;
 use oxvba_symbol::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
 };
@@ -28,6 +29,13 @@ impl TypeLibResolver for NullTypeLibs {
 
 /// Wrap a snippet as a one-module project (module name `Main`).
 fn manifest(source: &str) -> SymbolProjectManifest {
+    manifest_with_target(source, ConditionalCompilationTarget::default())
+}
+
+fn manifest_with_target(
+    source: &str,
+    target: ConditionalCompilationTarget,
+) -> SymbolProjectManifest {
     SymbolProjectManifest {
         project_name: "Conf".into(),
         project_kind: ProjectKind::Source,
@@ -40,7 +48,7 @@ fn manifest(source: &str) -> SymbolProjectManifest {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
-        conditional_compilation_target: Default::default(),
+        conditional_compilation_target: target,
     }
 }
 
@@ -48,7 +56,18 @@ fn manifest(source: &str) -> SymbolProjectManifest {
 /// module globals followed by the entry (`Sub Main`) frame's locals (matching the
 /// legacy `snapshot_variants` slot order).
 fn run_result(source: &str) -> Result<Vec<Variant>, String> {
-    let program = oxvba_bind::bind_program(&manifest(source), &NullTypeLibs)
+    run_manifest_result(&manifest(source))
+}
+
+fn run_result_with_target(
+    source: &str,
+    target: ConditionalCompilationTarget,
+) -> Result<Vec<Variant>, String> {
+    run_manifest_result(&manifest_with_target(source, target))
+}
+
+fn run_manifest_result(manifest: &SymbolProjectManifest) -> Result<Vec<Variant>, String> {
+    let program = oxvba_bind::bind_program(manifest, &NullTypeLibs)
         .map_err(|e| format!("bind error: {e:?}"))?;
     let oxp = oxvba_oxir::elaborate::elaborate(&program)
         .map_err(|e| format!("elaborate error: {e:?}"))?;
@@ -278,6 +297,76 @@ fn longptr_arithmetic_widens_to_64_bit_not_long() {
          Dim p As LongPtr\np = 2147483647\nr = p + p\n\
          End Sub");
     assert_eq!(snap[0], Variant::from_i64(4_294_967_294));
+}
+
+#[test]
+fn longptr_default_follows_win32_target_width() {
+    let snap = run_result_with_target(
+        "Sub Main()\n\
+         Dim p As LongPtr\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 LongPtr default should bind as Long zero");
+    assert_eq!(snap[0], Variant::from_i32(0));
+}
+
+#[test]
+fn longptr_store_follows_win32_target_width() {
+    let snap = run_result_with_target(
+        "Sub Main()\n\
+         Dim p As LongPtr\n\
+         p = 2147483647\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 LongPtr should accept Long-width max value");
+    assert_eq!(snap[0], Variant::from_i32(2_147_483_647));
+}
+
+#[test]
+fn longptr_store_overflows_above_long_on_win32_target() {
+    let err = run_result_with_target(
+        "Sub Main()\n\
+         Dim p As LongPtr\n\
+         p = 2147483648\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect_err("Win32 LongPtr is Long-sized and should overflow above Long max");
+    assert!(
+        err.contains("runtime error: 6"),
+        "expected overflow error 6, got {err}"
+    );
+}
+
+#[test]
+fn longptr_arithmetic_overflows_as_long_on_win32_target() {
+    let err = run_result_with_target(
+        "Sub Main()\n\
+         Dim p As LongPtr\n\
+         Dim r As Long\n\
+         p = 2147483647\n\
+         r = p + 1\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect_err("Win32 LongPtr arithmetic should use Long overflow rules");
+    assert!(
+        err.contains("runtime error: 6"),
+        "expected overflow error 6, got {err}"
+    );
+}
+
+#[test]
+fn longptr_store_keeps_longlong_width_on_win64_target() {
+    let snap = run("Public r As LongLong\n\
+         Sub Main()\n\
+         Dim p As LongPtr\n\
+         p = 2147483648\n\
+         r = p\n\
+         End Sub");
+    assert_eq!(snap[0], Variant::from_i64(2_147_483_648));
 }
 
 #[test]

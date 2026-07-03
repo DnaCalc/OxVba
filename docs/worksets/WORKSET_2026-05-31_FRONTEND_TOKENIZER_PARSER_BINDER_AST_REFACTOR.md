@@ -760,13 +760,20 @@ Required newly explicit delivery beads:
   through a culture-specific order, plus same-project module-/project-qualified constants such as
   `Const X As Long = ModA.K + 1` through the compile-time constant evaluator, with scanner-owned
   declaration visibility now preventing default-Private or explicit `Private Const` values from
-  leaking across sibling modules while still allowing same-module qualification.
+  leaking across sibling modules while still allowing same-module qualification. A 2026-07-03
+  continuation threads `SymbolProjectManifest.conditional_compilation_target` pointer width through
+  the clean binder's scalar `LongPtr` type context: Win64 keeps `LongLong`-sized store/default and
+  arithmetic behavior, while Win32-target scalar stores/defaults, by-value/default argument coercion,
+  integer division/`Mod` result choice, arithmetic overflow mode, and file-read type codes now use
+  `Long`-sized behavior instead of the old unconditional Win64 assumption.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic and
   deterministic string-Date store subset,
-  full platform `LongPtr` semantics, lossless
+  remaining platform `LongPtr` semantics outside that scalar binder slice (notably array/UDT/native
+  pointer layout and compile-time `Const`/optional-default validation under non-Win64 targets),
+  lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
 - FE-7.6/FE-8.5.f Reference/imported COM construction and member binding: route imported
@@ -1655,7 +1662,12 @@ Candidate bead units:
   string-to-declared-scalar optional default metadata/runtime binding for covered Boolean,
   integer, Currency, and deterministic Date text defaults, deterministic string-to-Date store
   coercion through the shared runtime parser, plus bounded equality-based `Like` folding for
-  covered string Boolean constants.
+  covered string Boolean constants. A 2026-07-03 scalar `LongPtr` continuation now routes the
+  clean binder's declared scalar `LongPtr` coercion/default/arithmetic/file-read type-code decisions
+  through the manifest pointer-width target, so Win32-target execution uses `Long`-sized behavior
+  for those paths while Win64 retains the existing `LongLong`-sized behavior; array/UDT/native
+  pointer layout and compile-time `Const`/optional-default validation under non-Win64 targets remain
+  open platform-LongPtr scope.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding

@@ -267,7 +267,7 @@ impl<'a> ProcLower<'a> {
                 let value = CoreValue::Unary {
                     op: CoreUnOp::Negate,
                     expr: Box::new(operand.value),
-                    num: types::numeric_mode(&ty),
+                    num: self.g.numeric_mode(&ty),
                 };
                 Ok(value_bound(value, ty))
             }
@@ -333,13 +333,13 @@ impl<'a> ProcLower<'a> {
         // else `Long`); the VM rounds the operands. Every other op's result type comes
         // from the promotion lattice.
         let ty = if matches!(op, CoreBinOp::IntDiv | CoreBinOp::Mod) {
-            if types::is_longlong(&lhs.ty) || types::is_longlong(&rhs.ty) {
+            if self.g.is_longlong(&lhs.ty) || self.g.is_longlong(&rhs.ty) {
                 builtin(BuiltinType::LongLong)
             } else {
                 builtin(BuiltinType::Long)
             }
         } else {
-            types::result_type(op, &lhs.ty, &rhs.ty)
+            self.g.result_type(op, &lhs.ty, &rhs.ty)
         };
         // The numeric regime (checked-fixed vs widening) rides on the op itself, so the
         // VM and the JIT type the arithmetic without a separate coercion node.
@@ -348,7 +348,7 @@ impl<'a> ProcLower<'a> {
             lhs: Box::new(lhs.value),
             rhs: Box::new(rhs.value),
             mode: self.info.compare_mode,
-            num: types::numeric_mode(&ty),
+            num: self.g.numeric_mode(&ty),
         };
         Ok(value_bound(value, ty))
     }

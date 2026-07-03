@@ -506,7 +506,7 @@ impl<'a> ProcLower<'a> {
                 let expected = self.g.resolve_udt_type(p.ty.clone());
                 let actual = self.g.resolve_udt_type(bound.ty.clone());
                 ensure_byval_type_compatible(&expected, &actual)?;
-                types::coerce(bound.value, &bound.ty, &p.ty)
+                self.g.coerce(bound.value, &bound.ty, &p.ty)
             }
             None => bound.value,
         };
@@ -938,7 +938,7 @@ impl<'a> ProcLower<'a> {
             };
             let value = if matches!(kind, PtrKind::Var) && scalar_ptr_writeback_kind(&ty).is_some()
             {
-                types::coerce_store(CoreValue::Load(place), &ty)
+                self.g.coerce_store(CoreValue::Load(place), &ty)
             } else {
                 CoreValue::Load(place)
             };
@@ -975,7 +975,9 @@ impl<'a> ProcLower<'a> {
         }
         let bound = self.bind_expr(expr)?;
         let value = match param {
-            Some(p) => types::coerce(bound.value, &bound.ty, &tlb_param_to_vartype(p)),
+            Some(p) => self
+                .g
+                .coerce(bound.value, &bound.ty, &tlb_param_to_vartype(p)),
             None => bound.value,
         };
         Ok(CoreArg::ByVal(value))
@@ -1140,7 +1142,7 @@ impl<'a> ProcLower<'a> {
                 .get(index)
                 .map(tlb_param_to_vartype)
                 .unwrap_or(VarTypeRef::Variant);
-            return CoreArg::ByVal(types::coerce_store(CoreValue::Const(default.clone()), &ty));
+            return CoreArg::ByVal(self.g.coerce_store(CoreValue::Const(default.clone()), &ty));
         }
         let ty = param_types
             .get(index)
@@ -1149,7 +1151,7 @@ impl<'a> ProcLower<'a> {
         match &ty {
             VarTypeRef::Variant => CoreArg::Omitted,
             VarTypeRef::Object(_) => CoreArg::ByVal(CoreValue::Const(CoreConst::Nothing)),
-            ty => CoreArg::ByVal(types::coerce_store(zero_const(ty), ty)),
+            ty => CoreArg::ByVal(self.g.coerce_store(zero_const(ty), ty)),
         }
     }
 
@@ -1834,7 +1836,7 @@ impl<'a> ProcLower<'a> {
     /// `Missing` (a `Variant` optional with no default — an `Object` yields `Nothing`).
     fn omitted_optional_arg(&self, proc_sym: SymbolId, index: usize, param: &Param) -> CoreArg {
         if let Some(c) = self.g.env.optional_default(proc_sym, index) {
-            return CoreArg::ByVal(types::coerce_store(CoreValue::Const(c.clone()), &param.ty));
+            return CoreArg::ByVal(self.g.coerce_store(CoreValue::Const(c.clone()), &param.ty));
         }
         if !param.optional {
             return CoreArg::Omitted;
@@ -1842,7 +1844,7 @@ impl<'a> ProcLower<'a> {
         match &param.ty {
             VarTypeRef::Variant => CoreArg::Omitted, // the `Missing` marker
             VarTypeRef::Object(_) => CoreArg::ByVal(CoreValue::Const(CoreConst::Nothing)),
-            ty => CoreArg::ByVal(types::coerce_store(zero_const(ty), ty)),
+            ty => CoreArg::ByVal(self.g.coerce_store(zero_const(ty), ty)),
         }
     }
 

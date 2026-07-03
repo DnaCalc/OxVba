@@ -149,7 +149,7 @@ impl<'a> ProcLower<'a> {
         // A declared scalar variable holds its declared type: coerce the value to the
         // target type on store (unconditionally — the value's static type is not a
         // reliable proxy for its run-time tag). No-op for Object/Variant/array.
-        let value = types::coerce_store(val.value, &target_ty);
+        let value = self.g.coerce_store(val.value, &target_ty);
         Ok(vec![CoreStmt::Assign {
             place,
             value,
@@ -211,7 +211,7 @@ impl<'a> ProcLower<'a> {
         };
         Ok(vec![CoreStmt::Assign {
             place,
-            value: types::coerce_store(aligned, &target_ty),
+            value: self.g.coerce_store(aligned, &target_ty),
             intent: AssignmentIntent::Let,
             target_kind: types::assignment_target_kind(&target_ty),
             target_name: target_node.text().trim().to_string(),
@@ -255,7 +255,7 @@ impl<'a> ProcLower<'a> {
         val = self.bind_default_member_value_context(val, value_label)?;
         Ok(Some(vec![CoreStmt::Error(ErrorOp::SetErrField {
             field,
-            value: types::coerce_store(val.value, &target_ty),
+            value: self.g.coerce_store(val.value, &target_ty),
         })]))
     }
 
@@ -715,14 +715,15 @@ impl<'a> ProcLower<'a> {
                 .for_counter_token()
                 .ok_or_else(|| BindError::Malformed("For counter".into()))?;
             let (var, counter_ty) = self.place_ty_by_name(counter.text)?;
-            let start = types::coerce_store(
+            let start = self.g.coerce_store(
                 self.bind_required(node.for_start(), "For start")?,
                 &counter_ty,
             );
-            let end =
-                types::coerce_store(self.bind_required(node.for_end(), "For end")?, &counter_ty);
+            let end = self
+                .g
+                .coerce_store(self.bind_required(node.for_end(), "For end")?, &counter_ty);
             let step = match node.for_step() {
-                Some(s) => Some(types::coerce_store(self.bind_expr(s)?.value, &counter_ty)),
+                Some(s) => Some(self.g.coerce_store(self.bind_expr(s)?.value, &counter_ty)),
                 None => None,
             };
             let body = self.bind_loop_body(node.body_block(), LoopContext::For)?;
@@ -1241,7 +1242,7 @@ impl<'a> ProcLower<'a> {
             return Ok(Vec::new());
         };
         let Some((value, intent, target_kind, type_name)) =
-            default_value_for_type(&self.info.return_type)
+            default_value_for_type(self.g.type_ctx, &self.info.return_type)
         else {
             return Ok(Vec::new());
         };
@@ -1313,7 +1314,9 @@ impl<'a> ProcLower<'a> {
             out.extend(self.udt_record_init(name.text)?);
             if let Some(sym) = self.resolve(name.text).and_then(|b| b.symbol) {
                 let ty = self.symbol_type(sym);
-                if let Some((value, intent, target_kind, type_name)) = default_value_for_type(&ty) {
+                if let Some((value, intent, target_kind, type_name)) =
+                    default_value_for_type(self.g.type_ctx, &ty)
+                {
                     let place = self.place_by_name(name.text)?;
                     out.push(CoreStmt::Assign {
                         place,
@@ -1717,7 +1720,7 @@ impl<'a> ProcLower<'a> {
                     CoreArg::ByVal(CoreValue::Const(CoreConst::I32(1))),
                 ],
             );
-            let value = types::coerce(read, &VarTypeRef::Variant, &target_ty);
+            let value = self.g.coerce(read, &VarTypeRef::Variant, &target_ty);
             stmts.push(CoreStmt::Assign {
                 place,
                 value,
@@ -1749,7 +1752,7 @@ impl<'a> ProcLower<'a> {
             .ok_or_else(|| BindError::Malformed("Line Input # without a target".into()))?;
         let (place, target_ty) = self.bind_place(target_node)?;
         let read = self.vba_library_call(NativeImplId::FileLineInput, vec![CoreArg::ByVal(handle)]);
-        let value = types::coerce(read, &VarTypeRef::Variant, &target_ty);
+        let value = self.g.coerce(read, &VarTypeRef::Variant, &target_ty);
         Ok(vec![CoreStmt::Assign {
             place,
             value,
@@ -1836,7 +1839,10 @@ impl<'a> ProcLower<'a> {
         };
         let (place, target_ty) = self.bind_place(*target_node)?;
         // The read native needs the target's VBA type code to fix the record size.
-        let type_code = CoreValue::Const(CoreConst::I32(record_type_code(&target_ty)));
+        let type_code = CoreValue::Const(CoreConst::I32(record_type_code(
+            self.g.type_ctx,
+            &target_ty,
+        )));
         // String-length spec: a fixed-length string passes its length N (read N
         // bytes, no prefix); a variable string passes -(Len(target)) so a Binary
         // read knows the byte count (Random uses the on-disk 2-byte prefix).
@@ -1872,7 +1878,7 @@ impl<'a> ProcLower<'a> {
         // routing the read through `ExternProc` preserves the write-back exactly — the
         // target slot is the assignment's place, untouched by the callee change.
         let read = self.vba_library_call(NativeImplId::FileGetInto, args);
-        let value = types::coerce(
+        let value = self.g.coerce(
             read,
             &oxvba_symbol::signature::VarTypeRef::Variant,
             &target_ty,
@@ -1930,7 +1936,7 @@ fn normalize_identifier_token(text: &str) -> &str {
 
 /// The VBA `VarType` discriminant for a target type, so `Get` knows the fixed
 /// record size to read. Unknown/untyped targets fall back to `Variant`.
-fn record_type_code(ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
+fn record_type_code(type_ctx: types::TypeContext, ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
     use oxvba_runtime::VarType as Vt;
     use oxvba_symbol::signature::{BuiltinType as B, VarTypeRef};
     let vt = match ty {
@@ -1938,7 +1944,9 @@ fn record_type_code(ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
         VarTypeRef::Builtin(B::Integer) => Vt::Integer,
         VarTypeRef::Builtin(B::Boolean) => Vt::Boolean,
         VarTypeRef::Builtin(B::Long) => Vt::Long,
-        VarTypeRef::Builtin(B::LongLong) | VarTypeRef::Builtin(B::LongPtr) => Vt::LongLong,
+        VarTypeRef::Builtin(B::LongLong) => Vt::LongLong,
+        VarTypeRef::Builtin(B::LongPtr) if type_ctx.longptr_is_64() => Vt::LongLong,
+        VarTypeRef::Builtin(B::LongPtr) => Vt::Long,
         VarTypeRef::Builtin(B::Single) => Vt::Single,
         VarTypeRef::Builtin(B::Double) => Vt::Double,
         VarTypeRef::Builtin(B::Currency) => Vt::Currency,
@@ -1950,6 +1958,7 @@ fn record_type_code(ty: &oxvba_symbol::signature::VarTypeRef) -> i32 {
 }
 
 fn default_value_for_type(
+    type_ctx: types::TypeContext,
     ty: &VarTypeRef,
 ) -> Option<(
     CoreValue,
@@ -1959,9 +1968,11 @@ fn default_value_for_type(
 )> {
     let value = match ty {
         VarTypeRef::Builtin(BuiltinType::String) => CoreValue::Const(CoreConst::Str(String::new())),
-        VarTypeRef::FixedString(_) => {
-            types::coerce_store(CoreValue::Const(CoreConst::Str(String::new())), ty)
-        }
+        VarTypeRef::FixedString(_) => types::coerce_store_with(
+            type_ctx,
+            CoreValue::Const(CoreConst::Str(String::new())),
+            ty,
+        ),
         VarTypeRef::Builtin(BuiltinType::Boolean) => CoreValue::Const(CoreConst::Bool(false)),
         VarTypeRef::Builtin(
             BuiltinType::Byte
@@ -1973,7 +1984,7 @@ fn default_value_for_type(
             | BuiltinType::Double
             | BuiltinType::Currency
             | BuiltinType::Date,
-        ) => types::coerce_store(CoreValue::Const(CoreConst::I32(0)), ty),
+        ) => types::coerce_store_with(type_ctx, CoreValue::Const(CoreConst::I32(0)), ty),
         VarTypeRef::Object(_) => CoreValue::Const(CoreConst::Nothing),
         VarTypeRef::Variant
         | VarTypeRef::Array(_)

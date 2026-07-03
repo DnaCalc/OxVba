@@ -120,6 +120,7 @@ fn bind_one(
         env,
         manifest,
         ids: &ids,
+        type_ctx: types::TypeContext::from_target(manifest.conditional_compilation_target),
         imports: RefCell::new(ImportCollector::default()),
     };
 
@@ -500,6 +501,7 @@ struct Lower<'a> {
     env: &'a ResolutionEnvironment,
     manifest: &'a SymbolProjectManifest,
     ids: &'a IdAllocator,
+    type_ctx: types::TypeContext,
     imports: RefCell<ImportCollector>,
 }
 
@@ -507,6 +509,31 @@ impl Lower<'_> {
     /// Register a cross-bundle import and return its index in `CoreProgram.imports`.
     fn intern_import(&self, import: BundleImport) -> usize {
         self.imports.borrow_mut().intern(import)
+    }
+
+    fn coerce_store(&self, value: CoreValue, to: &VarTypeRef) -> CoreValue {
+        types::coerce_store_with(self.type_ctx, value, to)
+    }
+
+    fn coerce(&self, value: CoreValue, from: &VarTypeRef, to: &VarTypeRef) -> CoreValue {
+        types::coerce_with(self.type_ctx, value, from, to)
+    }
+
+    fn numeric_mode(&self, ty: &VarTypeRef) -> oxvba_bundle::NumericMode {
+        types::numeric_mode_with(self.type_ctx, ty)
+    }
+
+    fn result_type(
+        &self,
+        op: oxvba_bundle::coreir::CoreBinOp,
+        lhs: &VarTypeRef,
+        rhs: &VarTypeRef,
+    ) -> VarTypeRef {
+        types::result_type_with(self.type_ctx, op, lhs, rhs)
+    }
+
+    fn is_longlong(&self, ty: &VarTypeRef) -> bool {
+        types::is_longlong_with(self.type_ctx, ty)
     }
 
     /// Resolve `New <name>` to its instantiation value + inferred object type — the
