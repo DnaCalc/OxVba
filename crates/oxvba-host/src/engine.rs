@@ -29,6 +29,7 @@ use crate::runner::RuntimeProfileId;
 
 const JIT_NOT_IMPLEMENTED_MESSAGE: &str =
     "JIT execution is not implemented; the clean stack runs on the oxvba_vm3 interpreter";
+const DEFAULT_SINGLE_SOURCE_PROJECT_NAME: &str = "VBAProject";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticPhase {
@@ -713,7 +714,7 @@ impl Engine {
         }
         use oxvba_symbol::manifest as sym;
         let manifest = sym::SymbolProjectManifest {
-            project_name: "Main".to_string(),
+            project_name: DEFAULT_SINGLE_SOURCE_PROJECT_NAME.to_string(),
             project_kind: sym::ProjectKind::Source,
             modules: vec![sym::ModuleUnit {
                 module_name: "Main".to_string(),
@@ -772,7 +773,7 @@ impl Engine {
     pub fn execute_source_with_variant_snapshot_vm3(&self, source: &str) -> Vm3Snapshot {
         use oxvba_symbol::manifest as sym;
         let manifest = sym::SymbolProjectManifest {
-            project_name: "Main".to_string(),
+            project_name: DEFAULT_SINGLE_SOURCE_PROJECT_NAME.to_string(),
             project_kind: sym::ProjectKind::Source,
             modules: vec![sym::ModuleUnit {
                 module_name: "Main".to_string(),
@@ -917,6 +918,29 @@ mod tests {
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert_eq!(err.diagnostic().code.as_str(), "RUN-E-JIT-NOT-IMPLEMENTED");
         assert!(err.message().contains("JIT execution"));
+    }
+
+    #[test]
+    fn single_source_err_source_defaults_to_excel_project_name() {
+        let engine = Engine::new(HostConfig { enable_jit: false });
+        let snapshot = engine.execute_source_with_variant_snapshot_vm3(
+            "Sub Main()\n\
+             Dim sourceName As String\n\
+             On Error Resume Next\n\
+             Error 9\n\
+             sourceName = Err.Source\n\
+             End Sub\n",
+        );
+        let values = match snapshot {
+            super::Vm3Snapshot::Ran(values) => values,
+            other => panic!("single-source Err.Source probe did not run: {other:?}"),
+        };
+        assert!(
+            values
+                .iter()
+                .any(|value| value.as_bstr().map(|s| s.as_str()).as_deref() == Some("VBAProject")),
+            "expected Err.Source to default to VBAProject, got {values:?}"
+        );
     }
 
     #[test]

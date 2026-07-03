@@ -763,7 +763,8 @@ mod tests {
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .replace('\\', "/");
-                let rendered = match run_with_timeout(Executor::Vm3, &source, "Main", budget) {
+                let rendered = match run_with_timeout(Executor::Vm3, &source, "VBAProject", budget)
+                {
                     Some(outcome) => render_outcome(&outcome),
                     None => "TIMEOUT".to_string(),
                 };
