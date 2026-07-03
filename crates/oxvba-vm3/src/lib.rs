@@ -887,12 +887,14 @@ impl<'h> Vm3<'h> {
                             })?;
                             self.propagate_fault(fault, base)?;
                         }
-                        // Caught by `On Error Resume Next`: latch the active error, consume
-                        // the fault, continue past the faulting statement.
+                        // Caught by `On Error Resume Next`: consume the fault and continue past
+                        // the faulting statement. VBA does not arm a later `Resume` here; a
+                        // following bare `Resume Next` raises error 20 under the still-active
+                        // handler instead of resuming the already-skipped statement.
                         ErrorMode::ResumeNext => {
                             self.pending_fault = None;
                             self.erl_line = self.frames[top].current_line;
-                            self.active_error = Some(rp);
+                            self.active_error = None;
                             self.goto(top, *resume_next);
                         }
                         // Caught by `On Error GoTo h`: the handler is single-shot — demote

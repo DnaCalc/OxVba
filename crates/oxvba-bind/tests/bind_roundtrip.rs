@@ -1159,6 +1159,34 @@ fn on_error_resume_next_err_number() {
     assert_eq!(run_main_local0(&main_sub(body)), Some(11.0));
 }
 
+#[test]
+fn on_error_resume_next_caught_error_does_not_arm_resume() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               Dim first As Long\n\
+               Dim second As Long\n\
+               On Error Resume Next\n\
+               Error 5\n\
+               first = Err.Number\n\
+               Resume Next\n\
+               second = Err.Number\n\
+               r = CStr(first) & \":\" & CStr(second)\n\
+               End Sub\n";
+    assert_eq!(run_main_local0_string(src), Some("5:20".to_string()));
+}
+
+#[test]
+fn cverr_out_of_range_raises_and_skips_assignment_under_resume_next() {
+    let src = "Sub Main()\n\
+               Dim r As String\n\
+               Dim value\n\
+               On Error Resume Next\n\
+               value = CVErr(70000)\n\
+               r = CStr(Err.Number) & \":\" & CStr(VarType(value))\n\
+               End Sub\n";
+    assert_eq!(run_main_local0_string(src), Some("5:0".to_string()));
+}
+
 // ── Regression tests for review findings ────────────────────────────────────
 
 #[test]

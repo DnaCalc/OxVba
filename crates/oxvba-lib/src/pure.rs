@@ -10,7 +10,7 @@ use crate::{
     opt, vbool, vf64, vi32, vstr, vunit,
 };
 use oxvba_runtime::{
-    Decimal96, Variant,
+    Decimal96, Variant, default_error_message,
     safe_array::{SafeArray, VT_UI1_VALUE, VT_VARIANT_VALUE},
     variant::VarType,
 };
@@ -1763,7 +1763,11 @@ fn cdate_from_string(s: &str) -> LibResult<Variant> {
     )?))
 }
 pub fn cverr(args: &[Variant]) -> LibResult<Variant> {
-    Ok(Variant::from_error_code(as_i32(need(args, 0)?)?))
+    let code = as_i32(need(args, 0)?)?;
+    if !(0..=0xFFFF).contains(&code) {
+        return Err(LibError::invalid_call(default_error_message(5)));
+    }
+    Ok(Variant::from_error_code(code))
 }
 
 // VBA numeric / type conversions. Each coerces its single argument to the named
@@ -3297,6 +3301,24 @@ mod tests {
         assert!(!isnum(Variant::from_bool(false)));
         assert!(!isnum(Variant::from_date_f64(45000.0))); // a Date-typed Variant
         assert!(!isnum(Variant::null()));
+    }
+
+    #[test]
+    fn cverr_accepts_unsigned_error_code_range_only() {
+        assert_eq!(
+            cverr(&[Variant::from_i32(0)]).unwrap().as_error_code(),
+            Some(0)
+        );
+        assert_eq!(
+            cverr(&[Variant::from_i32(0xFFFF)]).unwrap().as_error_code(),
+            Some(0xFFFF)
+        );
+        let low = cverr(&[Variant::from_i32(-1)]).unwrap_err();
+        assert_eq!(low.code, 5);
+        assert_eq!(low.message, default_error_message(5));
+        let high = cverr(&[Variant::from_i32(0x1_0000)]).unwrap_err();
+        assert_eq!(high.code, 5);
+        assert_eq!(high.message, default_error_message(5));
     }
 
     #[test]

@@ -14,7 +14,7 @@
 "coercion_arg_object_to_long_error.bas","error",""
 "coercion_assign_object_to_long_error.bas","error",""
 "coercion_cverr_abs_normalization.bas","error",""
-"coercion_cverr_range_predicates.bas","ok","bool:true|bool:true|bool:true|bool:true|bool:false|i32:10"
+"coercion_cverr_range_predicates.bas","error",""
 "coercion_null_empty_error_predicates.bas","ok","bool:true|bool:true|bool:true|bool:false|bool:false"
 "conditional_compilation_basic.bas","ok","i16:8"
 "consolidate_error_intrinsics_mix.bas","ok","i32:12|error:4|bool:true"
