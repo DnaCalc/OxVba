@@ -1624,6 +1624,20 @@ fn parenthesized_byref_type_mismatch_uses_byval_temporary() {
 }
 
 #[test]
+fn byval_object_param_rejects_statically_scalar_argument() {
+    let src = "DefObj A-Z\nSub Main()\n    Call Use(1)\nEnd Sub\n\nSub Use(ByVal alpha)\nEnd Sub\n";
+    let err = bind_error_display(src);
+    assert!(err.contains("Type mismatch"), "unexpected error: {err}");
+}
+
+#[test]
+fn byval_object_param_accepts_object_or_nothing_argument() {
+    bind(
+        "DefObj A-Z\nSub Main()\n    Dim alpha As Object\n    Set alpha = Nothing\n    Use alpha\n    Use Nothing\nEnd Sub\n\nSub Use(ByVal beta)\nEnd Sub\n",
+    );
+}
+
+#[test]
 fn hex_literal() {
     assert_eq!(
         run_main_local0(&main_sub("    Dim r As Long\n    r = &H1F\n")),

@@ -502,7 +502,12 @@ impl<'a> ProcLower<'a> {
         }
         let bound = self.bind_expr(expr)?;
         let value = match param {
-            Some(p) => types::coerce(bound.value, &bound.ty, &p.ty),
+            Some(p) => {
+                let expected = self.g.resolve_udt_type(p.ty.clone());
+                let actual = self.g.resolve_udt_type(bound.ty.clone());
+                ensure_byval_type_compatible(&expected, &actual)?;
+                types::coerce(bound.value, &bound.ty, &p.ty)
+            }
             None => bound.value,
         };
         Ok(CoreArg::ByVal(value))
@@ -2860,6 +2865,18 @@ fn canonical_byref_type(ty: VarTypeRef) -> VarTypeRef {
 fn byref_variant_accepts_array(expected: &VarTypeRef, actual: &VarTypeRef) -> bool {
     matches!(expected, VarTypeRef::Variant)
         && matches!(actual, VarTypeRef::Array(_) | VarTypeRef::FixedArray { .. })
+}
+
+fn ensure_byval_type_compatible(
+    expected: &VarTypeRef,
+    actual: &VarTypeRef,
+) -> Result<(), BindError> {
+    if matches!(expected, VarTypeRef::Object(_))
+        && !matches!(actual, VarTypeRef::Object(_) | VarTypeRef::Variant)
+    {
+        return Err(BindError::TypeMismatch);
+    }
+    Ok(())
 }
 
 /// Convert one variadic-tail argument to its array-element value for a ParamArray

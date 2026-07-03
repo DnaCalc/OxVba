@@ -1111,9 +1111,11 @@ impl<'a> Parser<'a> {
         self.eat_whitespace();
 
         // Name
+        let mut has_name_type_suffix = false;
         if self.at(SyntaxKind::Ident) || self.current().is_keyword() {
             self.bump();
             if self.at(SyntaxKind::TypeSuffix) {
+                has_name_type_suffix = true;
                 self.bump();
             }
         }
@@ -1127,6 +1129,9 @@ impl<'a> Parser<'a> {
 
         // Return type: As Type, optionally an array return (`As Byte()`).
         if self.at(SyntaxKind::KwAs) {
+            if has_name_type_suffix {
+                self.error("expected end of statement".into());
+            }
             self.bump();
             self.eat_whitespace();
             self.parse_type_ref();
@@ -3091,11 +3096,12 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_function_type_suffix_with_return_type() {
+    fn function_type_suffix_rejects_explicit_return_type() {
         let src = "Function alpha%() As Object\nalpha = Nothing\nEnd Function\n";
         let p = parse(src);
         assert_eq!(p.syntax().text(), src);
-        assert!(p.errors().is_empty(), "{:?}", p.errors());
+        assert_eq!(p.errors().len(), 1);
+        assert_eq!(p.errors()[0].message, "expected end of statement");
         let func = p
             .syntax()
             .child_nodes()

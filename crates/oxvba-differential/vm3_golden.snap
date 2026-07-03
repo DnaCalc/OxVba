@@ -101,7 +101,7 @@ conformance/tests/declaration_collision_proc_name_error.bas	ok[Raw { tag: 2, byt
 conformance/tests/declare_function_stub_basic.bas	err(VBA error 5) raised=true err=FinalErr { number: 5, source: "Main", description: "operation blocked by host policy", last_dll_error: 0 }
 conformance/tests/declare_sub_stub_basic.bas	err(VBA error 5) raised=true err=FinalErr { number: 5, source: "Main", description: "operation blocked by host policy", last_dll_error: 0 }
 conformance/tests/default_type_defobj_implicit_error.bas	err(VBA error 424) raised=true err=FinalErr { number: 424, source: "Main", description: "Object required: a", last_dll_error: 0 }
-conformance/tests/default_type_param_defobj_error.bas	ok[] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
+conformance/tests/default_type_param_defobj_error.bas	err(bind: Type mismatch) raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/diagnostic_phase_compile_wins.bas	err(bind: Label not defined) raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/do_exit_do.bas	ok[Raw { tag: 3, bytes: [4, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/do_loop_until_basic.bas	ok[Raw { tag: 3, bytes: [3, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
@@ -138,7 +138,7 @@ conformance/tests/for_step_negative.bas	ok[Raw { tag: 3, bytes: [3, 0, 0, 0, 0, 
 conformance/tests/for_step_positive.bas	ok[Raw { tag: 3, bytes: [6, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }, Raw { tag: 3, bytes: [7, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/for_zero_iter.bas	ok[Raw { tag: 2, bytes: [5, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }, Raw { tag: 2, bytes: [5, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/function_call_basic.bas	ok[Raw { tag: 3, bytes: [9, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
-conformance/tests/function_return_explicit_as_precedence_error.bas	ok[] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
+conformance/tests/function_return_explicit_as_precedence_error.bas	err(bind: symbol model error: syntax parse failed in module Main: [ParseError { offset: 18, message: "expected end of statement" }]) raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/gosub_basic.bas	ok[Raw { tag: 3, bytes: [4, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/gosub_loop_accumulate.bas	ok[Raw { tag: 3, bytes: [60, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }, Raw { tag: 3, bytes: [4, 0, 0, 0, 0, 0, 0, 0], reserved: [0, 0, 0] }] raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
 conformance/tests/gosub_missing_label_error.bas	err(bind: Label not defined) raised=false err=FinalErr { number: 0, source: "", description: "", last_dll_error: 0 }
