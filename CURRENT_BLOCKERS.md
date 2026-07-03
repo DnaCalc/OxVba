@@ -51,6 +51,21 @@ Run context: active parity/compliance execution plus in-progress feature worklis
 
 ## Active blocker entries
 
+### BLK-GIT-PUSH-001: GitHub push permission denied for local closure commit
+- Date: `2026-07-03`
+- Status: open; external repository permission blocker.
+- Impact:
+  - Local M4-0 closure commit `f779bd4d` (`Complete JIT M4-0 baseline gates`) exists on `master`.
+  - `git push` to `https://github.com/DnaCalc/OxVba.git/` failed with HTTP 403:
+    `Permission to DnaCalc/OxVba.git denied to dnakoderbot`.
+  - This blocks publishing the local closure commit to `origin/master`, but does not block local implementation progress on subsequent beads.
+- Exact unblocking steps:
+  - Grant `dnakoderbot` push permission to `DnaCalc/OxVba`, or
+  - update the remote/auth token to an identity with write access, or
+  - have a maintainer push local commit `f779bd4d` from this workspace.
+- Suggestions/questions for the user:
+  - No code decision is needed. Repository write access or a maintainer push is required to clear the publishing blocker.
+
 ### BLK-COM-EVENT-BYREF-001: COM ByRef event writeback requires synchronous callback transport
 - Date: `2026-07-02`
 - Status: open; surfaced by `bd-aprs.8.8.9` / V11.
