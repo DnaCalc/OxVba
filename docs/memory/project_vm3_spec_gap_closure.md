@@ -3086,3 +3086,27 @@
   - `cargo fmt --all -- --check`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-03 - Const References to Enum Members (`bd-aprs.9.9.8`)
+
+- `Const` folding now retries after enum members are published, so enum members
+  are available as VBA compile-time `Long` constants to later or earlier Const
+  expressions.
+- The first Const pass remains before enum folding, preserving enum initializers
+  that depend on already-folded Const values.
+- Covered same-module unqualified and `Enum.Member` references:
+  `Const FromQualified As Long = WebFormat.Json + 1` and
+  `Const FromBare As Long = Json + 2`.
+- Cross-module and referenced-project enum-member Const forms are explicitly
+  split to `bd-aprs.9.9.9`.
+- Clean-stack execution coverage proves the folded values through
+  bind -> OxIR -> vm3.
+- Verification completed:
+  - `cargo test -p oxvba-symbol const_values_fold_enum_member_references -- --nocapture`
+  - `cargo test -p oxvba-bind const_enum_member_references_execute --test feature_coverage -- --nocapture`
+  - `cargo test -q -p oxvba-symbol`
+  - `cargo test -q -p oxvba-bind`
+  - `cargo check --workspace`
+  - `cargo fmt --all -- --check`
+  - `git diff --check`
+  - `br dep cycles --json`

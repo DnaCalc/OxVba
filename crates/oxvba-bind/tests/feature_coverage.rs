@@ -1819,6 +1819,14 @@ fn optional_enum_member_defaults_are_bound_for_omitted_args() {
 }
 
 #[test]
+fn const_enum_member_references_execute() {
+    let snap = run(
+        "Public Const FromQualified As Long = EncodingMode.FormUrlEncoding + 1\nPublic Const FromBare As Long = FormUrlEncoding + 2\nPublic Enum EncodingMode\nStrictUrlEncoding = 0\nFormUrlEncoding = 1\nEnd Enum\nSub Main()\nDim a As Long\nDim b As Long\na = FromQualified\nb = FromBare\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_i32(2), Variant::from_i32(3)]);
+}
+
+#[test]
 fn optional_typed_declared_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim s As String\nDim b As Boolean\nDim n As Long\nCall Fill(s, b, n)\nEnd Sub\nSub Fill(ByRef target As String, ByRef flagTarget As Boolean, ByRef numberTarget As Long, Optional ByVal text As String, Optional ByVal flag As Boolean, Optional ByVal value As Long)\ntarget = text\nflagTarget = flag\nnumberTarget = value\nEnd Sub",

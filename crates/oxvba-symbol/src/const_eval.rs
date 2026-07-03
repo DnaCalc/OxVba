@@ -48,7 +48,15 @@ pub fn fold_const_values(
         collect_consts(symbols, *module_scope, *root, &mut pending, &mut const_syms);
     }
     // 2) Fold them by fixed point (forward + cross-const references).
-    let mut values = resolve_const_worklist(symbols, pending, &const_syms, &module_modes, target)?;
+    let mut values = HashMap::new();
+    resolve_const_worklist(
+        symbols,
+        &pending,
+        &const_syms,
+        &module_modes,
+        target,
+        &mut values,
+    )?;
     // 3) Fold `Enum` members (sequential auto-increment, reading earlier values).
     for (module_scope, root) in module_roots {
         let mode = module_modes
@@ -57,6 +65,16 @@ pub fn fold_const_values(
             .unwrap_or(StringCompareMode::Binary);
         fold_enums(symbols, *module_scope, *root, &mut values, mode);
     }
+    // 4) Retry `Const` entries that referenced enum members now available as
+    // compile-time `Long` constants.
+    resolve_const_worklist(
+        symbols,
+        &pending,
+        &const_syms,
+        &module_modes,
+        target,
+        &mut values,
+    )?;
     Ok(values)
 }
 
@@ -403,13 +421,13 @@ enum ConstEval {
 /// being misread as a cycle.
 fn resolve_const_worklist(
     symbols: &SymbolTable,
-    pending: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)>,
+    pending: &[(ScopeId, SymbolId, SyntaxNode<'_>)],
     const_syms: &HashSet<SymbolId>,
     module_modes: &HashMap<ScopeId, StringCompareMode>,
     target: ConditionalCompilationTarget,
-) -> Result<HashMap<SymbolId, CoreConst>, SymbolModelError> {
-    let mut values: HashMap<SymbolId, CoreConst> = HashMap::new();
-    let mut remaining = pending;
+    values: &mut HashMap<SymbolId, CoreConst>,
+) -> Result<(), SymbolModelError> {
+    let mut remaining = pending.to_vec();
     loop {
         let mut progress = false;
         let mut still = Vec::new();
@@ -433,7 +451,7 @@ fn resolve_const_worklist(
             }
         }
         if still.is_empty() || !progress {
-            return Ok(values);
+            return Ok(());
         }
         remaining = still;
     }

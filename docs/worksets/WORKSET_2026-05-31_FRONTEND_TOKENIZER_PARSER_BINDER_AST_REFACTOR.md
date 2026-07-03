@@ -777,7 +777,10 @@ Required newly explicit delivery beads:
   VBA `Long` boundary. A final 2026-07-03 compile-time `LongPtr` cleanup threads the manifest
   pointer-width target through symbol-layer `Const` and `Optional` default coercion, so Win32
   `LongPtr` constants/defaults publish `Long` carriers and reject values above `Long` max while
-  Win64 keeps `LongLong` carriers.
+  Win64 keeps `LongLong` carriers. Another 2026-07-03 compile-time evaluator slice retries Const
+  folding after enum-member publication, so same-module bare and `Enum.Member` references fold as
+  VBA `Long` constants without losing enum initializers that depend on earlier Const values;
+  cross-module and referenced-project enum-member Const forms are split to `bd-aprs.9.9.9`.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
@@ -1684,7 +1687,10 @@ Candidate bead units:
   targetless `OxTy::LongPtr` and leaves LongPtr lowered explicitly to `Long` or `LongLong` by VBA
   target width. The compile-time `LongPtr` cleanup then routes symbol-layer `Const` and
   `Optional` default coercion through the same manifest pointer-width target, closing the
-  non-Win64 `LongPtr` constant/default residual.
+  non-Win64 `LongPtr` constant/default residual. A follow-up enum-member Const slice retries
+  Const folding after enum members are available, covering same-module bare and `Enum.Member`
+  references while preserving enum initializer references to earlier Consts; cross-module and
+  referenced-project enum-member Const forms remain split to `bd-aprs.9.9.9`.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
