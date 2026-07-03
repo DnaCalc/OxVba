@@ -59,16 +59,14 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `f779bd4d` (`Complete JIT M4-0 baseline gates`)
     - `c05bec56` (`Complete JIT M4-1 IR prep passes`)
     - `ff1308db` (`Complete JIT M4-2 runtime ABI substrate`)
-  - Local blocker-documentation commits also remain unpublished:
-    - `b9a195cd` (`Document push permission blocker`)
-    - `38167061` (`Update push blocker after M4-1 closure`)
+  - Local blocker-documentation commits for this recurring push failure also remain unpublished.
   - `git push` to `https://github.com/DnaCalc/OxVba.git/` failed with HTTP 403:
     `Permission to DnaCalc/OxVba.git denied to dnakoderbot`.
   - This blocks publishing the local branch to `origin/master`, but does not block local implementation progress on subsequent beads.
 - Exact unblocking steps:
   - Grant `dnakoderbot` push permission to `DnaCalc/OxVba`, or
   - update the remote/auth token to an identity with write access, or
-  - have a maintainer push the local branch through `ff1308db` from this workspace.
+  - have a maintainer push the current local `master` branch head from this workspace.
 - Suggestions/questions for the user:
   - No code decision is needed. Repository write access or a maintainer push is required to clear the publishing blocker.
 
