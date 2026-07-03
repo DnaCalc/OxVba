@@ -3,7 +3,7 @@
 //! This is the spine of the pass. It builds the CFG (mirroring the proven `linearize`
 //! lowering, but emitting blocks + terminators instead of flat labelled ops), recovers
 //! each binding's [`OxTy`] from the type the binder recorded on the Core IR
-//! ([`crate::elaborate::lower_var_type`]), and marks statement boundaries.
+//! ([`crate::elaborate::lower_var_type_with_longptr_width`]), and marks statement boundaries.
 //!
 //! # Coverage
 //!
@@ -46,8 +46,8 @@
 use std::collections::HashMap;
 
 use oxvba_bundle::coreir::{
-    self, CoreArg, CoreAsNew, CoreBinOp, CoreClass, CoreConst, CoreProc, CoreProgram, CoreStmt,
-    CoreUnOp, CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
+    self, CoreArg, CoreAsNew, CoreBinOp, CoreClass, CoreConst, CoreLongPtrWidth, CoreProc,
+    CoreProgram, CoreStmt, CoreUnOp, CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
 };
 use oxvba_bundle::{
     AssignmentIntent, AssignmentTargetKind, NumericCoerceTarget, NumericMode, ProjectMemberKind,
@@ -56,7 +56,7 @@ use oxvba_bundle::{
 use oxvba_com::{TypeLibInterfaceMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata};
 
 use crate::com::{ComInterface, ComMethodRef};
-use crate::elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
+use crate::elaborate::{NameResolver, ResolvedTypeName, lower_var_type_with_longptr_width};
 use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxAsNew, OxBlock, OxInst, OxTerminator};
 use crate::program::{
@@ -104,7 +104,7 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         .iter()
         .map(|g| OxGlobal {
             name: g.name.clone(),
-            ty: lower_var_type(&g.ty, &resolver),
+            ty: lower_var_type_with_longptr_width(&g.ty, &resolver, program.long_ptr_width),
             array_element: g.array_element.clone(),
         })
         .collect();
@@ -116,7 +116,12 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
 
     let mut funcs = Vec::with_capacity(program.procs.len());
     for proc in &program.procs {
-        funcs.push(elaborate_proc(proc, &resolver, &mut com)?);
+        funcs.push(elaborate_proc(
+            proc,
+            &resolver,
+            program.long_ptr_width,
+            &mut com,
+        )?);
     }
 
     let classes = program.classes.iter().map(lower_class).collect();
@@ -293,6 +298,7 @@ fn invoke_kind_from_member_kind(kind: Option<ProjectMemberKind>) -> TypeLibMembe
 fn elaborate_proc(
     proc: &CoreProc,
     resolver: &impl NameResolver,
+    long_ptr_width: CoreLongPtrWidth,
     com: &mut ComInterner,
 ) -> Result<OxFunc> {
     // The unified local index space is params first, then locals (the binder's
@@ -301,7 +307,7 @@ fn elaborate_proc(
     for p in &proc.params {
         locals.push(OxLocal {
             name: p.name.clone(),
-            ty: lower_var_type(&p.ty, resolver),
+            ty: lower_var_type_with_longptr_width(&p.ty, resolver, long_ptr_width),
             array_element: None,
             param: Some(OxParamInfo {
                 by_ref: p.by_ref,
@@ -313,7 +319,7 @@ fn elaborate_proc(
     for l in &proc.locals {
         locals.push(OxLocal {
             name: l.name.clone(),
-            ty: lower_var_type(&l.ty, resolver),
+            ty: lower_var_type_with_longptr_width(&l.ty, resolver, long_ptr_width),
             array_element: l.array_element.clone(),
             param: None,
             escaped: false,
@@ -322,7 +328,13 @@ fn elaborate_proc(
 
     // The binding types are recovered up front (the `locals` above, via the resolver);
     // the lowerer carries the COM interner so early-bound calls intern their members.
-    let mut lo = Lowerer::new(locals, proc.params.len(), proc.label_lines.clone(), com);
+    let mut lo = Lowerer::new(
+        locals,
+        proc.params.len(),
+        proc.label_lines.clone(),
+        long_ptr_width,
+        com,
+    );
     // Pre-assign a block to every source label so forward references resolve.
     lo.assign_labels(&proc.body)?;
     lo.lower_block(&proc.body)?;
@@ -380,6 +392,7 @@ struct Lowerer<'a> {
     /// The program-level typed-COM interface-table builder (shared across procs); an
     /// early-bound call interns its resolved member here and names it by a `ComMethodRef`.
     com: &'a mut ComInterner,
+    long_ptr_width: CoreLongPtrWidth,
 }
 
 impl<'a> Lowerer<'a> {
@@ -387,6 +400,7 @@ impl<'a> Lowerer<'a> {
         locals: Vec<OxLocal>,
         param_count: usize,
         label_lines: Vec<Option<i32>>,
+        long_ptr_width: CoreLongPtrWidth,
         com: &'a mut ComInterner,
     ) -> Self {
         // Entry = block 0, epilogue = block 1; both reserved up front.
@@ -407,6 +421,7 @@ impl<'a> Lowerer<'a> {
             label_lines,
             with_temps: HashMap::new(),
             com,
+            long_ptr_width,
         }
     }
 
@@ -416,6 +431,13 @@ impl<'a> Lowerer<'a> {
         let id = BlockId(self.blocks.len());
         self.blocks.push(None);
         id
+    }
+
+    fn long_ptr_ty(&self) -> OxTy {
+        match self.long_ptr_width {
+            CoreLongPtrWidth::Bits32 => OxTy::Long,
+            CoreLongPtrWidth::Bits64 => OxTy::LongLong,
+        }
     }
 
     fn new_temp(&mut self) -> TempId {
@@ -1115,10 +1137,7 @@ impl<'a> Lowerer<'a> {
             OxTy::Byte => NumericMode::Checked(NumericCoerceTarget::Byte),
             OxTy::Integer => NumericMode::Checked(NumericCoerceTarget::Integer),
             OxTy::Long => NumericMode::Checked(NumericCoerceTarget::Long),
-            // TODO(bd-aprs.9.9.7): `OxTy::LongPtr` is targetless here; binder-stamped
-            // scalar ops already carry width, but For-counter mode still needs an
-            // explicit target-width fact.
-            OxTy::LongLong | OxTy::LongPtr => NumericMode::Checked(NumericCoerceTarget::LongLong),
+            OxTy::LongLong => NumericMode::Checked(NumericCoerceTarget::LongLong),
             _ => NumericMode::Widening,
         };
 
@@ -1515,7 +1534,7 @@ impl<'a> Lowerer<'a> {
                     src,
                 });
                 // VarPtr/StrPtr/ObjPtr yield a pointer-width integer.
-                Ok((OxOperand::temp(t), OxTy::LongPtr))
+                Ok((OxOperand::temp(t), self.long_ptr_ty()))
             }
             CoreValue::ErrField(field) => {
                 let t = self.new_temp();
@@ -2669,6 +2688,7 @@ mod tests {
 
     fn program(proc: CoreProc) -> CoreProgram {
         CoreProgram {
+            long_ptr_width: Default::default(),
             procs: vec![proc],
             unit_name: "T".to_string(),
             ..Default::default()
@@ -2995,6 +3015,7 @@ mod tests {
             },
         ];
         let prog = CoreProgram {
+            long_ptr_width: Default::default(),
             procs: vec![sub("Main", locals, body)],
             classes: vec![CoreClass {
                 name: "Widget".into(),

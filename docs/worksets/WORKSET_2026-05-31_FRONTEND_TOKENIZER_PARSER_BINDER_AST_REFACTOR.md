@@ -771,15 +771,17 @@ Required newly explicit delivery beads:
   scalar write-back now use `Long`-sized metadata under Win32 targets while preserving Win64
   `LongLong`-sized behavior. A subsequent 2026-07-03 cleanup carries that target-aware array
   metadata into OxIR locals/globals for unallocated array descriptors and removes the legacy
-  host-sized `ArrayElementType::LongPtr` / `VbaRecordFieldKind::LongPtr` storage fallback.
+  host-sized `ArrayElementType::LongPtr` / `VbaRecordFieldKind::LongPtr` storage fallback. A
+  further 2026-07-03 cleanup removes targetless scalar `OxTy::LongPtr` from OxIR, requires
+  explicit target-width lowering, and proves Win32-target `LongPtr` `For` counters overflow at the
+  VBA `Long` boundary.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic and
   deterministic string-Date store subset,
   compile-time `LongPtr` `Const`/optional-default validation under non-Win64 targets
-  (`bd-aprs.9.9.5`), target-width scalar OxIR/vm3 `LongPtr` paths not already governed by
-  binder-stamped coercion/arithmetic metadata (`bd-aprs.9.9.7`),
+  (`bd-aprs.9.9.5`),
   lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
@@ -1675,12 +1677,13 @@ Candidate bead units:
   for those paths while Win64 retains the existing `LongLong`-sized behavior; clean-bind
   array/UDT metadata and `VarPtr` scalar write-back are then covered by the follow-up 2026-07-03
   runtime-metadata slice for dynamic and fixed arrays, UDT fields, and fixed-array `Erase`.
-  Remaining legacy host-width `ArrayElementType::LongPtr` / `VbaRecordFieldKind::LongPtr`
-  fallback removal is covered by the subsequent 2026-07-03 OxIR metadata cleanup, which carries
-  array element metadata into OxIR locals/globals and deletes those host-sized storage variants.
+  The subsequent 2026-07-03 OxIR metadata cleanup carries array element metadata into OxIR
+  locals/globals and deletes the host-sized `ArrayElementType::LongPtr` /
+  `VbaRecordFieldKind::LongPtr` storage variants. A further 2026-07-03 scalar OxIR cleanup removes
+  targetless `OxTy::LongPtr` and leaves LongPtr lowered explicitly to `Long` or `LongLong` by VBA
+  target width.
   Compile-time `Const`/optional-default validation under non-Win64 targets is split to
-  `bd-aprs.9.9.5`; target-width scalar OxIR/vm3 `LongPtr` lanes not already governed by
-  binder-stamped metadata are split to `bd-aprs.9.9.7`.
+  `bd-aprs.9.9.5`.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding

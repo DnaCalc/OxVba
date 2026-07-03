@@ -74,6 +74,7 @@ fn lib_program() -> CoreProgram {
         )],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         procs: vec![add],
         unit_name: "Lib".into(),
         exports: vec![BundleExport {
@@ -106,6 +107,7 @@ fn app_program() -> CoreProgram {
         )],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         globals: vec![CoreGlobal {
             name: "result".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
@@ -154,6 +156,7 @@ fn boom_lib_program() -> CoreProgram {
         })],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         procs: vec![boom],
         unit_name: "Lib".into(),
         exports: vec![BundleExport {
@@ -199,6 +202,7 @@ fn error_app_program() -> CoreProgram {
         ],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         globals: vec![CoreGlobal {
             name: "result".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
@@ -276,6 +280,7 @@ fn lib_apply_program() -> CoreProgram {
         )],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         procs: vec![apply],
         unit_name: "Lib".into(),
         exports: vec![BundleExport {
@@ -332,6 +337,7 @@ fn app_with_thing_program() -> CoreProgram {
         )],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         globals: vec![CoreGlobal {
             name: "result".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
@@ -425,6 +431,7 @@ fn lib_apply_global_arg_program() -> CoreProgram {
         ],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         globals: vec![CoreGlobal {
             name: "gLib".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
@@ -494,6 +501,7 @@ fn app_echo_program() -> CoreProgram {
         )],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         globals: vec![CoreGlobal {
             name: "result".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
@@ -568,6 +576,7 @@ fn lib_widget_program() -> CoreProgram {
         )],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         procs: vec![val],
         classes: vec![CoreClass {
             name: "Widget".into(),
@@ -635,6 +644,7 @@ fn app_new_extern_program() -> CoreProgram {
         ],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         globals: vec![CoreGlobal {
             name: "result".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
@@ -677,6 +687,7 @@ fn app_predeclared_extern_program() -> CoreProgram {
         )],
     };
     CoreProgram {
+        long_ptr_width: Default::default(),
         globals: vec![CoreGlobal {
             name: "result".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,

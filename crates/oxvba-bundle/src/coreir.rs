@@ -50,6 +50,10 @@ pub struct LabelId(pub usize);
 /// linearize into its own [`crate::Bundle`].
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CoreProgram {
+    /// VBA target pointer width for `LongPtr` lowering. Defaults to Win64/VBA7
+    /// width for hand-built test IR; real binder output sets this from the
+    /// manifest's conditional-compilation target.
+    pub long_ptr_width: CoreLongPtrWidth,
     /// Module-level variables; index == [`GlobalId`].
     pub globals: Vec<CoreGlobal>,
     /// Procedures; index == [`ProcId`].
@@ -72,6 +76,18 @@ pub struct CoreProgram {
     pub exports: Vec<crate::BundleExport>,
     /// Cross-bundle references this unit makes (resolved at link time).
     pub imports: Vec<crate::BundleImport>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CoreLongPtrWidth {
+    Bits32,
+    Bits64,
+}
+
+impl Default for CoreLongPtrWidth {
+    fn default() -> Self {
+        Self::Bits64
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

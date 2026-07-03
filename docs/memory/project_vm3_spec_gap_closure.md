@@ -3039,3 +3039,25 @@
   `oxvba-build` test `tests::wrapped_com_server_build_emits_package_descriptor_and_idl`
   remained stuck. Running that single test directly also timed out after five
   minutes.
+
+## 2026-07-03 - LongPtr OxIR Target-Width Cleanup (`bd-aprs.9.9.7`)
+
+- Removed the targetless `OxTy::LongPtr` lane from OxIR instead of preserving it
+  as a legacy compatibility fallback.
+- `CoreProgram` now carries the manifest-derived VBA pointer width, and
+  elaboration lowers source-level `LongPtr` declarations to `Long` for Win32
+  targets and `LongLong` for Win64 targets before vm3 sees the typed frame.
+- Pointer helper values (`VarPtr`/`StrPtr`/`ObjPtr`) now lower to the same
+  target-width scalar type. Callback argument shaping consequently follows the
+  lowered `Long`/`LongLong` parameter type rather than a targetless LongPtr arm.
+- Updated the `for-counter-no-overflow` inventory row: fixed-integer `For`
+  counters still use checked increment modes, and Win32-target `LongPtr`
+  counters now overflow with VBA run-time error 6 at the `Long` boundary.
+- Fresh-eyes review removed the last `OxTy::LongPtr` production/VM fallback and
+  the public targetless `lower_var_type` helper, then checked for stale
+  Win64-only LongPtr wording in the active docs.
+- Verification completed:
+  - `cargo test -p oxvba-oxir`
+  - `cargo test -p oxvba-bind longptr --test feature_coverage -- --nocapture`
+  - `cargo test -q -p oxvba-vm3`
+  - `cargo test -q -p oxvba-bind`

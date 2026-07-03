@@ -21,8 +21,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::coreir::{
-    CoreArg, CoreAsNew, CoreClass, CoreClassAsNewField, CoreConst, CoreLocal, CorePlace, CoreProc,
-    CoreProgram, CoreValue, LabelId, LocalId, ProcId,
+    CoreArg, CoreAsNew, CoreClass, CoreClassAsNewField, CoreConst, CoreLocal, CoreLongPtrWidth,
+    CorePlace, CoreProc, CoreProgram, CoreValue, LabelId, LocalId, ProcId,
 };
 use oxvba_bundle::{
     BundleExport, BundleImport, ComClassExport, EventRoute, ExportTarget, ExportToken,
@@ -180,6 +180,7 @@ fn bind_one(
     let imports = lower.imports.into_inner().imports;
 
     Ok(CoreProgram {
+        long_ptr_width: core_long_ptr_width(manifest.conditional_compilation_target),
         globals: ids.globals.clone(),
         procs,
         classes,
@@ -192,6 +193,19 @@ fn bind_one(
         exports,
         imports,
     })
+}
+
+fn core_long_ptr_width(
+    target: oxvba_symbol::cond_comp::ConditionalCompilationTarget,
+) -> CoreLongPtrWidth {
+    match target.pointer_width {
+        oxvba_symbol::cond_comp::ConditionalCompilationPointerWidth::Bits32 => {
+            CoreLongPtrWidth::Bits32
+        }
+        oxvba_symbol::cond_comp::ConditionalCompilationPointerWidth::Bits64 => {
+            CoreLongPtrWidth::Bits64
+        }
+    }
 }
 
 /// This bundle's export table: each public coclass → a `Class` token resolving to

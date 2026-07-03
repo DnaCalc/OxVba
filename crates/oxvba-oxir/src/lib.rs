@@ -34,7 +34,7 @@ pub mod value;
 pub mod verify;
 
 pub use com::{ComInterface, ComMethodRef, ProjectIfaceMethod, ProjectInterface};
-pub use elaborate::{NameResolver, ResolvedTypeName, lower_var_type};
+pub use elaborate::{NameResolver, ResolvedTypeName, lower_var_type_with_longptr_width};
 pub use ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 pub use image::{OX_IMAGE_FORMAT, OX_IMAGE_VERSION, OxImage, OxImageError};
 pub use inst::{

@@ -36,8 +36,8 @@ pub struct OxLocal {
     pub name: String,
     pub ty: OxTy,
     /// Element layout for declared array slots. This comes from the binder's
-    /// target-aware metadata; `OxTy::Array` alone does not know platform-sized
-    /// carriers such as `LongPtr`.
+    /// target-aware metadata and preserves source-level array facts that are not
+    /// otherwise represented by a scalar `OxTy`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub array_element: Option<ArrayElementType>,
     /// `Some` if this local is a parameter.

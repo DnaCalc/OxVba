@@ -436,10 +436,6 @@ impl<'h> Vm3<'h> {
             OxTy::Integer => ArrayElementType::Integer,
             OxTy::Long => ArrayElementType::Long,
             OxTy::LongLong => ArrayElementType::LongLong,
-            // `OxTy` has no VBA target-width fact. Clean binder output supplies
-            // `array_element` metadata for declared arrays; targetless old IR falls
-            // back to Variant instead of manufacturing host-sized LongPtr storage.
-            OxTy::LongPtr => return None,
             OxTy::Single => ArrayElementType::Single,
             OxTy::Double => ArrayElementType::Double,
             OxTy::Currency => ArrayElementType::Currency,
@@ -4248,7 +4244,7 @@ impl<'h> Vm3<'h> {
             OxTy::Byte => Variant::from_u8(raw as u8),
             OxTy::Integer => Variant::from_i16(raw as i16),
             OxTy::Long => Variant::from_i32(raw as i32),
-            OxTy::LongLong | OxTy::LongPtr => Variant::from_i64(raw as i64),
+            OxTy::LongLong => Variant::from_i64(raw as i64),
             OxTy::Bool => Variant::from_bool(raw != 0),
             _ => Variant::from_i64(raw as i64),
         }
@@ -4867,6 +4863,7 @@ mod tests {
 
     fn main_proc(locals: Vec<CoreLocal>, body: Vec<CoreStmt>) -> CoreProgram {
         CoreProgram {
+            long_ptr_width: Default::default(),
             procs: vec![CoreProc {
                 name: "Main".into(),
                 kind: ProcedureKind::Sub,
@@ -4885,6 +4882,7 @@ mod tests {
     /// A multi-proc program whose `procs[0]` is the entry (`Main`).
     fn procs_program(procs: Vec<CoreProc>) -> CoreProgram {
         CoreProgram {
+            long_ptr_width: Default::default(),
             procs,
             entry: Some(ProcId(0)),
             unit_name: "T".into(),
@@ -5075,6 +5073,7 @@ mod tests {
         // matching vm2's select_entry fallback (else nothing runs and `g` stays Empty).
         let g = CorePlace::Global(oxvba_bundle::coreir::GlobalId(0));
         let prog = CoreProgram {
+            long_ptr_width: Default::default(),
             procs: vec![CoreProc {
                 name: "Helper".into(), // deliberately not "Main"
                 kind: ProcedureKind::Sub,
@@ -5287,6 +5286,7 @@ mod tests {
             Vec::new(),
         );
         let prog = CoreProgram {
+            long_ptr_width: Default::default(),
             procs: vec![main, twice],
             entry: Some(ProcId(0)),
             unit_name: "T".into(),

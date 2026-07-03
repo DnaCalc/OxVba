@@ -18,4 +18,4 @@ pub mod lower;
 pub mod types;
 
 pub use lower::{ElaborateError, elaborate};
-pub use types::{NameResolver, ResolvedTypeName, lower_var_type};
+pub use types::{NameResolver, ResolvedTypeName, lower_var_type_with_longptr_width};

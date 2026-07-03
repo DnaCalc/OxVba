@@ -361,6 +361,25 @@ fn longptr_arithmetic_overflows_as_long_on_win32_target() {
 }
 
 #[test]
+fn longptr_for_counter_overflows_as_long_on_win32_target() {
+    let err = run_result_with_target(
+        "Sub Main()\n\
+         Dim p As LongPtr\n\
+         Dim hits As Long\n\
+         For p = 2147483647 To 2147483647\n\
+             hits = hits + 1\n\
+         Next\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect_err("Win32 LongPtr For counter should overflow like Long at increment");
+    assert!(
+        err.contains("runtime error: 6"),
+        "expected overflow error 6, got {err}"
+    );
+}
+
+#[test]
 fn longptr_store_keeps_longlong_width_on_win64_target() {
     let snap = run("Public r As LongLong\n\
          Sub Main()\n\
