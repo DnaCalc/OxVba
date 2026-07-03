@@ -61,7 +61,7 @@ Run context: active parity/compliance execution plus in-progress feature worklis
     - `ff1308db` (`Complete JIT M4-2 runtime ABI substrate`)
     - `cc0bba20` (`Complete JIT M4-3 Cranelift skeleton`)
   - Local blocker-documentation commits for this recurring push failure also remain unpublished.
-  - Current local `master` is 8 commits ahead of `origin/master`.
+  - Current local `master` is ahead of `origin/master`; the exact count changes as local blocker-documentation commits are added.
   - `git push` to `https://github.com/DnaCalc/OxVba.git/` failed with HTTP 403:
     `Permission to DnaCalc/OxVba.git denied to dnakoderbot`.
   - This blocks publishing the local branch to `origin/master`, but does not block local implementation progress on subsequent beads.
