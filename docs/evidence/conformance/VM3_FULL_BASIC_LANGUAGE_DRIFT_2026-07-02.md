@@ -73,6 +73,15 @@ loop variable `Empty`; an additional guarded Excel probe confirmed the same
 normal-completion rule for `Collection` enumeration while preserving the last
 visited item in a separate local.
 
+`bd-5kqj.1` reconciled the remaining composite retained-value rows by reshaping
+the basic-language fixtures so `Main` retains only VBA-observable scalar values.
+Arrays and UDT records now live in helper functions/subs for those rows, while
+dedicated VM/package lanes continue to inspect structural SAFEARRAY/record
+carriers. A fresh guarded Excel oracle run captured the scalarized array,
+`ReDim`, `Erase`, `For Each`, and UDT values; `udt_whole_assignment_overwrite`
+was corrected to use explicit UDT field declarations because the old implicit
+field declaration was not real VBA compile/runtime behavior.
+
 The starting 70-mismatch surface was captured after the earlier W10 `Rnd` and
 `Single` retained-value formatter fixes; this bead reconciles that post-W10
 baseline.
@@ -90,22 +99,18 @@ module-level `Const` parser fix, the `bd-5kqj.3` compile-diagnostic fix, the
 `bd-5kqj.2` CVErr/Resume-state fix, and the `bd-5kqj.5` collection-fixture
 replacement, the `bd-5kqj.6` `Err.Source` default-name fix, and the
 `bd-5kqj.7` Variant small-integer arithmetic fix, and the `bd-5kqj.8`
-`For Each` loop-variable final-state fix:
+`For Each` loop-variable final-state fix, and the `bd-5kqj.1` composite
+retained-value fixture scalarization:
 
 - Command: `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-- Current result: 15 mismatches over 192 files.
-- Latest evidence: terminal output from the `bd-5kqj.8` closure run.
+- Current result: `ok` over 192 files.
+- Latest evidence: terminal output from the `bd-5kqj.1` closure run.
 - Earlier 27-mismatch log before the `Const` fix:
   `target/conformance_basic_language_vm_after_remaining_oracle_20260702.log`
 
-The 15 remaining mismatch rows are classified as follows:
-
-- `bd-5kqj.1` composite retained-value dump shape:
-  array/`ReDim`/UDT rows where vm3 currently dumps structural SAFEARRAY/record
-  debug values while the VBA-observable fixture target should be scalar or the
-  oracle encoder must be extended. `for_each_array_variable_basic.bas` remains
-  here only because the retained array variable `a` still dumps structurally;
-  its final loop variable now matches the Excel-backed `Empty` target.
+No basic-language mismatch row remains in this epic. Structural SAFEARRAY and
+record carrier inspection remains covered by dedicated VM/package and COM lanes
+rather than by the fast scalar conformance gate.
 
 ## Checks
 
@@ -137,20 +142,22 @@ The 15 remaining mismatch rows are classified as follows:
 - `cargo test -q -p oxvba-vm3 foreach`
 - `cargo test -q -p oxvba-differential --test project_class_newenum_vm3`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern for_each_array_literal_basic.bas`
+- `./scripts/run-conformance-oracle.ps1 -OutputDir docs/evidence/conformance/oracle_captures/conformance_oracle_composite_scalarized_20260703 -IncludePattern array_explicit_lower_bound.bas,array_multidim_indexing.bas,array_option_base_one_bounds.bas,array_store_load.bas,array_zero_index.bas,erase_array_basic.bas,for_each_array_variable_basic.bas,redim_expand_allows_new_index.bas,redim_preserve_keeps_values.bas,redim_preserve_multidim_last_dimension.bas,redim_preserve_shrink_expand_clears_tail.bas,redim_without_preserve_resets.bas,udt_field_access_basic.bas,udt_whole_assignment_copy.bas,udt_whole_assignment_overwrite.bas -TestTimeoutMs 15000`
+- `./scripts/run-conformance-oracle.ps1 -OutputDir docs/evidence/conformance/oracle_captures/conformance_oracle_udt_overwrite_scalarized_20260703 -IncludePattern udt_whole_assignment_overwrite.bas -TestTimeoutMs 15000`
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern array_explicit_lower_bound.bas,array_multidim_indexing.bas,array_option_base_one_bounds.bas,array_store_load.bas,array_zero_index.bas,erase_array_basic.bas,for_each_array_variable_basic.bas,redim_expand_allows_new_index.bas,redim_preserve_keeps_values.bas,redim_preserve_multidim_last_dimension.bas,redim_preserve_shrink_expand_clears_tail.bas,redim_without_preserve_resets.bas,udt_field_access_basic.bas,udt_whole_assignment_copy.bas,udt_whole_assignment_overwrite.bas`
 - `cargo test -q -p oxvba-differential --lib vm3_golden_snapshot`
-- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <42 scalar oracle rows>`
-  - Current expected result: 3 mismatches, all split to follow-up beads.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-  - Current expected result: 15 mismatches over 192 files, all classified above.
+  - Current result: ok over 192 files.
 
 ## Fresh-Eyes Review
 
 Reviewed the updated golden rows against both raw Excel captures and current
 vm3 outputs. Rows were only refreshed to real Excel targets when the generic
-oracle capture was a valid observation for that fixture shape. UDT rows remain
-split because the generic oracle harness still cannot encode private UDT locals
-cleanly; the synthetic collection rows were replaced with real VBA fixtures
-rather than treated as parity targets.
+oracle capture was a valid observation for that fixture shape. The final
+scalarized UDT rows keep private UDT locals out of `Main`, so the generic
+oracle harness captures portable scalar field observations instead of failing
+on private record variables. The synthetic collection rows were replaced with
+real VBA fixtures rather than treated as parity targets.
 The `Round(19, -1)` change was backed by the Excel runtime error 5 capture and
 by a focused differential regression. The `module_const_basic.bas` parser
 failure was traced to `Base` being tokenized as an `Option Base` keyword; VBA
@@ -189,8 +196,10 @@ residuals were left on their existing beads instead of being hidden by scalar
 arithmetic changes. The `bd-5kqj.8` review confirmed
 the fix writes `Empty` only on normal enumerator exhaustion; `Exit For` still
 uses the loop break path, and collection/project-class/foreign-object
-enumeration checks still pass. The only surviving `For Each`-named row is now a
-composite retained-array dump issue owned by `bd-5kqj.1`, not a final loop
-variable issue.
-No remaining mismatch is left only in chat; every residual category has an open
-bead.
+enumeration checks still pass. The final `bd-5kqj.1` review kept structural
+array/record
+inspection out of the scalar conformance gate instead of blessing OxVBA debug
+dumps as VBA behavior. The corrected UDT overwrite fixture uses explicit fields
+because Excel rejected the implicit-field form during the guarded oracle run.
+The full basic-language gate now passes, so no residual mismatch is left only in
+chat.

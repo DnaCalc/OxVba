@@ -1,0 +1,2 @@
+"file","oracle_status","oracle_values","golden_status","golden_values","match","notes"
+"udt_whole_assignment_overwrite.bas","ok","i16:7|i16:6|i16:7|i16:6","ok","empty|i32:7|i32:6|empty|i32:7|i32:6","false","oracle=ok/i16:7|i16:6|i16:7|i16:6 golden=ok/empty|i32:7|i32:6|empty|i32:7|i32:6"
