@@ -10,6 +10,7 @@ use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode};
 
 use crate::binding::{Binding, DispatchRoute};
 use crate::cond_comp;
+use crate::const_eval::{ExternalConstProject, ExternalConstValue};
 use crate::manifest::{ModuleKind, ProjectReference, SymbolProjectManifest};
 use crate::model::{
     ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace,
@@ -1020,15 +1021,54 @@ pub fn build_resolution_environment(
         referenced_scans.push(scans);
     }
 
-    // Fold the whole closure's Const/Enum values once (a published type-system
-    // property), so each surface publishes its folded literal values and the binder
-    // reads constant values uniformly via `const_value`. Folded before any surface
-    // is synthesized so a cross-project `Const X = Other.Y` resolves.
+    // Fold once without cross-project surface constants to publish referenced
+    // surfaces, then fold again for the active project with only those exported
+    // constants visible. This keeps the const-fold target aligned with VBA's
+    // reference boundary: no raw referenced module internals, and no Option Private
+    // leakage.
     let roots: Vec<(ScopeId, SyntaxNode<'_>)> = module_csts
         .iter()
         .map(|m| (m.module_scope, m.parse.syntax()))
         .collect();
-    let const_values = crate::const_eval::fold_const_values(&symbols, &roots, active_target)?;
+    let preliminary_const_values =
+        crate::const_eval::fold_const_values(&symbols, &roots, active_target, &[])?;
+    let preliminary_referenced_surfaces: Vec<ProjectExportSurface> = manifest
+        .reference_projects
+        .iter()
+        .zip(referenced_scans.iter())
+        .map(|(referenced, scans)| {
+            synthesize_export_surface(
+                &referenced.project_name,
+                &referenced.modules,
+                scans,
+                &symbols,
+                &signatures,
+                &preliminary_const_values,
+            )
+        })
+        .collect();
+    let external_const_projects: Vec<ExternalConstProject> = preliminary_referenced_surfaces
+        .iter()
+        .map(|surface| ExternalConstProject {
+            visible_from_project: project_scope,
+            project_name: surface.project_name.clone(),
+            consts: surface
+                .consts
+                .iter()
+                .map(|constant| ExternalConstValue {
+                    name: constant.name.clone(),
+                    enum_name: constant.enum_name.clone(),
+                    value: constant.value.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+    let const_values = crate::const_eval::fold_const_values(
+        &symbols,
+        &roots,
+        active_target,
+        &external_const_projects,
+    )?;
     // Optional-parameter defaults fold against the closure's const values.
     let optional_defaults =
         crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values, active_target)?;

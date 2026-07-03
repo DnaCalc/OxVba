@@ -709,6 +709,7 @@ mod tests {
             &symbols,
             &roots,
             crate::cond_comp::ConditionalCompilationTarget::default(),
+            &[],
         )
         .unwrap();
         synthesize_export_surface("P", &modules, &scans, &symbols, &signatures, &const_values)

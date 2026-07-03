@@ -560,6 +560,120 @@ fn const_values_fold_cross_module_enum_member_references() {
 }
 
 #[test]
+fn referenced_project_enum_member_consts_fold_through_export_surface() {
+    use crate::manifest::{ProjectReference, ReferencedProjectManifest};
+
+    let lib_mod = module(
+        "LibMod",
+        "Public Const KBase As Long = 10\n\
+         Public Enum Color\n  Red = 1\n  Green\nEnd Enum\n",
+    );
+    let lib = ReferencedProjectManifest {
+        project_name: "Lib".into(),
+        project_kind: ProjectKind::Library,
+        modules: vec![lib_mod],
+    };
+    let m = SymbolProjectManifest {
+        project_name: "App".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![
+            module(
+                "Main",
+                "Public Const FromPlainConst As Long = KBase + 1\n\
+                 Public Const FromBare As Long = Green + 2\n\
+                 Public Const FromQualified As Long = Color.Green + 3\n\
+                 Public Const FromProjectQualified As Long = Lib.Color.Green + 4\n",
+            ),
+            module(
+                "Shadow",
+                "Public Const Color As Long = 99\n\
+                 Public Const FromShadowedQualified As Long = Color.Green + 5\n",
+            ),
+        ],
+        references: vec![ProjectReference::Project {
+            referenced_project_name: "Lib".into(),
+        }],
+        reference_projects: vec![lib],
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let main_scope = env.module_scope("Main").unwrap();
+    let shadow_scope = env.module_scope("Shadow").unwrap();
+    let val_at = |scope, name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(
+        val_at(main_scope, "FromPlainConst"),
+        Some(CoreConst::I32(11))
+    );
+    assert_eq!(val_at(main_scope, "FromBare"), Some(CoreConst::I32(4)));
+    assert_eq!(val_at(main_scope, "FromQualified"), Some(CoreConst::I32(5)));
+    assert_eq!(
+        val_at(main_scope, "FromProjectQualified"),
+        Some(CoreConst::I32(6))
+    );
+    assert_eq!(val_at(shadow_scope, "Color"), Some(CoreConst::I32(99)));
+    assert_eq!(val_at(shadow_scope, "FromShadowedQualified"), None);
+}
+
+#[test]
+fn referenced_option_private_enum_member_consts_do_not_leak() {
+    use crate::manifest::{ProjectReference, ReferencedProjectManifest};
+
+    let lib = ReferencedProjectManifest {
+        project_name: "Lib".into(),
+        project_kind: ProjectKind::Library,
+        modules: vec![
+            module(
+                "Visible",
+                "Public Enum PublicColor\n  VisibleGreen = 2\nEnd Enum\n",
+            ),
+            module(
+                "Hidden",
+                "Option Private Module\n\
+                 Public Enum HiddenColor\n  HiddenRed = 7\nEnd Enum\n",
+            ),
+        ],
+    };
+    let m = SymbolProjectManifest {
+        project_name: "App".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![module(
+            "Main",
+            "Public Const FromVisible As Long = VisibleGreen + 1\n\
+             Public Const FromHiddenBare As Long = HiddenRed + 1\n\
+             Public Const FromHiddenQualified As Long = HiddenColor.HiddenRed + 1\n\
+             Public Const FromHiddenProjectQualified As Long = Lib.HiddenColor.HiddenRed + 1\n",
+        )],
+        references: vec![ProjectReference::Project {
+            referenced_project_name: "Lib".into(),
+        }],
+        reference_projects: vec![lib],
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let scope = env.module_scope("Main").unwrap();
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("FromVisible"), Some(CoreConst::I32(3)));
+    assert_eq!(val("FromHiddenBare"), None);
+    assert_eq!(val("FromHiddenQualified"), None);
+    assert_eq!(val("FromHiddenProjectQualified"), None);
+    assert!(
+        env.resolve(&ResolutionContext::at(scope), "HiddenRed")
+            .is_none(),
+        "Option Private Module enum member should not publish through the referenced surface"
+    );
+}
+
+#[test]
 fn string_typed_const_values_coerce_to_declared_scalar_carriers() {
     let m = manifest(
         "Proj",

@@ -3134,3 +3134,37 @@
   - `cargo fmt --all -- --check`
   - `git diff --check`
   - `br dep cycles --json`
+
+## 2026-07-03 - Referenced-Project Enum Member Const References (`bd-aprs.9.9.10`)
+
+- Referenced-project constants now enter clean symbol-layer `Const` folding only
+  through each referenced project's synthesized export surface.
+- `build_resolution_environment` first folds internal constants with no
+  cross-project constants, synthesizes referenced surfaces from that preliminary
+  metadata, then does a final fold where those exported constants are visible to
+  the active project.
+- Covered referenced forms include public plain constants and public enum
+  members by bare name, `Enum.Member`, and `Project.Enum.Member`.
+- `Option Private Module` and other non-exported referenced modules do not leak:
+  their public-looking enum members are absent from the surface table and remain
+  unavailable to active-project `Const` folding.
+- Referenced project code does not see active-project or other injected external
+  constants; the export table is scoped to the active project that owns the
+  reference.
+- Fresh-eyes review found that referenced `Enum.Member` lookup also needed to
+  honor active local/parameter shadowing of the enum qualifier. The implementation
+  now matches the same-project qualified-enum guard, and the regression
+  `FromShadowedQualified` keeps `Color.Green` unresolved when active project code
+  declares its own `Const Color`.
+- Clean-stack execution coverage proves the folded values through
+  bind -> OxIR -> vm3.
+- Verification completed:
+  - `cargo test -p oxvba-symbol referenced_project_enum_member_consts_fold_through_export_surface -- --nocapture`
+  - `cargo test -p oxvba-symbol referenced_option_private_enum_member_consts_do_not_leak -- --nocapture`
+  - `cargo test -p oxvba-bind referenced_project_enum_member_consts_execute --test cross_project -- --nocapture`
+  - `cargo test -q -p oxvba-symbol`
+  - `cargo test -q -p oxvba-bind`
+  - `cargo check --workspace`
+  - `cargo fmt --all -- --check`
+  - `git diff --check`
+  - `br dep cycles --json`

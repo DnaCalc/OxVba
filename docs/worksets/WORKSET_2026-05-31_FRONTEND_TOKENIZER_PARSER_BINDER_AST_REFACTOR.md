@@ -781,8 +781,10 @@ Required newly explicit delivery beads:
   folding after enum-member publication, so same-module bare and `Enum.Member` references fold as
   VBA `Long` constants without losing enum initializers that depend on earlier Const values;
   a follow-up same-project cross-module slice covers bare public enum members from sibling modules,
-  `Enum.Member`, project-qualified enum forms, and direct module/member enum-member constants while
-  splitting referenced-project enum-member Const forms to `bd-aprs.9.9.10`.
+  `Enum.Member`, project-qualified enum forms, and direct module/member enum-member constants.
+  A referenced-project slice then routes final active-project Const folding through synthesized
+  export surfaces for public referenced constants and enum members by bare name, `Enum.Member`,
+  and `Project.Enum.Member`, without leaking `Option Private Module` members.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
@@ -1694,7 +1696,9 @@ Candidate bead units:
   references while preserving enum initializer references to earlier Consts. A subsequent
   same-project cross-module enum-member Const slice covers bare public enum members from sibling
   modules, `Enum.Member`, project-qualified enum forms, and direct module/member enum-member
-  constants; referenced-project enum-member Const forms remain split to `bd-aprs.9.9.10`.
+  constants. A referenced-project continuation folds public referenced constants and enum members
+  through synthesized export surfaces for bare, `Enum.Member`, and `Project.Enum.Member` forms,
+  preserving `Option Private Module` and non-exported-module boundaries.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding

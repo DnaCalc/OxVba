@@ -25,6 +25,20 @@ use crate::providers::vba_library;
 use crate::scanner::parameter_name_token;
 use crate::signature::{BuiltinType, VarTypeRef};
 
+#[derive(Debug, Clone)]
+pub struct ExternalConstProject {
+    pub visible_from_project: ScopeId,
+    pub project_name: String,
+    pub consts: Vec<ExternalConstValue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternalConstValue {
+    pub name: String,
+    pub enum_name: Option<String>,
+    pub value: CoreConst,
+}
+
 /// Fold every `Const` and `Enum` member reachable from the given module roots into
 /// a `SymbolId → value` map. Module- *and* proc-level consts are included (the
 /// binder reads proc-level consts too); failures are simply absent (a referrer/
@@ -35,6 +49,7 @@ pub fn fold_const_values(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
     target: ConditionalCompilationTarget,
+    external_projects: &[ExternalConstProject],
 ) -> Result<HashMap<SymbolId, CoreConst>, SymbolModelError> {
     // The string comparison/`Like` regime is the declaring module's `Option Compare`.
     let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
@@ -55,6 +70,7 @@ pub fn fold_const_values(
         &const_syms,
         &module_modes,
         target,
+        external_projects,
         &mut values,
     )?;
     // 3) Fold `Enum` members (sequential auto-increment, reading earlier values).
@@ -73,6 +89,7 @@ pub fn fold_const_values(
         &const_syms,
         &module_modes,
         target,
+        external_projects,
         &mut values,
     )?;
     Ok(values)
@@ -425,6 +442,7 @@ fn resolve_const_worklist(
     const_syms: &HashSet<SymbolId>,
     module_modes: &HashMap<ScopeId, StringCompareMode>,
     target: ConditionalCompilationTarget,
+    external_projects: &[ExternalConstProject],
     values: &mut HashMap<SymbolId, CoreConst>,
 ) -> Result<(), SymbolModelError> {
     let mut remaining = pending.to_vec();
@@ -436,7 +454,15 @@ fn resolve_const_worklist(
                 continue;
             }
             let mode = mode_for_scope(symbols, scope, module_modes);
-            match eval_const_expr_syms(symbols, scope, init, &values, const_syms, mode) {
+            match eval_const_expr_syms(
+                symbols,
+                scope,
+                init,
+                &values,
+                const_syms,
+                external_projects,
+                mode,
+            ) {
                 ConstEval::Value(v) => {
                     let Some(v) = coerce_declared_const_value(symbols, sym, v, target) else {
                         return Err(SymbolModelError::InvalidConstValue {
@@ -546,9 +572,18 @@ fn eval_const_expr_syms(
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
     const_syms: &HashSet<SymbolId>,
+    external_projects: &[ExternalConstProject],
     mode: StringCompareMode,
 ) -> ConstEval {
-    eval_inner(symbols, scope, node, values, Some(const_syms), mode)
+    eval_inner(
+        symbols,
+        scope,
+        node,
+        values,
+        Some(const_syms),
+        external_projects,
+        mode,
+    )
 }
 
 /// Evaluate with no pending set (enum initializers, read after consts are folded).
@@ -559,7 +594,7 @@ fn eval_const_expr(
     values: &HashMap<SymbolId, CoreConst>,
     mode: StringCompareMode,
 ) -> ConstEval {
-    eval_inner(symbols, scope, node, values, None, mode)
+    eval_inner(symbols, scope, node, values, None, &[], mode)
 }
 
 fn eval_inner(
@@ -568,6 +603,7 @@ fn eval_inner(
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
     const_syms: Option<&HashSet<SymbolId>>,
+    external_projects: &[ExternalConstProject],
     mode: StringCompareMode,
 ) -> ConstEval {
     match node.kind() {
@@ -576,14 +612,30 @@ fn eval_inner(
             None => ConstEval::Unresolvable,
         },
         SyntaxKind::ParenExpr => match node.paren_inner() {
-            Some(inner) => eval_inner(symbols, scope, inner, values, const_syms, mode),
+            Some(inner) => eval_inner(
+                symbols,
+                scope,
+                inner,
+                values,
+                const_syms,
+                external_projects,
+                mode,
+            ),
             None => ConstEval::Unresolvable,
         },
         SyntaxKind::UnaryExpr => {
             let Some(operand) = node.unary_operand() else {
                 return ConstEval::Unresolvable;
             };
-            let inner = match eval_inner(symbols, scope, operand, values, const_syms, mode) {
+            let inner = match eval_inner(
+                symbols,
+                scope,
+                operand,
+                values,
+                const_syms,
+                external_projects,
+                mode,
+            ) {
                 ConstEval::Value(c) => c,
                 other => return other,
             };
@@ -614,16 +666,24 @@ fn eval_inner(
                     resolved => return resolved,
                 }
             }
+            if let Some(value) =
+                resolve_external_const_by_name(symbols, scope, external_projects, tok.text)
+            {
+                return ConstEval::Value(value);
+            }
             match vba_library::library_constant(tok.text) {
                 Some(v) => ConstEval::Value(v),
                 None => ConstEval::Unresolvable,
             }
         }
         SyntaxKind::MemberExpr => {
-            let Some(sym) = resolve_qualified_const_symbol(symbols, scope, node) else {
-                return ConstEval::Unresolvable;
-            };
-            eval_resolved_const(sym, values, const_syms)
+            if let Some(sym) = resolve_qualified_const_symbol(symbols, scope, node) {
+                return eval_resolved_const(sym, values, const_syms);
+            }
+            match resolve_external_qualified_const(symbols, scope, external_projects, node) {
+                Some(value) => ConstEval::Value(value),
+                None => ConstEval::Unresolvable,
+            }
         }
         SyntaxKind::BinaryExpr => {
             let (Some(op_tok), Some(lhs_n), Some(rhs_n)) =
@@ -635,8 +695,24 @@ fn eval_inner(
                 return ConstEval::Unresolvable;
             };
             match (
-                eval_inner(symbols, scope, lhs_n, values, const_syms, mode),
-                eval_inner(symbols, scope, rhs_n, values, const_syms, mode),
+                eval_inner(
+                    symbols,
+                    scope,
+                    lhs_n,
+                    values,
+                    const_syms,
+                    external_projects,
+                    mode,
+                ),
+                eval_inner(
+                    symbols,
+                    scope,
+                    rhs_n,
+                    values,
+                    const_syms,
+                    external_projects,
+                    mode,
+                ),
             ) {
                 (ConstEval::Pending, _) | (_, ConstEval::Pending) => ConstEval::Pending,
                 (ConstEval::Value(l), ConstEval::Value(r)) => {
@@ -661,6 +737,105 @@ fn eval_resolved_const(
         return ConstEval::Pending;
     }
     ConstEval::Unresolvable
+}
+
+fn resolve_external_const_by_name(
+    symbols: &SymbolTable,
+    scope: ScopeId,
+    external_projects: &[ExternalConstProject],
+    member_name: &str,
+) -> Option<CoreConst> {
+    let project_scope = current_project_scope(symbols, scope)?;
+    let member_folded = crate::model::fold_identifier(normalize_identifier_text(member_name));
+    for project in external_projects
+        .iter()
+        .filter(|project| project.visible_from_project == project_scope)
+    {
+        let mut matches = project
+            .consts
+            .iter()
+            .filter(|constant| crate::model::fold_identifier(&constant.name) == member_folded);
+        let Some(first) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            return None;
+        }
+        return Some(first.value.clone());
+    }
+    None
+}
+
+fn resolve_external_qualified_const(
+    symbols: &SymbolTable,
+    scope: ScopeId,
+    external_projects: &[ExternalConstProject],
+    node: SyntaxNode<'_>,
+) -> Option<CoreConst> {
+    let parts = qualified_ident_parts(node)?;
+    match parts.as_slice() {
+        [owner, member] if !module_qualifier_shadowed(symbols, scope, owner) => {
+            resolve_external_enum_member(symbols, scope, external_projects, None, owner, member)
+        }
+        [project, owner, member] => resolve_external_enum_member(
+            symbols,
+            scope,
+            external_projects,
+            Some(*project),
+            owner,
+            member,
+        ),
+        _ => None,
+    }
+}
+
+fn resolve_external_enum_member(
+    symbols: &SymbolTable,
+    scope: ScopeId,
+    external_projects: &[ExternalConstProject],
+    project_name: Option<&str>,
+    enum_name: &str,
+    member_name: &str,
+) -> Option<CoreConst> {
+    let project_scope = current_project_scope(symbols, scope)?;
+    let enum_folded = crate::model::fold_identifier(normalize_identifier_text(enum_name));
+    let member_folded = crate::model::fold_identifier(normalize_identifier_text(member_name));
+    let project_folded =
+        project_name.map(|name| crate::model::fold_identifier(normalize_identifier_text(name)));
+
+    for project in external_projects
+        .iter()
+        .filter(|project| project.visible_from_project == project_scope)
+    {
+        if let Some(project_folded) = &project_folded
+            && crate::model::fold_identifier(&project.project_name) != *project_folded
+        {
+            continue;
+        }
+        let mut matches = project.consts.iter().filter(|constant| {
+            crate::model::fold_identifier(&constant.name) == member_folded
+                && constant
+                    .enum_name
+                    .as_deref()
+                    .is_some_and(|name| crate::model::fold_identifier(name) == enum_folded)
+        });
+        let Some(first) = matches.next() else {
+            if project_folded.is_some() {
+                return None;
+            }
+            continue;
+        };
+        if matches.next().is_some() {
+            return None;
+        }
+        return Some(first.value.clone());
+    }
+    None
+}
+
+fn current_project_scope(symbols: &SymbolTable, scope: ScopeId) -> Option<ScopeId> {
+    let module_scope = enclosing_module_scope(symbols, scope)?;
+    symbols.scope(module_scope).ok()?.parent
 }
 
 /// Resolve `Module.Const` / `Project.Module.Const` in a constant expression.

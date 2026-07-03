@@ -213,6 +213,27 @@ fn cross_module_enum_member_consts_execute() {
 }
 
 #[test]
+fn referenced_project_enum_member_consts_execute() {
+    let lib = project("Lib", lib_modules(), vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Public Const FromPlainConst As Long = KMax + 1\n\
+             Public Const FromBare As Long = Green + 2\n\
+             Public Const FromQualified As Long = Color.Green + 3\n\
+             Public Const FromProjectQualified As Long = Lib.Color.Green + 4\n\
+             Sub Main()\n\
+             \x20   r = FromPlainConst + FromBare + FromQualified + FromProjectQualified\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", lib_modules())],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(11 + 4 + 5 + 6));
+}
+
+#[test]
 fn cross_project_withevents() {
     // A sink class in App holds `WithEvents src As Lib.Clock`; firing the source's
     // event (in Lib's bundle) must route to the sink's handler (in App's bundle).
