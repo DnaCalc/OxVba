@@ -1,6 +1,10 @@
 Sub Main()
-    Dim a(2)
     Dim x
-    a(0) = 3
-    x = a(0)
+    x = ProbeArrayZeroIndex()
 End Sub
+
+Private Function ProbeArrayZeroIndex()
+    Dim a(2)
+    a(0) = 3
+    ProbeArrayZeroIndex = a(0)
+End Function

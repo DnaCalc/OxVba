@@ -1,8 +1,12 @@
 Sub Main()
-Dim a()
 Dim x
+x = ProbeRedimWithoutPreserve()
+End Sub
+
+Private Function ProbeRedimWithoutPreserve()
+Dim a()
 ReDim a(1)
 a(0) = 7
 ReDim a(3)
-x = a(0)
-End Sub
+ProbeRedimWithoutPreserve = a(0)
+End Function

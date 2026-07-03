@@ -1,8 +1,12 @@
 Sub Main()
-Dim a()
 Dim x
+x = ProbeRedimPreserveKeepsValues()
+End Sub
+
+Private Function ProbeRedimPreserveKeepsValues()
+Dim a()
 ReDim a(1)
 a(0) = 7
 ReDim Preserve a(3)
-x = a(0)
-End Sub
+ProbeRedimPreserveKeepsValues = a(0)
+End Function

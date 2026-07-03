@@ -1,6 +1,10 @@
 Sub Main()
-Dim m(1 To 2, 1 To 3)
 Dim x
-m(2, 3) = 17
-x = m(2, 3)
+    x = ProbeMultidimIndexing()
 End Sub
+
+Private Function ProbeMultidimIndexing()
+Dim m(1 To 2, 1 To 3)
+m(2, 3) = 17
+ProbeMultidimIndexing = m(2, 3)
+End Function

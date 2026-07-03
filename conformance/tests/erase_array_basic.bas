@@ -1,7 +1,11 @@
 Sub Main()
-    Dim a(2)
     Dim x
+    x = ProbeEraseArray()
+End Sub
+
+Private Function ProbeEraseArray()
+    Dim a(2)
     a(0) = 7
     Erase a
-    x = a(0)
-End Sub
+    ProbeEraseArray = a(0)
+End Function

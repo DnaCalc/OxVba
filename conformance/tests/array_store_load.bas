@@ -1,7 +1,11 @@
 Sub Main()
-    Dim a(2)
     Dim x
+    x = ProbeArrayStoreLoad()
+End Sub
+
+Private Function ProbeArrayStoreLoad()
+    Dim a(2)
     a(0) = 5
     a(1) = 7
-    x = a(1)
-End Sub
+    ProbeArrayStoreLoad = a(1)
+End Function

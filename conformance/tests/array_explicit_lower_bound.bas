@@ -1,6 +1,10 @@
 Sub Main()
-Dim a(5 To 7)
 Dim x
-a(6) = 11
-x = a(6)
+    x = ProbeExplicitLowerBound()
 End Sub
+
+Private Function ProbeExplicitLowerBound()
+Dim a(5 To 7)
+a(6) = 11
+ProbeExplicitLowerBound = a(6)
+End Function

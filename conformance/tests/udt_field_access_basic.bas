@@ -4,9 +4,13 @@ Type Point
 End Type
 
 Sub Main()
-    Dim p As Point
     Dim x
+    x = ProbePointFieldAccess()
+End Sub
+
+Private Function ProbePointFieldAccess()
+    Dim p As Point
     p.X = 7
     p.Y = p.X
-    x = p.Y
-End Sub
+    ProbePointFieldAccess = p.Y
+End Function

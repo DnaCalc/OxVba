@@ -1,7 +1,11 @@
 Sub Main()
-Dim a()
 Dim x
+x = ProbeRedimExpand()
+End Sub
+
+Private Function ProbeRedimExpand()
+Dim a()
 ReDim a(3)
 a(3) = 5
-x = a(3)
-End Sub
+ProbeRedimExpand = a(3)
+End Function
