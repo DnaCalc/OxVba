@@ -7,7 +7,16 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+cranelift-codegen.workspace = true
+cranelift-frontend.workspace = true
+cranelift-jit.workspace = true
+cranelift-module.workspace = true
+cranelift-native.workspace = true
+oxvba-bundle.workspace = true
+oxvba-hal.workspace = true
+oxvba-oxir.workspace = true
 oxvba-rt-abi.workspace = true
+oxvba-runtime.workspace = true
 thiserror.workspace = true
 
 [features]

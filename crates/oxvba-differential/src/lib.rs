@@ -24,10 +24,7 @@
 
 pub mod oracle;
 
-use oxvba_host::{
-    Engine, FinalErr, HostConfig, JIT_NOT_IMPLEMENTED_MESSAGE, RuntimeProfileId, SnapshotOutcome,
-    Vm3Snapshot,
-};
+use oxvba_host::{Engine, FinalErr, HostConfig, RuntimeProfileId, SnapshotOutcome, Vm3Snapshot};
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{HandleBalance, Variant, live_handle_counts, variant_to_vba_string};
 
@@ -36,8 +33,16 @@ fn balance_measurement_lock() -> &'static std::sync::Mutex<()> {
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
 }
 
+fn differential_engine(config: HostConfig) -> Engine {
+    Engine::new(config).with_runtime_profile(RuntimeProfileId::WindowsHeadless)
+}
+
 fn vm3_oracle_engine() -> Engine {
-    Engine::new(HostConfig::vm3()).with_runtime_profile(RuntimeProfileId::WindowsHeadless)
+    differential_engine(HostConfig::vm3())
+}
+
+fn jit_candidate_engine() -> Engine {
+    differential_engine(HostConfig::jit())
 }
 
 /// A canonical, comparable projection of a runtime [`Variant`].
@@ -138,7 +143,8 @@ pub fn canon(v: &Variant) -> Canon {
 pub enum Executor {
     /// The typed-OxIR interpreter — the product runtime and the JIT oracle.
     Vm3,
-    /// The M4 Cranelift backend. During M4-0 it exists only as a standard clean decline.
+    /// The M4 Cranelift backend. During M4-3 it compiles a narrow straight-line Long slice
+    /// and cleanly declines out-of-scope OxIR shapes.
     Jit,
 }
 
@@ -250,7 +256,9 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
         Executor::Vm3 => {
             RunOutcome::from_snapshot(engine.execute_manifest_snapshot_with_err_vm3(&manifest))
         }
-        Executor::Jit => RunOutcome::unsupported(JIT_NOT_IMPLEMENTED_MESSAGE),
+        Executor::Jit => RunOutcome::from_snapshot(
+            jit_candidate_engine().execute_manifest_snapshot_with_err_jit(&manifest),
+        ),
     };
     outcome.with_handle_balance(before)
 }
@@ -292,7 +300,9 @@ pub fn run_modules(
         Executor::Vm3 => {
             RunOutcome::from_snapshot(engine.execute_manifest_snapshot_with_err_vm3(&manifest))
         }
-        Executor::Jit => RunOutcome::unsupported(JIT_NOT_IMPLEMENTED_MESSAGE),
+        Executor::Jit => RunOutcome::from_snapshot(
+            jit_candidate_engine().execute_manifest_snapshot_with_err_jit(&manifest),
+        ),
     };
     outcome.with_handle_balance(before)
 }
@@ -338,7 +348,36 @@ pub fn run_project_closure(
                 },
             }
         }
-        Executor::Jit => RunOutcome::unsupported(JIT_NOT_IMPLEMENTED_MESSAGE),
+        Executor::Jit => {
+            if closure_leaf_first.len() != 1 {
+                RunOutcome::unsupported("M4-3 JIT supports one-project closure execution only")
+            } else {
+                match jit_candidate_engine()
+                    .execute_project_closure_with_variant_snapshot(closure_leaf_first)
+                {
+                    Ok(values) => RunOutcome {
+                        result: Ok(values.iter().map(canon).collect()),
+                        err: FinalErr::default(),
+                        raised: false,
+                        unsupported: None,
+                        handle_balance: None,
+                    },
+                    Err(err) => {
+                        if err.diagnostic().code.as_str().contains("JIT-UNSUPPORTED") {
+                            RunOutcome::unsupported(err.message().to_string())
+                        } else {
+                            RunOutcome {
+                                result: Err(err.message().to_string()),
+                                err: FinalErr::default(),
+                                raised: false,
+                                unsupported: None,
+                                handle_balance: None,
+                            }
+                        }
+                    }
+                }
+            }
+        }
     };
     outcome.with_handle_balance(before)
 }
@@ -369,6 +408,36 @@ pub fn run_with_timeout(
 mod tests {
     use super::*;
 
+    const JIT_STRAIGHT_LINE_LONG: &str = "\
+Public g As Long
+Sub Main()
+  Dim n As Long
+  n = 10
+  n = n + 5
+  n = n * 2
+  g = n - 3
+End Sub
+";
+
+    const JIT_LONG_OVERFLOW: &str = "\
+Public g As Long
+Sub Main()
+  Dim n As Long
+  n = 2147483647
+  g = n + 1
+End Sub
+";
+
+    const JIT_FOR_LOOP: &str = "\
+Public g As Long
+Sub Main()
+  Dim i As Long
+  For i = 1 To 3
+    g = g + i
+  Next i
+End Sub
+";
+
     /// Assert a vm3 run completed (not unsupported, not a defect/raised error) and return its
     /// canonical snapshot. The vm3 conformance probes below assert specific result slots; the
     /// per-program validated observable is otherwise pinned by [`vm3_golden_snapshot`].
@@ -392,6 +461,56 @@ mod tests {
     fn vm3_runs_arithmetic() {
         let snap = run_vm3_ok("Sub Main()\n  Dim n As Long\n  n = (10 + 5) * 2\nEnd Sub\n");
         assert!(snap.contains(&canon(&Variant::from_i32(30))), "{snap:?}");
+    }
+
+    #[test]
+    fn jit_matches_vm3_straight_line_long_arithmetic() {
+        let vm3 = run(Executor::Vm3, JIT_STRAIGHT_LINE_LONG);
+        let jit = run(Executor::Jit, JIT_STRAIGHT_LINE_LONG);
+        assert!(vm3.unsupported.is_none(), "vm3 unsupported: {vm3:?}");
+        assert!(jit.unsupported.is_none(), "jit unsupported: {jit:?}");
+        assert_eq!(jit.raised, vm3.raised);
+        assert_eq!(jit.err, vm3.err);
+        assert_eq!(jit.result, vm3.result);
+        assert!(
+            jit.handle_balance.is_some_and(HandleBalance::is_zero),
+            "jit handle imbalance {:?}",
+            jit.handle_balance
+        );
+        let result = jit.result.expect("jit result");
+        assert!(
+            result.contains(&canon(&Variant::from_i32(27))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn jit_overflow_matches_vm3_error_number() {
+        let vm3 = run(Executor::Vm3, JIT_LONG_OVERFLOW);
+        let jit = run(Executor::Jit, JIT_LONG_OVERFLOW);
+        assert!(vm3.raised, "vm3 should raise overflow: {vm3:?}");
+        assert!(jit.raised, "jit should raise overflow: {jit:?}");
+        assert_eq!(jit.err.number, vm3.err.number);
+        assert_eq!(jit.err.number, 6);
+        assert!(
+            jit.handle_balance.is_some_and(HandleBalance::is_zero),
+            "jit handle imbalance {:?}",
+            jit.handle_balance
+        );
+    }
+
+    #[test]
+    fn jit_declines_out_of_scope_loop_cleanly() {
+        let jit = run(Executor::Jit, JIT_FOR_LOOP);
+        let unsupported = jit.unsupported.as_deref().unwrap_or("");
+        assert!(
+            unsupported.contains("M4-3"),
+            "loop should be an M4-3 clean decline, got {jit:?}"
+        );
+        assert!(
+            jit.result.is_ok(),
+            "decline should not be a failure: {jit:?}"
+        );
     }
 
     #[test]
@@ -810,6 +929,51 @@ mod tests {
             Err(msg) => format!("err({msg})"),
         };
         format!("{body} raised={} err={:?}", o.raised, o.err)
+    }
+
+    fn render_jit_scope(name: &str, source: &str) -> String {
+        let outcome = run(Executor::Jit, source);
+        assert!(
+            outcome.handle_balance.is_some_and(HandleBalance::is_zero),
+            "jit scope handle imbalance: {:?} for outcome {outcome:?}",
+            outcome.handle_balance
+        );
+        let status = if outcome.unsupported.is_some() {
+            "declined"
+        } else if outcome.result.is_ok() && !outcome.raised {
+            "compiled"
+        } else if outcome.raised {
+            "raised"
+        } else {
+            "failed"
+        };
+        format!("{name}\t{status}")
+    }
+
+    /// M4-3 JIT scope ratchet: the first compiled slice must stay compiled, while a loop stays
+    /// a clean decline until the control-flow milestone intentionally blesses it.
+    #[test]
+    fn jit_scope_snapshot() {
+        let mut lines = vec![
+            render_jit_scope(
+                "inline/straight_line_long_arithmetic",
+                JIT_STRAIGHT_LINE_LONG,
+            ),
+            render_jit_scope("inline/for_loop", JIT_FOR_LOOP),
+        ];
+        lines.sort();
+        let actual = format!("{}\n", lines.join("\n"));
+        let golden = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("jit_scope.snap");
+        if std::env::var_os("OXVBA_BLESS_JIT_SCOPE").is_some() {
+            std::fs::write(&golden, &actual).expect("write jit scope snapshot");
+            eprintln!("blessed jit scope snapshot: {} cases", lines.len());
+            return;
+        }
+        let expected = std::fs::read_to_string(&golden).unwrap_or_default();
+        assert_eq!(
+            actual, expected,
+            "jit scope snapshot drift (re-bless with OXVBA_BLESS_JIT_SCOPE=1 if intended)"
+        );
     }
 
     /// W11 — the vm3 GOLDEN SNAPSHOT regression net. Pins vm3's validated observable for every

@@ -602,6 +602,7 @@ New crate per §1; extract `ErrEngine` (cells + `route_fault`) and `ExecState` (
 ### M4-3 — Cranelift skeleton: straight-line code runs (M)
 Pinned cranelift deps in `oxvba-jit` only; `Backend` trait over `JITModule`; JitRun/frame layout + dynamic-entry ABI; lower StmtBoundary/Assign/consts/arith-via-shims/Return; host compiles the image when `backend == Jit`; `jit_scope.snap` ratchet live.
 **Verify:** first corpus slice green in the differential (values/err/balance axes); everything else declines cleanly; ratchet active. **Depends:** M4-1, M4-2.
+**Implementation note (2026-07-03):** Complete in `bd-h4oh.4`; evidence is recorded in `docs/evidence/jit/JIT_M4_CRANELIFT_SKELETON_20260703.md`. The first source-level slice runs through `Executor::Jit` with Cranelift `0.133.1`, covering straight-line `Long` globals/locals/temps, `Numeric(Long)` coercions inserted by the binder, checked `Long` add/sub/mul through `oxvba-rt-abi` shims, host `backend == Jit` manifest execution, and a live `jit_scope.snap` ratchet. Unsupported shapes remain whole-program declines with no VM fallback. The only non-green lane is the non-blocking formal runner, which could not start in the current Linux environment because PowerShell is not installed.
 
 ### M4-4 — Control flow, calls, ByRef (M–L)
 Branch/loops; **typed primary entries become the convention of record** (signature derivation from OxFunc params; typed direct calls for CallProc/CallExtern); dynamic-entry thunk generator (unbox/coerce/box adapters); activation save/restore; ByRef aliasing via typed slot pointers; ParamArray (incl. the alias copy-out confirmation flagged in §6.1); err-28 stack guard with vm3-matching ceiling.
@@ -689,4 +690,4 @@ Option B thunk exports for the WrappedComServer `.dll`; Option A PE-surgery expo
 
 1. **ParamArray element-alias copy-out**: confirmed in M4-1. `ArrayLiteral { aliases }` carries enough for caller-side static copy-out; no IR extension was needed.
 2. **`Me`-receiver convention**: mirror vm3's class-method call path exactly (hidden receiver parameter placement per §6.1).
-3. **Cranelift version pin**: record the exact crate versions at M4-3 in this document.
+3. **Cranelift version pin**: M4-3 pins `cranelift-codegen`, `cranelift-frontend`, `cranelift-jit`, `cranelift-module`, and `cranelift-native` to `0.133.1`. `cargo info cranelift-jit` reports `rust-version = 1.94`; the local toolchain used for the M4-3 checks is `rustc 1.95.0`. The dependencies are declared in the workspace and consumed only by `oxvba-jit`, with cargo-tree checks guarding VM3/Cranelift separation.
