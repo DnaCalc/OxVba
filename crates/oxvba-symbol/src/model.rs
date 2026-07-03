@@ -210,6 +210,8 @@ pub enum SymbolModelError {
         procedure: String,
         parameter: String,
     },
+    #[error("invalid constant value for `{name}`")]
+    InvalidConstValue { name: String },
     #[error("Friend is only valid in object modules: `{name}`")]
     FriendNotValidInStandardModule { name: String },
     #[error("Implements is only valid in object modules: `{name}`")]
@@ -293,6 +295,12 @@ impl SymbolModelError {
             .with_help(
                 "Use a constant expression that VBA can coerce to the declared parameter type.",
             ),
+            SymbolModelError::InvalidConstValue { name } => Diagnostic::error(
+                "SYM-E-INVALID-CONST-VALUE",
+                DiagnosticPhase::Symbol,
+                format!("invalid constant value for `{name}`"),
+            )
+            .with_help("Use a constant expression that VBA can coerce to the declared Const type."),
             SymbolModelError::FriendNotValidInStandardModule { name } => Diagnostic::error(
                 "SYM-E-FRIEND-ONLY-VALID-IN-OBJECT-MODULE",
                 DiagnosticPhase::Symbol,

@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use oxvba_bundle::{DeclareParamType, coreir::CoreConst};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
+use crate::cond_comp::ConditionalCompilationTarget;
 use crate::manifest::{ModuleKind, ModuleUnit};
 use crate::model::{
     PropertyGroup, ScopeId, SourceProvenance, SourceSpan, SymbolId, SymbolImpl, SymbolKind,
@@ -87,6 +88,7 @@ pub fn scan_module(
     module: &ModuleUnit,
     module_syntax: SyntaxNode<'_>,
     project_scope: ScopeId,
+    target: ConditionalCompilationTarget,
 ) -> Result<ModuleScan, SymbolModelError> {
     let source_attributes = source_module_attributes(module_syntax);
     reject_unsupported_declared_decimal_storage(module_syntax)?;
@@ -143,6 +145,7 @@ pub fn scan_module(
         default_member_attrs,
         enumerator_member_attrs,
         default_types,
+        target,
         proc_is_static: false,
     };
     ctx.walk(module_scope, module_syntax, true)?;
@@ -159,6 +162,7 @@ struct ScanCtx<'a> {
     default_member_attrs: BTreeSet<String>,
     enumerator_member_attrs: BTreeSet<String>,
     default_types: DefaultTypeTable,
+    target: ConditionalCompilationTarget,
     /// Set while walking the body of a `Static Sub/Function/Property`, so every
     /// proc-local declarator becomes a `StaticLocal` even without its own
     /// `Static` keyword. VBA has no nested procedures, so a single flag (no
@@ -623,7 +627,7 @@ impl ScanCtx<'_> {
                     .unwrap_or_default();
                 let optional = parameter_has_modifier(param, SyntaxKind::KwOptional);
                 let ty = self.param_type(param);
-                let default = match default_from_param(param, &ty) {
+                let default = match default_from_param(param, &ty, self.target) {
                     ParsedParamDefault::Value(value) => Some(value),
                     ParsedParamDefault::Invalid => None,
                     ParsedParamDefault::Absent | ParsedParamDefault::Unparsed => {
@@ -1090,7 +1094,11 @@ enum ParsedParamDefault {
     Invalid,
 }
 
-fn default_from_param(node: SyntaxNode<'_>, ty: &VarTypeRef) -> ParsedParamDefault {
+fn default_from_param(
+    node: SyntaxNode<'_>,
+    ty: &VarTypeRef,
+    target: ConditionalCompilationTarget,
+) -> ParsedParamDefault {
     let text = node.text();
     let Some((_, rhs)) = text.split_once('=') else {
         return ParsedParamDefault::Absent;
@@ -1098,7 +1106,7 @@ fn default_from_param(node: SyntaxNode<'_>, ty: &VarTypeRef) -> ParsedParamDefau
     let Some(raw) = parse_default_literal(rhs.trim()) else {
         return ParsedParamDefault::Unparsed;
     };
-    let Some(value) = crate::const_eval::coerce_const_to_declared_type(raw, ty) else {
+    let Some(value) = crate::const_eval::coerce_const_to_declared_type(raw, ty, target) else {
         return ParsedParamDefault::Invalid;
     };
     match default_value_from_core_const(value) {
@@ -1667,6 +1675,7 @@ mod tests {
             &module,
             parse.syntax(),
             project,
+            ConditionalCompilationTarget::default(),
         )
         .map(|scan| (symbols, signatures, scan.members))
     }

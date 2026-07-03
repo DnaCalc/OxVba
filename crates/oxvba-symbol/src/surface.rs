@@ -694,6 +694,7 @@ mod tests {
                 m,
                 parse.syntax(),
                 project,
+                crate::cond_comp::ConditionalCompilationTarget::default(),
             )
             .unwrap();
             scans.push(scan);
@@ -704,7 +705,12 @@ mod tests {
             .zip(parses.iter())
             .map(|(s, p)| (s.module_scope, p.syntax()))
             .collect();
-        let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
+        let const_values = crate::const_eval::fold_const_values(
+            &symbols,
+            &roots,
+            crate::cond_comp::ConditionalCompilationTarget::default(),
+        )
+        .unwrap();
         synthesize_export_surface("P", &modules, &scans, &symbols, &signatures, &const_values)
     }
 

@@ -343,6 +343,78 @@ fn longptr_store_overflows_above_long_on_win32_target() {
 }
 
 #[test]
+fn longptr_const_and_optional_defaults_follow_win32_target_width() {
+    let snap = run_result_with_target(
+        "Const CMax As LongPtr = 2147483647\n\
+         Sub Main()\n\
+         Dim fromConst As LongPtr\n\
+         Dim fromDefault As LongPtr\n\
+         fromConst = CMax\n\
+         Fill fromDefault\n\
+         End Sub\n\
+         Sub Fill(ByRef target As LongPtr, Optional ByVal value As LongPtr = CMax)\n\
+         target = value\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 LongPtr Const/default should bind as Long-width values");
+    assert_eq!(snap[0], Variant::from_i32(2_147_483_647));
+    assert_eq!(snap[1], Variant::from_i32(2_147_483_647));
+}
+
+#[test]
+fn longptr_const_and_optional_defaults_keep_win64_width() {
+    let snap = run("Const CAbove As LongPtr = 2147483648\n\
+         Sub Main()\n\
+         Dim fromConst As LongPtr\n\
+         Dim fromDefault As LongPtr\n\
+         fromConst = CAbove\n\
+         Fill fromDefault\n\
+         End Sub\n\
+         Sub Fill(ByRef target As LongPtr, Optional ByVal value As LongPtr = CAbove)\n\
+         target = value\n\
+         End Sub");
+    assert_eq!(snap[0], Variant::from_i64(2_147_483_648));
+    assert_eq!(snap[1], Variant::from_i64(2_147_483_648));
+}
+
+#[test]
+fn longptr_const_overflows_above_long_on_win32_target() {
+    let err = run_result_with_target(
+        "Const CAbove As LongPtr = 2147483648\n\
+         Sub Main()\n\
+         Dim value As LongPtr\n\
+         value = CAbove\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect_err("Win32 LongPtr Const above Long max should reject");
+    assert!(
+        err.contains("InvalidConstValue") || err.contains("invalid constant value"),
+        "expected invalid constant value, got {err}"
+    );
+}
+
+#[test]
+fn longptr_optional_default_overflows_above_long_on_win32_target() {
+    let err = run_result_with_target(
+        "Sub Main()\n\
+         Dim p As LongPtr\n\
+         Fill p\n\
+         End Sub\n\
+         Sub Fill(ByRef target As LongPtr, Optional ByVal value As LongPtr = 2147483648)\n\
+         target = value\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect_err("Win32 LongPtr optional default above Long max should reject");
+    assert!(
+        err.contains("InvalidOptionalDefault") || err.contains("invalid optional default"),
+        "expected invalid optional default, got {err}"
+    );
+}
+
+#[test]
 fn longptr_arithmetic_overflows_as_long_on_win32_target() {
     let err = run_result_with_target(
         "Sub Main()\n\

@@ -946,6 +946,7 @@ pub fn build_resolution_environment(
             module,
             parse.syntax(),
             project_scope,
+            active_target,
         )?;
         type_index.add_module(
             &manifest.project_name,
@@ -998,6 +999,7 @@ pub fn build_resolution_environment(
                 module,
                 parse.syntax(),
                 scope,
+                active_target,
             )?;
             type_index.add_module(
                 &referenced.project_name,
@@ -1026,10 +1028,10 @@ pub fn build_resolution_environment(
         .iter()
         .map(|m| (m.module_scope, m.parse.syntax()))
         .collect();
-    let const_values = crate::const_eval::fold_const_values(&symbols, &roots);
+    let const_values = crate::const_eval::fold_const_values(&symbols, &roots, active_target)?;
     // Optional-parameter defaults fold against the closure's const values.
     let optional_defaults =
-        crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values)?;
+        crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values, active_target)?;
     drop(roots);
     let ambiguous_type_names = type_index.ambiguous_type_names();
     validate_type_refs(&module_csts, &ambiguous_type_names)?;

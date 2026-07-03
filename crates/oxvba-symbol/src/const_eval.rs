@@ -16,6 +16,7 @@ use oxvba_bundle::coreir::{CoreBinOp, CoreConst};
 use oxvba_runtime::CurrencyValue;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
+use crate::cond_comp::{ConditionalCompilationPointerWidth, ConditionalCompilationTarget};
 use crate::model::{
     ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace,
     SymbolTable, Visibility,
@@ -33,7 +34,8 @@ use crate::signature::{BuiltinType, VarTypeRef};
 pub fn fold_const_values(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
-) -> HashMap<SymbolId, CoreConst> {
+    target: ConditionalCompilationTarget,
+) -> Result<HashMap<SymbolId, CoreConst>, SymbolModelError> {
     // The string comparison/`Like` regime is the declaring module's `Option Compare`.
     let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
         .iter()
@@ -46,7 +48,7 @@ pub fn fold_const_values(
         collect_consts(symbols, *module_scope, *root, &mut pending, &mut const_syms);
     }
     // 2) Fold them by fixed point (forward + cross-const references).
-    let mut values = resolve_const_worklist(symbols, pending, &const_syms, &module_modes);
+    let mut values = resolve_const_worklist(symbols, pending, &const_syms, &module_modes, target)?;
     // 3) Fold `Enum` members (sequential auto-increment, reading earlier values).
     for (module_scope, root) in module_roots {
         let mode = module_modes
@@ -55,7 +57,7 @@ pub fn fold_const_values(
             .unwrap_or(StringCompareMode::Binary);
         fold_enums(symbols, *module_scope, *root, &mut values, mode);
     }
-    values
+    Ok(values)
 }
 
 /// A module's `Option Compare` mode (`Text` → case-insensitive string ops; default
@@ -109,6 +111,7 @@ pub fn fold_optional_defaults(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
     values: &HashMap<SymbolId, CoreConst>,
+    target: ConditionalCompilationTarget,
 ) -> Result<HashMap<(SymbolId, usize), CoreConst>, SymbolModelError> {
     let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
         .iter()
@@ -117,7 +120,15 @@ pub fn fold_optional_defaults(
     let mut out = HashMap::new();
     for (module_scope, root) in module_roots {
         let mode = mode_for_scope(symbols, *module_scope, &module_modes);
-        collect_proc_defaults(symbols, *module_scope, *root, values, mode, &mut out)?;
+        collect_proc_defaults(
+            symbols,
+            *module_scope,
+            *root,
+            values,
+            mode,
+            target,
+            &mut out,
+        )?;
     }
     Ok(out)
 }
@@ -128,6 +139,7 @@ fn collect_proc_defaults(
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
     mode: StringCompareMode,
+    target: ConditionalCompilationTarget,
     out: &mut HashMap<(SymbolId, usize), CoreConst>,
 ) -> Result<(), SymbolModelError> {
     if matches!(
@@ -146,12 +158,11 @@ fn collect_proc_defaults(
                     .unwrap_or_else(|| format!("arg{}", i + 1));
                 let default = match eval_const_expr(symbols, module_scope, def, values, mode) {
                     ConstEval::Value(c) => {
-                        coerce_param_default_value(symbols, proc_scope, *param, c).ok_or_else(
-                            || SymbolModelError::InvalidOptionalDefault {
+                        coerce_param_default_value(symbols, proc_scope, *param, c, target)
+                            .ok_or_else(|| SymbolModelError::InvalidOptionalDefault {
                                 procedure: name.text.to_string(),
                                 parameter: parameter.clone(),
-                            },
-                        )?
+                            })?
                     }
                     ConstEval::Pending | ConstEval::Unresolvable => {
                         return Err(SymbolModelError::InvalidOptionalDefault {
@@ -165,7 +176,7 @@ fn collect_proc_defaults(
         }
     }
     for child in node.child_nodes() {
-        collect_proc_defaults(symbols, module_scope, child, values, mode, out)?;
+        collect_proc_defaults(symbols, module_scope, child, values, mode, target, out)?;
     }
     Ok(())
 }
@@ -224,6 +235,7 @@ fn coerce_param_default_value(
     proc_scope: Option<ScopeId>,
     param: SyntaxNode<'_>,
     value: CoreConst,
+    target: ConditionalCompilationTarget,
 ) -> Option<CoreConst> {
     let Some(scope) = proc_scope else {
         return Some(value);
@@ -234,7 +246,7 @@ fn coerce_param_default_value(
     let Ok(Some(sym)) = symbols.find_in_scope(scope, SymbolNamespace::Parameter, name.text) else {
         return Some(value);
     };
-    coerce_declared_param_default_value(symbols, scope, sym, value)
+    coerce_declared_param_default_value(symbols, scope, sym, value, target)
 }
 
 fn coerce_declared_param_default_value(
@@ -242,6 +254,7 @@ fn coerce_declared_param_default_value(
     scope: ScopeId,
     sym: SymbolId,
     value: CoreConst,
+    target: ConditionalCompilationTarget,
 ) -> Option<CoreConst> {
     let Some(symbol) = symbols.symbol(sym) else {
         return Some(value);
@@ -249,13 +262,17 @@ fn coerce_declared_param_default_value(
     let SymbolImpl::DeclaredType(ty) = &symbol.imp else {
         return Some(value);
     };
-    if let Some(value) = coerce_const_to_declared_type(value.clone(), ty) {
+    if let Some(value) = coerce_const_to_declared_type(value.clone(), ty, target) {
         return Some(value);
     }
     if let VarTypeRef::Object(name) = ty
         && is_declared_enum_type(symbols, scope, name)
     {
-        return coerce_const_to_declared_type(value, &VarTypeRef::Builtin(BuiltinType::Long));
+        return coerce_const_to_declared_type(
+            value,
+            &VarTypeRef::Builtin(BuiltinType::Long),
+            target,
+        );
     }
     None
 }
@@ -389,7 +406,8 @@ fn resolve_const_worklist(
     pending: Vec<(ScopeId, SymbolId, SyntaxNode<'_>)>,
     const_syms: &HashSet<SymbolId>,
     module_modes: &HashMap<ScopeId, StringCompareMode>,
-) -> HashMap<SymbolId, CoreConst> {
+    target: ConditionalCompilationTarget,
+) -> Result<HashMap<SymbolId, CoreConst>, SymbolModelError> {
     let mut values: HashMap<SymbolId, CoreConst> = HashMap::new();
     let mut remaining = pending;
     loop {
@@ -402,8 +420,10 @@ fn resolve_const_worklist(
             let mode = mode_for_scope(symbols, scope, module_modes);
             match eval_const_expr_syms(symbols, scope, init, &values, const_syms, mode) {
                 ConstEval::Value(v) => {
-                    let Some(v) = coerce_declared_const_value(symbols, sym, v) else {
-                        continue;
+                    let Some(v) = coerce_declared_const_value(symbols, sym, v, target) else {
+                        return Err(SymbolModelError::InvalidConstValue {
+                            name: const_symbol_name(symbols, sym),
+                        });
                     };
                     values.insert(sym, v);
                     progress = true;
@@ -413,16 +433,25 @@ fn resolve_const_worklist(
             }
         }
         if still.is_empty() || !progress {
-            return values;
+            return Ok(values);
         }
         remaining = still;
     }
+}
+
+fn const_symbol_name(symbols: &SymbolTable, sym: SymbolId) -> String {
+    symbols
+        .symbol(sym)
+        .and_then(|symbol| symbols.name(symbol.name))
+        .map(|name| name.first_spelling.clone())
+        .unwrap_or_else(|| format!("{sym:?}"))
 }
 
 fn coerce_declared_const_value(
     symbols: &SymbolTable,
     sym: SymbolId,
     value: CoreConst,
+    target: ConditionalCompilationTarget,
 ) -> Option<CoreConst> {
     let Some(symbol) = symbols.symbol(sym) else {
         return Some(value);
@@ -430,12 +459,13 @@ fn coerce_declared_const_value(
     let SymbolImpl::DeclaredType(ty) = &symbol.imp else {
         return Some(value);
     };
-    coerce_const_to_declared_type(value, ty)
+    coerce_const_to_declared_type(value, ty, target)
 }
 
 pub(crate) fn coerce_const_to_declared_type(
     value: CoreConst,
     ty: &VarTypeRef,
+    target: ConditionalCompilationTarget,
 ) -> Option<CoreConst> {
     match ty {
         VarTypeRef::Variant => Some(value),
@@ -457,9 +487,14 @@ pub(crate) fn coerce_const_to_declared_type(
             let n = const_to_i64(&value)?;
             i32::try_from(n).ok().map(CoreConst::I32)
         }
-        VarTypeRef::Builtin(BuiltinType::LongLong | BuiltinType::LongPtr) => {
-            const_to_i64(&value).map(CoreConst::I64)
+        VarTypeRef::Builtin(BuiltinType::LongLong) => const_to_i64(&value).map(CoreConst::I64),
+        VarTypeRef::Builtin(BuiltinType::LongPtr)
+            if target.pointer_width == ConditionalCompilationPointerWidth::Bits32 =>
+        {
+            let n = const_to_i64(&value)?;
+            i32::try_from(n).ok().map(CoreConst::I32)
         }
+        VarTypeRef::Builtin(BuiltinType::LongPtr) => const_to_i64(&value).map(CoreConst::I64),
         VarTypeRef::Builtin(BuiltinType::Single) => {
             let n = const_to_f64(&value)?;
             (n.is_finite() && n.abs() <= f64::from(f32::MAX))

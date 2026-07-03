@@ -774,14 +774,15 @@ Required newly explicit delivery beads:
   host-sized `ArrayElementType::LongPtr` / `VbaRecordFieldKind::LongPtr` storage fallback. A
   further 2026-07-03 cleanup removes targetless scalar `OxTy::LongPtr` from OxIR, requires
   explicit target-width lowering, and proves Win32-target `LongPtr` `For` counters overflow at the
-  VBA `Long` boundary.
+  VBA `Long` boundary. A final 2026-07-03 compile-time `LongPtr` cleanup threads the manifest
+  pointer-width target through symbol-layer `Const` and `Optional` default coercion, so Win32
+  `LongPtr` constants/defaults publish `Long` carriers and reject values above `Long` max while
+  Win64 keeps `LongLong` carriers.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic and
   deterministic string-Date store subset,
-  compile-time `LongPtr` `Const`/optional-default validation under non-Win64 targets
-  (`bd-aprs.9.9.5`),
   lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
@@ -1681,9 +1682,9 @@ Candidate bead units:
   locals/globals and deletes the host-sized `ArrayElementType::LongPtr` /
   `VbaRecordFieldKind::LongPtr` storage variants. A further 2026-07-03 scalar OxIR cleanup removes
   targetless `OxTy::LongPtr` and leaves LongPtr lowered explicitly to `Long` or `LongLong` by VBA
-  target width.
-  Compile-time `Const`/optional-default validation under non-Win64 targets is split to
-  `bd-aprs.9.9.5`.
+  target width. The compile-time `LongPtr` cleanup then routes symbol-layer `Const` and
+  `Optional` default coercion through the same manifest pointer-width target, closing the
+  non-Win64 `LongPtr` constant/default residual.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding

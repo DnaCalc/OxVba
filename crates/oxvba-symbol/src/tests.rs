@@ -12,6 +12,7 @@ use oxvba_com::{
 };
 
 use crate::binding::{Binding, DispatchRoute, SpecialForm};
+use crate::cond_comp::ConditionalCompilationTarget;
 use crate::manifest::{
     ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference, SymbolProjectManifest,
 };
@@ -42,6 +43,14 @@ fn module(name: &str, source: &str) -> ModuleUnit {
 }
 
 fn manifest(name: &str, modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
+    manifest_with_target(name, modules, ConditionalCompilationTarget::default())
+}
+
+fn manifest_with_target(
+    name: &str,
+    modules: Vec<ModuleUnit>,
+    target: ConditionalCompilationTarget,
+) -> SymbolProjectManifest {
     SymbolProjectManifest {
         project_name: name.into(),
         project_kind: ProjectKind::Source,
@@ -49,7 +58,7 @@ fn manifest(name: &str, modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
-        conditional_compilation_target: Default::default(),
+        conditional_compilation_target: target,
     }
 }
 
@@ -522,6 +531,68 @@ fn string_typed_const_values_coerce_to_declared_scalar_carriers() {
     assert_eq!(val("CDouble"), Some(CoreConst::F64(2.5f64.to_bits())));
     assert_eq!(val("CAmount"), Some(CoreConst::Currency(12_500)));
     assert_eq!(val("CStamp"), Some(CoreConst::Date(46_081.0f64.to_bits())));
+}
+
+#[test]
+fn longptr_const_values_follow_target_width() {
+    let src = "Public Const CMax As LongPtr = 2147483647\n\
+               Public Const CTextMax As LongPtr = \"2147483647\"\n";
+    let win32 = manifest_with_target(
+        "Proj",
+        vec![module("Mod1", src)],
+        ConditionalCompilationTarget::windows_32_vba7(),
+    );
+    let env32 = build_resolution_environment(&win32, &NullTypeLibs).unwrap();
+    let scope32 = env32.module_scope("Mod1").unwrap();
+    let val32 = |name: &str| -> Option<CoreConst> {
+        let b = env32.resolve(&ResolutionContext::at(scope32), name)?;
+        env32.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val32("CMax"), Some(CoreConst::I32(2_147_483_647)));
+    assert_eq!(val32("CTextMax"), Some(CoreConst::I32(2_147_483_647)));
+
+    let win64 = manifest_with_target(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Const CMax As LongPtr = 2147483647\n\
+             Public Const CTextMax As LongPtr = \"2147483647\"\n\
+             Public Const CAbove As LongPtr = 2147483648\n",
+        )],
+        ConditionalCompilationTarget::windows_64_vba7(),
+    );
+    let env64 = build_resolution_environment(&win64, &NullTypeLibs).unwrap();
+    let scope64 = env64.module_scope("Mod1").unwrap();
+    let val64 = |name: &str| -> Option<CoreConst> {
+        let b = env64.resolve(&ResolutionContext::at(scope64), name)?;
+        env64.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val64("CMax"), Some(CoreConst::I64(2_147_483_647)));
+    assert_eq!(val64("CTextMax"), Some(CoreConst::I64(2_147_483_647)));
+    assert_eq!(val64("CAbove"), Some(CoreConst::I64(2_147_483_648)));
+}
+
+#[test]
+fn win32_longptr_const_above_long_rejects() {
+    let m = manifest_with_target(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Const CAbove As LongPtr = 2147483648\n",
+        )],
+        ConditionalCompilationTarget::windows_32_vba7(),
+    );
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("Win32 LongPtr Const above Long max should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::InvalidConstValue { name } if name == "CAbove"
+        ),
+        "unexpected error: {err:?}"
+    );
 }
 
 // ── COM provider: early/late + events ────────────────────────────────────────
@@ -1276,6 +1347,95 @@ fn optional_single_default_preserves_f32_metadata_carrier() {
     assert_eq!(
         signature.params[0].default,
         Some(DefaultValue::F32(1.5f32.to_bits()))
+    );
+}
+
+#[test]
+fn optional_longptr_defaults_follow_target_width() {
+    let src = "Const CMax As LongPtr = 2147483647\r\n\
+               Sub S(Optional ByVal literal As LongPtr = 2147483647, Optional ByVal fromConst As LongPtr = CMax)\r\n\
+               End Sub\r\n";
+
+    let win32 = manifest_with_target(
+        "Proj",
+        vec![module("Mod1", src)],
+        ConditionalCompilationTarget::windows_32_vba7(),
+    );
+    let env32 = build_resolution_environment(&win32, &NullTypeLibs).expect("env");
+    let scope32 = env32.module_scope("Mod1").expect("module scope");
+    let binding32 = env32
+        .resolve(&ResolutionContext::at(scope32), "S")
+        .expect("proc resolves");
+    let proc32 = binding32.symbol.expect("proc symbol");
+    let symbol32 = env32.symbols.symbol(proc32).expect("symbol");
+    let SymbolImpl::Signature(sig32) = &symbol32.imp else {
+        panic!("expected signature");
+    };
+    let signature32 = env32.signatures.get(*sig32).expect("signature");
+    assert_eq!(
+        signature32.params[0].default,
+        Some(DefaultValue::I32(2_147_483_647))
+    );
+    assert_eq!(
+        env32.optional_default(proc32, 0),
+        Some(&CoreConst::I32(2_147_483_647))
+    );
+    assert_eq!(
+        env32.optional_default(proc32, 1),
+        Some(&CoreConst::I32(2_147_483_647))
+    );
+
+    let win64 = manifest_with_target(
+        "Proj",
+        vec![module("Mod1", src)],
+        ConditionalCompilationTarget::windows_64_vba7(),
+    );
+    let env64 = build_resolution_environment(&win64, &NullTypeLibs).expect("env");
+    let scope64 = env64.module_scope("Mod1").expect("module scope");
+    let binding64 = env64
+        .resolve(&ResolutionContext::at(scope64), "S")
+        .expect("proc resolves");
+    let proc64 = binding64.symbol.expect("proc symbol");
+    let symbol64 = env64.symbols.symbol(proc64).expect("symbol");
+    let SymbolImpl::Signature(sig64) = &symbol64.imp else {
+        panic!("expected signature");
+    };
+    let signature64 = env64.signatures.get(*sig64).expect("signature");
+    assert_eq!(
+        signature64.params[0].default,
+        Some(DefaultValue::I64(2_147_483_647))
+    );
+    assert_eq!(
+        env64.optional_default(proc64, 0),
+        Some(&CoreConst::I64(2_147_483_647))
+    );
+    assert_eq!(
+        env64.optional_default(proc64, 1),
+        Some(&CoreConst::I64(2_147_483_647))
+    );
+}
+
+#[test]
+fn win32_longptr_optional_default_above_long_rejects() {
+    let src = "Sub S(Optional ByVal p As LongPtr = 2147483648)\r\nEnd Sub\r\n";
+    let m = manifest_with_target(
+        "Proj",
+        vec![module("Mod1", src)],
+        ConditionalCompilationTarget::windows_32_vba7(),
+    );
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("Win32 LongPtr optional default above Long max should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::InvalidOptionalDefault {
+                procedure,
+                parameter,
+            } if procedure == "S" && parameter == "p"
+        ),
+        "unexpected error: {err:?}"
     );
 }
 

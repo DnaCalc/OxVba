@@ -3061,3 +3061,28 @@
   - `cargo test -p oxvba-bind longptr --test feature_coverage -- --nocapture`
   - `cargo test -q -p oxvba-vm3`
   - `cargo test -q -p oxvba-bind`
+
+## 2026-07-03 - LongPtr Compile-Time Constant Target Width (`bd-aprs.9.9.5`)
+
+- Threaded `SymbolProjectManifest.conditional_compilation_target` into symbol
+  scanner literal optional defaults, `Const` folding, and folded optional-default
+  coercion.
+- Declared `Const ... As LongPtr` and `Optional ... As LongPtr = ...` now use
+  `Long`/`I32` carriers under Win32-target VBA and `LongLong`/`I64` carriers
+  under Win64-target VBA.
+- Win32-target `Const ... As LongPtr` values above `Long` max now reject with
+  `InvalidConstValue`; Win32-target optional defaults above `Long` max reject
+  with `InvalidOptionalDefault`.
+- Clean-stack execution coverage now proves module-constant and omitted optional
+  LongPtr defaults through bind -> OxIR -> vm3 on both Win32 and Win64 targets.
+- Remaining FE-8.5.e work is broader compile-time expression/name/typed-coercion
+  breadth, not a LongPtr target-width residual.
+- Verification completed:
+  - `cargo test -p oxvba-symbol longptr -- --nocapture`
+  - `cargo test -p oxvba-bind longptr --test feature_coverage -- --nocapture`
+  - `cargo test -q -p oxvba-symbol`
+  - `cargo test -q -p oxvba-bind`
+  - `cargo check --workspace`
+  - `cargo fmt --all -- --check`
+  - `git diff --check`
+  - `br dep cycles --json`
