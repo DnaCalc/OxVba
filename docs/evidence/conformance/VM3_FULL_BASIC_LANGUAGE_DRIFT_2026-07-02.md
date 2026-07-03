@@ -66,6 +66,13 @@ with `Boolean` joining the `Integer` lane), while `LongLong` remains
 step literal now uses an `Integer` carrier, matching Excel's retained subtype
 for the affected loop row.
 
+`bd-5kqj.8` aligned normal `For Each` completion with Excel/VBA by clearing
+the Variant loop variable when the enumerator is exhausted. The existing Excel
+captures already showed array-literal and array-variable `For Each` leave the
+loop variable `Empty`; an additional guarded Excel probe confirmed the same
+normal-completion rule for `Collection` enumeration while preserving the last
+visited item in a separate local.
+
 The starting 70-mismatch surface was captured after the earlier W10 `Rnd` and
 `Single` retained-value formatter fixes; this bead reconciles that post-W10
 baseline.
@@ -82,25 +89,23 @@ After the oracle-backed golden refreshes, `Round` fix, the `bd-5kqj.4`
 module-level `Const` parser fix, the `bd-5kqj.3` compile-diagnostic fix, the
 `bd-5kqj.2` CVErr/Resume-state fix, and the `bd-5kqj.5` collection-fixture
 replacement, the `bd-5kqj.6` `Err.Source` default-name fix, and the
-`bd-5kqj.7` Variant small-integer arithmetic fix:
+`bd-5kqj.7` Variant small-integer arithmetic fix, and the `bd-5kqj.8`
+`For Each` loop-variable final-state fix:
 
 - Command: `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-- Current result: 16 mismatches over 192 files.
-- Latest evidence: terminal output from the `bd-5kqj.7` closure run.
+- Current result: 15 mismatches over 192 files.
+- Latest evidence: terminal output from the `bd-5kqj.8` closure run.
 - Earlier 27-mismatch log before the `Const` fix:
   `target/conformance_basic_language_vm_after_remaining_oracle_20260702.log`
 
-The 16 remaining mismatch rows are classified as follows; one row
-(`for_each_array_variable_basic.bas`) intersects the composite-retained-value
-surface and the loop-variable-final-state follow-up:
+The 15 remaining mismatch rows are classified as follows:
 
 - `bd-5kqj.1` composite retained-value dump shape:
   array/`ReDim`/UDT rows where vm3 currently dumps structural SAFEARRAY/record
   debug values while the VBA-observable fixture target should be scalar or the
-  oracle encoder must be extended.
-- `bd-5kqj.8` `For Each` array loop-variable final state:
-  `for_each_array_literal_basic.bas` and the loop-variable part of
-  `for_each_array_variable_basic.bas`.
+  oracle encoder must be extended. `for_each_array_variable_basic.bas` remains
+  here only because the retained array variable `a` still dumps structurally;
+  its final loop variable now matches the Excel-backed `Empty` target.
 
 ## Checks
 
@@ -127,11 +132,16 @@ surface and the loop-variable-final-state follow-up:
 - `cargo test -q -p oxvba-runtime arithmetic`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern for_exit_for_basic.bas`
 - `cargo test -q -p oxvba-differential --test for_counter_overflow_vm3`
+- `./scripts/run-conformance-oracle.ps1 -OutputDir docs/evidence/conformance/oracle_captures/conformance_oracle_foreach_collection_final_probe_20260703 -IncludePattern zz_probe_foreach_collection_final.bas -TestTimeoutMs 15000`
+- `cargo test -q -p oxvba-differential --test foreach_scalar_source_vm3`
+- `cargo test -q -p oxvba-vm3 foreach`
+- `cargo test -q -p oxvba-differential --test project_class_newenum_vm3`
+- `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern for_each_array_literal_basic.bas`
 - `cargo test -q -p oxvba-differential --lib vm3_golden_snapshot`
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language -IncludePattern <42 scalar oracle rows>`
   - Current expected result: 3 mismatches, all split to follow-up beads.
 - `./scripts/run-conformance.ps1 -Backend vm -Suite basic-language`
-  - Current expected result: 16 mismatches over 192 files, all classified above.
+  - Current expected result: 15 mismatches over 192 files, all classified above.
 
 ## Fresh-Eyes Review
 
@@ -174,8 +184,13 @@ names for cross-project origin behavior. The `bd-5kqj.7` review checked that
 the prior broad `Long` promotion was a legacy OxVBA fallback, not a VBA
 compatibility target. The targeted Excel probes and the full guarded oracle
 capture agree on the small-integer ladder, and golden rows were updated only
-where current vm3 output matched those Excel observations; the remaining
-array/UDT and `For Each` residuals were left on their existing beads instead of
-being hidden by scalar arithmetic changes.
+where current vm3 output matched those Excel observations; broader array/UDT
+residuals were left on their existing beads instead of being hidden by scalar
+arithmetic changes. The `bd-5kqj.8` review confirmed
+the fix writes `Empty` only on normal enumerator exhaustion; `Exit For` still
+uses the loop break path, and collection/project-class/foreign-object
+enumeration checks still pass. The only surviving `For Each`-named row is now a
+composite retained-array dump issue owned by `bd-5kqj.1`, not a final loop
+variable issue.
 No remaining mismatch is left only in chat; every residual category has an open
 bead.
