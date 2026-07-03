@@ -40,12 +40,12 @@ impl Default for TypeContext {
 // ── Type → coreir mappings (frame builder + ReDim) ──────────────────────────
 
 /// The coreir array element type for a declared element type.
-pub fn array_element_of(elem: &VarTypeRef) -> ArrayElementType {
+pub(crate) fn array_element_of_with(ctx: TypeContext, elem: &VarTypeRef) -> ArrayElementType {
     match elem {
-        VarTypeRef::Builtin(b) => builtin_element(*b),
+        VarTypeRef::Builtin(b) => builtin_element(ctx, *b),
         VarTypeRef::FixedString(_) => ArrayElementType::String,
         VarTypeRef::FixedArray { element, bounds } => ArrayElementType::FixedArray {
-            element: Box::new(array_element_of(element)),
+            element: Box::new(array_element_of_with(ctx, element)),
             bounds: bounds.clone(),
         },
         VarTypeRef::Object(_) | VarTypeRef::Udt(_) | VarTypeRef::Variant | VarTypeRef::Array(_) => {
@@ -54,14 +54,15 @@ pub fn array_element_of(elem: &VarTypeRef) -> ArrayElementType {
     }
 }
 
-fn builtin_element(b: BuiltinType) -> ArrayElementType {
+fn builtin_element(ctx: TypeContext, b: BuiltinType) -> ArrayElementType {
     match b {
         BuiltinType::Boolean => ArrayElementType::Boolean,
         BuiltinType::Byte => ArrayElementType::Byte,
         BuiltinType::Integer => ArrayElementType::Integer,
         BuiltinType::Long => ArrayElementType::Long,
         BuiltinType::LongLong => ArrayElementType::LongLong,
-        BuiltinType::LongPtr => ArrayElementType::LongPtr,
+        BuiltinType::LongPtr if ctx.longptr_is_64() => ArrayElementType::LongLong,
+        BuiltinType::LongPtr => ArrayElementType::Long,
         BuiltinType::Single => ArrayElementType::Single,
         BuiltinType::Double => ArrayElementType::Double,
         BuiltinType::Currency => ArrayElementType::Currency,
@@ -71,10 +72,10 @@ fn builtin_element(b: BuiltinType) -> ArrayElementType {
 }
 
 /// `Some(element)` when the declared type is an array, for `CoreLocal`/`CoreGlobal`.
-pub fn array_element(ty: &VarTypeRef) -> Option<ArrayElementType> {
+pub(crate) fn array_element_with(ctx: TypeContext, ty: &VarTypeRef) -> Option<ArrayElementType> {
     match ty {
-        VarTypeRef::Array(inner) => Some(array_element_of(inner)),
-        VarTypeRef::FixedArray { element, .. } => Some(array_element_of(element)),
+        VarTypeRef::Array(inner) => Some(array_element_of_with(ctx, inner)),
+        VarTypeRef::FixedArray { element, .. } => Some(array_element_of_with(ctx, element)),
         _ => None,
     }
 }

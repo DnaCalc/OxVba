@@ -8,6 +8,8 @@
 
 use std::collections::BTreeMap;
 
+use oxvba_bundle::PtrWritebackKind;
+use oxvba_bundle::coreir::{CoreCallee, CoreStmt, CoreValue};
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_runtime::{Variant, bstr::BStr};
@@ -367,6 +369,121 @@ fn longptr_store_keeps_longlong_width_on_win64_target() {
          r = p\n\
          End Sub");
     assert_eq!(snap[0], Variant::from_i64(2_147_483_648));
+}
+
+#[test]
+fn longptr_dynamic_array_elements_follow_win32_target_width() {
+    let snap = run_result_with_target(
+        "Sub Main()\n\
+         Dim a() As LongPtr\n\
+         Dim v\n\
+         ReDim a(0)\n\
+         a(0) = 2147483647\n\
+         v = a(0)\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 LongPtr array element should accept Long-width max value");
+    assert_eq!(snap[1], Variant::from_i32(2_147_483_647));
+}
+
+#[test]
+fn longptr_dynamic_array_element_overflows_above_long_on_win32_target() {
+    let err = run_result_with_target(
+        "Sub Main()\n\
+         Dim a() As LongPtr\n\
+         ReDim a(0)\n\
+         a(0) = 2147483648\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect_err("Win32 LongPtr array element should overflow above Long max");
+    assert!(
+        err.contains("runtime error: 6"),
+        "expected overflow error 6, got {err}"
+    );
+}
+
+#[test]
+fn longptr_fixed_array_erase_uses_win32_long_default() {
+    let snap = run_result_with_target(
+        "Sub Main()\n\
+         Dim a(0) As LongPtr\n\
+         Dim v\n\
+         a(0) = 2147483647\n\
+         Erase a\n\
+         v = a(0)\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 LongPtr fixed array Erase should use Long zero");
+    assert_eq!(snap[1], Variant::from_i32(0));
+}
+
+#[test]
+fn longptr_udt_field_follows_win32_target_width() {
+    let snap = run_result_with_target(
+        "Type Holder\n\
+         P As LongPtr\n\
+         End Type\n\
+         Sub Main()\n\
+         Dim h As Holder\n\
+         Dim v\n\
+         h.P = 2147483647\n\
+         v = h.P\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect("Win32 LongPtr UDT field should accept Long-width max value");
+    assert_eq!(snap[1], Variant::from_i32(2_147_483_647));
+}
+
+#[test]
+fn longptr_udt_field_overflows_above_long_on_win32_target() {
+    let err = run_result_with_target(
+        "Type Holder\n\
+         P As LongPtr\n\
+         End Type\n\
+         Sub Main()\n\
+         Dim h As Holder\n\
+         h.P = 2147483648\n\
+         End Sub",
+        ConditionalCompilationTarget::windows_32_vba7(),
+    )
+    .expect_err("Win32 LongPtr UDT field should overflow above Long max");
+    assert!(
+        err.contains("runtime error: 6"),
+        "expected overflow error 6, got {err}"
+    );
+}
+
+#[test]
+fn longptr_varptr_writeback_kind_follows_win32_target_width() {
+    let program = oxvba_bind::bind_program(
+        &manifest_with_target(
+            "Private Declare PtrSafe Sub Touch Lib \"fake\" (ByVal p As LongPtr)\n\
+             Sub Main()\n\
+             Dim p As LongPtr\n\
+             Touch VarPtr(p)\n\
+             End Sub",
+            ConditionalCompilationTarget::windows_32_vba7(),
+        ),
+        &NullTypeLibs,
+    )
+    .expect("bind Win32 LongPtr VarPtr declare call");
+    let main = program
+        .procs
+        .iter()
+        .find(|proc| proc.name.eq_ignore_ascii_case("Main"))
+        .expect("Main proc");
+    let writeback_kind = main.body.iter().find_map(|stmt| match stmt {
+        CoreStmt::Eval(CoreValue::Call {
+            callee: CoreCallee::Declare { ptr_writebacks, .. },
+            ..
+        }) => ptr_writebacks.first().map(|writeback| writeback.kind),
+        _ => None,
+    });
+    assert_eq!(writeback_kind, Some(PtrWritebackKind::Long));
 }
 
 #[test]

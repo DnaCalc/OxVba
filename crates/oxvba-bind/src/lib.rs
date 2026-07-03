@@ -696,7 +696,7 @@ impl Lower<'_> {
                     .unwrap_or_default();
                 oxvba_bundle::ArrayElementType::Record(fields)
             }
-            other => crate::types::array_element_of(&other),
+            other => crate::types::array_element_of_with(self.type_ctx, &other),
         }
     }
 
@@ -716,7 +716,7 @@ impl Lower<'_> {
                 }
             }
             VarTypeRef::Array(_) => oxvba_bundle::ArrayElementType::Variant,
-            other => crate::types::array_element_of(&other),
+            other => crate::types::array_element_of_with(self.type_ctx, &other),
         }
     }
 }

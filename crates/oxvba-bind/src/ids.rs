@@ -113,6 +113,7 @@ pub struct IdAllocator {
 
 struct ProcAllocInput<'a> {
     env: &'a ResolutionEnvironment,
+    type_ctx: types::TypeContext,
     module_scope: ScopeId,
     module_syntax: SyntaxNode<'a>,
     decl: SyntaxNode<'a>,
@@ -130,6 +131,7 @@ impl IdAllocator {
         manifest: &SymbolProjectManifest,
     ) -> Result<Self, BindError> {
         let symbols = &env.symbols;
+        let type_ctx = types::TypeContext::from_target(manifest.conditional_compilation_target);
         let mut alloc = IdAllocator {
             globals: Vec::new(),
             procs: Vec::new(),
@@ -184,7 +186,7 @@ impl IdAllocator {
                         // Standard-module module-level variable → a global.
                         let gid = GlobalId(alloc.globals.len());
                         let array_element = match &sym.imp {
-                            SymbolImpl::DeclaredType(t) => types::array_element(t),
+                            SymbolImpl::DeclaredType(t) => types::array_element_with(type_ctx, t),
                             _ => None,
                         };
                         alloc.globals.push(CoreGlobal {
@@ -230,6 +232,7 @@ impl IdAllocator {
             for (decl, &proc_scope) in decls.iter().zip(proc_scopes.iter()) {
                 alloc.alloc_proc(ProcAllocInput {
                     env,
+                    type_ctx,
                     module_scope: module.module_scope,
                     module_syntax: module.syntax,
                     decl: *decl,
@@ -341,6 +344,7 @@ impl IdAllocator {
             option_base,
             option_explicit,
             default_types,
+            type_ctx,
         } = input;
         let symbols = &env.symbols;
         let proc_id = ProcId(self.procs.len());
@@ -408,6 +412,7 @@ impl IdAllocator {
             kind,
             &logical,
             is_class_member,
+            type_ctx,
         )?;
 
         // `Static` locals persist across calls: allocate one zero-initialized
@@ -422,7 +427,7 @@ impl IdAllocator {
             }
             let gid = GlobalId(self.globals.len());
             let array_element = match &sym.imp {
-                SymbolImpl::DeclaredType(t) => types::array_element(t),
+                SymbolImpl::DeclaredType(t) => types::array_element_with(type_ctx, t),
                 _ => None,
             };
             self.globals.push(CoreGlobal {
@@ -521,6 +526,7 @@ fn build_frame(
     kind: ProcedureKind,
     logical: &str,
     is_class_member: bool,
+    type_ctx: types::TypeContext,
 ) -> Result<Frame, BindError> {
     let symbols = &env.symbols;
     let scope_syms = symbols.symbols_in_scope(proc_scope).unwrap_or_default();
@@ -591,7 +597,7 @@ fn build_frame(
             && sym.kind != SymbolKind::StaticLocal
         {
             let array_element = match &sym.imp {
-                SymbolImpl::DeclaredType(t) => types::array_element(t),
+                SymbolImpl::DeclaredType(t) => types::array_element_with(type_ctx, t),
                 _ => None,
             };
             locals.push(CoreLocal {

@@ -928,15 +928,15 @@ impl<'a> ProcLower<'a> {
                     PtrKind::Var if matches!(ty, VarTypeRef::Array(_)) => {
                         Some((place.clone(), PtrWritebackKind::ByteArray))
                     }
-                    PtrKind::Var => {
-                        scalar_ptr_writeback_kind(&ty).map(|kind| (place.clone(), kind))
-                    }
+                    PtrKind::Var => scalar_ptr_writeback_kind(self.g.type_ctx, &ty)
+                        .map(|kind| (place.clone(), kind)),
                     _ => None,
                 }
             } else {
                 None
             };
-            let value = if matches!(kind, PtrKind::Var) && scalar_ptr_writeback_kind(&ty).is_some()
+            let value = if matches!(kind, PtrKind::Var)
+                && scalar_ptr_writeback_kind(self.g.type_ctx, &ty).is_some()
             {
                 self.g.coerce_store(CoreValue::Load(place), &ty)
             } else {
@@ -2940,13 +2940,19 @@ fn pointer_kind(intrinsic: StructuralIntrinsic, ty: &VarTypeRef) -> PtrKind {
     }
 }
 
-fn scalar_ptr_writeback_kind(ty: &VarTypeRef) -> Option<PtrWritebackKind> {
+fn scalar_ptr_writeback_kind(
+    type_ctx: types::TypeContext,
+    ty: &VarTypeRef,
+) -> Option<PtrWritebackKind> {
     match ty {
         VarTypeRef::Builtin(BuiltinType::Boolean) => Some(PtrWritebackKind::Boolean),
         VarTypeRef::Builtin(BuiltinType::Byte) => Some(PtrWritebackKind::Byte),
         VarTypeRef::Builtin(BuiltinType::Integer) => Some(PtrWritebackKind::Integer),
         VarTypeRef::Builtin(BuiltinType::Long) => Some(PtrWritebackKind::Long),
         VarTypeRef::Builtin(BuiltinType::LongLong) => Some(PtrWritebackKind::LongLong),
+        VarTypeRef::Builtin(BuiltinType::LongPtr) if !type_ctx.longptr_is_64() => {
+            Some(PtrWritebackKind::Long)
+        }
         VarTypeRef::Builtin(BuiltinType::LongPtr) => Some(PtrWritebackKind::LongPtr),
         VarTypeRef::Builtin(BuiltinType::Single) => Some(PtrWritebackKind::Single),
         VarTypeRef::Builtin(BuiltinType::Double) => Some(PtrWritebackKind::Double),

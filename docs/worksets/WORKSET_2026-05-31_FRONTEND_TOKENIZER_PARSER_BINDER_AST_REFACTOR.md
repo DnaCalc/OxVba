@@ -765,14 +765,19 @@ Required newly explicit delivery beads:
   the clean binder's scalar `LongPtr` type context: Win64 keeps `LongLong`-sized store/default and
   arithmetic behavior, while Win32-target scalar stores/defaults, by-value/default argument coercion,
   integer division/`Mod` result choice, arithmetic overflow mode, and file-read type codes now use
-  `Long`-sized behavior instead of the old unconditional Win64 assumption.
+  `Long`-sized behavior instead of the old unconditional Win64 assumption. A follow-up 2026-07-03
+  continuation applies the same target context to clean-bind array/record metadata: dynamic and
+  fixed-array `LongPtr` elements, UDT `LongPtr` fields, fixed-array `Erase` defaults, and `VarPtr`
+  scalar write-back now use `Long`-sized metadata under Win32 targets while preserving Win64
+  `LongLong`-sized behavior.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
   broader Date/Currency expression coercion beyond the covered numeric arithmetic and
   deterministic string-Date store subset,
-  remaining platform `LongPtr` semantics outside that scalar binder slice (notably array/UDT/native
-  pointer layout and compile-time `Const`/optional-default validation under non-Win64 targets),
+  compile-time `LongPtr` `Const`/optional-default validation under non-Win64 targets
+  (`bd-aprs.9.9.5`), removal of remaining legacy host-width `ArrayElementType::LongPtr` /
+  `VbaRecordFieldKind::LongPtr` fallback surfaces (`bd-aprs.9.9.6`),
   lossless
   conditional-compilation CST/source-span preservation for interactive editor inactive regions, and
   project-owned attribute/module-option semantics outside the current single-source route.
@@ -1665,9 +1670,12 @@ Candidate bead units:
   covered string Boolean constants. A 2026-07-03 scalar `LongPtr` continuation now routes the
   clean binder's declared scalar `LongPtr` coercion/default/arithmetic/file-read type-code decisions
   through the manifest pointer-width target, so Win32-target execution uses `Long`-sized behavior
-  for those paths while Win64 retains the existing `LongLong`-sized behavior; array/UDT/native
-  pointer layout and compile-time `Const`/optional-default validation under non-Win64 targets remain
-  open platform-LongPtr scope.
+  for those paths while Win64 retains the existing `LongLong`-sized behavior; clean-bind
+  array/UDT metadata and `VarPtr` scalar write-back are then covered by the follow-up 2026-07-03
+  runtime-metadata slice for dynamic and fixed arrays, UDT fields, and fixed-array `Erase`.
+  Remaining legacy host-width `ArrayElementType::LongPtr` / `VbaRecordFieldKind::LongPtr`
+  fallback removal is split to `bd-aprs.9.9.6`. Compile-time
+  `Const`/optional-default validation under non-Win64 targets is split to `bd-aprs.9.9.5`.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
