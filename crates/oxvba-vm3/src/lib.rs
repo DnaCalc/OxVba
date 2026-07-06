@@ -3049,6 +3049,8 @@ impl<'h> Vm3<'h> {
         // resolves (store dst / extern_args) would otherwise use the wrong program. The caller
         // sets `cur` to the receiver's program (object dispatch / terminate) before calling.
         let saved_cur = self.cur;
+        // Suppressed finalizers/callbacks must not overwrite the caller-visible Err object.
+        let suppressed_err_engine = suppress.then(|| self.exec.err_engine.clone());
         let base = self.frames.len();
         let mut frame = self.new_frame_in(target_prog, proc);
         if let Some(slot) = frame.locals.get_mut(0) {
@@ -3111,6 +3113,9 @@ impl<'h> Vm3<'h> {
         // left parked as it unwound) — run their `Class_Terminate`s now, the nested-epilogue /
         // fault-path drain that mirrors vm2 (re-entrant drains fold via the `draining` guard).
         self.maybe_drain();
+        if let Some(saved) = suppressed_err_engine {
+            self.exec.err_engine = saved;
+        }
         match result {
             Ok(()) => Ok(ret),
             Err(Vm3Error::Fault(_)) if suppress => Ok(Variant::empty()),
@@ -3141,6 +3146,8 @@ impl<'h> Vm3<'h> {
         // resolves (store dst / extern_args) would otherwise use the wrong program. The caller
         // sets `cur` to the receiver's program (object dispatch / terminate) before calling.
         let saved_cur = self.cur;
+        // Suppressed finalizers/callbacks must not overwrite the caller-visible Err object.
+        let suppressed_err_engine = suppress.then(|| self.exec.err_engine.clone());
         let base = self.frames.len();
         let mut frame = self.new_frame_in(target_prog, proc);
         if let Some(slot) = frame.locals.get_mut(0) {
@@ -3177,6 +3184,9 @@ impl<'h> Vm3<'h> {
         self.prune_param_array_aliases_from_depth(self.frames.len());
         self.cur = saved_cur;
         self.maybe_drain();
+        if let Some(saved) = suppressed_err_engine {
+            self.exec.err_engine = saved;
+        }
         match result {
             Ok(()) => Ok(ret),
             Err(Vm3Error::Fault(_)) if suppress => Ok(Variant::empty()),
@@ -4402,6 +4412,8 @@ impl<'h> Vm3<'h> {
     ) -> Result<Variant, Vm3Error> {
         self.guard_call_depth()?;
         let saved_cur = self.cur;
+        // Suppressed native callback handlers must not overwrite the caller-visible Err object.
+        let suppressed_err_engine = suppress.then(|| self.exec.err_engine.clone());
         let base = self.frames.len();
         let mut frame = self.new_frame_in(target_prog, proc);
         for (i, v) in args.into_iter().enumerate() {
@@ -4430,6 +4442,9 @@ impl<'h> Vm3<'h> {
         self.prune_param_array_aliases_from_depth(self.frames.len());
         self.cur = saved_cur;
         self.maybe_drain();
+        if let Some(saved) = suppressed_err_engine {
+            self.exec.err_engine = saved;
+        }
         match result {
             Ok(()) => Ok(ret),
             Err(Vm3Error::Fault(_)) if suppress => Ok(Variant::empty()),
