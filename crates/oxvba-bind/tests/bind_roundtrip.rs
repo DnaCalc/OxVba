@@ -3225,6 +3225,25 @@ fn withevents_local_declaration_is_bind_error() {
 }
 
 #[test]
+fn withevents_const_declaration_is_bind_error() {
+    let manifest = manifest_modules(&[(
+        "Sink",
+        ModuleKind::Class,
+        "Private Const WithEvents src As Long = 1\n",
+    )]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("WithEvents Const declaration should fail binding")
+    );
+    assert!(
+        err.contains("InvalidWithEventsConstDeclaration")
+            || err.contains("SYM-E-INVALID-WITHEVENTS-CONST-DECLARATION"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn event_declaration_rejects_optional_and_paramarray_parameters() {
     for (source, expected) in [
         (

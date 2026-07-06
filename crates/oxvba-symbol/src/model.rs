@@ -261,6 +261,8 @@ pub enum SymbolModelError {
     InvalidWithEventsFieldType { name: String },
     #[error("WithEvents field `{name}` cannot use As New")]
     InvalidWithEventsAutoInstantiation { name: String },
+    #[error("WithEvents cannot be used in a Const declaration: `{name}`")]
+    InvalidWithEventsConstDeclaration { name: String },
     #[error("ambiguous name detected: {name}")]
     AmbiguousName { name: String },
     #[error("unknown scope {0:?}")]
@@ -460,6 +462,12 @@ impl SymbolModelError {
                 format!("WithEvents field `{name}` cannot be declared As New"),
             )
             .with_help("Declare the WithEvents field without `As New` and assign an event source explicitly."),
+            SymbolModelError::InvalidWithEventsConstDeclaration { name } => Diagnostic::error(
+                "SYM-E-INVALID-WITHEVENTS-CONST-DECLARATION",
+                DiagnosticPhase::Symbol,
+                format!("WithEvents cannot be used in Const declaration `{name}`"),
+            )
+            .with_help("Declare WithEvents as an object variable in a class/object module, not as a Const."),
             SymbolModelError::AmbiguousName { name } => Diagnostic::error(
                 "SYM-E-AMBIGUOUS-NAME",
                 DiagnosticPhase::Symbol,

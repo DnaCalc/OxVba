@@ -1768,9 +1768,10 @@ Candidate bead units:
   `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` and reject `Optional` or `ParamArray` event arguments
   before event metadata is published, matching the Microsoft Learn Event statement rule
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/event-statement`),
-  `WithEvents` declarations now reject local scope plus scalar, explicit/implicit `Variant`, array,
-  and `As New` source declarations through scanner-owned diagnostics before event-field metadata is
-  published, matching the Microsoft Learn `Private` statement rule
+  `WithEvents` declarations now reject local scope and `Const` forms plus scalar,
+  explicit/implicit `Variant`, array, and `As New` source declarations through scanner-owned
+  diagnostics before event-field metadata is published, matching the Microsoft Learn `Private`
+  statement rule
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/private-statement`),
   while named object/class/COM source types remain accepted,
   context-aware project class member lookup now rejects external receiver access to `Private`

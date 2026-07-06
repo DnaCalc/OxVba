@@ -1,5 +1,6 @@
 diag_id,phase,status,description,legacy_ids
 PMR-E-WITHEVENTS-AS-NEW,compile-time,implemented,WithEvents fields cannot use As New,
+PMR-E-WITHEVENTS-CONST,compile-time,implemented,WithEvents cannot be used in Const declarations,
 PMR-E-WITHEVENTS-MODULE-LEVEL,compile-time,implemented,WithEvents declarations are valid only at module level,
 PMR-E-WITHEVENTS-MODULE-KIND,compile-time,implemented,WithEvents declarations are valid only in class/document/form modules,PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED
 PMR-E-WITHEVENTS-SOURCE-TYPE,compile-time,implemented,WithEvents fields must declare an object or event source type,
