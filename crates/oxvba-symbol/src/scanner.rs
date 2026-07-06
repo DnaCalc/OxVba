@@ -188,7 +188,7 @@ impl ScanCtx<'_> {
             SyntaxKind::EventDecl => {
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
-                    validate_param_array_declaration(node, name)?;
+                    self.validate_param_array_declaration(node, name)?;
                     let sig = self
                         .signatures
                         .alloc(self.build_signature(node, CallShape::EventRaise));
@@ -355,7 +355,7 @@ impl ScanCtx<'_> {
         {
             return Err(SymbolModelError::FriendNotValidInStandardModule { name: logical });
         }
-        validate_param_array_declaration(node, &logical)?;
+        self.validate_param_array_declaration(node, &logical)?;
         let sig = self
             .signatures
             .alloc(self.build_signature(node, CallShape::Ordinary));
@@ -546,7 +546,7 @@ impl ScanCtx<'_> {
             return Ok(());
         };
         let declared_name = normalize_identifier_token(name_token.text).to_string();
-        validate_param_array_declaration(node, &declared_name)?;
+        self.validate_param_array_declaration(node, &declared_name)?;
         let library = node.lib_string().unwrap_or_default();
         let alias_raw = node.alias_string();
         let (alias, ordinal_alias) = match alias_raw {
@@ -658,17 +658,64 @@ impl ScanCtx<'_> {
         }
     }
 
+    fn validate_param_array_declaration(
+        &self,
+        proc_node: SyntaxNode<'_>,
+        procedure: &str,
+    ) -> Result<(), SymbolModelError> {
+        let Some(param_list) = proc_node.param_list() else {
+            return Ok(());
+        };
+        let params = param_list.params();
+        for (index, param) in params.iter().enumerate() {
+            if !parameter_has_modifier(*param, SyntaxKind::KwParamArray) {
+                continue;
+            }
+            let parameter = parameter_name_token(*param)
+                .map(|t| normalize_identifier_token(t.text).to_string())
+                .unwrap_or_else(|| format!("arg{}", index + 1));
+            let reason = if parameter_has_modifier(*param, SyntaxKind::KwOptional) {
+                "ParamArray cannot be combined with Optional"
+            } else if parameter_has_modifier(*param, SyntaxKind::KwByVal) {
+                "ParamArray cannot be combined with ByVal"
+            } else if parameter_has_modifier(*param, SyntaxKind::KwByRef) {
+                "ParamArray cannot be combined with ByRef"
+            } else if index + 1 != params.len() {
+                "ParamArray must be the final parameter"
+            } else if !matches!(
+                self.param_type(*param),
+                VarTypeRef::Array(inner) if matches!(inner.as_ref(), VarTypeRef::Variant)
+            ) {
+                "ParamArray must be an array of Variant elements"
+            } else {
+                continue;
+            };
+            return Err(SymbolModelError::InvalidParamArrayDeclaration {
+                procedure: procedure.to_string(),
+                parameter,
+                reason,
+            });
+        }
+        Ok(())
+    }
+
     fn param_type(&self, node: SyntaxNode<'_>) -> VarTypeRef {
-        let base = node
+        let explicit = node
             .child_nodes()
             .into_iter()
             .find(|child| child.kind() == SyntaxKind::TypeRef)
             .map(type_ref_node)
-            .or_else(|| type_suffix_type(node))
-            .or_else(|| {
-                parameter_name_token(node).and_then(|token| self.default_types.type_for(token.text))
-            })
-            .unwrap_or(VarTypeRef::Variant);
+            .or_else(|| type_suffix_type(node));
+        let base = if parameter_has_modifier(node, SyntaxKind::KwParamArray) {
+            explicit.unwrap_or(VarTypeRef::Variant)
+        } else {
+            explicit
+                .or_else(|| {
+                    parameter_name_token(node)
+                        .and_then(|token| self.default_types.type_for(token.text))
+                })
+                .unwrap_or(VarTypeRef::Variant)
+        };
         let element = fixed_string_refine(base, node);
         if node.array_bounds().is_some() {
             return VarTypeRef::Array(Box::new(element));
@@ -1116,41 +1163,6 @@ fn default_from_param(
         Some(value) => ParsedParamDefault::Value(value),
         None => ParsedParamDefault::Unparsed,
     }
-}
-
-fn validate_param_array_declaration(
-    proc_node: SyntaxNode<'_>,
-    procedure: &str,
-) -> Result<(), SymbolModelError> {
-    let Some(param_list) = proc_node.param_list() else {
-        return Ok(());
-    };
-    let params = param_list.params();
-    for (index, param) in params.iter().enumerate() {
-        if !parameter_has_modifier(*param, SyntaxKind::KwParamArray) {
-            continue;
-        }
-        let parameter = parameter_name_token(*param)
-            .map(|t| normalize_identifier_token(t.text).to_string())
-            .unwrap_or_else(|| format!("arg{}", index + 1));
-        let reason = if parameter_has_modifier(*param, SyntaxKind::KwOptional) {
-            "ParamArray cannot be combined with Optional"
-        } else if parameter_has_modifier(*param, SyntaxKind::KwByVal) {
-            "ParamArray cannot be combined with ByVal"
-        } else if parameter_has_modifier(*param, SyntaxKind::KwByRef) {
-            "ParamArray cannot be combined with ByRef"
-        } else if index + 1 != params.len() {
-            "ParamArray must be the final parameter"
-        } else {
-            continue;
-        };
-        return Err(SymbolModelError::InvalidParamArrayDeclaration {
-            procedure: procedure.to_string(),
-            parameter,
-            reason,
-        });
-    }
-    Ok(())
 }
 
 fn parse_default_literal(rhs: &str) -> Option<CoreConst> {

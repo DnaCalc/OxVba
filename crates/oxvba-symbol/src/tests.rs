@@ -1688,6 +1688,18 @@ fn scanner_rejects_invalid_paramarray_modifiers() {
             "xs",
             "ParamArray cannot be combined with Optional",
         ),
+        (
+            "Sub S(ParamArray xs() As Long)\r\nEnd Sub\r\n",
+            "S",
+            "xs",
+            "ParamArray must be an array of Variant elements",
+        ),
+        (
+            "Sub S(ParamArray xs As Variant)\r\nEnd Sub\r\n",
+            "S",
+            "xs",
+            "ParamArray must be an array of Variant elements",
+        ),
     ] {
         let m = manifest("Proj", vec![module("Mod1", src)]);
         let err = match build_resolution_environment(&m, &NullTypeLibs) {
@@ -1709,6 +1721,28 @@ fn scanner_rejects_invalid_paramarray_modifiers() {
             "SYM-E-INVALID-PARAMARRAY-DECLARATION"
         );
     }
+}
+
+#[test]
+fn scanner_accepts_implicit_variant_paramarray_array() {
+    let src = "DefStr X-Z\r\nSub S(ParamArray xs())\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("proc resolves");
+    let proc = binding.symbol.expect("proc symbol");
+    let symbol = env.symbols.symbol(proc).expect("S symbol");
+    let SymbolImpl::Signature(sig_id) = symbol.imp else {
+        panic!("expected signature");
+    };
+    let signature = env.signatures.get(sig_id).expect("signature");
+    assert!(signature.params[0].param_array);
+    assert_eq!(
+        signature.params[0].ty,
+        VarTypeRef::Array(Box::new(VarTypeRef::Variant))
+    );
 }
 
 #[test]

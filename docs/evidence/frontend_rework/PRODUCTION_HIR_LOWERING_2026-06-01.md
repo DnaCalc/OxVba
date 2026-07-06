@@ -1563,12 +1563,16 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - Follow-up ParamArray declaration validation now rejects invalid clean-stack signatures before
   publishing partial metadata. The scanner reports `SYM-E-INVALID-PARAMARRAY-DECLARATION` for
   `ParamArray` combined with `Optional`, explicit `ByVal`, explicit `ByRef`, or a non-final
-  parameter position, covering ordinary procedures and `Declare` statements. This follows the
-  VBA Function statement rule documented by Microsoft Learn
+  parameter position, and for `ParamArray` parameters that are not an array of `Variant` elements,
+  covering ordinary procedures and `Declare` statements while preserving implicit
+  `ParamArray xs()` as `Variant()` even under DefType defaults. This follows the VBA Function
+  statement rule documented by Microsoft Learn
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/function-statement`)
-  that `ParamArray` is the final variable-argument slot and is not combined with `Optional`,
-  `ByVal`, or `ByRef`. Evidence:
-  `scanner_rejects_invalid_paramarray_modifiers`; `invalid_paramarray_declaration_is_bind_error`;
+  that `ParamArray` is the final variable-argument slot, not combined with `Optional`, `ByVal`, or
+  `ByRef`, and represents an array of `Variant` elements. Evidence:
+  `scanner_rejects_invalid_paramarray_modifiers`;
+  `scanner_accepts_implicit_variant_paramarray_array`;
+  `invalid_paramarray_declaration_is_bind_error`; `non_variant_paramarray_declaration_is_bind_error`;
   existing ParamArray binder/runtime regressions remain green.
 - The i64 optional-default follow-up also found a front-end symbol-model miss where a later
   parameter following a string default could be absent from the HIR parameter list even though the

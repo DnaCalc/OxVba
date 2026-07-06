@@ -1747,7 +1747,7 @@ Candidate bead units:
   `Property Set` writes through HIR, simple non-indexed property declarations through the default
   HIR route, simple positional ParamArray packing including empty packs through the default HIR
   route, invalid `ParamArray` declarations with `Optional`, explicit `ByVal`, explicit `ByRef`,
-  or non-final parameter position now reject through scanner-owned
+  non-final parameter position, or a non-`Variant()` parameter type now reject through scanner-owned
   `SYM-E-INVALID-PARAMARRAY-DECLARATION`, and `LBound`/`UBound`
   array-bound intrinsics in HIR, one-argument `IsArray`,
   `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`
