@@ -43,12 +43,14 @@ fn lib_program() -> CoreProgram {
             CoreParam {
                 name: "a".into(),
                 ty: oxvba_bundle::VarTypeRef::Variant,
+                optional: false,
                 by_ref: false,
                 variadic: false,
             },
             CoreParam {
                 name: "b".into(),
                 ty: oxvba_bundle::VarTypeRef::Variant,
+                optional: false,
                 by_ref: false,
                 variadic: false,
             },
@@ -254,6 +256,7 @@ fn lib_apply_program() -> CoreProgram {
         params: vec![CoreParam {
             name: "o".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
+            optional: false,
             by_ref: false,
             variadic: false,
         }],
@@ -304,6 +307,7 @@ fn app_with_thing_program() -> CoreProgram {
         params: vec![CoreParam {
             name: "me".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
+            optional: false,
             by_ref: false,
             variadic: false,
         }],
@@ -401,6 +405,7 @@ fn lib_apply_global_arg_program() -> CoreProgram {
         params: vec![CoreParam {
             name: "o".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
+            optional: false,
             by_ref: false,
             variadic: false,
         }],
@@ -465,12 +470,14 @@ fn app_echo_program() -> CoreProgram {
             CoreParam {
                 name: "me".into(),
                 ty: oxvba_bundle::VarTypeRef::Variant,
+                optional: false,
                 by_ref: false,
                 variadic: false,
             },
             CoreParam {
                 name: "n".into(),
                 ty: oxvba_bundle::VarTypeRef::Variant,
+                optional: false,
                 by_ref: false,
                 variadic: false,
             },
@@ -567,6 +574,7 @@ fn lib_widget_program() -> CoreProgram {
         params: vec![CoreParam {
             name: "me".into(),
             ty: oxvba_bundle::VarTypeRef::Variant,
+            optional: false,
             by_ref: false,
             variadic: false,
         }],

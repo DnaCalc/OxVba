@@ -23,6 +23,10 @@ use crate::ty::{IfaceId, OxTy, RecordLayoutId};
 /// Parameter-specific facts for a [`OxLocal`] that is a procedure parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OxParamInfo {
+    /// Source-level `Optional` marker. Omitted defaults are bound by the caller,
+    /// but package/runtime descriptor consumers still need the signature fact.
+    #[serde(default)]
+    pub optional: bool,
     /// Callee-side `ByRef` declaration (the *caller* decides actual aliasing).
     pub by_ref: bool,
     /// A trailing `ParamArray`.

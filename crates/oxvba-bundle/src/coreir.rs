@@ -126,6 +126,10 @@ pub struct CoreParam {
     pub name: String,
     /// The declared static type of the parameter (see [`CoreGlobal::ty`]).
     pub ty: VarTypeRef,
+    /// Source-level `Optional` marker. The binder still substitutes omitted
+    /// defaults at call sites; this keeps descriptor consumers aware of the
+    /// callable signature.
+    pub optional: bool,
     /// Callee-side declaration (diagnostics only; the caller decides aliasing).
     pub by_ref: bool,
     /// A trailing `ParamArray` parameter: the caller boxes all remaining

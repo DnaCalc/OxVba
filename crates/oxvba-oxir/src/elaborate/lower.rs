@@ -474,6 +474,7 @@ fn elaborate_proc(
             ty: lower_declared_var_type_with_longptr_width(&p.ty, resolver, long_ptr_width),
             array_element: None,
             param: Some(OxParamInfo {
+                optional: p.optional,
                 by_ref: p.by_ref,
                 variadic: p.variadic,
             }),
@@ -2820,8 +2821,8 @@ mod tests {
     use super::*;
     use crate::verify::{VerifyError, verify_program};
     use oxvba_bundle::coreir::{
-        BoundWhich, CoreBound, CoreCallee, CoreClassMethod, CoreIfArm, CoreLocal, CorePlace,
-        ErrField, ErrorOp, LocalId as CoreLocalId, ProcId as CoreProcId, PtrKind,
+        BoundWhich, CoreBound, CoreCallee, CoreClassMethod, CoreIfArm, CoreLocal, CoreParam,
+        CorePlace, ErrField, ErrorOp, LocalId as CoreLocalId, ProcId as CoreProcId, PtrKind,
     };
     use oxvba_bundle::{
         ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, FixedArrayBound,
@@ -2989,6 +2990,38 @@ mod tests {
             f.blocks.len()
         );
         assert_eq!(f.locals[0].ty, OxTy::Long);
+    }
+
+    #[test]
+    fn optional_param_metadata_elaborates_and_round_trips() {
+        let proc = CoreProc {
+            name: "UseOptional".to_string(),
+            kind: ProcedureKind::Sub,
+            params: vec![CoreParam {
+                name: "count".to_string(),
+                ty: VarTypeRef::Builtin(BuiltinType::Long),
+                optional: true,
+                by_ref: true,
+                variadic: false,
+            }],
+            locals: Vec::new(),
+            return_local: None,
+            label_lines: Vec::new(),
+            body: Vec::new(),
+        };
+
+        let oxp = elaborate(&program(proc)).expect("elaborate optional param");
+        verify_program(&oxp).expect("optional-param program verifies");
+        let info = oxp.funcs[0].locals[0]
+            .param
+            .expect("first local should be param metadata");
+        assert!(info.optional);
+        assert!(info.by_ref);
+        assert!(!info.variadic);
+
+        let json = serde_json::to_string(&oxp).expect("serialize optional param");
+        let back: OxProgram = serde_json::from_str(&json).expect("deserialize optional param");
+        assert_eq!(back.funcs[0].locals[0].param, Some(info));
     }
 
     #[test]

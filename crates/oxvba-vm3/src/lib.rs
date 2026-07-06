@@ -138,7 +138,7 @@ fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescripto
                 name: leak_runtime_str(&local.name),
                 value_type: runtime_value_type(&local.ty),
                 by_ref: param.map(|p| p.by_ref).unwrap_or(false),
-                optional: false,
+                optional: param.map(|p| p.optional).unwrap_or(false),
                 param_array: param.map(|p| p.variadic).unwrap_or(false),
             }
         })
@@ -4944,6 +4944,7 @@ mod tests {
         CoreParam {
             name: name.into(),
             ty: VarTypeRef::Builtin(BuiltinType::Long),
+            optional: false,
             by_ref: true,
             variadic: false,
         }
@@ -4953,7 +4954,18 @@ mod tests {
         CoreParam {
             name: name.into(),
             ty: VarTypeRef::Builtin(BuiltinType::Long),
+            optional: false,
             by_ref: false,
+            variadic: false,
+        }
+    }
+
+    fn optional_long_param(name: &str) -> CoreParam {
+        CoreParam {
+            name: name.into(),
+            ty: VarTypeRef::Builtin(BuiltinType::Long),
+            optional: true,
+            by_ref: true,
             variadic: false,
         }
     }
@@ -5399,7 +5411,7 @@ mod tests {
         let reset = proc(
             "Reset",
             ProcedureKind::Sub,
-            vec![long_param("me"), long_param("count")],
+            vec![long_param("me"), optional_long_param("count")],
             Vec::new(),
             None,
             Vec::new(),
@@ -5609,6 +5621,8 @@ mod tests {
         assert_eq!(method.params[0].name, "count");
         assert_eq!(method.params[0].value_type, RuntimeValueType::Long);
         assert!(method.params[0].by_ref);
+        assert!(method.params[0].optional);
+        assert!(!method.params[0].param_array);
         assert_eq!(method.return_type, None);
 
         let new_enum = &dispatch.members[3];
@@ -6278,6 +6292,7 @@ mod tests {
                     "x",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),

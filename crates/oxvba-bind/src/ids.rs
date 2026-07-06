@@ -592,6 +592,7 @@ fn build_frame(
             // The receiver is the enclosing class instance; precise `Object(class)`
             // typing of `Me` is deferred to the object-elaboration sub-section.
             ty: VarTypeRef::Variant,
+            optional: false,
             by_ref: false,
             variadic: false,
         });
@@ -609,6 +610,7 @@ fn build_frame(
         if sym.namespace == SymbolNamespace::Parameter {
             let sig_param = signature.and_then(|s| s.params.get(param_index));
             let variadic = sig_param.map(|p| p.param_array).unwrap_or(false);
+            let optional = sig_param.map(|p| p.optional).unwrap_or(false);
             let ty = sig_param
                 .map(|p| normalize_declared_type(env, p.ty.clone()))
                 .unwrap_or(VarTypeRef::Variant);
@@ -626,6 +628,7 @@ fn build_frame(
             params.push(CoreParam {
                 name: alloc_name(env, sym.name),
                 ty,
+                optional,
                 by_ref,
                 variadic,
             });
@@ -1145,7 +1148,7 @@ mod tests {
     fn allocates_globals_procs_and_frames() {
         let src = "Public total As Long\n\n\
                    Sub Main()\n    Dim x As Long\n    x = Add(2, 3)\nEnd Sub\n\n\
-                   Function Add(a As Long, b As Long) As Long\n    Add = a + b\nEnd Function\n";
+                   Function Add(a As Long, Optional b As Long = 3) As Long\n    Add = a + b\nEnd Function\n";
         let env = build_resolution_environment(&procedural(src), &NullTypeLibs).unwrap();
         let alloc = IdAllocator::build(&env, &procedural(src)).unwrap();
 
@@ -1168,6 +1171,8 @@ mod tests {
         assert_eq!(add.kind, ProcedureKind::Function);
         assert_eq!(add.params.len(), 2);
         assert!(add.params[0].by_ref); // VBA params default to ByRef
+        assert!(!add.params[0].optional);
+        assert!(add.params[1].optional);
         // params occupy slots 0,1; the synthetic return local is slot 2.
         assert_eq!(add.return_local, Some(LocalId(2)));
         assert_eq!(add.locals.len(), 1); // just the return local

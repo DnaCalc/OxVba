@@ -14269,6 +14269,7 @@ mod tests {
                 "items",
                 packed_array_ty.clone(),
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: true,
                 }),
@@ -14370,6 +14371,7 @@ mod tests {
                 "items",
                 packed_array_ty,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: true,
                 }),
@@ -15384,6 +15386,7 @@ mod tests {
                     "x",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -15574,6 +15577,7 @@ mod tests {
                     "x",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -15774,6 +15778,7 @@ mod tests {
             "x",
             OxTy::Long,
             Some(OxParamInfo {
+                optional: false,
                 by_ref: true,
                 variadic: false,
             }),
@@ -15866,6 +15871,7 @@ mod tests {
                 "text",
                 OxTy::Str,
                 Some(OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -16008,6 +16014,7 @@ mod tests {
                 "x",
                 OxTy::Long,
                 Some(OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -16016,6 +16023,7 @@ mod tests {
                 "y",
                 OxTy::Long,
                 Some(OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -16891,6 +16899,7 @@ mod tests {
                     "value",
                     record.clone(),
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -16923,6 +16932,7 @@ mod tests {
                     "value",
                     object.clone(),
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -16954,6 +16964,7 @@ mod tests {
                 "target",
                 OxTy::ProcRef,
                 Some(OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -17057,6 +17068,7 @@ mod tests {
                     "value",
                     array.clone(),
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17088,6 +17100,7 @@ mod tests {
                 "target",
                 array,
                 Some(OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -17207,6 +17220,7 @@ mod tests {
                     "x",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17313,6 +17327,7 @@ mod tests {
                     "a",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17321,6 +17336,7 @@ mod tests {
                     "b",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17429,6 +17445,7 @@ mod tests {
                     "a",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17437,6 +17454,7 @@ mod tests {
                     "b",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17445,6 +17463,7 @@ mod tests {
                     "c",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17453,6 +17472,7 @@ mod tests {
                     "d",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17576,6 +17596,7 @@ mod tests {
                 name,
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -17707,6 +17728,7 @@ mod tests {
                     "x",
                     OxTy::Double,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17910,6 +17932,7 @@ mod tests {
                     "x",
                     OxTy::Double,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -17955,6 +17978,7 @@ mod tests {
                     "x",
                     OxTy::Double,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -18060,6 +18084,7 @@ mod tests {
                 "x",
                 OxTy::Currency,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -18159,6 +18184,7 @@ mod tests {
                     "value",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -18398,6 +18424,7 @@ mod tests {
                     "value",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -18443,6 +18470,7 @@ mod tests {
                     "value",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -18708,6 +18736,7 @@ mod tests {
                     "text",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -18848,6 +18877,7 @@ mod tests {
                     "text",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -18992,6 +19022,7 @@ mod tests {
                     "first",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -19000,6 +19031,7 @@ mod tests {
                     "second",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -19305,6 +19337,7 @@ mod tests {
                 "text",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -19549,6 +19582,7 @@ mod tests {
             "text",
             OxTy::Str,
             Some(oxvba_oxir::OxParamInfo {
+                optional: false,
                 by_ref: true,
                 variadic: false,
             }),
@@ -19588,6 +19622,7 @@ mod tests {
                 "text",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -19596,6 +19631,7 @@ mod tests {
                 "value",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -19909,6 +19945,7 @@ mod tests {
                 "text",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -19947,6 +19984,7 @@ mod tests {
                 "text",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -19955,6 +19993,7 @@ mod tests {
                 "value",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -20168,6 +20207,7 @@ mod tests {
                 "text",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -20176,6 +20216,7 @@ mod tests {
                 "value",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -20601,6 +20642,7 @@ mod tests {
                     "first",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -20609,6 +20651,7 @@ mod tests {
                     "second",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -21747,6 +21790,7 @@ mod tests {
                 "value",
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -21923,6 +21967,7 @@ mod tests {
                 "left",
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -21931,6 +21976,7 @@ mod tests {
                 "right",
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -21963,6 +22009,7 @@ mod tests {
                 "value",
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -22087,6 +22134,7 @@ mod tests {
                 "value",
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -22158,6 +22206,7 @@ mod tests {
                 "value",
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -22166,6 +22215,7 @@ mod tests {
                 "delta",
                 OxTy::Long,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
@@ -22269,6 +22319,7 @@ mod tests {
                     "value",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -22442,6 +22493,7 @@ mod tests {
                     "value",
                     OxTy::Long,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -22577,6 +22629,7 @@ mod tests {
                     "left",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -22585,6 +22638,7 @@ mod tests {
                     "right",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -22755,6 +22809,7 @@ mod tests {
                     "value",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: true,
                         variadic: false,
                     }),
@@ -22763,6 +22818,7 @@ mod tests {
                     "delta",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -22915,6 +22971,7 @@ mod tests {
                     "value",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: true,
                         variadic: false,
                     }),
@@ -22923,6 +22980,7 @@ mod tests {
                     "delta",
                     OxTy::Long,
                     Some(OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -23040,6 +23098,7 @@ mod tests {
                     "value",
                     OxTy::Str,
                     Some(oxvba_oxir::OxParamInfo {
+                        optional: false,
                         by_ref: false,
                         variadic: false,
                     }),
@@ -23142,6 +23201,7 @@ mod tests {
                 "value",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -23246,6 +23306,7 @@ mod tests {
                 "value",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -23288,6 +23349,7 @@ mod tests {
                 "value",
                 OxTy::Str,
                 Some(oxvba_oxir::OxParamInfo {
+                    optional: false,
                     by_ref: true,
                     variadic: false,
                 }),
@@ -27975,6 +28037,7 @@ mod tests {
                 ty: OxTy::Variant,
                 array_element: None,
                 param: Some(OxParamInfo {
+                    optional: false,
                     by_ref: false,
                     variadic: false,
                 }),
