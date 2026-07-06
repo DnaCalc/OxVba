@@ -1811,6 +1811,34 @@ fn property_let_allows_required_value_after_optional_index_args() {
 }
 
 #[test]
+fn property_writers_require_final_value_or_reference_parameter() {
+    for (src, accessor) in [
+        ("Property Let Item()\r\nEnd Property\r\n", "Let"),
+        ("Property Set Item()\r\nEnd Property\r\n", "Set"),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("Property {accessor} without writer parameter should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::MissingPropertyWriterParameter {
+                    procedure,
+                    accessor: actual_accessor,
+                } if procedure == "Item" && *actual_accessor == accessor
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-MISSING-PROPERTY-WRITER-PARAMETER"
+        );
+    }
+}
+
+#[test]
 fn property_let_value_parameter_cannot_be_optional() {
     let src = "Property Let Item(Optional ByVal value As Long)\r\nEnd Property\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

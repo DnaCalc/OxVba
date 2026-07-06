@@ -219,6 +219,11 @@ pub enum SymbolModelError {
         parameter: String,
         reason: &'static str,
     },
+    #[error("missing Property {accessor} writer parameter for `{procedure}`")]
+    MissingPropertyWriterParameter {
+        procedure: String,
+        accessor: &'static str,
+    },
     #[error("invalid Property Set reference parameter for `{procedure}` parameter `{parameter}`")]
     InvalidPropertySetReferenceParameter {
         procedure: String,
@@ -332,6 +337,22 @@ impl SymbolModelError {
                 ),
             )
             .with_help("Declare every parameter after an Optional parameter as Optional."),
+            SymbolModelError::MissingPropertyWriterParameter {
+                procedure,
+                accessor,
+            } => {
+                let slot = if *accessor == "Let" {
+                    "value"
+                } else {
+                    "reference"
+                };
+                Diagnostic::error(
+                    "SYM-E-MISSING-PROPERTY-WRITER-PARAMETER",
+                    DiagnosticPhase::Symbol,
+                    format!("Property {accessor} `{procedure}` must declare a final {slot} parameter"),
+                )
+                .with_help("Declare at least one final value/reference parameter for Property Let/Set.")
+            }
             SymbolModelError::InvalidPropertySetReferenceParameter {
                 procedure,
                 parameter,

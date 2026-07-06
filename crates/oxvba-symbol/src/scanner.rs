@@ -663,9 +663,39 @@ impl ScanCtx<'_> {
         proc_node: SyntaxNode<'_>,
         procedure: &str,
     ) -> Result<(), SymbolModelError> {
+        self.validate_property_writer_value_parameter_present(proc_node, procedure)?;
         self.validate_optional_parameter_declaration(proc_node, procedure)?;
         self.validate_param_array_declaration(proc_node, procedure)?;
         self.validate_property_set_reference_parameter(proc_node, procedure)
+    }
+
+    fn validate_property_writer_value_parameter_present(
+        &self,
+        proc_node: SyntaxNode<'_>,
+        procedure: &str,
+    ) -> Result<(), SymbolModelError> {
+        if proc_node.kind() != SyntaxKind::PropertyDecl {
+            return Ok(());
+        }
+        let accessor = property_accessor(proc_node);
+        if !matches!(accessor, PropertyAccessor::Let | PropertyAccessor::Set) {
+            return Ok(());
+        }
+        let has_value_parameter = proc_node
+            .param_list()
+            .is_some_and(|param_list| !param_list.params().is_empty());
+        if has_value_parameter {
+            return Ok(());
+        }
+        let accessor = match accessor {
+            PropertyAccessor::Let => "Let",
+            PropertyAccessor::Set => "Set",
+            PropertyAccessor::Get => unreachable!(),
+        };
+        Err(SymbolModelError::MissingPropertyWriterParameter {
+            procedure: procedure.to_string(),
+            accessor,
+        })
     }
 
     fn validate_optional_parameter_declaration(
