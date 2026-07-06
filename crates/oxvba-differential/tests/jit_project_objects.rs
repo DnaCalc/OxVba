@@ -254,6 +254,143 @@ fn jit_project_member_dispatch_on_unset_object_matches_vm3_without_fallback() {
 }
 
 #[test]
+fn jit_project_method_named_dispatch_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  r = w.Pick(second:=20, first:=10)\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Public Function Pick(ByVal first As Long, ByVal second As Long) As Long\n  Pick = first\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 10);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 10);
+}
+
+#[test]
+fn jit_project_method_optional_dispatch_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  r = w.DefaultBonus()\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Public Function DefaultBonus(Optional ByVal bonus As Long = 5) As Long\n  DefaultBonus = bonus\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 5);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 5);
+}
+
+#[test]
+fn jit_project_method_paramarray_dispatch_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  r = w.Second(4, 9)\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Public Function Second(ParamArray xs() As Variant) As Long\n  Second = xs(1)\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 9);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 9);
+}
+
+#[test]
+fn jit_project_method_byref_alias_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  Dim n As Long\n  Set w = New Widget\n  n = 4\n  w.Bump n\n  r = n\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Public Sub Bump(ByRef value As Long)\n  value = value + 3\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 7);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 7);
+}
+
+#[test]
+fn jit_project_indexed_property_get_let_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  w.Value(3) = 10\n  r = w.Value(2)\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Private m As Long\nPublic Property Get Value(ByVal i As Long) As Long\n  Value = m\nEnd Property\nPublic Property Let Value(ByVal i As Long, ByVal v As Long)\n  m = i\nEnd Property\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 3);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 3);
+}
+
+#[test]
+fn jit_project_property_set_dispatch_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim b As Box\n  Dim t As Thing\n  Dim got As Thing\n  Set b = New Box\n  Set t = New Thing\n  Set b.Item(3) = t\n  Set got = b.Item(2)\n  r = got.GetVal()\nEnd Sub\n",
+        ),
+        (
+            "Box",
+            Class,
+            "Private stored As Thing\nPublic Property Get Item(ByVal i As Long) As Thing\n  Set Item = stored\nEnd Property\nPublic Property Set Item(ByVal i As Long, ByVal v As Thing)\n  Set stored = v\nEnd Property\n",
+        ),
+        (
+            "Thing",
+            Class,
+            "Public Function GetVal() As Long\n  GetVal = 23\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 23);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 23);
+}
+
+#[test]
 fn jit_project_typeof_unset_object_matches_vm3_without_fallback() {
     let modules = [
         (

@@ -78,6 +78,8 @@ const JIT_CALL_ARG_AUX_OFFSET: i32 = 4;
 const JIT_CALL_ARG_VALUE_OFFSET: i32 = 8;
 const JIT_CALL_ARG_AREA_OFFSET: i32 = 16;
 const JIT_CALL_ARG_INDEX_OFFSET: i32 = 20;
+const JIT_CALL_ARG_NAME_DESC_SIZE: u32 = 16;
+const JIT_CALL_ARG_NAME_LEN_OFFSET: i32 = 8;
 const JIT_SLOT_ALIAS_DESC_SIZE: u32 = 8;
 const JIT_SLOT_ALIAS_INDEX_OFFSET: i32 = 4;
 const JIT_I32_STACK_ELEM_SIZE: u32 = 4;
@@ -414,6 +416,14 @@ struct JitCallArgDesc {
     value: i64,
     area: i32,
     index: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct JitCallArgNameDesc {
+    ptr: i64,
+    len: i32,
+    _pad: i32,
 }
 
 #[repr(C)]
@@ -974,7 +984,7 @@ impl<'a> LowerFunc<'a> {
                 default_member,
                 invoke_kind,
                 args,
-            } => self.emit_project_member_get_to_slot(
+            } => self.emit_project_member_call_to_slot(
                 builder,
                 module,
                 *dst,
@@ -2486,6 +2496,92 @@ impl<'a> LowerFunc<'a> {
         Ok(lowered)
     }
 
+    fn lower_project_call_arg<'b>(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        arg: &'b OxCallArg,
+    ) -> Result<(LoweredCallArg, Option<&'b str>), JitError> {
+        let zero_i32 = builder.ins().iconst(types::I32, 0);
+        let zero_i64 = builder.ins().iconst(types::I64, 0);
+        match arg {
+            OxCallArg::Operand(operand) => {
+                let operand = self.lower_variant_operand(builder, operand)?;
+                Ok((
+                    LoweredCallArg {
+                        kind: builder
+                            .ins()
+                            .iconst(types::I32, i64::from(JIT_CALL_ARG_BYVAL_VARIANT)),
+                        aux: operand.kind,
+                        value: operand.value,
+                        area: operand.area,
+                        index: operand.index,
+                    },
+                    None,
+                ))
+            }
+            OxCallArg::Named { name, value } => {
+                let operand = self.lower_variant_operand(builder, value)?;
+                Ok((
+                    LoweredCallArg {
+                        kind: builder
+                            .ins()
+                            .iconst(types::I32, i64::from(JIT_CALL_ARG_BYVAL_VARIANT)),
+                        aux: operand.kind,
+                        value: operand.value,
+                        area: operand.area,
+                        index: operand.index,
+                    },
+                    Some(name.as_str()),
+                ))
+            }
+            OxCallArg::ByRef(place) => {
+                let (area, index) = place_addr(*place);
+                Ok((
+                    LoweredCallArg {
+                        kind: builder
+                            .ins()
+                            .iconst(types::I32, i64::from(JIT_CALL_ARG_BYREF_ALIAS)),
+                        aux: zero_i32,
+                        value: zero_i64,
+                        area: builder.ins().iconst(types::I32, i64::from(area)),
+                        index: builder.ins().iconst(types::I32, index as i64),
+                    },
+                    None,
+                ))
+            }
+            OxCallArg::Omitted => Ok((
+                LoweredCallArg {
+                    kind: builder
+                        .ins()
+                        .iconst(types::I32, i64::from(JIT_CALL_ARG_OMITTED)),
+                    aux: zero_i32,
+                    value: zero_i64,
+                    area: zero_i32,
+                    index: zero_i32,
+                },
+                None,
+            )),
+            OxCallArg::Const(_) => Err(JitError::unsupported(
+                "JIT project ComCallLate does not support compiler-inserted Const call arguments",
+            )),
+        }
+    }
+
+    fn lower_project_call_args<'b>(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        args: &'b [OxCallArg],
+    ) -> Result<(Vec<LoweredCallArg>, Vec<Option<&'b str>>), JitError> {
+        let mut lowered = Vec::with_capacity(args.len());
+        let mut names = Vec::with_capacity(args.len());
+        for arg in args {
+            let (lowered_arg, name) = self.lower_project_call_arg(builder, arg)?;
+            lowered.push(lowered_arg);
+            names.push(name);
+        }
+        Ok((lowered, names))
+    }
+
     fn emit_variant_arith_slot_call(
         &self,
         builder: &mut FunctionBuilder<'_>,
@@ -2922,7 +3018,7 @@ impl<'a> LowerFunc<'a> {
         Ok(())
     }
 
-    fn emit_project_member_get_to_slot(
+    fn emit_project_member_call_to_slot(
         &self,
         builder: &mut FunctionBuilder<'_>,
         module: &mut JITModule,
@@ -2938,32 +3034,22 @@ impl<'a> LowerFunc<'a> {
                 "JIT ComCallLate default-member dispatch remains VM3-only",
             ));
         }
-        if !args.is_empty() {
-            return Err(JitError::unsupported(
-                "JIT project ComCallLate currently supports only no-argument members",
-            ));
-        }
-        if !matches!(
-            invoke_kind,
-            TypeLibMemberInvokeKind::PropertyGet | TypeLibMemberInvokeKind::Method
-        ) {
-            return Err(JitError::unsupported(
-                "JIT project ComCallLate currently supports only PropertyGet/Method reads",
-            ));
-        }
         if !is_project_object_static_ty(&operand_static_ty(self.program, self.func, recv)?) {
             return Err(JitError::unsupported(
                 "JIT ComCallLate is unsupported for non-project class/interface receivers: currently supports only statically typed active-project class/interface receivers",
             ));
         }
-        let Some(dst) = dst else {
-            return Err(JitError::unsupported(
-                "JIT project ComCallLate currently requires a destination",
-            ));
-        };
-        self.ensure_variant_carrier_place(dst)?;
+        if let Some(dst) = dst {
+            self.ensure_variant_carrier_place(dst)?;
+        }
         let recv = self.lower_variant_operand(builder, recv)?;
         let recv_ptr = self.emit_variant_operand_descriptors(builder, module, &[recv])?;
+        let (lowered_args, arg_names) = self.lower_project_call_args(builder, args)?;
+        let args_ptr = self.emit_call_arg_descriptors(builder, module, &lowered_args)?;
+        let arg_names_ptr = self.emit_call_arg_name_descriptors(builder, module, &arg_names)?;
+        let argc = i32::try_from(args.len())
+            .map_err(|_| JitError::unsupported("JIT project member argument count is too large"))?;
+        let argc = builder.ins().iconst(types::I32, i64::from(argc));
         let ptr_ty = module.target_config().pointer_type();
         let name_ptr = builder.ins().iconst(ptr_ty, name.as_ptr() as i64);
         let name_len = i32::try_from(name.len())
@@ -2972,9 +3058,18 @@ impl<'a> LowerFunc<'a> {
         let invoke_kind = builder
             .ins()
             .iconst(types::I32, i64::from(raw_member_invoke_kind(invoke_kind)));
-        let (area, index) = place_addr(dst);
-        let area = builder.ins().iconst(types::I32, i64::from(area));
-        let index = builder.ins().iconst(types::I32, index as i64);
+        let (area, index) = if let Some(dst) = dst {
+            let (area, index) = place_addr(dst);
+            (
+                builder.ins().iconst(types::I32, i64::from(area)),
+                builder.ins().iconst(types::I32, index as i64),
+            )
+        } else {
+            (
+                builder.ins().iconst(types::I32, -1),
+                builder.ins().iconst(types::I32, -1),
+            )
+        };
         let callee = self.import(builder, module, self.imports.project_member_get_slot);
         let call = builder.ins().call(
             callee,
@@ -2985,6 +3080,9 @@ impl<'a> LowerFunc<'a> {
                 name_ptr,
                 name_len,
                 invoke_kind,
+                argc,
+                args_ptr,
+                arg_names_ptr,
                 area,
                 index,
             ],
@@ -4058,6 +4156,54 @@ impl<'a> LowerFunc<'a> {
             builder
                 .ins()
                 .stack_store(arg.index, slot, base + JIT_CALL_ARG_INDEX_OFFSET);
+        }
+        Ok(builder.ins().stack_addr(ptr_ty, slot, 0))
+    }
+
+    fn emit_call_arg_name_descriptors(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &JITModule,
+        names: &[Option<&str>],
+    ) -> Result<Value, JitError> {
+        let ptr_ty = module.target_config().pointer_type();
+        if names.is_empty() {
+            return Ok(builder.ins().iconst(ptr_ty, 0));
+        }
+        let byte_size = names
+            .len()
+            .checked_mul(JIT_CALL_ARG_NAME_DESC_SIZE as usize)
+            .and_then(|size| i32::try_from(size).ok())
+            .and_then(|size| u32::try_from(size).ok())
+            .ok_or_else(|| JitError::unsupported("M4-8 project call name stack is too large"))?;
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            byte_size,
+            3,
+        ));
+        for (index, name) in names.iter().enumerate() {
+            let base = i32::try_from(index)
+                .ok()
+                .and_then(|index| index.checked_mul(JIT_CALL_ARG_NAME_DESC_SIZE as i32))
+                .ok_or_else(|| JitError::unsupported("M4-8 project call name offset overflow"))?;
+            let (ptr, len) = if let Some(name) = name {
+                let len = i32::try_from(name.len()).map_err(|_| {
+                    JitError::unsupported("JIT project call argument name is too long")
+                })?;
+                (
+                    builder.ins().iconst(ptr_ty, name.as_ptr() as i64),
+                    builder.ins().iconst(types::I32, i64::from(len)),
+                )
+            } else {
+                (
+                    builder.ins().iconst(ptr_ty, 0),
+                    builder.ins().iconst(types::I32, -1),
+                )
+            };
+            builder.ins().stack_store(ptr, slot, base);
+            builder
+                .ins()
+                .stack_store(len, slot, base + JIT_CALL_ARG_NAME_LEN_OFFSET);
         }
         Ok(builder.ins().stack_addr(ptr_ty, slot, 0))
     }
@@ -8008,30 +8154,23 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         .map_err(module_err)?;
 
     let mut project_member_get_slot_sig = module.make_signature();
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(ptr_ty));
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(ptr_ty));
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(ptr_ty));
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(ptr_ty));
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(types::I32));
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(types::I32));
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(types::I32));
-    project_member_get_slot_sig
-        .params
-        .push(AbiParam::new(types::I32));
+    for param in [
+        ptr_ty,
+        ptr_ty,
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        types::I32,
+        types::I32,
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        types::I32,
+    ] {
+        project_member_get_slot_sig
+            .params
+            .push(AbiParam::new(param));
+    }
     project_member_get_slot_sig
         .returns
         .push(AbiParam::new(types::I32));
@@ -10595,6 +10734,212 @@ fn coerce_call_arg_for_param(
     }
 }
 
+fn hidden_me_receiver_param_count(func: &OxFunc) -> usize {
+    usize::from(
+        func.param_count > 0
+            && func.locals.first().is_some_and(|local| {
+                local.param.is_some() && local.name.eq_ignore_ascii_case("Me")
+            }),
+    )
+}
+
+fn omitted_call_arg_desc() -> JitCallArgDesc {
+    JitCallArgDesc {
+        kind: JIT_CALL_ARG_OMITTED,
+        aux: 0,
+        value: 0,
+        area: 0,
+        index: 0,
+    }
+}
+
+fn call_arg_name(name: JitCallArgNameDesc) -> Result<Option<String>, i32> {
+    if name.len < 0 {
+        return Ok(None);
+    }
+    if name.ptr == 0 {
+        return Err(ST_FAULT);
+    }
+    let len = usize::try_from(name.len).map_err(|_| ST_FAULT)?;
+    let ptr = usize::try_from(name.ptr).map_err(|_| ST_FAULT)? as *const u8;
+    if ptr.is_null() && len != 0 {
+        return Err(ST_FAULT);
+    }
+    // SAFETY: compiled descriptors point at source names owned by the live OxProgram.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let name = std::str::from_utf8(bytes).map_err(|_| ST_FAULT)?;
+    Ok(Some(name.to_ascii_lowercase()))
+}
+
+fn order_project_member_call_args(
+    state: *mut RawExecState,
+    func: &OxFunc,
+    args: &[JitCallArgDesc],
+    names: &[JitCallArgNameDesc],
+) -> Result<Vec<JitCallArgDesc>, i32> {
+    if args.len() != names.len() {
+        return Err(ST_FAULT);
+    }
+    let hidden = hidden_me_receiver_param_count(func);
+    if hidden != 1 {
+        return Err(ST_FAULT);
+    }
+    let param_names: Vec<String> = func
+        .locals
+        .iter()
+        .take(func.param_count)
+        .skip(hidden)
+        .map(|local| local.name.to_ascii_lowercase())
+        .collect();
+    let mut ordered: Vec<Option<JitCallArgDesc>> = Vec::new();
+    let mut next_positional = 0usize;
+    for (arg, name) in args.iter().copied().zip(names.iter().copied()) {
+        if let Some(name) = call_arg_name(name)? {
+            let Some(index) = param_names.iter().position(|param| param == &name) else {
+                return Err(rt_raise_runtime_error_number(state, 448));
+            };
+            if ordered.len() <= index {
+                ordered.resize_with(index + 1, || None);
+            }
+            if ordered[index].is_some() {
+                return Err(rt_raise_runtime_error_number(state, 448));
+            }
+            ordered[index] = Some(arg);
+        } else {
+            while ordered.get(next_positional).is_some_and(Option::is_some) {
+                next_positional += 1;
+            }
+            if ordered.len() <= next_positional {
+                ordered.resize_with(next_positional + 1, || None);
+            }
+            ordered[next_positional] = Some(arg);
+            next_positional += 1;
+        }
+    }
+    Ok(ordered
+        .into_iter()
+        .map(|arg| arg.unwrap_or_else(omitted_call_arg_desc))
+        .collect())
+}
+
+fn seed_jit_member_frame_args(
+    state: *mut RawExecState,
+    run: &mut JitRun,
+    func: &OxFunc,
+    frame: &mut JitFrame,
+    caller_frame: usize,
+    args: &[JitCallArgDesc],
+    pending_param_array_aliases: &mut Vec<(usize, Vec<Option<SlotAlias>>)>,
+) -> i32 {
+    let hidden = hidden_me_receiver_param_count(func);
+    if hidden != 1 {
+        return ST_FAULT;
+    }
+    for (arg_index, arg) in args.iter().copied().enumerate() {
+        let param_index = hidden + arg_index;
+        let Some(param) = func.locals.get(param_index) else {
+            continue;
+        };
+        let Some(param_info) = param.param.as_ref() else {
+            return ST_FAULT;
+        };
+        if param_info.variadic {
+            if !is_m4_4_supported_paramarray_param(&param.ty, *param_info)
+                || arg.kind != JIT_CALL_ARG_BYVAL_VARIANT
+            {
+                return ST_FAULT;
+            }
+        } else if !is_jit_static_call_ty(&param.ty) {
+            return ST_FAULT;
+        }
+        match arg.kind {
+            JIT_CALL_ARG_BYVAL_SCALAR
+                if !param_info.by_ref
+                    && matches!(classify_jit_ty(&param.ty), JitTypeSupport::FastScalar) =>
+            {
+                let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                    return ST_FAULT;
+                };
+                frame.locals[param_index] = value;
+            }
+            JIT_CALL_ARG_BYVAL_VARIANT if !param_info.by_ref && matches!(param.ty, OxTy::Long) => {
+                let Some(value) = call_arg_long_i32_value(run, arg) else {
+                    return ST_FAULT;
+                };
+                frame.locals[param_index] = Variant::from_i32(value);
+            }
+            JIT_CALL_ARG_BYVAL_VARIANT
+                if !param_info.by_ref
+                    && (is_jit_variant_carrier_ty(&param.ty) || param_info.variadic) =>
+            {
+                let param_array_aliases = if param_info.variadic {
+                    param_array_aliases_for_call_arg(run, arg)
+                } else {
+                    None
+                };
+                let Some(value) = call_arg_variant_value(run, arg) else {
+                    return ST_FAULT;
+                };
+                if param_info.variadic && value.safearray_bounds_len().is_none() {
+                    return ST_FAULT;
+                }
+                frame.locals[param_index] =
+                    match coerce_call_arg_for_param(state, &param.ty, &value) {
+                        Ok(value) => value,
+                        Err(status) => return status,
+                    };
+                if let Some(aliases) = param_array_aliases {
+                    pending_param_array_aliases.push((param_index, aliases));
+                }
+            }
+            JIT_CALL_ARG_OMITTED if !param_info.by_ref && matches!(param.ty, OxTy::Variant) => {
+                let Some(value) = call_arg_variant_value(run, arg) else {
+                    return ST_FAULT;
+                };
+                frame.locals[param_index] = value;
+            }
+            JIT_CALL_ARG_BYREF_COPY if param_info.by_ref => {
+                if is_jit_variant_carrier_ty(&param.ty) {
+                    let Some(value) = call_arg_variant_value(run, arg) else {
+                        return ST_FAULT;
+                    };
+                    frame.locals[param_index] =
+                        match coerce_call_arg_for_param(state, &param.ty, &value) {
+                            Ok(value) => value,
+                            Err(status) => return status,
+                        };
+                } else {
+                    let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                        return ST_FAULT;
+                    };
+                    frame.locals[param_index] = value;
+                }
+            }
+            JIT_CALL_ARG_BYREF_ALIAS if param_info.by_ref => {
+                if arg.area < 0 || arg.index < 0 {
+                    return ST_FAULT;
+                }
+                let frame_index = match arg.area as u32 {
+                    AREA_GLOBAL => None,
+                    AREA_LOCAL | AREA_TEMP => Some(caller_frame),
+                    _ => return ST_FAULT,
+                };
+                let alias = SlotAlias {
+                    frame: frame_index,
+                    area: arg.area as u32,
+                    index: arg.index as u32,
+                };
+                if slot_alias_ref(run, alias).is_none() {
+                    return ST_FAULT;
+                }
+                frame.aliases[param_index] = Some(alias);
+            }
+            _ => return ST_FAULT,
+        }
+    }
+    ST_OK
+}
+
 fn unknown_proc_ref_arg_shape(
     state: *mut RawExecState,
     run: &JitRun,
@@ -11185,11 +11530,13 @@ fn project_member_kind_from_raw(raw: i32) -> Option<ProjectMemberKind> {
     }
 }
 
-fn invoke_project_noarg_member_with_me(
+fn invoke_project_member_with_me(
     run: &mut JitRun,
     state: *mut RawExecState,
     proc: usize,
     me: Variant,
+    args: &[JitCallArgDesc],
+    names: &[JitCallArgNameDesc],
 ) -> Result<Variant, i32> {
     if run.program.is_null() || run.functions.is_null() || proc >= run.function_count {
         return Err(ST_FAULT);
@@ -11199,46 +11546,70 @@ fn invoke_project_noarg_member_with_me(
     let Some(func) = program.funcs.get(proc) else {
         return Err(ST_FAULT);
     };
-    if func.param_count != 1 {
+    if hidden_me_receiver_param_count(func) != 1 {
         return Err(ST_FAULT);
     }
-    let Some(param) = func.locals.first() else {
-        return Err(ST_FAULT);
+    let return_local = if let Some(ret) = func.return_local {
+        let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
+            return Err(ST_FAULT);
+        };
+        if !is_jit_static_call_ty(&ret_ty) {
+            return Err(ST_FAULT);
+        }
+        Some((ret.0, ret_ty))
+    } else {
+        None
     };
-    if param.param.as_ref().is_none_or(|param| param.by_ref)
-        || !is_jit_variant_carrier_ty(&param.ty)
-    {
-        return Err(ST_FAULT);
-    }
-    let Some(ret) = func.return_local else {
-        return Err(ST_FAULT);
-    };
-    let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
-        return Err(ST_FAULT);
-    };
-    if !is_jit_static_call_ty(&ret_ty) {
-        return Err(ST_FAULT);
-    }
+    let ordered_args = order_project_member_call_args(state, func, args, names)?;
     if run.frames.len() >= MAX_JIT_FRAMES {
         return Err(rt_raise_out_of_stack(state));
     }
+    let Some(caller_frame) = run.frames.len().checked_sub(1) else {
+        return Err(ST_FAULT);
+    };
     let mut frame = new_jit_frame(program, func).map_err(|_| ST_FAULT)?;
     frame.locals[0] = me;
+    let mut pending_param_array_aliases = Vec::new();
+    let seed_status = seed_jit_member_frame_args(
+        state,
+        run,
+        func,
+        &mut frame,
+        caller_frame,
+        &ordered_args,
+        &mut pending_param_array_aliases,
+    );
+    if seed_status != ST_OK {
+        return Err(seed_status);
+    }
     let mut saved_err = RtSavedErrState::default();
     let enter_status = rt_err_enter_activation(state, &mut saved_err);
     if enter_status != ST_OK {
         return Err(enter_status);
     }
     run.frames.push(frame);
+    let callee_frame = run.frames.len() - 1;
+    for (index, aliases) in pending_param_array_aliases {
+        run.param_array_aliases.insert(
+            SlotAlias {
+                frame: Some(callee_frame),
+                area: AREA_LOCAL,
+                index: index as u32,
+            },
+            aliases,
+        );
+    }
     // SAFETY: function pointer bounds were checked above.
     let entry = unsafe { *run.functions.add(proc) };
     // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
     let status = unsafe { entry(run as *mut JitRun, state) };
     let return_value = if status == ST_OK {
-        run.frames
-            .last()
-            .and_then(|frame| frame.locals.get(ret.0))
-            .and_then(|value| call_return_variant(&ret_ty, value))
+        return_local.as_ref().and_then(|(local, ty)| {
+            run.frames
+                .last()
+                .and_then(|frame| frame.locals.get(*local))
+                .and_then(|value| call_return_variant(ty, value))
+        })
     } else {
         None
     };
@@ -11252,7 +11623,7 @@ fn invoke_project_noarg_member_with_me(
     if status != ST_OK {
         return Err(status);
     }
-    return_value.ok_or(ST_FAULT)
+    Ok(return_value.unwrap_or_else(Variant::empty))
 }
 
 unsafe extern "C" fn rt_jit_project_member_get_to_slot(
@@ -11262,6 +11633,9 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
     name_ptr: *const u8,
     name_len: i32,
     invoke_kind: i32,
+    argc: i32,
+    args: *const JitCallArgDesc,
+    names: *const JitCallArgNameDesc,
     dst_area: i32,
     dst_index: i32,
 ) -> i32 {
@@ -11271,20 +11645,35 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
             || recv.is_null()
             || name_ptr.is_null()
             || name_len < 0
-            || dst_area < 0
-            || dst_index < 0
+            || argc < 0
+            || dst_area < -1
+            || dst_index < -1
         {
             return ST_FAULT;
         }
+        let dst = match (dst_area, dst_index) {
+            (-1, -1) => None,
+            (area, index) if area >= 0 && index >= 0 => Some((area as u32, index as u32)),
+            _ => return ST_FAULT,
+        };
         let Some(kind) = project_member_kind_from_raw(invoke_kind) else {
             return ST_FAULT;
         };
-        if !matches!(
-            kind,
-            ProjectMemberKind::PropertyGet | ProjectMemberKind::Method
-        ) {
+        let argc = argc as usize;
+        let args = if argc == 0 {
+            &[]
+        } else if args.is_null() || names.is_null() {
             return ST_FAULT;
-        }
+        } else {
+            // SAFETY: compiled code provides exactly `argc` call and name descriptors.
+            unsafe { std::slice::from_raw_parts(args, argc) }
+        };
+        let names = if argc == 0 {
+            &[]
+        } else {
+            // SAFETY: null was rejected above and the descriptor count matches `args`.
+            unsafe { std::slice::from_raw_parts(names, argc) }
+        };
         // SAFETY: pointer/length were provided by compiled constants for a live member name.
         let name = match std::str::from_utf8(unsafe {
             std::slice::from_raw_parts(name_ptr, name_len as usize)
@@ -11321,16 +11710,18 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
             .iter()
             .find(|method| method.name.eq_ignore_ascii_case(name) && method.kind == kind);
         let member = exact.or_else(|| {
-            if kind == ProjectMemberKind::PropertyGet {
+            if kind == ProjectMemberKind::PropertyGet && args.is_empty() {
                 class.methods.iter().find(|method| {
                     method.name.eq_ignore_ascii_case(name)
                         && method.kind == ProjectMemberKind::Method
                 })
-            } else {
+            } else if kind == ProjectMemberKind::Method {
                 class.methods.iter().find(|method| {
                     method.name.eq_ignore_ascii_case(name)
                         && method.kind == ProjectMemberKind::PropertyGet
                 })
+            } else {
+                None
             }
         });
         let Some(member) = member else {
@@ -11338,15 +11729,18 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
         };
         // SAFETY: null was rejected and the compiled caller gives unique run ownership.
         let run = unsafe { &mut *run };
-        let value = match invoke_project_noarg_member_with_me(run, state, member.proc.0, recv_value)
-        {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
-            return ST_FAULT;
-        };
-        *slot = value;
+        let value =
+            match invoke_project_member_with_me(run, state, member.proc.0, recv_value, args, names)
+            {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        if let Some((area, index)) = dst {
+            let Some(slot) = slot_mut(run, area, index) else {
+                return ST_FAULT;
+            };
+            *slot = value;
+        }
         ST_OK
     })
 }

@@ -1000,12 +1000,22 @@ predeclared singletons, cross-project classes, events, `Class_Terminate`, defaul
 object-valued property breadth, and argument-bearing member dispatch remain outside this slice and
 stay split to the follow-up beads below.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.19` extends project member dispatch beyond the
+initial no-argument read. The JIT now lowers active-project `ComCallLate` through call-site argument
+descriptors plus name descriptors, resolves the project member by descriptor metadata, reorders
+named arguments against visible parameters after hidden `Me`, seeds a compiled hidden-`Me` member
+frame, and matches VM3 without fallback for method calls, optional arguments, ParamArray, ByRef
+aliasing, indexed `Property Get`/`Property Let`, and a basic `Property Set` route. The promoted
+rows are in `crates/oxvba-differential/tests/jit_project_objects.rs`. Default-member dispatch,
+broader object-valued property/default-member compatibility, `As New`, predeclared singletons,
+cross-project classes, events, and `Class_Terminate` remain split to the follow-up beads.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
    `TypeName`. Complete 2026-07-07.
 3. `bd-h4oh.10.19` - active-project method/property dispatch breadth, hidden `Me`, named/positional
-   arguments, optional parameters, and `ParamArray`.
+   arguments, optional parameters, and `ParamArray`. Complete 2026-07-07.
 4. `bd-h4oh.10.20` - default members and object-valued property compatibility.
 5. `bd-h4oh.10.21` - lazy active-project `As New` locals and fields.
 6. `bd-h4oh.10.22` - active-project `VB_PredeclaredId` singleton construction and reset.

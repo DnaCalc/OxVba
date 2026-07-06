@@ -2170,3 +2170,27 @@
   - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
   - `cargo test -p oxvba-jit jit_declines_project_object_instructions_with_specific_diagnostics -- --nocapture`
   - `cargo test -p oxvba-jit -- --format terse`
+
+# 2026-07-07 - JIT active-project member dispatch breadth
+
+- Closed the implementation scope for `bd-h4oh.10.19`, the active-project member dispatch breadth
+  slice after construction and object identity.
+- Replaced the no-argument-only project-member helper with descriptor-backed project call lowering:
+  call-site argument descriptors, per-argument name descriptors, runtime member resolution, named
+  argument reordering against visible parameters after hidden `Me`, and compiled hidden-`Me` frame
+  invocation.
+- Extended JIT project-class execution to cover method calls, optional arguments, ParamArray,
+  ByRef aliasing, indexed `Property Get`/`Property Let`, and a basic `Property Set` route without
+  VM fallback.
+- Added VM3-vs-JIT source-level differential rows for named method arguments, optional method
+  arguments, ParamArray methods, ByRef mutation, indexed property Get/Let, and Property Set
+  dispatch.
+- Fresh-eyes review kept default-member dispatch, broader object-valued property/default-member
+  compatibility, `As New`, predeclared singletons, cross-project classes, events, and
+  `Class_Terminate` outside this slice and split to follow-up beads.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `br lint bd-h4oh.10.19 bd-h4oh.10.20 --json`
+  - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
+  - `cargo test -p oxvba-jit -- --format terse`
