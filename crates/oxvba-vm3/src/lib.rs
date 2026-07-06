@@ -71,8 +71,9 @@ use oxvba_runtime::object_ref::{
     ObjectRef, RUNTIME_CLASS_LIFECYCLE_NONE, RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
     RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassActivationDescriptor,
     RuntimeClassAsNewFieldDescriptor, RuntimeClassDescriptor, RuntimeClassFieldDescriptor,
-    RuntimeClassLifecycleDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
-    RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
+    RuntimeClassLifecycleDescriptor, RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
+    RuntimeInterfaceIdentity, RuntimeInterfaceKind, RuntimeMemberDescriptor,
+    RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
@@ -145,6 +146,36 @@ fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescripto
         .collect()
 }
 
+fn runtime_member_descriptor(
+    program: &OxProgram,
+    method: &oxvba_oxir::program::OxClassMethod,
+    display_name: &str,
+    dispatch_index: usize,
+    dispatch_id: Option<i32>,
+    vtable_slot: Option<u16>,
+    is_default_member: bool,
+    is_enumerator_member: bool,
+) -> RuntimeMemberDescriptor {
+    let proc = program.funcs.get(method.proc.0);
+    let params: &'static [RuntimeParamDescriptor] = Box::leak(
+        proc.map(runtime_member_params)
+            .unwrap_or_default()
+            .into_boxed_slice(),
+    );
+    RuntimeMemberDescriptor {
+        name: leak_runtime_str(display_name),
+        dispatch_id: dispatch_id
+            .unwrap_or_else(|| synthetic_dispatch_id(dispatch_index, is_default_member)),
+        vtable_slot,
+        invoke_kind: runtime_member_invoke_kind(method.kind),
+        arity: params.len(),
+        params,
+        return_type: proc.and_then(runtime_return_type),
+        is_default_member,
+        is_enumerator_member,
+    }
+}
+
 fn runtime_return_type(func: &oxvba_oxir::OxFunc) -> Option<RuntimeValueType> {
     func.return_local
         .and_then(|local| func.locals.get(local.0))
@@ -169,6 +200,30 @@ fn runtime_value_type(ty: &OxTy) -> RuntimeValueType {
         OxTy::Array(_, _) => RuntimeValueType::Array,
         OxTy::Variant | OxTy::ProcRef => RuntimeValueType::Variant,
     }
+}
+
+const PROJECT_INTERFACE_GUID_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const PROJECT_INTERFACE_GUID_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn fnv1a64(seed: u64, input: &str) -> u64 {
+    let mut hash = seed;
+    for byte in input.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(PROJECT_INTERFACE_GUID_PRIME);
+    }
+    hash
+}
+
+fn runtime_project_interface_guid(unit_name: &str, interface_name: &str) -> RuntimeGuid {
+    let key = format!(
+        "oxvba:project-interface:{}:{}",
+        unit_name.to_ascii_lowercase(),
+        interface_name.to_ascii_lowercase()
+    );
+    let hi = fnv1a64(PROJECT_INTERFACE_GUID_OFFSET, &key);
+    let lo = fnv1a64(!PROJECT_INTERFACE_GUID_OFFSET, &key);
+    let lo_bytes = lo.to_be_bytes();
+    RuntimeGuid::new((hi >> 32) as u32, (hi >> 16) as u16, hi as u16, lo_bytes)
 }
 
 fn runtime_array_element_type(element: &ArrayElementType) -> RuntimeValueType {
@@ -219,6 +274,61 @@ fn runtime_as_new_field_descriptor(
         field_token: field.field,
         activation: runtime_class_activation_descriptor(&field.binding),
     }
+}
+
+fn runtime_project_interface_descriptor(
+    program: &OxProgram,
+    class: &oxvba_oxir::OxClass,
+    interface_name: &str,
+) -> Option<RuntimeInterfaceDescriptor> {
+    let bare_interface = interface_name.rsplit('.').next().unwrap_or(interface_name);
+    let interface_class = program
+        .classes
+        .iter()
+        .find(|candidate| candidate.name.eq_ignore_ascii_case(bare_interface))?;
+    let mut members = Vec::new();
+    for interface_method in &interface_class.methods {
+        let mangled = format!("{bare_interface}_{}", interface_method.name);
+        let Some(implementation_method) = class.methods.iter().find(|method| {
+            method.kind == interface_method.kind && method.name.eq_ignore_ascii_case(&mangled)
+        }) else {
+            continue;
+        };
+        let index = members.len();
+        members.push(runtime_member_descriptor(
+            program,
+            implementation_method,
+            &interface_method.name,
+            index,
+            interface_method.dispid.or(implementation_method.dispid),
+            interface_method
+                .vtable_slot
+                .or(implementation_method.vtable_slot),
+            interface_method.is_default_member || implementation_method.is_default_member,
+            interface_method.is_enumerator_member || implementation_method.is_enumerator_member,
+        ));
+    }
+    let members: &'static [RuntimeMemberDescriptor] = Box::leak(members.into_boxed_slice());
+    let qualified_name = if program.unit_name.is_empty() {
+        bare_interface.to_string()
+    } else {
+        format!("{}.{}", program.unit_name, bare_interface)
+    };
+    let identity_name = leak_runtime_str(&qualified_name);
+    Some(RuntimeInterfaceDescriptor {
+        id: RuntimeInterfaceId::Unsupported,
+        identity: RuntimeInterfaceIdentity::custom(
+            runtime_project_interface_guid(&program.unit_name, bare_interface),
+            identity_name,
+            RuntimeInterfaceKind::Custom,
+            None,
+            None,
+            None,
+        ),
+        name: leak_runtime_str(bare_interface),
+        members,
+        dual_dispatch: false,
+    })
 }
 
 /// A failure to execute an OxIR program on vm3.
@@ -485,8 +595,12 @@ impl<'h> Vm3<'h> {
             members,
             dual_dispatch: true,
         };
+        let mut interface_descriptors = vec![RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, dispatch];
+        interface_descriptors.extend(class.implements.iter().filter_map(|interface| {
+            runtime_project_interface_descriptor(program, class, interface)
+        }));
         let interfaces: &'static [RuntimeInterfaceDescriptor] =
-            Box::leak(vec![RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, dispatch].into_boxed_slice());
+            Box::leak(interface_descriptors.into_boxed_slice());
         &*Box::leak(Box::new(RuntimeClassDescriptor {
             name,
             predeclared: class.predeclared,
@@ -5637,6 +5751,185 @@ mod tests {
 
         drop(obj);
         drop(widget);
+        vm.maybe_drain();
+    }
+
+    #[test]
+    fn project_instance_runtime_descriptor_carries_implemented_interfaces() {
+        let iface_get_size = proc(
+            "Size",
+            ProcedureKind::Function,
+            vec![long_param("me")],
+            vec![local("Size", VarTypeRef::Builtin(BuiltinType::Long))],
+            Some(CoreLocalId(1)),
+            Vec::new(),
+        );
+        let iface_let_size = proc(
+            "Size",
+            ProcedureKind::PropertyLet,
+            vec![long_param("me"), byval_long_param("value")],
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let impl_get_size = proc(
+            "IShape_Size",
+            ProcedureKind::Function,
+            vec![long_param("me")],
+            vec![local("IShape_Size", VarTypeRef::Builtin(BuiltinType::Long))],
+            Some(CoreLocalId(1)),
+            Vec::new(),
+        );
+        let impl_let_size = proc(
+            "IShape_Size",
+            ProcedureKind::PropertyLet,
+            vec![long_param("me"), byval_long_param("newSize")],
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let prog = CoreProgram {
+            long_ptr_width: Default::default(),
+            procs: vec![
+                main,
+                iface_get_size,
+                iface_let_size,
+                impl_get_size,
+                impl_let_size,
+            ],
+            entry: Some(ProcId(0)),
+            unit_name: "T".into(),
+            classes: vec![
+                CoreClass {
+                    name: "CBox".into(),
+                    predeclared: false,
+                    initialize: None,
+                    terminate: None,
+                    fields: Vec::new(),
+                    methods: vec![
+                        CoreClassMethod {
+                            name: "IShape_Size".into(),
+                            kind: ProjectMemberKind::PropertyGet,
+                            proc: ProcId(3),
+                            dispid: None,
+                            vtable_slot: None,
+                            is_default_member: false,
+                            is_enumerator_member: false,
+                        },
+                        CoreClassMethod {
+                            name: "IShape_Size".into(),
+                            kind: ProjectMemberKind::PropertyLet,
+                            proc: ProcId(4),
+                            dispid: None,
+                            vtable_slot: None,
+                            is_default_member: false,
+                            is_enumerator_member: false,
+                        },
+                    ],
+                    as_new_fields: Vec::new(),
+                    implements: vec!["IShape".into()],
+                },
+                CoreClass {
+                    name: "IShape".into(),
+                    predeclared: false,
+                    initialize: None,
+                    terminate: None,
+                    fields: Vec::new(),
+                    methods: vec![
+                        CoreClassMethod {
+                            name: "Size".into(),
+                            kind: ProjectMemberKind::PropertyGet,
+                            proc: ProcId(1),
+                            dispid: Some(0),
+                            vtable_slot: Some(11),
+                            is_default_member: true,
+                            is_enumerator_member: false,
+                        },
+                        CoreClassMethod {
+                            name: "Size".into(),
+                            kind: ProjectMemberKind::PropertyLet,
+                            proc: ProcId(2),
+                            dispid: Some(0),
+                            vtable_slot: Some(12),
+                            is_default_member: true,
+                            is_enumerator_member: false,
+                        },
+                    ],
+                    as_new_fields: Vec::new(),
+                    implements: Vec::new(),
+                },
+            ],
+            ..Default::default()
+        };
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate"),
+        ));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        let mut vm = Vm3::activate(oxp, host).expect("activate");
+        let cbox = vm.create_project_instance("CBox").expect("create CBox");
+        let obj = cbox.as_object_ref().expect("CBox object");
+        let class_descriptor = obj.class_descriptor();
+
+        assert_eq!(class_descriptor.implements, &["IShape"]);
+        assert_eq!(class_descriptor.interfaces.len(), 3);
+        assert!(
+            obj.query_interface_descriptor(RuntimeInterfaceId::IUnknown)
+                .is_some()
+        );
+        assert!(
+            obj.query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+                .is_some()
+        );
+
+        let shape = class_descriptor
+            .interfaces
+            .iter()
+            .find(|interface| interface.name == "IShape")
+            .expect("implemented project interface descriptor");
+        assert_eq!(shape.id, RuntimeInterfaceId::Unsupported);
+        assert_eq!(shape.identity.id, RuntimeInterfaceId::Unsupported);
+        assert_eq!(shape.identity.name, "T.IShape");
+        assert_eq!(shape.identity.kind, RuntimeInterfaceKind::Custom);
+        assert!(!shape.dual_dispatch);
+        assert_eq!(shape.members.len(), 2);
+        assert_eq!(
+            obj.query_interface_descriptor_by_guid(shape.identity.guid)
+                .map(|descriptor| descriptor.name),
+            Some("IShape")
+        );
+
+        let get = &shape.members[0];
+        assert_eq!(get.name, "Size");
+        assert_eq!(get.dispatch_id, 0);
+        assert_eq!(get.vtable_slot, Some(11));
+        assert_eq!(get.invoke_kind, RuntimeMemberInvokeKind::PropertyGet);
+        assert!(get.is_default_member);
+        assert_eq!(get.arity, 0);
+        assert_eq!(get.return_type, Some(RuntimeValueType::Long));
+
+        let put = &shape.members[1];
+        assert_eq!(put.name, "Size");
+        assert_eq!(put.dispatch_id, 0);
+        assert_eq!(put.vtable_slot, Some(12));
+        assert_eq!(put.invoke_kind, RuntimeMemberInvokeKind::PropertyLet);
+        assert!(put.is_default_member);
+        assert_eq!(put.arity, 1);
+        assert_eq!(put.params[0].name, "newSize");
+        assert_eq!(put.params[0].value_type, RuntimeValueType::Long);
+        assert!(!put.params[0].by_ref);
+        assert_eq!(put.return_type, None);
+
+        drop(obj);
+        drop(cbox);
         vm.maybe_drain();
     }
 
