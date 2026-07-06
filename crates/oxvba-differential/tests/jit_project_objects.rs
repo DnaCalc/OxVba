@@ -40,20 +40,23 @@ fn project(modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
     }
 }
 
-fn assert_completed_with_i32(outcome: RunOutcome, expected: i32) {
+fn assert_completed_with_i32(label: &str, outcome: RunOutcome, expected: i32) {
     assert!(
         outcome.unsupported.is_none(),
-        "VM3 should execute the project-object oracle case: {outcome:?}"
+        "{label} should execute the project-object oracle case: {outcome:?}"
     );
     assert!(
         outcome
             .handle_balance
             .is_some_and(oxvba_runtime::HandleBalance::is_zero),
-        "VM3 handle imbalance: {:?}",
+        "{label} handle imbalance: {:?}",
         outcome.handle_balance
     );
     assert_eq!(
-        outcome.result.expect("VM3 should complete").first(),
+        outcome
+            .result
+            .unwrap_or_else(|err| panic!("{label} should complete: {err}"))
+            .first(),
         Some(&canon(&Variant::from_i32(expected)))
     );
 }
@@ -96,10 +99,28 @@ fn jit_project_class_new_declines_without_vm_fallback() {
     ];
 
     let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
-    assert_completed_with_i32(vm3, 42);
+    assert_completed_with_i32("VM3", vm3, 42);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
     assert_jit_declines(jit, "NewObject", "VM3-only");
+}
+
+#[test]
+fn jit_project_typed_local_is_nothing_matches_vm3_without_construction() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  If w Is Nothing Then\n    r = 11\n  Else\n    r = 13\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 11);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 11);
 }
 
 #[test]
@@ -114,7 +135,7 @@ fn jit_project_typeof_declines_without_vm_fallback() {
     ];
 
     let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
-    assert_completed_with_i32(vm3, 3);
+    assert_completed_with_i32("VM3", vm3, 3);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
     assert_jit_declines(jit, "TypeOfIs", "runtime descriptors");
@@ -134,7 +155,7 @@ fn jit_predeclared_default_instance_declines_without_vm_fallback() {
     ]);
 
     let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
-    assert_completed_with_i32(vm3, 10);
+    assert_completed_with_i32("VM3", vm3, 10);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
     assert_jit_declines(jit, "Predeclared", "VM3-only");
