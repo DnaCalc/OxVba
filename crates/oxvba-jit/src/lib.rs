@@ -204,6 +204,7 @@ impl<'p> CompiledImage<'p> {
         let mut run = JitRun {
             globals: globals_ptr,
             frames: Vec::new(),
+            explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
@@ -286,6 +287,7 @@ impl<'p> CompiledImage<'p> {
             .get(func.0)
             .ok_or_else(|| JitError::Runtime(format!("function {} out of range", func.0)))?;
         run.frames.clear();
+        run.explicit_refs.clear();
         run.param_array_aliases.clear();
         let entry = *self
             .functions
@@ -312,6 +314,7 @@ impl<'p> CompiledImage<'p> {
 struct JitRun {
     globals: *mut Vec<Variant>,
     frames: Vec<JitFrame>,
+    explicit_refs: Vec<Variant>,
     for_each: HashMap<SlotAlias, JitForEachState>,
     as_new_slots: HashMap<SlotAlias, OxAsNew>,
     param_array_aliases: HashMap<SlotAlias, Vec<Option<SlotAlias>>>,
@@ -605,6 +608,10 @@ struct Imports {
     store_bool: ClifFuncId,
     store_proc_ref: ClifFuncId,
     store_variant: ClifFuncId,
+    stmt_boundary: ClifFuncId,
+    drain_terminations: ClifFuncId,
+    add_ref: ClifFuncId,
+    release: ClifFuncId,
     as_new_project_class_slot: ClifFuncId,
     new_object_slot: ClifFuncId,
     predeclared_slot: ClifFuncId,
@@ -920,8 +927,13 @@ impl<'a> LowerFunc<'a> {
             return Err(JitError::unsupported(message));
         }
         match inst {
-            OxInst::StmtBoundary { .. } | OxInst::SetLineNumber { .. } => Ok(()),
-            OxInst::DrainTerminations => Ok(()),
+            OxInst::StmtBoundary {
+                clear_temps_from, ..
+            } => self.emit_stmt_boundary(builder, module, *clear_temps_from),
+            OxInst::SetLineNumber { .. } => Ok(()),
+            OxInst::DrainTerminations => self.emit_drain_terminations(builder, module),
+            OxInst::AddRef { object } => self.emit_add_ref(builder, module, object),
+            OxInst::Release { object, .. } => self.emit_release(builder, module, object),
             OxInst::Assign { dst, value } => match place_ty(self.program, self.func, *dst)? {
                 OxTy::Long => {
                     let value = self.lower_operand_i32(builder, module, value)?;
@@ -7576,6 +7588,69 @@ impl<'a> LowerFunc<'a> {
         Ok(())
     }
 
+    fn emit_stmt_boundary(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        clear_temps_from: usize,
+    ) -> Result<(), JitError> {
+        let state = self.state;
+        let clear_temps_from = builder.ins().iconst(types::I32, clear_temps_from as i64);
+        let callee = self.import(builder, module, self.imports.stmt_boundary);
+        let call = builder
+            .ins()
+            .call(callee, &[self.run, state, clear_temps_from]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_drain_terminations(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+    ) -> Result<(), JitError> {
+        let callee = self.import(builder, module, self.imports.drain_terminations);
+        let call = builder.ins().call(callee, &[self.state]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_add_ref(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        object: &OxOperand,
+    ) -> Result<(), JitError> {
+        let operand = self.lower_variant_operand(builder, object)?;
+        let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &[operand])?;
+        let callee = self.import(builder, module, self.imports.add_ref);
+        let call = builder
+            .ins()
+            .call(callee, &[self.run, self.state, operand_ptr]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_release(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        object: &OxOperand,
+    ) -> Result<(), JitError> {
+        let operand = self.lower_variant_operand(builder, object)?;
+        let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &[operand])?;
+        let callee = self.import(builder, module, self.imports.release);
+        let call = builder
+            .ins()
+            .call(callee, &[self.run, self.state, operand_ptr]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
     fn return_if_not_ok(&self, builder: &mut FunctionBuilder<'_>, status: Value) {
         let ok = builder
             .ins()
@@ -7839,6 +7914,13 @@ fn register_symbols(builder: &mut JITBuilder) {
     builder.symbol("rt_jit_store_bool", rt_jit_store_bool as *const u8);
     builder.symbol("rt_jit_store_proc_ref", rt_jit_store_proc_ref as *const u8);
     builder.symbol("rt_jit_store_variant", rt_jit_store_variant as *const u8);
+    builder.symbol("rt_jit_stmt_boundary", rt_jit_stmt_boundary as *const u8);
+    builder.symbol(
+        "rt_jit_drain_terminations",
+        rt_jit_drain_terminations as *const u8,
+    );
+    builder.symbol("rt_jit_add_ref", rt_jit_add_ref as *const u8);
+    builder.symbol("rt_jit_release", rt_jit_release as *const u8);
     builder.symbol(
         "rt_jit_as_new_project_class_slot",
         rt_jit_as_new_project_class_slot as *const u8,
@@ -8209,6 +8291,40 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
     store_variant_sig.returns.push(AbiParam::new(types::I32));
     let store_variant = module
         .declare_function("rt_jit_store_variant", Linkage::Import, &store_variant_sig)
+        .map_err(module_err)?;
+
+    let mut stmt_boundary_sig = module.make_signature();
+    stmt_boundary_sig.params.push(AbiParam::new(ptr_ty));
+    stmt_boundary_sig.params.push(AbiParam::new(ptr_ty));
+    stmt_boundary_sig.params.push(AbiParam::new(types::I32));
+    stmt_boundary_sig.returns.push(AbiParam::new(types::I32));
+    let stmt_boundary = module
+        .declare_function("rt_jit_stmt_boundary", Linkage::Import, &stmt_boundary_sig)
+        .map_err(module_err)?;
+
+    let mut drain_terminations_sig = module.make_signature();
+    drain_terminations_sig.params.push(AbiParam::new(ptr_ty));
+    drain_terminations_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let drain_terminations = module
+        .declare_function(
+            "rt_jit_drain_terminations",
+            Linkage::Import,
+            &drain_terminations_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut ref_effect_sig = module.make_signature();
+    ref_effect_sig.params.push(AbiParam::new(ptr_ty));
+    ref_effect_sig.params.push(AbiParam::new(ptr_ty));
+    ref_effect_sig.params.push(AbiParam::new(ptr_ty));
+    ref_effect_sig.returns.push(AbiParam::new(types::I32));
+    let add_ref = module
+        .declare_function("rt_jit_add_ref", Linkage::Import, &ref_effect_sig)
+        .map_err(module_err)?;
+    let release = module
+        .declare_function("rt_jit_release", Linkage::Import, &ref_effect_sig)
         .map_err(module_err)?;
 
     let mut as_new_project_class_slot_sig = module.make_signature();
@@ -9333,6 +9449,10 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         store_bool,
         store_proc_ref,
         store_variant,
+        stmt_boundary,
+        drain_terminations,
+        add_ref,
+        release,
         as_new_project_class_slot,
         new_object_slot,
         predeclared_slot,
@@ -9770,12 +9890,6 @@ fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str
         ),
         OxInst::RaiseEvent { .. } => Some(
             "JIT project object/class instruction RaiseEvent is unsupported: event dispatch and handler fault routing remain VM3-only",
-        ),
-        OxInst::AddRef { .. } => Some(
-            "JIT project object/class instruction AddRef is unsupported: explicit object reference ownership remains VM3-only",
-        ),
-        OxInst::Release { .. } => Some(
-            "JIT project object/class instruction Release is unsupported: explicit object release and termination scheduling remain VM3-only",
         ),
         _ => None,
     }
@@ -10729,6 +10843,44 @@ fn prune_for_each_from_depth(run: &mut JitRun, depth: usize) {
         .retain(|iter, _| iter.frame.is_none_or(|frame| frame < depth));
 }
 
+fn is_current_frame_temp_at_or_after(alias: SlotAlias, frame: usize, first_temp: usize) -> bool {
+    alias.frame == Some(frame) && alias.area == AREA_TEMP && alias.index as usize >= first_temp
+}
+
+fn prune_param_array_aliases_for_cleared_temps(run: &mut JitRun, frame: usize, first_temp: usize) {
+    run.param_array_aliases.retain(|array, aliases| {
+        !is_current_frame_temp_at_or_after(*array, frame, first_temp)
+            && aliases
+                .iter()
+                .flatten()
+                .all(|alias| !is_current_frame_temp_at_or_after(*alias, frame, first_temp))
+    });
+}
+
+fn prune_as_new_slots_for_cleared_temps(run: &mut JitRun, frame: usize, first_temp: usize) {
+    run.as_new_slots
+        .retain(|slot, _| !is_current_frame_temp_at_or_after(*slot, frame, first_temp));
+}
+
+fn prune_for_each_for_cleared_temps(run: &mut JitRun, frame: usize, first_temp: usize) {
+    run.for_each
+        .retain(|iter, _| !is_current_frame_temp_at_or_after(*iter, frame, first_temp));
+}
+
+fn clear_current_statement_temps(run: &mut JitRun, first_temp: usize) {
+    let Some(frame_index) = run.frames.len().checked_sub(1) else {
+        return;
+    };
+    if let Some(frame) = run.frames.get_mut(frame_index) {
+        for slot in frame.temps.iter_mut().skip(first_temp) {
+            *slot = Variant::empty();
+        }
+    }
+    prune_for_each_for_cleared_temps(run, frame_index, first_temp);
+    prune_as_new_slots_for_cleared_temps(run, frame_index, first_temp);
+    prune_param_array_aliases_for_cleared_temps(run, frame_index, first_temp);
+}
+
 fn mirror_param_array_element_write(
     state: *mut RawExecState,
     run: &mut JitRun,
@@ -11653,6 +11805,88 @@ unsafe extern "C" fn rt_jit_store_variant(
             return ST_FAULT;
         };
         *slot = src;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_stmt_boundary(
+    run: *mut JitRun,
+    state: *mut RawExecState,
+    clear_temps_from: i32,
+) -> i32 {
+    status_guard(|| {
+        if run.is_null() || state.is_null() || clear_temps_from < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and compiled code gives unique run ownership.
+        let run = unsafe { &mut *run };
+        clear_current_statement_temps(run, clear_temps_from as usize);
+        rt_maybe_drain(state)
+    })
+}
+
+unsafe extern "C" fn rt_jit_drain_terminations(state: *mut RawExecState) -> i32 {
+    status_guard(|| {
+        if state.is_null() {
+            return ST_FAULT;
+        }
+        rt_maybe_drain(state)
+    })
+}
+
+unsafe extern "C" fn rt_jit_add_ref(
+    run: *mut JitRun,
+    state: *mut RawExecState,
+    operand: *const JitVariantOperandDesc,
+) -> i32 {
+    status_guard(|| {
+        if run.is_null() || state.is_null() || operand.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: descriptor pointer is owned by compiled stack state for this call.
+        let operand = unsafe { *operand };
+        // SAFETY: null was rejected and compiled code gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let value = match variant_operand_value_with_as_new(run, state, operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        if !matches!(value.vtype(), VarType::Object) {
+            return rt_raise_runtime_error_number(state, 424);
+        }
+        run.explicit_refs.push(value);
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_release(
+    run: *mut JitRun,
+    state: *mut RawExecState,
+    operand: *const JitVariantOperandDesc,
+) -> i32 {
+    status_guard(|| {
+        if run.is_null() || state.is_null() || operand.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: descriptor pointer is owned by compiled stack state for this call.
+        let operand = unsafe { *operand };
+        // SAFETY: null was rejected and compiled code gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let value = match variant_operand_value_with_as_new(run, state, operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let identity = match object_identity_for_is(state, &value) {
+            Ok(identity) => identity,
+            Err(status) => return status,
+        };
+        if let Some(index) = run
+            .explicit_refs
+            .iter()
+            .rposition(|held| object_identity_for_is(state, held).ok() == Some(identity))
+        {
+            run.explicit_refs.remove(index);
+        }
         ST_OK
     })
 }
@@ -16927,6 +17161,7 @@ mod tests {
             frames: (0..MAX_JIT_FRAMES)
                 .map(|_| new_jit_frame(&program, &program.funcs[0]).expect("frame"))
                 .collect(),
+            explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
@@ -16961,6 +17196,7 @@ mod tests {
             frames: (0..MAX_JIT_FRAMES)
                 .map(|_| new_jit_frame(&program, &program.funcs[0]).expect("frame"))
                 .collect(),
+            explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
@@ -18297,6 +18533,34 @@ mod tests {
     }
 
     #[test]
+    fn jit_addref_release_refcount_effects_compile_without_unsupported_diagnostic() {
+        for (label, inst) in [
+            (
+                "AddRef",
+                OxInst::AddRef {
+                    object: OxOperand::local(LocalId(0)),
+                },
+            ),
+            (
+                "Release",
+                OxInst::Release {
+                    object: OxOperand::local(LocalId(0)),
+                    may_terminate: true,
+                },
+            ),
+        ] {
+            let program = unsupported_project_object_instruction_program(inst);
+            assert_eq!(verify_program(&program), Ok(()), "{label}");
+            let outcome = run_jit_program(&program);
+            assert!(
+                !outcome.raised,
+                "{label} should execute as a JIT refcount effect, got {:?}",
+                outcome.err
+            );
+        }
+    }
+
+    #[test]
     fn jit_defaults_supported_carrier_slots() {
         let record = OxTy::Record(RecordLayoutId(0));
         let main = OxFunc {
@@ -18492,15 +18756,6 @@ mod tests {
                     args: Vec::new(),
                 },
                 "RaiseEvent",
-            ),
-            ("AddRef", OxInst::AddRef { object: object() }, "AddRef"),
-            (
-                "Release",
-                OxInst::Release {
-                    object: object(),
-                    may_terminate: true,
-                },
-                "Release",
             ),
         ];
 
@@ -29768,6 +30023,7 @@ mod tests {
         let mut run = JitRun {
             globals: &mut globals,
             frames: vec![frame],
+            explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
@@ -29817,6 +30073,7 @@ mod tests {
         let mut run = JitRun {
             globals: &mut globals,
             frames: vec![frame],
+            explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
@@ -29895,6 +30152,7 @@ mod tests {
         let mut run = JitRun {
             globals: &mut globals,
             frames: vec![new_jit_frame(&program, &program.funcs[0]).expect("frame")],
+            explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
@@ -29977,6 +30235,7 @@ mod tests {
         let mut run = JitRun {
             globals: &mut globals,
             frames: vec![new_jit_frame(&program, &program.funcs[0]).expect("frame")],
+            explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),

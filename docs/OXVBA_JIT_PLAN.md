@@ -1034,6 +1034,17 @@ instance persistence, statement-form method dispatch, `Set ClassName = Nothing`,
 Cross-project predeclared singletons remain split to `bd-h4oh.10.24`; COM/export default instances
 remain outside this JIT class slice.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.23` completed the JIT class termination
+boundary slice. Compiled `StmtBoundary` now clears statement temps and calls the shared termination
+drain; compiled `DrainTerminations` calls the same drain directly; explicit `AddRef`/`Release`
+refcount-effect instructions lower through JIT helpers rather than unsupported diagnostics. The
+shared drain now snapshots and restores `ErrEngine` while invoking suppressed `Class_Terminate`
+callbacks, so termination faults do not overwrite the caller's `Err.Number`. VM3/JIT differential
+rows cover `Set ... = Nothing` termination before the next statement, callee-local procedure-exit
+termination, initializer-failure cleanup/retry, and cascaded field release to child termination.
+Cross-project classes remain split to `bd-h4oh.10.24`; project events remain split to
+`bd-h4oh.10.25`; COM server/export release behavior remains out of M4-8 scope.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1044,7 +1055,8 @@ Class/JIT follow-up bead order:
 5. `bd-h4oh.10.21` - lazy active-project `As New` locals and fields. Complete 2026-07-07.
 6. `bd-h4oh.10.22` - active-project `VB_PredeclaredId` singleton construction and reset. Complete
    2026-07-07.
-7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains.
+7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains. Complete
+   2026-07-07.
 8. `bd-h4oh.10.24` - referenced-project class descriptors and construction.
 9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT.
 10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events.

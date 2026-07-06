@@ -744,9 +744,11 @@ pub fn maybe_drain_with_bridge(exec: &mut ExecState<'_>) -> Result<(), Fault> {
     while oxvba_runtime::has_pending_terminations() {
         for work in take_termination_batch(exec) {
             if let (Some(proc), Some(object)) = (work.terminate, work.object) {
+                let saved_err_engine = exec.err_engine.clone();
                 // SAFETY: the installed bridge owns the opaque context and accepts a borrowed
                 // Variant for the duration of the call. Terminate faults are suppressed.
                 let _ = unsafe { (bridge.invoke)(bridge.ctx, work.bundle, proc.0, &object, 1) };
+                exec.err_engine = saved_err_engine;
             }
             oxvba_runtime::finish_pending_termination(work.instance_id);
             cleanup_terminated_owner(exec, work.instance_id);

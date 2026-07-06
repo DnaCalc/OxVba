@@ -774,3 +774,96 @@ fn jit_predeclared_failed_initialize_clears_slot_for_retry_without_fallback() {
     let jit = run_project_closure(Executor::Jit, &[app]);
     assert_completed_prefix_i32("JIT", jit, &[2, 2, 5]);
 }
+
+#[test]
+fn jit_project_set_nothing_runs_class_terminate_before_next_statement() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nPublic initCount As Long\nPublic termCount As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  Set w = Nothing\n  r = termCount\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\nEnd Sub\nPrivate Sub Class_Terminate()\n  Main.termCount = Main.termCount + 1\n  Err.Raise 77\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_prefix_i32("VM3", vm3, &[1, 1, 1]);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_prefix_i32("JIT", jit, &[1, 1, 1]);
+}
+
+#[test]
+fn jit_project_local_object_terminates_after_callee_exit_before_caller_statement() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nPublic initCount As Long\nPublic termCount As Long\nSub Main()\n  MakeWidget\n  r = termCount\nEnd Sub\nSub MakeWidget()\n  Dim w As Widget\n  Set w = New Widget\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\nEnd Sub\nPrivate Sub Class_Terminate()\n  Main.termCount = Main.termCount + 1\n  Err.Raise 77\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_prefix_i32("VM3", vm3, &[1, 1, 1]);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_prefix_i32("JIT", jit, &[1, 1, 1]);
+}
+
+#[test]
+fn jit_project_initialize_failure_terminates_partial_instance_and_retries() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nPublic initCount As Long\nPublic termCount As Long\nPublic firstErr As Long\nPublic failOnce As Boolean\nSub Main()\n  failOnce = True\n  On Error Resume Next\n  Dim w As Widget\n  Set w = New Widget\n  firstErr = Err.Number\n  Err.Clear\n  Set w = New Widget\n  Set w = Nothing\n  r = termCount\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\n  If Main.failOnce Then\n    Main.failOnce = False\n    Err.Raise 5\n  End If\nEnd Sub\nPrivate Sub Class_Terminate()\n  Main.termCount = Main.termCount + 1\n  Err.Raise 77\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_prefix_i32("VM3", vm3, &[2, 2, 2, 5]);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_prefix_i32("JIT", jit, &[2, 2, 2, 5]);
+}
+
+#[test]
+fn jit_project_class_terminate_field_release_cascades_to_child() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nPublic ownerInit As Long\nPublic ownerTerm As Long\nPublic childInit As Long\nPublic childTerm As Long\nSub Main()\n  Dim o As Owner\n  Set o = New Owner\n  Set o = Nothing\n  r = childTerm\nEnd Sub\n",
+        ),
+        (
+            "Owner",
+            Class,
+            "Private child As Child\nPrivate Sub Class_Initialize()\n  Main.ownerInit = Main.ownerInit + 1\n  Set child = New Child\nEnd Sub\nPrivate Sub Class_Terminate()\n  Main.ownerTerm = Main.ownerTerm + 1\nEnd Sub\n",
+        ),
+        (
+            "Child",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.childInit = Main.childInit + 1\nEnd Sub\nPrivate Sub Class_Terminate()\n  Main.childTerm = Main.childTerm + 1\n  Err.Raise 88\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_prefix_i32("VM3", vm3, &[1, 1, 1, 1, 1]);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_prefix_i32("JIT", jit, &[1, 1, 1, 1, 1]);
+}

@@ -9,22 +9,25 @@ Recovery rule: an accidental interim status reply is non-blocking and must be tr
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Current user instruction (2026-07-07): take stock from the IP-08B detour, resume class-module
 support in the JIT, and keep follow-up class-related beads ready in line with the current
-class-module plan. `bd-h4oh.10.22`
-(`M4-8 JIT predeclared singleton active-project classes`) is closed; continue with
-`bd-h4oh.10.23` (`Class_Terminate`, release ownership, and termination drains).
+class-module plan. `bd-h4oh.10.23`
+(`M4-8 JIT Class_Terminate release and drain parity`) is ready to close; continue with
+`bd-h4oh.10.24` (`M4-8 JIT cross-project class descriptors and construction`) after the closure
+commit.
 `bd-aprs.8.8` / IP-08B COM-host work is deferred from scheduler/ready output, not closed; its
 remaining state is documented in `CURRENT_BLOCKERS.md` and
 `docs/worksets/WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md`.
 GPT-5.5 startup note: keep resume context bounded. Read the authoritative status surfaces below, then open only the active workset/bead/evidence files needed for the next outcome.
 
 Active ladder/work bead:
-- `bd-h4oh.10.23` under `bd-h4oh.10` / M4-8 objects, classes, lifecycle, after closing
-  `bd-h4oh.10.22`.
-Completed gate: active-project lazy `As New` and `VB_PredeclaredId` singleton support run under
-`Executor::Jit` with no VM fallback and match VM3 for lazy first access, Set Nothing/retry,
-singleton reset/replacement, held old references, and initializer-failure retry.
-Follow-up beads staged under `bd-h4oh.10`: `bd-h4oh.10.23` through `bd-h4oh.10.29`, chained in
-execution order after `bd-h4oh.10.22`. `bd-h4oh.10.26-.29` cover the post-events class metadata
+- `bd-h4oh.10.24` under `bd-h4oh.10` / M4-8 objects, classes, lifecycle, after closing
+  `bd-h4oh.10.23`.
+Completed gate: JIT class termination drains now run through compiled `StmtBoundary` /
+`DrainTerminations` and shared ProcInvoker re-entry. Differential coverage proves `Set Nothing`,
+callee procedure exit, initializer-failure cleanup/retry, cascaded field release, suppressed
+termination faults, and explicit `AddRef`/`Release` lowering for the scoped active-project class
+slice.
+Follow-up beads staged under `bd-h4oh.10`: `bd-h4oh.10.24` through `bd-h4oh.10.29`, chained in
+execution order after `bd-h4oh.10.23`. `bd-h4oh.10.26-.29` cover the post-events class metadata
 audit, binder/lowering residual suite, VM3/JIT parity sweep, and terminal docs/residual handoff.
 Class-related COM export readiness is deferred to `bd-h4oh.15.1` under the later M4-13 COM/AOT
 lane and must not block the current M4-8 class/JIT chain.
@@ -43,5 +46,5 @@ Authoritative status surfaces:
 
 Resume protocol:
 1. Read `AGENTS.md` and this file.
-2. Inspect `bd-h4oh.10.23`, `bd-h4oh.10`, and `docs/OXVBA_JIT_PLAN.md` M4-8.
+2. Inspect `bd-h4oh.10.24`, `bd-h4oh.10`, and `docs/OXVBA_JIT_PLAN.md` M4-8.
 3. Continue with the scoped class/JIT slice; do not resume IP-08B unless explicitly redirected.
