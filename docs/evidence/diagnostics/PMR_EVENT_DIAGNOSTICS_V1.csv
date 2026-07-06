@@ -1,5 +1,6 @@
 diag_id,phase,status,description,legacy_ids
 PMR-E-WITHEVENTS-MODULE-KIND,compile-time,implemented,WithEvents declarations are valid only in class/document/form modules,PMR-E-WITHEVENTS-MODULE-KIND-UNRESOLVED
+PMR-E-WITHEVENTS-SOURCE-TYPE,compile-time,implemented,WithEvents fields must declare an object or event source type,
 PMR-E-IMPLEMENTS-MODULE-KIND,compile-time,implemented,Implements directives are valid only in class modules,PMR-E-IMPLEMENTS-PROJECTGRAPH-REQUIRED
 PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND,compile-time,implemented,Implemented interface must resolve to a known project/type symbol,
 PMR-E-IMPLEMENTS-MEMBER-MISSING,compile-time,implemented,Class must provide required prefixed member coverage for each implemented interface,

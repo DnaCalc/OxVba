@@ -3168,6 +3168,25 @@ fn event_declaration_outside_class_module_is_bind_error() {
 }
 
 #[test]
+fn withevents_scalar_field_type_is_bind_error() {
+    let manifest = manifest_modules(&[(
+        "Sink",
+        ModuleKind::Class,
+        "Private WithEvents src As Long\n",
+    )]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("scalar WithEvents field should fail binding")
+    );
+    assert!(
+        err.contains("InvalidWithEventsFieldType")
+            || err.contains("SYM-E-INVALID-WITHEVENTS-FIELD-TYPE"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn event_declaration_rejects_optional_and_paramarray_parameters() {
     for (source, expected) in [
         (

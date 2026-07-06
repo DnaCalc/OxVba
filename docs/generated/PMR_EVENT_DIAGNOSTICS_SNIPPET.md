@@ -16,3 +16,4 @@ Canonical source: `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`.
 | `PMR-E-RAISEEVENT-MODULE-KIND` | compile-time | implemented | RaiseEvent statements are valid only in class modules |
 | `PMR-E-RAISEEVENT-UNDECLARED` | compile-time | implemented | RaiseEvent target must match a declared event in the class module |
 | `PMR-E-WITHEVENTS-MODULE-KIND` | compile-time | implemented | WithEvents declarations are valid only in class/document/form modules |
+| `PMR-E-WITHEVENTS-SOURCE-TYPE` | compile-time | implemented | WithEvents fields must declare an object or event source type |

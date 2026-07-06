@@ -255,6 +255,8 @@ pub enum SymbolModelError {
     ImplementsNotValidInStandardModule { name: String },
     #[error("WithEvents is only valid in object modules: `{name}`")]
     WithEventsNotValidInStandardModule { name: String },
+    #[error("invalid WithEvents field type for `{name}`")]
+    InvalidWithEventsFieldType { name: String },
     #[error("ambiguous name detected: {name}")]
     AmbiguousName { name: String },
     #[error("unknown scope {0:?}")]
@@ -436,6 +438,12 @@ impl SymbolModelError {
                 format!("WithEvents is only valid in object modules: {name}"),
             )
             .with_help("Move the WithEvents member to a class/object module."),
+            SymbolModelError::InvalidWithEventsFieldType { name } => Diagnostic::error(
+                "SYM-E-INVALID-WITHEVENTS-FIELD-TYPE",
+                DiagnosticPhase::Symbol,
+                format!("WithEvents field `{name}` must be declared as an object type"),
+            )
+            .with_help("Declare the WithEvents field with a class/object or COM event source type."),
             SymbolModelError::AmbiguousName { name } => Diagnostic::error(
                 "SYM-E-AMBIGUOUS-NAME",
                 DiagnosticPhase::Symbol,

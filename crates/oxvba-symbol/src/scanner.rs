@@ -272,6 +272,15 @@ impl ScanCtx<'_> {
                             name: name.to_string(),
                         });
                     }
+                    if module_level
+                        && !is_const
+                        && declarator.is_with_events()
+                        && !withevents_field_type_compatible(&declared_type)
+                    {
+                        return Err(SymbolModelError::InvalidWithEventsFieldType {
+                            name: name.to_string(),
+                        });
+                    }
                     let (ns, kind) = if is_const {
                         // A `Const` is a constant at any scope (module- or proc-level):
                         // namespace `Local`, kind `Const`. Its value is folded by the
@@ -1145,6 +1154,10 @@ impl ScanCtx<'_> {
 
 fn property_set_reference_type_compatible(ty: &VarTypeRef) -> bool {
     matches!(ty, VarTypeRef::Variant | VarTypeRef::Object(_))
+}
+
+fn withevents_field_type_compatible(ty: &VarTypeRef) -> bool {
+    matches!(ty, VarTypeRef::Object(_))
 }
 
 fn property_accessor_signature(
@@ -2262,6 +2275,46 @@ mod tests {
             err.to_diagnostic().code.as_str(),
             "SYM-E-WITHEVENTS-ONLY-VALID-IN-OBJECT-MODULE"
         );
+    }
+
+    #[test]
+    fn scanner_accepts_object_withevents_fields_in_class_modules() {
+        let (symbols, _, members) =
+            scan_state_for_kind(ModuleKind::Class, "Private WithEvents src As Clock\n")
+                .expect("class WithEvents object field should scan");
+        let member = members
+            .iter()
+            .find(|m| m.name_folded == fold_identifier("src"))
+            .expect("WithEvents field member should publish");
+        assert_eq!(member.kind, SymbolKind::WithEventsField);
+        let symbol = symbols.symbol(member.symbol).expect("symbol");
+        assert_eq!(
+            symbol.imp,
+            SymbolImpl::DeclaredType(VarTypeRef::Object("clock".to_string()))
+        );
+    }
+
+    #[test]
+    fn scanner_rejects_non_object_withevents_fields() {
+        for source in [
+            "Private WithEvents src As Long\n",
+            "Private WithEvents src As Variant\n",
+            "Private WithEvents src\n",
+            "Private WithEvents src() As Clock\n",
+        ] {
+            let err = scan_members_for_kind(ModuleKind::Class, source)
+                .expect_err("non-object WithEvents field should be rejected");
+            assert_eq!(
+                err,
+                SymbolModelError::InvalidWithEventsFieldType {
+                    name: "src".to_string()
+                }
+            );
+            assert_eq!(
+                err.to_diagnostic().code.as_str(),
+                "SYM-E-INVALID-WITHEVENTS-FIELD-TYPE"
+            );
+        }
     }
 
     #[test]
