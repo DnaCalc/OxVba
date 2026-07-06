@@ -2143,3 +2143,30 @@
   - `cargo test -p oxvba-runtime`
   - `cargo test -p oxvba-bind`
   - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
+
+# 2026-07-07 - JIT active-project object identity and typed introspection
+
+- Closed the implementation scope for `bd-h4oh.10.18`, the active-project object
+  identity/reference ownership slice after first class construction.
+- Extended JIT project-object coverage so compatible `Set` assignment across class, `Object`, and
+  `Variant` object slots preserves identity, and `Set ... = Nothing` clears only the target slot
+  while preserving other references to the same instance.
+- Added descriptor-backed JIT support for `TypeOf ... Is ...` on statically typed active-project
+  class/interface receivers, including implemented-interface matching and the `Nothing` false case.
+- Added JIT `TypeName` support for statically typed active-project class/interface values, returning
+  the project class descriptor name for live objects and matching VM3's `"Nothing"` result for the
+  unset object slice covered here.
+- Broadened the class-object differential fixture to cover live object identity, typed `TypeOf`,
+  typed `TypeName`, and unset-object introspection under `Executor::Jit` without VM fallback.
+- Fresh-eyes review kept the new runtime helpers behind static active-project class/interface
+  admission gates so untyped, COM, and out-of-scope receiver shapes still decline deterministically
+  instead of leaking through as runtime faults.
+- Residuals remain split to follow-up beads: method/property dispatch breadth (`bd-h4oh.10.19`),
+  default/object-valued properties (`bd-h4oh.10.20`), `As New`, predeclared singletons,
+  cross-project classes, events, and `Class_Terminate`.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
+  - `cargo test -p oxvba-jit jit_declines_project_object_instructions_with_specific_diagnostics -- --nocapture`
+  - `cargo test -p oxvba-jit -- --format terse`

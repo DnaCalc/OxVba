@@ -160,6 +160,24 @@ fn jit_project_typed_null_set_assignment_matches_vm3_without_construction() {
 }
 
 #[test]
+fn jit_project_live_object_identity_and_set_assignment_match_vm3() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim a As Widget\n  Dim b As Widget\n  Dim o As Object\n  Dim v As Variant\n  Set a = New Widget\n  Set b = a\n  Set o = b\n  Set v = o\n  If a Is b Then r = r + 1\n  If b Is o Then r = r + 10\n  If o Is v Then r = r + 100\n  Set b = Nothing\n  If a Is Nothing Then r = r + 1000\n  If b Is Nothing Then r = r + 10000\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 10111);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 10111);
+}
+
+#[test]
 fn jit_set_object_from_scalar_raises_object_required_without_vm_fallback() {
     let modules = [
         (
@@ -236,7 +254,7 @@ fn jit_project_member_dispatch_on_unset_object_matches_vm3_without_fallback() {
 }
 
 #[test]
-fn jit_project_typeof_declines_without_vm_fallback() {
+fn jit_project_typeof_unset_object_matches_vm3_without_fallback() {
     let modules = [
         (
             "Main",
@@ -250,7 +268,25 @@ fn jit_project_typeof_declines_without_vm_fallback() {
     assert_completed_with_i32("VM3", vm3, 3);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
-    assert_jit_declines(jit, "TypeOfIs", "runtime descriptors");
+    assert_completed_with_i32("JIT", jit, 3);
+}
+
+#[test]
+fn jit_project_typeof_live_object_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  If TypeOf w Is Widget Then\n    r = 7\n  Else\n    r = 3\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 7);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 7);
 }
 
 #[test]
@@ -272,7 +308,7 @@ fn jit_project_typeof_nothing_matches_vm3_without_descriptors() {
 }
 
 #[test]
-fn jit_project_typename_object_declines_without_vm_fallback() {
+fn jit_project_typename_unset_object_matches_vm3_without_fallback() {
     let modules = [
         (
             "Main",
@@ -286,7 +322,25 @@ fn jit_project_typename_object_declines_without_vm_fallback() {
     assert_completed_with_i32("VM3", vm3, 31);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
-    assert_jit_declines(jit, "TypeName", "VarType/TypeName/Is*");
+    assert_completed_with_i32("JIT", jit, 31);
+}
+
+#[test]
+fn jit_project_typename_live_object_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  If TypeName(w) = \"Widget\" Then\n    r = 37\n  Else\n    r = 31\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 37);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 37);
 }
 
 #[test]

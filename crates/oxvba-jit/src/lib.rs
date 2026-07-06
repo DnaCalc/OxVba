@@ -593,6 +593,7 @@ struct Imports {
     field_get_slot: ClifFuncId,
     field_set_slot: ClifFuncId,
     project_member_get_slot: ClifFuncId,
+    project_type_name_slot: ClifFuncId,
     new_record_slot: ClifFuncId,
     validate_assignment: ClifFuncId,
     err_clear: ClifFuncId,
@@ -630,6 +631,7 @@ struct Imports {
     neg_v_slot: ClifFuncId,
     compare_v_slot: ClifFuncId,
     compare_object_is_slot: ClifFuncId,
+    type_of_is_slot: ClifFuncId,
     logical_v_slot: ClifFuncId,
     not_v_slot: ClifFuncId,
     truthy_v_slot: ClifFuncId,
@@ -2629,9 +2631,37 @@ impl<'a> LowerFunc<'a> {
             let false_value = builder.ins().iconst(types::I32, 0);
             return self.emit_store_bool(builder, module, dst, false_value);
         }
-        Err(JitError::unsupported(format!(
-            "JIT project object/class instruction TypeOfIs is unsupported for {type_name}: project class/interface matching requires runtime descriptors"
-        )))
+        if !is_project_object_static_ty(&operand_static_ty(self.program, self.func, object)?) {
+            return Err(JitError::unsupported(format!(
+                "JIT project object/class instruction TypeOfIs is unsupported for {type_name}: currently supports only statically typed active-project class/interface receivers"
+            )));
+        }
+        let operand = self.lower_variant_operand(builder, object)?;
+        let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &[operand])?;
+        let ptr_ty = module.target_config().pointer_type();
+        let name_ptr = builder.ins().iconst(ptr_ty, type_name.as_ptr() as i64);
+        let name_len = i32::try_from(type_name.len())
+            .map_err(|_| JitError::unsupported("JIT TypeOf type name is too long"))?;
+        let name_len = builder.ins().iconst(types::I32, i64::from(name_len));
+        let (area, index) = place_addr(dst);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.type_of_is_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                operand_ptr,
+                name_ptr,
+                name_len,
+                area,
+                index,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
     }
 
     fn emit_variant_logical_slot_call(
@@ -2921,12 +2951,9 @@ impl<'a> LowerFunc<'a> {
                 "JIT project ComCallLate currently supports only PropertyGet/Method reads",
             ));
         }
-        if !matches!(
-            operand_static_ty(self.program, self.func, recv)?,
-            OxTy::Object(ObjClass::Class(_))
-        ) {
+        if !is_project_object_static_ty(&operand_static_ty(self.program, self.func, recv)?) {
             return Err(JitError::unsupported(
-                "JIT ComCallLate is unsupported for non-project-class receivers: currently supports only statically typed active-project class receivers",
+                "JIT ComCallLate is unsupported for non-project class/interface receivers: currently supports only statically typed active-project class/interface receivers",
             ));
         }
         let Some(dst) = dst else {
@@ -2962,6 +2989,28 @@ impl<'a> LowerFunc<'a> {
                 index,
             ],
         );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_project_type_name_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        object: &OxOperand,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let operand = self.lower_variant_operand(builder, object)?;
+        let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &[operand])?;
+        let (area, index) = place_addr(dst);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.project_type_name_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, operand_ptr, area, index]);
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
@@ -5310,6 +5359,13 @@ impl<'a> LowerFunc<'a> {
     ) -> Result<(), JitError> {
         let (native_id, native_impl, string_typed_alias) =
             resolve_vba_library_import(self.program, import)?;
+        if native_impl == NativeImplId::TypeName
+            && let Some(dst) = dst
+            && let [OxArg::ByVal(object)] = args
+            && is_project_object_static_ty(&operand_static_ty(self.program, self.func, object)?)
+        {
+            return self.emit_project_type_name_to_slot(builder, module, dst, object);
+        }
         self.validate_call_extern_library_shape(dst, args, native_impl)?;
         if let Some(dst) = dst {
             let dst_ty = place_ty(self.program, self.func, dst)?;
@@ -5373,6 +5429,13 @@ impl<'a> LowerFunc<'a> {
                 "M4-4 CallNative lowers only a narrow built-in subset; Declare/native external calls remain unsupported",
             ));
         };
+        if *native_impl == NativeImplId::TypeName
+            && let Some(dst) = dst
+            && let [OxCallArg::Operand(object)] = args
+            && is_project_object_static_ty(&operand_static_ty(self.program, self.func, object)?)
+        {
+            return self.emit_project_type_name_to_slot(builder, module, dst, object);
+        }
         self.validate_call_native_builtin_shape(dst, args, *native_impl)?;
         if let Some(dst) = dst {
             let dst_ty = place_ty(self.program, self.func, dst)?;
@@ -7556,6 +7619,10 @@ fn register_symbols(builder: &mut JITBuilder) {
         rt_jit_project_member_get_to_slot as *const u8,
     );
     builder.symbol(
+        "rt_jit_project_type_name_to_slot",
+        rt_jit_project_type_name_to_slot as *const u8,
+    );
+    builder.symbol(
         "rt_jit_new_record_to_slot",
         rt_jit_new_record_to_slot as *const u8,
     );
@@ -7674,6 +7741,10 @@ fn register_symbols(builder: &mut JITBuilder) {
     builder.symbol(
         "rt_jit_compare_object_is_to_bool_slot",
         rt_jit_compare_object_is_to_bool_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_type_of_is_to_bool_slot",
+        rt_jit_type_of_is_to_bool_slot as *const u8,
     );
     builder.symbol(
         "rt_jit_logical_v_to_slot",
@@ -7969,6 +8040,33 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
             "rt_jit_project_member_get_to_slot",
             Linkage::Import,
             &project_member_get_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut project_type_name_slot_sig = module.make_signature();
+    project_type_name_slot_sig
+        .params
+        .push(AbiParam::new(ptr_ty));
+    project_type_name_slot_sig
+        .params
+        .push(AbiParam::new(ptr_ty));
+    project_type_name_slot_sig
+        .params
+        .push(AbiParam::new(ptr_ty));
+    project_type_name_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    project_type_name_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    project_type_name_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let project_type_name_slot = module
+        .declare_function(
+            "rt_jit_project_type_name_to_slot",
+            Linkage::Import,
+            &project_type_name_slot_sig,
         )
         .map_err(module_err)?;
 
@@ -8678,6 +8776,23 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         )
         .map_err(module_err)?;
 
+    let mut type_of_is_slot_sig = module.make_signature();
+    type_of_is_slot_sig.params.push(AbiParam::new(ptr_ty));
+    type_of_is_slot_sig.params.push(AbiParam::new(ptr_ty));
+    type_of_is_slot_sig.params.push(AbiParam::new(ptr_ty));
+    type_of_is_slot_sig.params.push(AbiParam::new(ptr_ty));
+    type_of_is_slot_sig.params.push(AbiParam::new(types::I32));
+    type_of_is_slot_sig.params.push(AbiParam::new(types::I32));
+    type_of_is_slot_sig.params.push(AbiParam::new(types::I32));
+    type_of_is_slot_sig.returns.push(AbiParam::new(types::I32));
+    let type_of_is_slot = module
+        .declare_function(
+            "rt_jit_type_of_is_to_bool_slot",
+            Linkage::Import,
+            &type_of_is_slot_sig,
+        )
+        .map_err(module_err)?;
+
     let mut logical_v_slot_sig = module.make_signature();
     logical_v_slot_sig.params.push(AbiParam::new(ptr_ty));
     logical_v_slot_sig.params.push(AbiParam::new(ptr_ty));
@@ -8924,6 +9039,7 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         field_get_slot,
         field_set_slot,
         project_member_get_slot,
+        project_type_name_slot,
         new_record_slot,
         validate_assignment,
         err_clear,
@@ -8961,6 +9077,7 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         neg_v_slot,
         compare_v_slot,
         compare_object_is_slot,
+        type_of_is_slot,
         logical_v_slot,
         not_v_slot,
         truthy_v_slot,
@@ -9473,6 +9590,13 @@ fn is_jit_variant_carrier_ty(ty: &OxTy) -> bool {
     matches!(
         classify_jit_ty(ty),
         JitTypeSupport::VariantScalar | JitTypeSupport::ArrayCarrier
+    )
+}
+
+fn is_project_object_static_ty(ty: &OxTy) -> bool {
+    matches!(
+        ty,
+        OxTy::Object(ObjClass::Class(_)) | OxTy::Object(ObjClass::Iface(_))
     )
 }
 
@@ -11227,6 +11351,50 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
     })
 }
 
+unsafe extern "C" fn rt_jit_project_type_name_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    operand: *const JitVariantOperandDesc,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || operand.is_null() || dst_area < 0 || dst_index < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run_ref = unsafe { &*run };
+        // SAFETY: the compiled caller provides one live descriptor.
+        let operand = unsafe { *operand };
+        let Some(value) = variant_operand_value(run_ref, operand) else {
+            return ST_FAULT;
+        };
+        let name = if value.as_object_ref().is_none()
+            && matches!(
+                value.vtype(),
+                VarType::Object | VarType::Empty | VarType::Null
+            ) {
+            "Nothing".to_string()
+        } else {
+            let object = match variant_to_project_object_for_jit(state, &value) {
+                Ok(object) => object,
+                Err(status) => return status,
+            };
+            if !object.is_project_instance() {
+                return ST_FAULT;
+            }
+            object.class_descriptor().name.to_string()
+        };
+        // SAFETY: null was rejected and source values no longer borrow from `run`.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = Variant::from_string(name);
+        ST_OK
+    })
+}
+
 unsafe extern "C" fn rt_jit_new_record_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
@@ -12127,6 +12295,67 @@ unsafe extern "C" fn rt_jit_compare_object_is_to_bool_slot(
                 if lhs_id == rhs_id { 1 } else { 0 },
             )
         }
+    })
+}
+
+unsafe extern "C" fn rt_jit_type_of_is_to_bool_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    operand: *const JitVariantOperandDesc,
+    type_name_ptr: *const u8,
+    type_name_len: i32,
+    dst_area: u32,
+    dst_index: u32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || operand.is_null()
+            || type_name_ptr.is_null()
+            || type_name_len < 0
+        {
+            return ST_FAULT;
+        }
+        // SAFETY: pointer/length come from compiled constants for a live type name.
+        let type_name = match std::str::from_utf8(unsafe {
+            std::slice::from_raw_parts(type_name_ptr, type_name_len as usize)
+        }) {
+            Ok(name) => name,
+            Err(_) => return ST_FAULT,
+        };
+        // SAFETY: null was rejected and operand values are cloned before destination storage
+        // takes a mutable borrow.
+        let run_ref = unsafe { &*run };
+        // SAFETY: the compiled caller provides one live descriptor.
+        let operand = unsafe { *operand };
+        let Some(value) = variant_operand_value(run_ref, operand) else {
+            return ST_FAULT;
+        };
+        let matches = if value.as_object_ref().is_none()
+            && matches!(
+                value.vtype(),
+                VarType::Object | VarType::Empty | VarType::Null
+            ) {
+            false
+        } else {
+            let object = match variant_to_project_object_for_jit(state, &value) {
+                Ok(object) => object,
+                Err(status) => return status,
+            };
+            if !object.is_project_instance() {
+                return ST_FAULT;
+            }
+            let descriptor = object.class_descriptor();
+            let bare = type_name.rsplit('.').next().unwrap_or(type_name);
+            descriptor.name.eq_ignore_ascii_case(bare)
+                || descriptor
+                    .implements
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(bare))
+        };
+        // SAFETY: null was rejected and operand clones no longer borrow from `run`.
+        let run = unsafe { &mut *run };
+        unsafe { rt_jit_store_bool(run, dst_area, dst_index, if matches { 1 } else { 0 }) }
     })
 }
 
@@ -17264,7 +17493,7 @@ mod tests {
                 "TypeOfIs",
                 OxInst::TypeOfIs {
                     dst: flag,
-                    object: object(),
+                    object: other(),
                     type_name: "IWidget".to_string(),
                 },
                 "TypeOfIs",

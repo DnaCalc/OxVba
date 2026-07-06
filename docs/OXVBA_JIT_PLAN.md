@@ -990,10 +990,20 @@ An unset receiver on the same member-read path now also matches VM3 by seating V
 object-valued properties/default members, argument-bearing member dispatch, arrays/UDT fields, and
 `Class_Terminate` remain outside this slice.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.18` extends that active-project class slice to
+reference identity and typed introspection. The JIT now matches VM3 without fallback for compatible
+`Set` assignment across active-project class, `Object`, and `Variant` object slots; `Set ... =
+Nothing`; `Is` / `Is Nothing`; descriptor-backed `TypeOf ... Is ...`; and `TypeName` on statically
+typed active-project class/interface values. The promoted source-level differential rows live in
+`crates/oxvba-differential/tests/jit_project_objects.rs`. Untyped/COM receivers, `As New`,
+predeclared singletons, cross-project classes, events, `Class_Terminate`, default members,
+object-valued property breadth, and argument-bearing member dispatch remain outside this slice and
+stay split to the follow-up beads below.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
-   `TypeName`.
+   `TypeName`. Complete 2026-07-07.
 3. `bd-h4oh.10.19` - active-project method/property dispatch breadth, hidden `Me`, named/positional
    arguments, optional parameters, and `ParamArray`.
 4. `bd-h4oh.10.20` - default members and object-valued property compatibility.
