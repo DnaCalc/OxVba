@@ -1047,6 +1047,15 @@ Class/JIT follow-up bead order:
 7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains.
 8. `bd-h4oh.10.24` - referenced-project class descriptors and construction.
 9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT.
+10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events.
+11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite.
+12. `bd-h4oh.10.28` - VM3/JIT class execution parity sweep for the accepted project-class subset.
+13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff.
+
+Class-related COM export/server readiness is intentionally not part of this M4-8 chain. The
+deferred handoff bead is `bd-h4oh.15.1` under M4-13, where generated COM vtables and AOT/export
+packaging belong. M4-8 may use Linux descriptor/layout tests as evidence for internal class
+runtime facts, but it must not claim live COM export parity.
 
 ### M4-9 — COM late/early, Declare, pointer helpers (L)
 ComCall lowering (rich HRESULT→Err through the same shims vm3 uses); late IDispatch + early vtable transports (axis-5 counts must match); typed-arg writebacks (axis 6); Declare lane + `last_dll_error`; GetObject; pointer helpers.
