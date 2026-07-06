@@ -65,6 +65,40 @@ Axes:
 - imported method/default-member invoke
 - event/callback behavior
 
+## Explicit Status Matrices
+
+2026-07-06 note: these matrices make the two remaining `IP-08B` gates explicit, but they do not
+close them. Rows marked `open` must either be delivered or split to an explicit out-of-scope /
+separately owned residual before `IP-08B` can close.
+
+### Host Root / Global / Project Behavior
+
+| receiver / precedence surface | behavior row | exposure / syntax | status |
+|---|---|---|---|
+| host-injected root | named/default-member read, write, `Call`, statement, object-return, indexed, and setter lanes | `VB_PredeclaredId` and `VB_GlobalNamespace`; bounded parenthesized/no-paren neighbors | `proved-exec` |
+| host-returned native object | child-local named/default-member get, let, set, indexed, `Call`, and statement lanes after host-root object return | both host exposure modes | `proved-exec` |
+| active-project same-name `Application` | active project outranks host root for the current imported scalar, named-argument, positional, property, setter, exception, and object-property subsets | bounded imported host/COM coexistence subset | `proved-exec` |
+| plain referenced-project same-name `Application` | plain project does not steal the proved host-root / host-returned imported subsets by reference order | bounded imported host/COM coexistence subset | `proved-exec` |
+| invalid host-looking root | non-exposed host-injected module diagnostic | read/write/`Call` bounded forms | `proved-diagnostic` |
+| host runtime identity | per-runtime root state isolation and snapped host-backed event source routing | event ingress and sibling-handle no-op rows | `proved-exec` |
+| broader Office-style root/global/project matrix | all intended assignment, invoke, precedence, and lifecycle rows beyond the bounded synthetic host and imported-subset evidence | scoped hosting target | `open` |
+
+### Host-Returned COM-Backed Object Behavior
+
+| host-returned COM surface | behavior row | evidence boundary | status |
+|---|---|---|---|
+| host root returns COM object | object handoff into shared object/value model | bounded `CreateObject("OxVba.TestDispatch")` and portable projection rows | `proved-exec` |
+| imported scalar/default/member reads | scalar read-assignment, named-argument, positional, method, property-get, and default-member reads | bounded imported COM subset | `proved-exec` |
+| imported calls/statements | paren/no-paren `Call`, bare statement-context, positional/default-member/named-argument forms | bounded imported COM subset | `proved-exec` |
+| imported setters | property put/get witness, property putref, indexed put/putref positional and named forms | bounded imported COM subset | `proved-exec` |
+| imported object-result rows | `VT_DISPATCH` / `VT_UNKNOWN`, `SelfDispatch` / `SelfUnknown`, `ReturnSelfDispatch` / `ReturnSelfUnknown` assignment-intent rows | bounded imported COM subset | `proved-exec` |
+| imported exception invoke | `RaiseException` `Call` and statement forms | controlled fault payload | `proved-exec` |
+| portable host-injected object chain | `Application.Workbooks.Count` and `Application.Workbooks` default-member execution through retained `Excel.Workbooks` | portable projection on Linux; no native COM claim | `proved-exec` |
+| live COM ByRef method writeback | `Increment(ByRef value As Long)` typed and late paths | TestEventServer M12 | `proved-exec` |
+| live COM ParamArray method | `SumParamArray(params object[] nums)` typed and metadata-known late paths | TestEventServer M13 | `proved-exec` |
+| live COM ByRef event writeback | V11 event argument writeback before native `IDispatch::Invoke` returns | blocked on synchronous callback transport | `open-blocked` |
+| broader host-returned COM member/property/default-member breadth | rows outside the bounded imported/portable/TestEventServer subsets above | scoped hosting target | `open` |
+
 ## Immediate frontier
 
 The next bounded executable neighbors after `IP-08A` are:
