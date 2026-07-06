@@ -160,6 +160,24 @@ fn jit_project_typeof_declines_without_vm_fallback() {
 }
 
 #[test]
+fn jit_project_typename_object_declines_without_vm_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  If TypeName(w) = \"Nothing\" Then\n    r = 31\n  Else\n    r = 37\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 31);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_jit_declines(jit, "TypeName", "VarType/TypeName/Is*");
+}
+
+#[test]
 fn jit_predeclared_default_instance_declines_without_vm_fallback() {
     let app = project(vec![
         proc_module(
