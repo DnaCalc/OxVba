@@ -1386,6 +1386,18 @@ constant expressions:
   string-to-scalar declared carriers and full `LongPtr` platform semantics, remain future FE-8.5
   work.
 
+2026-07-06 closure reconciliation for `bd-aprs.9.9`: the concrete residuals above have since been
+split or closed by follow-up slices. Procedure-local constants and module-qualified local-shadowing
+are covered in `oxvba-bind`; conditional compilation is covered through symbol, bind, host, and
+load-time profile tests; `LongPtr` constant/default/storage semantics now lower by target width;
+enum-member constants fold across same-module, cross-module, and referenced-project export
+surfaces; referenced-project optional defaults publish folded method and property accessor defaults;
+and mixed string/scalar relational constants fold for the supported Boolean/integer/floating/
+Currency/deterministic-Date carriers. Locale-sensitive Access database collation remains an
+explicit `Option Compare Database` diagnostic, ambiguous locale-sensitive date text remains
+rejected, and Variant-origin comparison exceptions are runtime/conformance breadth rather than a
+compile-time-options declaration/constant blocker.
+
 Follow-up route-audit hardening fixes a hidden gate weakness: the selected production route audit
 now asserts `terminal_gate_passed()` directly, so any audited fixture left as a fallback/static
 residual fails the test instead of relying only on representative row assertions. This does not

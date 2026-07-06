@@ -1730,6 +1730,14 @@ Candidate bead units:
   preserving `Option Private Module` and non-exported-module boundaries. A 2026-07-06 diagnostic
   continuation now rejects covered invalid explicit Enum initializers during symbol/bind setup
   instead of publishing absent enum-member values and relying on unresolved use sites.
+  Closure reconciliation: `bd-aprs.9.9` is no longer open on the concrete compile-time option,
+  declaration, and constant residuals listed above. Later slices covered folded referenced-project
+  optional defaults for methods and property accessors, mixed string/scalar relational constants,
+  exact integer relational comparisons, compile-time `Like` charlists, target-width `LongPtr`
+  constants/defaults/storage metadata, procedure-local constant references, and load-time
+  conditional target selection. Locale-sensitive Access database collation and ambiguous
+  locale-sensitive date text remain explicit diagnostics/out-of-scope choices, not hidden
+  FE-8.5.e blockers.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding
