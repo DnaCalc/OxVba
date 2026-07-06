@@ -5,6 +5,9 @@ Canonical source: `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`.
 
 | Diagnostic ID | Phase | Status | Description |
 |---|---|---|---|
+| `PMR-E-EVENT-MODULE-KIND` | compile-time | implemented | Event declarations are valid only in object modules |
+| `PMR-E-EVENT-OPTIONAL-ARGUMENT` | compile-time | implemented | Event declarations cannot use Optional arguments |
+| `PMR-E-EVENT-PARAMARRAY-ARGUMENT` | compile-time | implemented | Event declarations cannot use ParamArray arguments |
 | `PMR-E-IMPLEMENTS-INTERFACE-NOT-FOUND` | compile-time | implemented | Implemented interface must resolve to a known project/type symbol |
 | `PMR-E-IMPLEMENTS-MEMBER-MISSING` | compile-time | implemented | Class must provide required prefixed member coverage for each implemented interface |
 | `PMR-E-IMPLEMENTS-MODULE-KIND` | compile-time | implemented | Implements directives are valid only in class modules |

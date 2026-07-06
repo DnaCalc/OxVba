@@ -188,6 +188,7 @@ impl ScanCtx<'_> {
             SyntaxKind::EventDecl => {
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
+                    self.validate_event_declaration(node, name)?;
                     self.validate_parameter_declaration(node, name)?;
                     let sig = self
                         .signatures
@@ -868,6 +869,41 @@ impl ScanCtx<'_> {
         self.validate_optional_parameter_declaration(proc_node, procedure)?;
         self.validate_param_array_declaration(proc_node, procedure)?;
         self.validate_property_set_reference_parameter(proc_node, procedure)
+    }
+
+    fn validate_event_declaration(
+        &self,
+        event_node: SyntaxNode<'_>,
+        event: &str,
+    ) -> Result<(), SymbolModelError> {
+        if self.module_kind == ModuleKind::Procedural {
+            return Err(SymbolModelError::EventNotValidInStandardModule {
+                name: event.to_string(),
+            });
+        }
+        let Some(param_list) = event_node.param_list() else {
+            return Ok(());
+        };
+        for (index, param) in param_list.params().iter().enumerate() {
+            let parameter = parameter_name_token(*param)
+                .map(|t| normalize_identifier_token(t.text).to_string())
+                .unwrap_or_else(|| format!("arg{}", index + 1));
+            if parameter_has_modifier(*param, SyntaxKind::KwOptional) {
+                return Err(SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure: event.to_string(),
+                    parameter,
+                    reason: "Event arguments cannot be Optional",
+                });
+            }
+            if parameter_has_modifier(*param, SyntaxKind::KwParamArray) {
+                return Err(SymbolModelError::InvalidParamArrayDeclaration {
+                    procedure: event.to_string(),
+                    parameter,
+                    reason: "Event arguments cannot be ParamArray",
+                });
+            }
+        }
+        Ok(())
     }
 
     fn validate_property_writer_value_parameter_present(
@@ -2226,6 +2262,62 @@ mod tests {
             err.to_diagnostic().code.as_str(),
             "SYM-E-WITHEVENTS-ONLY-VALID-IN-OBJECT-MODULE"
         );
+    }
+
+    #[test]
+    fn scanner_rejects_event_in_standard_modules() {
+        let err = scan_members_for_kind(ModuleKind::Procedural, "Public Event Changed()\n")
+            .expect_err("standard module Event should be rejected");
+        assert_eq!(
+            err,
+            SymbolModelError::EventNotValidInStandardModule {
+                name: "Changed".to_string()
+            }
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE"
+        );
+    }
+
+    #[test]
+    fn scanner_rejects_invalid_event_parameter_modifiers() {
+        for (source, parameter, reason, diagnostic) in [
+            (
+                "Public Event Changed(Optional ByVal value As Long)\n",
+                "value",
+                "Event arguments cannot be Optional",
+                "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION",
+            ),
+            (
+                "Public Event Changed(ParamArray values() As Variant)\n",
+                "values",
+                "Event arguments cannot be ParamArray",
+                "SYM-E-INVALID-PARAMARRAY-DECLARATION",
+            ),
+        ] {
+            let err = scan_members_for_kind(ModuleKind::Class, source)
+                .expect_err("invalid event argument modifier should be rejected");
+            let matches_error = match &err {
+                SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure,
+                    parameter: actual_parameter,
+                    reason: actual_reason,
+                }
+                | SymbolModelError::InvalidParamArrayDeclaration {
+                    procedure,
+                    parameter: actual_parameter,
+                    reason: actual_reason,
+                } => {
+                    procedure == "Changed"
+                        && actual_parameter == parameter
+                        && *actual_reason == reason
+                }
+                _ => false,
+            };
+            assert!(matches_error, "unexpected error: {err:?}");
+            assert_eq!(err.to_diagnostic().code.as_str(), diagnostic);
+        }
     }
 
     #[test]

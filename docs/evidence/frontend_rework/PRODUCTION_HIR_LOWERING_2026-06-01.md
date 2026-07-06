@@ -1597,7 +1597,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - Follow-up Optional declaration-order validation now rejects signatures that publish a required
   parameter after an `Optional` parameter. The scanner reports
   `SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION` before building ordinary procedure,
-  `Property Get`, property index-argument, event, or `Declare` descriptors, including the
+  `Property Get`, property index-argument, or `Declare` descriptors, including the
   `Optional ..., ParamArray ...` case where the `ParamArray` slot is still not explicitly
   Optional. `Property Let`/`Set` keep their VBA-specific required final value/reference parameter
   after optional index arguments, reject missing writer slots with
@@ -1612,10 +1612,13 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   names/types or final value-vs-return type do not match; `Property Get`/`Set` and `Property
   Let`/`Set` index count/type mismatches use the same diagnostic while still allowing different
   index parameter names and allowing the final `Property Set` reference to differ from the Get
-  return type if it is object-compatible. This
-  follows the same Microsoft Learn Function/Property Let rules, the Property Set statement's
+  return type if it is object-compatible. Event declarations now reject standard-module placement
+  with `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` and reject `Optional` or `ParamArray` arguments
+  through the existing parameter-shape diagnostics before event metadata is published. This
+  follows the same Microsoft Learn Function/Event/Property Let rules, the Property Set statement's
   object-reference contract, and the inconsistent property definitions diagnostic
-  (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-let-statement`,
+  (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/event-statement`,
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-let-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-set-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/definitions-of-property-procedures-for-the-same-property-are-inconsistent`),
   and remains a declaration-shape diagnostic rather than broader call-site

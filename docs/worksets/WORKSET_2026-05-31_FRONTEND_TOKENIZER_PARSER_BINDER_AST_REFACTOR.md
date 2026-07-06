@@ -1746,7 +1746,7 @@ Candidate bead units:
     underlying `Long` coercion and object `Nothing`/zero defaults remain accepted,
   required parameters after an `Optional` parameter now reject through scanner-owned
   `SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION` before ordinary procedure, `Property Get`,
-  property index-argument, event, or `Declare` metadata is published, while `Property Let`/`Set`
+  property index-argument, or `Declare` metadata is published, while `Property Let`/`Set`
   still allow their required final value/reference parameter after optional index arguments, reject
   missing writer slots through `SYM-E-MISSING-PROPERTY-WRITER-PARAMETER`, and reject that final
   parameter if it is explicitly marked `Optional` or `ParamArray`, and
@@ -1758,6 +1758,10 @@ Candidate bead units:
   `Property Let`/`Set` index/value/reference pairings reject through scanner-owned
   property-accessor diagnostics, with Set-side index pairing currently enforcing count/type rather
   than source parameter-name equality,
+  `Event` declarations now reject standard-module placement through
+  `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` and reject `Optional` or `ParamArray` event arguments
+  before event metadata is published, matching the Microsoft Learn Event statement rule
+  (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/event-statement`),
   context-aware project class member lookup now rejects external receiver access to `Private`
     class members while preserving same-class `Private` calls and same-project `Friend` calls,
     with Excel/VBA compile oracle rows for `w.Secret()` rejection and internal/private plus

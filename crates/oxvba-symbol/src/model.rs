@@ -249,6 +249,8 @@ pub enum SymbolModelError {
     InvalidConstValue { name: String },
     #[error("Friend is only valid in object modules: `{name}`")]
     FriendNotValidInStandardModule { name: String },
+    #[error("Event is only valid in object modules: `{name}`")]
+    EventNotValidInStandardModule { name: String },
     #[error("Implements is only valid in object modules: `{name}`")]
     ImplementsNotValidInStandardModule { name: String },
     #[error("WithEvents is only valid in object modules: `{name}`")]
@@ -416,6 +418,12 @@ impl SymbolModelError {
                 format!("Friend is only valid in object modules: {name}"),
             )
             .with_help("Use Public or Private in a standard module, or move the Friend member to a class/object module."),
+            SymbolModelError::EventNotValidInStandardModule { name } => Diagnostic::error(
+                "SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE",
+                DiagnosticPhase::Symbol,
+                format!("Event is only valid in object modules: {name}"),
+            )
+            .with_help("Move the Event declaration to a class/object module."),
             SymbolModelError::ImplementsNotValidInStandardModule { name } => Diagnostic::error(
                 "SYM-E-IMPLEMENTS-ONLY-VALID-IN-OBJECT-MODULE",
                 DiagnosticPhase::Symbol,

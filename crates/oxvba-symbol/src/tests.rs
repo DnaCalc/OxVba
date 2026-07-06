@@ -42,6 +42,15 @@ fn module(name: &str, source: &str) -> ModuleUnit {
     }
 }
 
+fn class_module(name: &str, source: &str) -> ModuleUnit {
+    ModuleUnit {
+        module_name: name.into(),
+        module_kind: ModuleKind::Class,
+        attributes: ModuleAttributes::named(name),
+        source: source.into(),
+    }
+}
+
 fn manifest(name: &str, modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
     manifest_with_target(name, modules, ConditionalCompilationTarget::default())
 }
@@ -1612,6 +1621,68 @@ fn exported_member_attribute_marks_project_default_member() {
 }
 
 #[test]
+fn event_declaration_rejects_standard_module() {
+    let src = "Public Event Changed()\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("standard module Event declaration should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::EventNotValidInStandardModule { name } if name == "Changed"
+        ),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE"
+    );
+}
+
+#[test]
+fn event_declaration_rejects_optional_and_paramarray_parameters() {
+    for (src, parameter, reason, diagnostic) in [
+        (
+            "Public Event Changed(Optional ByVal value As Long)\r\n",
+            "value",
+            "Event arguments cannot be Optional",
+            "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION",
+        ),
+        (
+            "Public Event Changed(ParamArray values() As Variant)\r\n",
+            "values",
+            "Event arguments cannot be ParamArray",
+            "SYM-E-INVALID-PARAMARRAY-DECLARATION",
+        ),
+    ] {
+        let m = manifest("Proj", vec![class_module("Source", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("invalid Event parameter declaration should reject"),
+            Err(err) => err,
+        };
+        let matches_error = match &err {
+            SymbolModelError::InvalidOptionalParameterDeclaration {
+                procedure,
+                parameter: actual_parameter,
+                reason: actual_reason,
+            }
+            | SymbolModelError::InvalidParamArrayDeclaration {
+                procedure,
+                parameter: actual_parameter,
+                reason: actual_reason,
+            } => {
+                procedure == "Changed" && actual_parameter == parameter && *actual_reason == reason
+            }
+            _ => false,
+        };
+        assert!(matches_error, "unexpected error: {err:?}");
+        assert_eq!(err.to_diagnostic().code.as_str(), diagnostic);
+    }
+}
+
+#[test]
 fn optional_parameter_default_is_parsed() {
     let src = "Sub S(Optional ByVal n As Long = 5)\r\nEnd Sub\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);
@@ -1930,12 +2001,6 @@ fn scanner_rejects_required_parameters_after_optional() {
             "Declare PtrSafe Sub Host Lib \"h\" (Optional ByVal first As Long, ByVal second As Long)\r\n",
             "Host",
             "second",
-        ),
-        (
-            ModuleKind::Class,
-            "Event Changed(Optional ByVal oldValue As Long, ByVal newValue As Long)\r\n",
-            "Changed",
-            "newValue",
         ),
         (
             ModuleKind::Procedural,

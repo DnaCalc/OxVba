@@ -3158,6 +3158,41 @@ fn raise_event_outside_class_module_is_bind_error() {
 }
 
 #[test]
+fn event_declaration_outside_class_module_is_bind_error() {
+    let err = bind_error("Public Event Tick()\n");
+    assert!(
+        err.contains("EventNotValidInStandardModule")
+            || err.contains("SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn event_declaration_rejects_optional_and_paramarray_parameters() {
+    for (source, expected) in [
+        (
+            "Public Event Tick(Optional ByVal n As Long)\n",
+            "Event arguments cannot be Optional",
+        ),
+        (
+            "Public Event Tick(ParamArray xs() As Variant)\n",
+            "Event arguments cannot be ParamArray",
+        ),
+    ] {
+        let manifest = manifest_modules(&[("Source", ModuleKind::Class, source)]);
+        let err = format!(
+            "{:?}",
+            bind_program(&manifest, &NullTypeLibs)
+                .expect_err("invalid Event parameter should fail binding")
+        );
+        assert!(
+            err.contains(expected),
+            "expected `{expected}` in bind error, got {err}"
+        );
+    }
+}
+
+#[test]
 fn raise_event_undeclared_event_is_bind_error() {
     let err = format!(
         "{:?}",
