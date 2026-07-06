@@ -859,6 +859,43 @@ fn scalar_longlong_const_comparison_preserves_integer_precision() {
 }
 
 #[test]
+fn scalar_mixed_string_scalar_relational_const_expression_executes() {
+    let snap = run(
+        "Const NumericFlag As Boolean = (\"7\" = 7) And (7 < \"8\") And (\"6\" <= 6)\n\
+         Const LongLongFlag As Boolean = (\"9007199254740993\" = 9007199254740993^)\n\
+         Const BooleanFlag As Boolean = (\"True\" < False) And (True < \"False\")\n\
+         Const FloatFlag As Boolean = (\"1.5\" = 1.5#) And (1.5! <= \"1.5\")\n\
+         Const CurrencyFlag As Boolean = (\"1.25\" = 1.25@) And (1.25@ >= \"1.20\")\n\
+         Const DateFlag As Boolean = (\"2026-02-28\" = #2026-02-28#) And (#2026-02-28# < \"2026-03-01\")\n\
+         Sub Main()\n\
+         Dim numericValue As Boolean\n\
+         Dim longLongValue As Boolean\n\
+         Dim booleanValue As Boolean\n\
+         Dim floatValue As Boolean\n\
+         Dim currencyValue As Boolean\n\
+         Dim dateValue As Boolean\n\
+         numericValue = NumericFlag\n\
+         longLongValue = LongLongFlag\n\
+         booleanValue = BooleanFlag\n\
+         floatValue = FloatFlag\n\
+         currencyValue = CurrencyFlag\n\
+         dateValue = DateFlag\n\
+         End Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_bool(true),
+            Variant::from_bool(true),
+            Variant::from_bool(true),
+            Variant::from_bool(true),
+            Variant::from_bool(true),
+            Variant::from_bool(true),
+        ]
+    );
+}
+
+#[test]
 fn scalar_string_typed_const_values_coerce_to_declared_carriers() {
     let snap = run(
         "Const CLong As Long = \"7\"\nConst CBool As Boolean = \"False\"\nConst CSingle As Single = \"1.5\"\nConst CDouble As Double = \"2.5\"\nConst CAmount As Currency = \"1.25\"\nConst CStamp As Date = \"2026-02-28\"\nSub Main()\nDim l As Long\nDim b As Boolean\nDim s As Single\nDim d As Double\nDim amount As Currency\nDim stamp As Date\nl = CLong\nb = CBool\ns = CSingle\nd = CDouble\namount = CAmount\nstamp = CStamp\nEnd Sub",
@@ -1854,6 +1891,14 @@ fn optional_boolean_like_charlist_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Sub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = (\"f\" Like \"[a-z]\") And (\"9\" Like \"[0-9a-f]\") And (\"]\" Like \"[]x]\") And (\"F\" Like \"[!a-z]\"))\ntarget = flag\nEnd Sub",
     );
+    assert_eq!(snap, vec![Variant::from_bool(true)]);
+}
+
+#[test]
+fn optional_boolean_mixed_string_scalar_defaults_are_bound_for_omitted_args() {
+    let snap = run("Sub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\n\
+         Sub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = (\"7\" = 7) And (7 < \"8\") And (\"True\" < False) And (\"1.5\" = 1.5#) And (\"1.25\" = 1.25@) And (\"2026-02-28\" = #2026-02-28#))\n\
+         target = flag\nEnd Sub");
     assert_eq!(snap, vec![Variant::from_bool(true)]);
 }
 

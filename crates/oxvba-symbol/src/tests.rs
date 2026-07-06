@@ -737,6 +737,34 @@ fn longlong_const_comparisons_preserve_integer_precision() {
 }
 
 #[test]
+fn mixed_string_scalar_relational_consts_use_effective_type_coercion() {
+    let m = manifest(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Const NumericFlag As Boolean = (\"7\" = 7) And (7 < \"8\") And (\"6\" <= 6)\n\
+             Public Const LongLongFlag As Boolean = (\"9007199254740993\" = 9007199254740993^)\n\
+             Public Const BooleanFlag As Boolean = (\"True\" < False) And (True < \"False\")\n\
+             Public Const FloatFlag As Boolean = (\"1.5\" = 1.5#) And (1.5! <= \"1.5\")\n\
+             Public Const CurrencyFlag As Boolean = (\"1.25\" = 1.25@) And (1.25@ >= \"1.20\")\n\
+             Public Const DateFlag As Boolean = (\"2026-02-28\" = #2026-02-28#) And (#2026-02-28# < \"2026-03-01\")\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let scope = env.module_scope("Mod1").unwrap();
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("NumericFlag"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("LongLongFlag"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("BooleanFlag"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("FloatFlag"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("CurrencyFlag"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("DateFlag"), Some(CoreConst::Bool(true)));
+}
+
+#[test]
 fn longptr_const_values_follow_target_width() {
     let src = "Public Const CMax As LongPtr = 2147483647\n\
                Public Const CTextMax As LongPtr = \"2147483647\"\n";
@@ -2576,6 +2604,19 @@ fn optional_object_defaults_accept_nothing_and_zero() {
 #[test]
 fn optional_boolean_like_default_folds_charlists_and_ranges() {
     let src = "Sub S(Optional ByVal flag As Boolean = (\"f\" Like \"[a-z]\") And (\"9\" Like \"[0-9a-f]\") And (\"]\" Like \"[]x]\") And (\"F\" Like \"[!a-z]\"))\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("proc resolves");
+    let proc = binding.symbol.expect("proc symbol");
+    assert_eq!(env.optional_default(proc, 0), Some(&CoreConst::Bool(true)));
+}
+
+#[test]
+fn optional_boolean_mixed_string_scalar_relational_defaults_fold() {
+    let src = "Sub S(Optional ByVal flag As Boolean = (\"7\" = 7) And (7 < \"8\") And (\"True\" < False) And (\"1.5\" = 1.5#) And (\"1.25\" = 1.25@) And (\"2026-02-28\" = #2026-02-28#))\r\nEnd Sub\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);
     let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
     let scope = env.module_scope("Mod1").expect("module scope");

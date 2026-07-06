@@ -688,10 +688,7 @@ pub(crate) fn coerce_const_to_declared_type(
             n.is_finite().then_some(CoreConst::F64(n.to_bits()))
         }
         VarTypeRef::Builtin(BuiltinType::Currency) => {
-            let n = const_to_f64(&value)?;
-            let scaled = (n * 10_000.0).round_ties_even();
-            (scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64)
-                .then_some(CoreConst::Currency(scaled as i64))
+            const_to_currency_scaled(&value).map(CoreConst::Currency)
         }
         VarTypeRef::Builtin(BuiltinType::Date) => const_to_date_bits(&value).map(CoreConst::Date),
         VarTypeRef::Object(_) => match value {
@@ -1389,11 +1386,28 @@ fn const_to_date_bits(c: &CoreConst) -> Option<u64> {
     }
 }
 
+fn const_to_currency_scaled(c: &CoreConst) -> Option<i64> {
+    let n = const_to_f64(c)?;
+    let scaled = (n * 10_000.0).round_ties_even();
+    (scaled.is_finite() && scaled >= i64::MIN as f64 && scaled <= i64::MAX as f64)
+        .then_some(scaled as i64)
+}
+
 fn const_to_i64(c: &CoreConst) -> Option<i64> {
     match c {
         CoreConst::I16(n) => Some(i64::from(*n)),
         CoreConst::I32(n) => Some(i64::from(*n)),
         CoreConst::I64(n) => Some(*n),
+        CoreConst::Str(s) => {
+            if let Ok(n) = s.trim().parse::<i64>() {
+                return Some(n);
+            }
+            let n = const_to_f64(c)?;
+            if !n.is_finite() || n.abs() >= 9.223_372_036_854_775e18 {
+                return None;
+            }
+            Some(n.round_ties_even() as i64)
+        }
         _ => {
             let n = const_to_f64(c)?;
             if !n.is_finite() || n.abs() >= 9.223_372_036_854_775e18 {
@@ -1436,6 +1450,120 @@ fn const_to_string(c: &CoreConst) -> Option<String> {
     })
 }
 
+fn bool_as_relational_i64(value: bool) -> i64 {
+    if value { -1 } else { 0 }
+}
+
+fn fold_relational_i64(op: CoreBinOp, lhs: i64, rhs: i64) -> Option<CoreConst> {
+    use CoreBinOp::*;
+    Some(CoreConst::Bool(match op {
+        Eq => lhs == rhs,
+        Ne => lhs != rhs,
+        Lt => lhs < rhs,
+        Le => lhs <= rhs,
+        Gt => lhs > rhs,
+        Ge => lhs >= rhs,
+        _ => return None,
+    }))
+}
+
+fn fold_relational_f64(op: CoreBinOp, lhs: f64, rhs: f64) -> Option<CoreConst> {
+    use CoreBinOp::*;
+    Some(CoreConst::Bool(match op {
+        Eq => lhs == rhs,
+        Ne => lhs != rhs,
+        Lt => lhs < rhs,
+        Le => lhs <= rhs,
+        Gt => lhs > rhs,
+        Ge => lhs >= rhs,
+        _ => return None,
+    }))
+}
+
+fn ordered_string_scalar_pair<T: Copy>(
+    string_value: T,
+    scalar_value: T,
+    string_is_left: bool,
+) -> (T, T) {
+    if string_is_left {
+        (string_value, scalar_value)
+    } else {
+        (scalar_value, string_value)
+    }
+}
+
+fn fold_string_scalar_relational(
+    op: CoreBinOp,
+    string: &str,
+    scalar: &CoreConst,
+    string_is_left: bool,
+) -> Option<CoreConst> {
+    let string_const = CoreConst::Str(string.to_string());
+    match scalar {
+        CoreConst::Bool(value) => {
+            let string_value = bool_as_relational_i64(const_to_bool(&string_const)?);
+            let scalar_value = bool_as_relational_i64(*value);
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, scalar_value, string_is_left);
+            fold_relational_i64(op, lhs, rhs)
+        }
+        CoreConst::I16(value) => {
+            let string_value = const_to_i64(&string_const)?;
+            let scalar_value = i64::from(*value);
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, scalar_value, string_is_left);
+            fold_relational_i64(op, lhs, rhs)
+        }
+        CoreConst::I32(value) => {
+            let string_value = const_to_i64(&string_const)?;
+            let scalar_value = i64::from(*value);
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, scalar_value, string_is_left);
+            fold_relational_i64(op, lhs, rhs)
+        }
+        CoreConst::I64(value) => {
+            let string_value = const_to_i64(&string_const)?;
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, *value, string_is_left);
+            fold_relational_i64(op, lhs, rhs)
+        }
+        CoreConst::Currency(value) => {
+            let string_value = const_to_currency_scaled(&string_const)?;
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, *value, string_is_left);
+            fold_relational_i64(op, lhs, rhs)
+        }
+        CoreConst::F32(bits) => {
+            let string_value = const_to_f64(&string_const)?;
+            let scalar_value = f64::from(f32::from_bits(*bits));
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, scalar_value, string_is_left);
+            fold_relational_f64(op, lhs, rhs)
+        }
+        CoreConst::F64(bits) => {
+            let string_value = const_to_f64(&string_const)?;
+            let scalar_value = f64::from_bits(*bits);
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, scalar_value, string_is_left);
+            fold_relational_f64(op, lhs, rhs)
+        }
+        CoreConst::Date(bits) => {
+            let string_value = f64::from_bits(const_to_date_bits(&string_const)?);
+            let scalar_value = f64::from_bits(*bits);
+            let (lhs, rhs) = ordered_string_scalar_pair(string_value, scalar_value, string_is_left);
+            fold_relational_f64(op, lhs, rhs)
+        }
+        _ => None,
+    }
+}
+
+fn fold_mixed_string_scalar_relational(
+    op: CoreBinOp,
+    lhs: &CoreConst,
+    rhs: &CoreConst,
+) -> Option<CoreConst> {
+    match (lhs, rhs) {
+        (CoreConst::Str(string), scalar) => fold_string_scalar_relational(op, string, scalar, true),
+        (scalar, CoreConst::Str(string)) => {
+            fold_string_scalar_relational(op, string, scalar, false)
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn fold_const_binary(
     op: CoreBinOp,
     lhs: &CoreConst,
@@ -1454,6 +1582,9 @@ pub(crate) fn fold_const_binary(
         && let Some(b) = fold_string_relational(op, ls, rs, mode)
     {
         return Some(CoreConst::Bool(b));
+    }
+    if let Some(value) = fold_mixed_string_scalar_relational(op, lhs, rhs) {
+        return Some(value);
     }
     let (l, r) = (const_num(lhs)?, const_num(rhs)?);
     let both_int = matches!((&l, &r), (ConstNum::Int(_), ConstNum::Int(_)));

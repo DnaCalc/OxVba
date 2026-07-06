@@ -753,7 +753,8 @@ Required newly explicit delivery beads:
   type-declaration characters such as `!` and `@` for the covered carrier subset, plus typed and
   untyped `String` constants over source-prior string/scalar constants and `&` concatenation, plus
   `Option Compare Text` folding for covered string equality/inequality and equality-based `Like`
-  Boolean constants, plus
+  Boolean constants, plus bounded mixed `String`/scalar relational folding for covered
+  Boolean/integer/floating/Currency/Date constants using the MS-VBAL effective value type rule, plus
   language-service workspace semantic snapshots that honor active-project manifest conditional
   constants for diagnostics/symbols through the shared compiler preprocessor, plus month-name Date
   constants with commas inside `#...#` literals without breaking same-statement Const declarator
@@ -900,8 +901,10 @@ Required newly explicit delivery beads:
   and module constants now also evaluate into explicit string carriers, and Boolean constant
   expressions over literals/module constants plus `Not`/`And`/`Or` evaluate into explicit Boolean
   carriers. Bounded numeric comparison defaults and Boolean equality/inequality defaults now also
-  evaluate into explicit Boolean carriers; broader typed coercion, string/locale-sensitive
-  comparison defaults, `Like`/`Is`, and expression expansion remain open. The
+  evaluate into explicit Boolean carriers, and bounded mixed `String`/scalar relational defaults
+  now fold through the same effective non-string scalar type used by VBA relational Let-coercion;
+  broader typed coercion, locale-sensitive/Variant-origin comparison defaults,
+  locale/database-sensitive `Like`, `Is`, and expression expansion remain open. The
   same continuation proves the `ParamArray` flag on both surfaces.
   Follow-up corpus coverage adds
   `RouteChecked` corpus rows for all seed host/project/imported-COM/predeclared-document and Excel
@@ -1816,7 +1819,9 @@ Candidate bead units:
     friend acceptance,
   optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
   optional `Boolean` defaults over bounded string `Like`, including charlists/ranges/literal
-  `]` charlists,
+  `]` charlists, and optional `Boolean` defaults over bounded mixed `String`/scalar relational
+  expressions using the non-string operand's effective Boolean/integer/floating/Currency/Date
+  scalar type,
   active-project optional defaults that fold public referenced-project constants through the final
   export-surface-backed constant pass,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,

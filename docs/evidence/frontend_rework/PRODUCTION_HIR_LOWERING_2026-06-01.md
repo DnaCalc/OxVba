@@ -1313,6 +1313,16 @@ constant expressions:
   compile-time evaluator now shares the runtime charlist rules for `?`, `*`, `#`, `[chars]`,
   `[!chars]`, `a-z` ranges, and literal `]` first in a charlist through resolver optional-default
   parsing, HIR/default route selection, route audit, and VM execution.
+- A bounded mixed `String`/scalar relational follow-up uses the MS-VBAL relational-operator
+  effective value type rule
+  (`https://learn.microsoft.com/en-us/openspecs/microsoft_general_purpose_programming_languages/ms-vbal/f8acd631-55c1-4199-bc1e-022aaab6d9c8`)
+  for compile-time constants and optional defaults when one operand is `String` and the other
+  operand is a covered Boolean, integer, floating, Currency, or deterministic Date scalar. This
+  covers folds such as `"7" = 7`, `7 < "8"`, `"9007199254740993" = 9007199254740993^`,
+  `"True" < False`, `"1.5" = 1.5#`, `"1.25" = 1.25@`, and
+  `"2026-02-28" = #2026-02-28#` through symbol metadata and package omitted-argument execution,
+  while leaving Variant-origin string/numeric comparison exceptions and locale-sensitive coercions
+  outside the slice.
 - A companion `String` typed-constant pass reuses the same bounded string evaluator for declared
   module constants. `Const Prefix As String = "re"` followed by
   `Const CText As String = Prefix & "ady"` now substitutes as `LoadConstString "ready"` through
@@ -1590,6 +1600,13 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `"f" Like "[a-z]"` and `"]" Like "[]x]"` through HIR/default metadata, route audit, and VM
   omitted-argument execution; locale/database collation and unsupported pattern edge diagnostics
   remain outside this slice.
+- Follow-up mixed `String`/scalar relational-default work folds bounded Boolean, integer, floating,
+  Currency, and deterministic Date comparisons by coercing the string operand to the non-string
+  effective value type named by the MS-VBAL relational-operator table. `Optional ... As Boolean =
+  ("7" = 7) And ("True" < False) And ("1.5" = 1.5#) And ("1.25" = 1.25@) And ("2026-02-28" =
+  #2026-02-28#)` now binds to `ExplicitBool(true)` through resolver/default metadata and
+  package-VM omitted-argument execution. Variant-origin string/numeric comparison exceptions and
+  locale-sensitive coercions remain outside this slice.
 - Follow-up i64 optional-default work adds an explicit `OptionalDefaultValue::ExplicitI64` carrier
   and binds covered `LongLong`/`LongPtr` source-prior integer constant defaults through resolver,
   HIR/default metadata, direct optional-entry bytecode, and VM omitted-argument execution for
@@ -1765,7 +1782,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   exact i64 optional-default carrier subset, plus the covered `Single` f32 metadata carrier and
   string-to-declared-scalar default coercions, nor exact Excel modal text for invalid default
   diagnostics beyond the covered reject-vs-accept behavior. Collation-sensitive string comparisons,
-  locale/database-sensitive `Like`, `Is`, and coercive comparison defaults remain FE-8.5.f
+  locale/database-sensitive `Like`, `Is`, Variant-origin string/numeric comparison exceptions, and
+  coercions outside the covered mixed `String`/scalar effective-type subset remain FE-8.5.f
   residuals.
 
 ## Checks
