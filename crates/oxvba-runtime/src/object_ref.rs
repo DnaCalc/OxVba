@@ -1334,6 +1334,44 @@ mod tests {
     }
 
     #[test]
+    fn object_ref_raw_iunknown_is_first_field_vtable_shape() {
+        let object = ObjectRef::from_project_instance(
+            501,
+            17,
+            3,
+            false,
+            &super::COMPAT_OBJECT_CLASS_DESCRIPTOR,
+        );
+        let raw_unknown = object.raw_iunknown();
+        assert_eq!(
+            core::mem::size_of::<RawRuntimeIUnknown>(),
+            core::mem::size_of::<*const RawRuntimeIUnknownVtbl>()
+        );
+        assert_eq!(
+            core::mem::align_of::<RawRuntimeIUnknown>(),
+            core::mem::align_of::<*const RawRuntimeIUnknownVtbl>()
+        );
+
+        unsafe {
+            let owner = raw_unknown.cast::<super::CompatObjectBase>();
+            assert_eq!(
+                core::ptr::addr_of_mut!((*owner).unknown),
+                raw_unknown,
+                "ObjectRef must expose a pointer to the first field of the compat object box"
+            );
+            let first_word = raw_unknown.cast::<*const RawRuntimeIUnknownVtbl>().read();
+            assert!(
+                core::ptr::eq(first_word, &super::COMPAT_OBJECT_VTBL),
+                "the first machine word of the exposed IUnknown must be the runtime vtable"
+            );
+            assert!(
+                core::ptr::eq((*raw_unknown).vtbl, &super::COMPAT_OBJECT_VTBL),
+                "the typed RawRuntimeIUnknown view must agree with the raw first-word proof"
+            );
+        }
+    }
+
+    #[test]
     fn compat_object_exposes_descriptor_backed_iunknown_interface() {
         let object = ObjectRef::from_compat_identity(9);
         let class_descriptor = object.class_descriptor();
