@@ -1010,13 +1010,22 @@ rows are in `crates/oxvba-differential/tests/jit_project_objects.rs`. Default-me
 broader object-valued property/default-member compatibility, `As New`, predeclared singletons,
 cross-project classes, events, and `Class_Terminate` remain split to the follow-up beads.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.20` extends active-project member dispatch to
+default members and object-valued properties. The JIT now admits default-member `ComCallLate`
+selectors by resolving descriptor-backed `VB_UserMemId = 0` metadata, preserves invoke-kind
+selection for default-member value and write routes, and mirrors VM3's Variant array-index fallback
+when a `Variant` slot actually holds a project object. VM3/JIT differential rows cover Object and
+Variant-held project receivers for default-member `Property Get`/`Property Let` plus object-valued
+default-member `Property Set`. `As New`, predeclared singletons, cross-project classes, events, and
+`Class_Terminate` remain split to the follow-up beads.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
    `TypeName`. Complete 2026-07-07.
 3. `bd-h4oh.10.19` - active-project method/property dispatch breadth, hidden `Me`, named/positional
    arguments, optional parameters, and `ParamArray`. Complete 2026-07-07.
-4. `bd-h4oh.10.20` - default members and object-valued property compatibility.
+4. `bd-h4oh.10.20` - default members and object-valued property compatibility. Complete 2026-07-07.
 5. `bd-h4oh.10.21` - lazy active-project `As New` locals and fields.
 6. `bd-h4oh.10.22` - active-project `VB_PredeclaredId` singleton construction and reset.
 7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains.

@@ -23,8 +23,8 @@ use oxvba_com::TypeLibMemberInvokeKind;
 use oxvba_hal::HostServices;
 use oxvba_oxir::{
     ArithOp, ArrayShape, BlockId, BoundWhich, CmpOp, ErrField, ErrorHandler, FuncId, LogicalOp,
-    ObjClass, OxArg, OxCallArg, OxCoerceTarget, OxConst, OxFunc, OxInst, OxLocal, OxNativeCallee,
-    OxOperand, OxPlace, OxProgram, OxTerminator, OxTy,
+    ObjClass, OxArg, OxCallArg, OxClass, OxClassMethod, OxCoerceTarget, OxConst, OxFunc, OxInst,
+    OxLocal, OxNativeCallee, OxOperand, OxPlace, OxProgram, OxTerminator, OxTy,
 };
 use oxvba_rt_abi::{
     ExecState, LoadedProgram, ProcInvokeBridge, RT_ARITH_ADD, RT_ARITH_DIV, RT_ARITH_INT_DIV,
@@ -3029,12 +3029,9 @@ impl<'a> LowerFunc<'a> {
         invoke_kind: TypeLibMemberInvokeKind,
         args: &[OxCallArg],
     ) -> Result<(), JitError> {
-        if default_member {
-            return Err(JitError::unsupported(
-                "JIT ComCallLate default-member dispatch remains VM3-only",
-            ));
-        }
-        if !is_project_object_static_ty(&operand_static_ty(self.program, self.func, recv)?) {
+        if !default_member
+            && !is_project_object_static_ty(&operand_static_ty(self.program, self.func, recv)?)
+        {
             return Err(JitError::unsupported(
                 "JIT ComCallLate is unsupported for non-project class/interface receivers: currently supports only statically typed active-project class/interface receivers",
             ));
@@ -3051,8 +3048,9 @@ impl<'a> LowerFunc<'a> {
             .map_err(|_| JitError::unsupported("JIT project member argument count is too large"))?;
         let argc = builder.ins().iconst(types::I32, i64::from(argc));
         let ptr_ty = module.target_config().pointer_type();
-        let name_ptr = builder.ins().iconst(ptr_ty, name.as_ptr() as i64);
-        let name_len = i32::try_from(name.len())
+        let member_name = if default_member { "" } else { name };
+        let name_ptr = builder.ins().iconst(ptr_ty, member_name.as_ptr() as i64);
+        let name_len = i32::try_from(member_name.len())
             .map_err(|_| JitError::unsupported("JIT project member name is too long"))?;
         let name_len = builder.ins().iconst(types::I32, i64::from(name_len));
         let invoke_kind = builder
@@ -11530,6 +11528,31 @@ fn project_member_kind_from_raw(raw: i32) -> Option<ProjectMemberKind> {
     }
 }
 
+fn project_default_member_for_jit<'a>(
+    class: &'a OxClass,
+    kind: ProjectMemberKind,
+    args_empty: bool,
+) -> Option<&'a OxClassMethod> {
+    let exact = class
+        .methods
+        .iter()
+        .find(|method| method.is_default_member && method.kind == kind);
+    exact.or_else(|| {
+        if kind == ProjectMemberKind::PropertyGet && args_empty {
+            class
+                .methods
+                .iter()
+                .find(|method| method.is_default_member && method.kind == ProjectMemberKind::Method)
+        } else if kind == ProjectMemberKind::Method {
+            class.methods.iter().find(|method| {
+                method.is_default_member && method.kind == ProjectMemberKind::PropertyGet
+            })
+        } else {
+            None
+        }
+    })
+}
+
 fn invoke_project_member_with_me(
     run: &mut JitRun,
     state: *mut RawExecState,
@@ -11626,6 +11649,64 @@ fn invoke_project_member_with_me(
     Ok(return_value.unwrap_or_else(Variant::empty))
 }
 
+fn invoke_project_default_member_values(
+    run: &mut JitRun,
+    state: *mut RawExecState,
+    recv_value: Variant,
+    kind: ProjectMemberKind,
+    values: &[Variant],
+) -> Result<Variant, i32> {
+    let object = variant_to_project_object_for_jit(state, &recv_value)?;
+    if !object.is_project_instance() || object.bundle_id() != 0 {
+        return Err(rt_raise_runtime_error_number(state, 438));
+    }
+    if run.program.is_null() {
+        return Err(ST_FAULT);
+    }
+    let class_idx = object.route_key() as usize;
+    // SAFETY: installed from the owning CompiledImage for this run.
+    let program = unsafe { &*run.program };
+    let class = program
+        .classes
+        .get(class_idx)
+        .ok_or_else(|| rt_raise_runtime_error_number(state, 438))?;
+    let member = project_default_member_for_jit(class, kind, values.is_empty())
+        .ok_or_else(|| rt_raise_runtime_error_number(state, 438))?;
+    let args: Vec<JitCallArgDesc> = values
+        .iter()
+        .enumerate()
+        .map(|(index, _)| JitCallArgDesc {
+            kind: JIT_CALL_ARG_BYVAL_VARIANT,
+            aux: JIT_VARIANT_OPERAND_PLACE,
+            value: 0,
+            area: AREA_TEMP as i32,
+            index: index as i32,
+        })
+        .collect();
+    let names = vec![
+        JitCallArgNameDesc {
+            ptr: 0,
+            len: -1,
+            _pad: 0,
+        };
+        args.len()
+    ];
+    let frame = JitFrame {
+        locals: Vec::new(),
+        temps: values.to_vec(),
+        aliases: Vec::new(),
+        gosub_stack: Vec::new(),
+        saved_err: RtSavedErrState::default(),
+    };
+    run.frames.push(frame);
+    let result =
+        invoke_project_member_with_me(run, state, member.proc.0, recv_value, &args, &names);
+    run.frames.pop();
+    prune_for_each_from_depth(run, run.frames.len());
+    prune_param_array_aliases_from_depth(run, run.frames.len());
+    result
+}
+
 unsafe extern "C" fn rt_jit_project_member_get_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
@@ -11705,25 +11786,29 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
         let Some(class) = program.classes.get(class_idx) else {
             return rt_raise_runtime_error_number(state, 438);
         };
-        let exact = class
-            .methods
-            .iter()
-            .find(|method| method.name.eq_ignore_ascii_case(name) && method.kind == kind);
-        let member = exact.or_else(|| {
-            if kind == ProjectMemberKind::PropertyGet && args.is_empty() {
-                class.methods.iter().find(|method| {
-                    method.name.eq_ignore_ascii_case(name)
-                        && method.kind == ProjectMemberKind::Method
-                })
-            } else if kind == ProjectMemberKind::Method {
-                class.methods.iter().find(|method| {
-                    method.name.eq_ignore_ascii_case(name)
-                        && method.kind == ProjectMemberKind::PropertyGet
-                })
-            } else {
-                None
-            }
-        });
+        let member = if name.is_empty() {
+            project_default_member_for_jit(class, kind, args.is_empty())
+        } else {
+            let exact = class
+                .methods
+                .iter()
+                .find(|method| method.name.eq_ignore_ascii_case(name) && method.kind == kind);
+            exact.or_else(|| {
+                if kind == ProjectMemberKind::PropertyGet && args.is_empty() {
+                    class.methods.iter().find(|method| {
+                        method.name.eq_ignore_ascii_case(name)
+                            && method.kind == ProjectMemberKind::Method
+                    })
+                } else if kind == ProjectMemberKind::Method {
+                    class.methods.iter().find(|method| {
+                        method.name.eq_ignore_ascii_case(name)
+                            && method.kind == ProjectMemberKind::PropertyGet
+                    })
+                } else {
+                    None
+                }
+            })
+        };
         let Some(member) = member else {
             return rt_raise_runtime_error_number(state, 438);
         };
@@ -12245,6 +12330,33 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
         let Some(array) = slot_ref(run_ref, array_area, array_index) else {
             return ST_FAULT;
         };
+        if array.as_safearray().is_none() {
+            if array.vtype() == VarType::ArrayVariant {
+                return rt_raise_array_has_no_bounds(state);
+            }
+            if array.as_object_ref().is_some() {
+                let recv_value = array.clone();
+                let args: Vec<Variant> = indices.iter().copied().map(Variant::from_i32).collect();
+                // SAFETY: null was rejected and source clones no longer borrow from `run`.
+                let run = unsafe { &mut *run };
+                let value = match invoke_project_default_member_values(
+                    run,
+                    state,
+                    recv_value,
+                    ProjectMemberKind::PropertyGet,
+                    &args,
+                ) {
+                    Ok(value) => value,
+                    Err(status) => return status,
+                };
+                let Some(slot) = slot_mut(run, dst_area, dst_index) else {
+                    return ST_FAULT;
+                };
+                *slot = value;
+                return ST_OK;
+            }
+            return rt_raise_expected_array(state);
+        }
         let flat = match jit_flat_index(state, array, indices) {
             Ok(flat) => flat,
             Err(status) => return status,
@@ -12296,6 +12408,35 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
         let Some(array) = slot_ref(run_ref, array_area, array_index) else {
             return ST_FAULT;
         };
+        if array.as_safearray().is_none() {
+            if array.vtype() == VarType::ArrayVariant {
+                return rt_raise_array_has_no_bounds(state);
+            }
+            if array.as_object_ref().is_some() {
+                let recv_value = array.clone();
+                let mut args: Vec<Variant> =
+                    indices.iter().copied().map(Variant::from_i32).collect();
+                args.push(value);
+                let invoke_kind = if args.last().and_then(Variant::as_object_ref).is_some() {
+                    ProjectMemberKind::PropertySet
+                } else {
+                    ProjectMemberKind::PropertyLet
+                };
+                // SAFETY: null was rejected and source clones no longer borrow from `run`.
+                let run = unsafe { &mut *run };
+                return match invoke_project_default_member_values(
+                    run,
+                    state,
+                    recv_value,
+                    invoke_kind,
+                    &args,
+                ) {
+                    Ok(_) => ST_OK,
+                    Err(status) => status,
+                };
+            }
+            return rt_raise_expected_array(state);
+        }
         let flat = match jit_flat_index(state, array, indices) {
             Ok(flat) => flat,
             Err(status) => return status,

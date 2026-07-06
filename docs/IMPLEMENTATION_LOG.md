@@ -2194,3 +2194,26 @@
   - `br lint bd-h4oh.10.19 bd-h4oh.10.20 --json`
   - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
   - `cargo test -p oxvba-jit -- --format terse`
+
+# 2026-07-07 - JIT class default members and object-valued properties
+
+- Closed the implementation scope for `bd-h4oh.10.20`, the active-project default-member and
+  object-valued property slice after broader member dispatch.
+- Removed the default-member decline for active-project `ComCallLate` receivers and made the
+  runtime member resolver use descriptor-backed `is_default_member` metadata for
+  `VB_UserMemId = 0` value and write routes.
+- Mirrored VM3's general `ArrayGet`/`ArraySet` fallback in the JIT runtime helpers when a
+  `Variant` slot holds a project object: integer subscripts become ByVal Variant call arguments,
+  reads dispatch the default `Property Get`, and writes dispatch `Property Set` for object RHS
+  values or `Property Let` otherwise.
+- Added VM3-vs-JIT differential rows for Object and Variant-held project receivers using
+  default-member `Property Get`/`Property Let`, plus object-valued default-member `Property Set`,
+  all without VM fallback.
+- Fresh-eyes review kept `As New`, predeclared singletons, cross-project classes, events, and
+  `Class_Terminate` split to the remaining class/JIT follow-up beads.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `br lint bd-h4oh.10.20 bd-h4oh.10.21 --json`
+  - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
+  - `cargo test -p oxvba-jit -- --format terse`

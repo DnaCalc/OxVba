@@ -8,20 +8,21 @@ Rule: The end of any cycle means continue immediately into the next cycle; do no
 Recovery rule: an accidental interim status reply is non-blocking and must be treated as a logging mistake, not a stop condition. Resume execution immediately.
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Current user instruction (2026-07-07): take stock from the IP-08B detour and resume class-module
-support in the JIT. `bd-h4oh.10.19`
-(`M4-8 JIT active-project member dispatch breadth`) is closed; continue with `bd-h4oh.10.20`
-after the closure commit.
+support in the JIT. `bd-h4oh.10.20`
+(`M4-8 JIT class default members and object-valued properties`) is closed; continue with
+`bd-h4oh.10.21` after the closure commit.
 `bd-aprs.8.8` / IP-08B COM-host work is deferred from scheduler/ready output, not closed; its
 remaining state is documented in `CURRENT_BLOCKERS.md` and
 `docs/worksets/WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md`.
 GPT-5.5 startup note: keep resume context bounded. Read the authoritative status surfaces below, then open only the active workset/bead/evidence files needed for the next outcome.
 
 Active ladder/work bead:
-- `bd-h4oh.10.20` under `bd-h4oh.10` / M4-8 objects, classes, lifecycle, after closing
-  `bd-h4oh.10.19`.
-Completed gate: active-project member dispatch breadth runs under `Executor::Jit` with no VM
-fallback and matches VM3 for method calls, property Get/Let/Set, hidden `Me`, named/positional
-argument mapping, ByRef aliasing, optional arguments, and supported ParamArray.
+- `bd-h4oh.10.21` under `bd-h4oh.10` / M4-8 objects, classes, lifecycle, after closing
+  `bd-h4oh.10.20`.
+Completed gate: active-project default members and object-valued properties run under
+`Executor::Jit` with no VM fallback and match VM3 for default-member Get/Let/Set, Object receivers,
+Variant-held project objects through the array-index fallback path, and object-valued Property Set
+routes.
 Follow-up beads staged under `bd-h4oh.10`: `bd-h4oh.10.18` through `bd-h4oh.10.25`, chained in
 execution order after `bd-h4oh.10.17`.
 
@@ -39,5 +40,5 @@ Authoritative status surfaces:
 
 Resume protocol:
 1. Read `AGENTS.md` and this file.
-2. Inspect `bd-h4oh.10.20`, `bd-h4oh.10`, and `docs/OXVBA_JIT_PLAN.md` M4-8.
+2. Inspect `bd-h4oh.10.21`, `bd-h4oh.10`, and `docs/OXVBA_JIT_PLAN.md` M4-8.
 3. Continue with the scoped class/JIT slice; do not resume IP-08B unless explicitly redirected.

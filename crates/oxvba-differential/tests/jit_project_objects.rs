@@ -391,6 +391,104 @@ fn jit_project_property_set_dispatch_matches_vm3_without_fallback() {
 }
 
 #[test]
+fn jit_project_object_default_member_get_let_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim o As Object\n  Set o = New Widget\n  o(i := 3) = 10\n  r = o(i := 2)\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Private m As Long\nPublic Property Get Value(ByVal i As Long) As Long\n  Value = m\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Let Value(ByVal i As Long, ByVal v As Long)\n  m = i\nEnd Property\nAttribute Value.VB_UserMemId = 0\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 3);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 3);
+}
+
+#[test]
+fn jit_project_variant_default_member_get_let_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim v As Variant\n  Set v = New Widget\n  v(4) = 10\n  r = v(1)\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Private m As Long\nPublic Property Get Value(ByVal i As Long) As Long\n  Value = m\nEnd Property\nAttribute Value.VB_UserMemId = 0\nPublic Property Let Value(ByVal i As Long, ByVal v As Long)\n  m = i\nEnd Property\nAttribute Value.VB_UserMemId = 0\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 4);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 4);
+}
+
+#[test]
+fn jit_project_variant_default_member_property_set_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim v As Variant\n  Dim t As Thing\n  Dim got As Thing\n  Set v = New Box\n  Set t = New Thing\n  Set v(3) = t\n  Set got = v(2)\n  r = got.GetVal()\nEnd Sub\n",
+        ),
+        (
+            "Box",
+            Class,
+            "Private stored As Thing\nPublic Property Get Item(ByVal i As Long) As Thing\n  Set Item = stored\nEnd Property\nAttribute Item.VB_UserMemId = 0\nPublic Property Set Item(ByVal i As Long, ByVal v As Thing)\n  Set stored = v\nEnd Property\nAttribute Item.VB_UserMemId = 0\n",
+        ),
+        (
+            "Thing",
+            Class,
+            "Public Function GetVal() As Long\n  GetVal = 31\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 31);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 31);
+}
+
+#[test]
+fn jit_project_object_default_member_property_set_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim b As Object\n  Dim t As Thing\n  Dim got As Thing\n  Set b = New Box\n  Set t = New Thing\n  Set b(3) = t\n  Set got = b(2)\n  r = got.GetVal()\nEnd Sub\n",
+        ),
+        (
+            "Box",
+            Class,
+            "Private stored As Thing\nPublic Property Get Item(ByVal i As Long) As Thing\n  Set Item = stored\nEnd Property\nAttribute Item.VB_UserMemId = 0\nPublic Property Set Item(ByVal i As Long, ByVal v As Thing)\n  Set stored = v\nEnd Property\nAttribute Item.VB_UserMemId = 0\n",
+        ),
+        (
+            "Thing",
+            Class,
+            "Public Function GetVal() As Long\n  GetVal = 29\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 29);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 29);
+}
+
+#[test]
 fn jit_project_typeof_unset_object_matches_vm3_without_fallback() {
     let modules = [
         (
