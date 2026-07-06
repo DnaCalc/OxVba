@@ -265,7 +265,8 @@ impl IdAllocator {
             class_of.insert(fold_identifier(&display), class_id);
             // A `VB_PredeclaredId = True` class has a global singleton reachable by
             // its name (the `ThisWorkbook`/`Sheet1` document-module shape).
-            if predeclared_class(manifest, module.module_name) {
+            let predeclared = predeclared_class(manifest, module.module_name);
+            if predeclared {
                 predeclared_class_of.insert(fold_identifier(&display), class_id);
             }
             let folded = fold_identifier(&display);
@@ -326,6 +327,7 @@ impl IdAllocator {
             }
             classes.push(CoreClass {
                 name: display,
+                predeclared,
                 initialize,
                 terminate,
                 methods,

@@ -346,6 +346,7 @@ fn app_with_thing_program() -> CoreProgram {
         procs: vec![main, getval], // Main = ProcId 0, GetVal = ProcId 1
         classes: vec![CoreClass {
             name: "Thing".into(),
+            predeclared: false,
             initialize: None,
             terminate: None,
             methods: vec![CoreClassMethod {
@@ -512,6 +513,7 @@ fn app_echo_program() -> CoreProgram {
         procs: vec![main, echo], // Main = ProcId 0, Echo = ProcId 1
         classes: vec![CoreClass {
             name: "Thing".into(),
+            predeclared: false,
             initialize: None,
             terminate: None,
             methods: vec![CoreClassMethod {
@@ -584,6 +586,7 @@ fn lib_widget_program() -> CoreProgram {
         procs: vec![val],
         classes: vec![CoreClass {
             name: "Widget".into(),
+            predeclared: false,
             initialize: None,
             terminate: None,
             methods: vec![CoreClassMethod {

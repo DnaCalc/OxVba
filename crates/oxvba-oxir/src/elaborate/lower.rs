@@ -192,6 +192,7 @@ fn proc_return_ty(
 fn lower_class(c: &CoreClass) -> OxClass {
     OxClass {
         name: c.name.clone(),
+        predeclared: c.predeclared,
         initialize: c.initialize.map(|p| FuncId(p.0)),
         terminate: c.terminate.map(|p| FuncId(p.0)),
         methods: c
@@ -3218,6 +3219,7 @@ mod tests {
             procs: vec![sub("Main", locals, body)],
             classes: vec![CoreClass {
                 name: "Widget".into(),
+                predeclared: false,
                 initialize: None,
                 terminate: None,
                 methods: vec![CoreClassMethod {

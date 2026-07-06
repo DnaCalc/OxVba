@@ -5119,6 +5119,7 @@ mod tests {
             unit_name: "T".into(),
             classes: vec![CoreClass {
                 name: "Widget".into(),
+                predeclared: false,
                 initialize: None,
                 terminate: None,
                 methods: vec![CoreClassMethod {

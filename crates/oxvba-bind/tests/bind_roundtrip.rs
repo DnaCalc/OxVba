@@ -2157,6 +2157,40 @@ fn exposed_class_methods_carry_surface_dispatch_metadata() {
 }
 
 #[test]
+fn predeclared_class_descriptor_carries_singleton_flag() {
+    let main = "Sub Main()\nEnd Sub\n";
+    let counter = "Public Sub Bump()\nEnd Sub\n";
+    let widget = "Public Sub Touch()\nEnd Sub\n";
+    let mut manifest = multi_manifest(&[
+        ("Main", ModuleKind::Procedural, main),
+        ("Counter", ModuleKind::Class, counter),
+        ("Widget", ModuleKind::Class, widget),
+    ]);
+    manifest.modules[1].attributes.vb_predeclared_id = true;
+    let program = bind_program(&manifest, &NullTypeLibs).expect("bind");
+    let counter = program
+        .classes
+        .iter()
+        .find(|class| class.name == "Counter")
+        .expect("Counter class");
+    assert!(
+        counter.predeclared,
+        "VB_PredeclaredId class should carry descriptor metadata: {:?}",
+        program.classes
+    );
+    let widget = program
+        .classes
+        .iter()
+        .find(|class| class.name == "Widget")
+        .expect("Widget class");
+    assert!(
+        !widget.predeclared,
+        "ordinary classes should not be marked predeclared: {:?}",
+        program.classes
+    );
+}
+
+#[test]
 fn project_default_member_set_roundtrip() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Dim t As Thing\n    Dim got As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b(3) = t\n    Set got = b(2)\n    r = got.GetVal()\nEnd Sub\n";
     let box_cls = "Private stored As Thing\n\n\

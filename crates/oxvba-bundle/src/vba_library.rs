@@ -121,6 +121,7 @@ fn build() -> Bundle {
 
     let classes = vec![ClassDescriptor {
         name: "Collection".to_string(),
+        predeclared: false,
         initialize: None,
         terminate: None,
         methods,

@@ -109,6 +109,10 @@ pub struct OxClassAsNewField {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OxClass {
     pub name: String,
+    /// True for a `VB_PredeclaredId = True` class whose name denotes a singleton
+    /// default instance.
+    #[serde(default)]
+    pub predeclared: bool,
     pub initialize: Option<FuncId>,
     pub terminate: Option<FuncId>,
     pub methods: Vec<OxClassMethod>,

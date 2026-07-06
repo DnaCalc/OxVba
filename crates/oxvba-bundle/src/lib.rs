@@ -273,6 +273,10 @@ pub struct ClassMethod {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClassDescriptor {
     pub name: String,
+    /// True for a `VB_PredeclaredId = True` class whose name denotes a singleton
+    /// default instance.
+    #[serde(default)]
+    pub predeclared: bool,
     /// `Class_Initialize` procedure index (run on `New`), if any.
     pub initialize: Option<usize>,
     /// `Class_Terminate` procedure index (run on final release), if any.

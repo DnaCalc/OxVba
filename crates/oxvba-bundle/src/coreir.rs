@@ -166,6 +166,9 @@ pub struct CoreClassAsNewField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreClass {
     pub name: String,
+    /// True for a `VB_PredeclaredId = True` class whose name denotes a singleton
+    /// default instance.
+    pub predeclared: bool,
     pub initialize: Option<ProcId>,
     pub terminate: Option<ProcId>,
     pub methods: Vec<CoreClassMethod>,
