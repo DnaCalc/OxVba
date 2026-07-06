@@ -36,15 +36,17 @@ pub use com_record::{ComRecord, ComRecordCloneFn, ComRecordDestroyFn};
 pub use decimal::Decimal96;
 pub use live_counters::{HandleBalance, LiveHandleCounts, live_handle_counts};
 pub use object_ref::{
-    ObjectRef, RUNTIME_GUID_ICONNECTIONPOINT, RUNTIME_GUID_ICONNECTIONPOINTCONTAINER,
-    RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN, RUNTIME_ICONNECTIONPOINT_INTERFACE_IDENTITY,
+    ObjectRef, RUNTIME_CLASS_LIFECYCLE_NONE, RUNTIME_GUID_ICONNECTIONPOINT,
+    RUNTIME_GUID_ICONNECTIONPOINTCONTAINER, RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN,
+    RUNTIME_ICONNECTIONPOINT_INTERFACE_IDENTITY,
     RUNTIME_ICONNECTIONPOINTCONTAINER_INTERFACE_IDENTITY, RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
     RUNTIME_IUNKNOWN_INTERFACE_IDENTITY, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl,
-    RuntimeApartmentModel, RuntimeClassDescriptor, RuntimeDispatchCacheKey, RuntimeDispatchPlan,
-    RuntimeDispatchPlanCache, RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
-    RuntimeInterfaceIdentity, RuntimeInterfaceKind, RuntimeInterfaceProjection,
-    RuntimeLifetimePolicy, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeObjectIdentity,
-    RuntimeParamDescriptor, RuntimeValueType,
+    RuntimeApartmentModel, RuntimeClassActivationDescriptor, RuntimeClassAsNewFieldDescriptor,
+    RuntimeClassDescriptor, RuntimeClassFieldDescriptor, RuntimeClassLifecycleDescriptor,
+    RuntimeDispatchCacheKey, RuntimeDispatchPlan, RuntimeDispatchPlanCache, RuntimeGuid,
+    RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeInterfaceIdentity, RuntimeInterfaceKind,
+    RuntimeInterfaceProjection, RuntimeLifetimePolicy, RuntimeMemberDescriptor,
+    RuntimeMemberInvokeKind, RuntimeObjectIdentity, RuntimeParamDescriptor, RuntimeValueType,
 };
 pub use object_ref::{
     finish_pending_termination, has_pending_terminations, reset_pending_terminations,

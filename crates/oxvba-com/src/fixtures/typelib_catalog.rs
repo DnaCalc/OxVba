@@ -137,11 +137,13 @@ fn normalize_ci_token(input: &str) -> String {
 }
 
 fn normalize_importlib_token(input: &str) -> String {
-    std::path::Path::new(input)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(normalize_ci_token)
-        .unwrap_or_else(|| normalize_ci_token(input))
+    let trimmed = input.trim().trim_end_matches(['/', '\\']);
+    let file_name = trimmed
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(trimmed);
+    normalize_ci_token(file_name)
 }
 
 fn normalize_guid_like(input: &str) -> String {

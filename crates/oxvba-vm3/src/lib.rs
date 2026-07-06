@@ -68,8 +68,10 @@ use oxvba_rt_abi::{
     variant_changed,
 };
 use oxvba_runtime::object_ref::{
-    ObjectRef, RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
-    RuntimeClassDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
+    ObjectRef, RUNTIME_CLASS_LIFECYCLE_NONE, RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+    RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassActivationDescriptor,
+    RuntimeClassAsNewFieldDescriptor, RuntimeClassDescriptor, RuntimeClassFieldDescriptor,
+    RuntimeClassLifecycleDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
     RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
@@ -93,6 +95,11 @@ const VBA_COLLECTION_ROUTE_KEY: i32 = i32::MIN;
 /// so `New Collection` needs no per-instance descriptor leak.
 static VBA_COLLECTION_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescriptor {
     name: "Collection",
+    predeclared: false,
+    lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+    fields: &[],
+    as_new_fields: &[],
+    implements: &[],
     interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
 };
 
@@ -116,6 +123,10 @@ fn runtime_member_invoke_kind(kind: ProjectMemberKind) -> RuntimeMemberInvokeKin
     }
 }
 
+fn leak_runtime_str(value: &str) -> &'static str {
+    Box::leak(value.to_string().into_boxed_str())
+}
+
 fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescriptor> {
     func.locals
         .iter()
@@ -124,7 +135,7 @@ fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescripto
         .map(|local| {
             let param = local.param.as_ref();
             RuntimeParamDescriptor {
-                name: Box::leak(local.name.clone().into_boxed_str()),
+                name: leak_runtime_str(&local.name),
                 value_type: runtime_value_type(&local.ty),
                 by_ref: param.map(|p| p.by_ref).unwrap_or(false),
                 optional: false,
@@ -155,7 +166,58 @@ fn runtime_value_type(ty: &OxTy) -> RuntimeValueType {
         OxTy::Str | OxTy::FixedStr(_) => RuntimeValueType::String,
         OxTy::Object(_) => RuntimeValueType::Object,
         OxTy::Record(_) => RuntimeValueType::Record,
-        OxTy::Variant | OxTy::Array(_, _) | OxTy::ProcRef => RuntimeValueType::Variant,
+        OxTy::Array(_, _) => RuntimeValueType::Array,
+        OxTy::Variant | OxTy::ProcRef => RuntimeValueType::Variant,
+    }
+}
+
+fn runtime_array_element_type(element: &ArrayElementType) -> RuntimeValueType {
+    match element {
+        ArrayElementType::Variant => RuntimeValueType::Variant,
+        ArrayElementType::Integer => RuntimeValueType::Integer,
+        ArrayElementType::Long => RuntimeValueType::Long,
+        ArrayElementType::LongLong => RuntimeValueType::LongLong,
+        ArrayElementType::Byte => RuntimeValueType::Byte,
+        ArrayElementType::Single => RuntimeValueType::Single,
+        ArrayElementType::Double => RuntimeValueType::Double,
+        ArrayElementType::Currency => RuntimeValueType::Currency,
+        ArrayElementType::Date => RuntimeValueType::Date,
+        ArrayElementType::String | ArrayElementType::FixedString(_) => RuntimeValueType::String,
+        ArrayElementType::Boolean => RuntimeValueType::Boolean,
+        ArrayElementType::Record(_) => RuntimeValueType::Record,
+        ArrayElementType::FixedArray { .. } => RuntimeValueType::Array,
+    }
+}
+
+fn runtime_class_field_descriptor(field: &oxvba_oxir::OxClassField) -> RuntimeClassFieldDescriptor {
+    RuntimeClassFieldDescriptor {
+        name: leak_runtime_str(&field.name),
+        token: field.token,
+        value_type: runtime_value_type(&field.ty),
+        array_element_type: field.array_element.as_ref().map(runtime_array_element_type),
+    }
+}
+
+fn runtime_class_activation_descriptor(binding: &OxAsNew) -> RuntimeClassActivationDescriptor {
+    match binding {
+        OxAsNew::ProjectClass { class } => RuntimeClassActivationDescriptor::ProjectClass {
+            class_index: class.0,
+        },
+        OxAsNew::ExternClass { import } => RuntimeClassActivationDescriptor::ExternClass {
+            import_index: import.0,
+        },
+        OxAsNew::ComClass { prog_id } => RuntimeClassActivationDescriptor::ComClass {
+            prog_id: leak_runtime_str(prog_id),
+        },
+    }
+}
+
+fn runtime_as_new_field_descriptor(
+    field: &oxvba_oxir::program::OxClassAsNewField,
+) -> RuntimeClassAsNewFieldDescriptor {
+    RuntimeClassAsNewFieldDescriptor {
+        field_token: field.field,
+        activation: runtime_class_activation_descriptor(&field.binding),
     }
 }
 
@@ -358,7 +420,35 @@ impl<'h> Vm3<'h> {
         program: &OxProgram,
         class: &oxvba_oxir::OxClass,
     ) -> &'static RuntimeClassDescriptor {
-        let name: &'static str = Box::leak(class.name.clone().into_boxed_str());
+        let name: &'static str = leak_runtime_str(&class.name);
+        let fields: &'static [RuntimeClassFieldDescriptor] = Box::leak(
+            class
+                .fields
+                .iter()
+                .map(runtime_class_field_descriptor)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
+        let as_new_fields: &'static [RuntimeClassAsNewFieldDescriptor] = Box::leak(
+            class
+                .as_new_fields
+                .iter()
+                .map(runtime_as_new_field_descriptor)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
+        let implements: &'static [&'static str] = Box::leak(
+            class
+                .implements
+                .iter()
+                .map(|interface| leak_runtime_str(interface))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
+        let lifecycle = RuntimeClassLifecycleDescriptor {
+            has_initialize: class.initialize.is_some(),
+            has_terminate: class.terminate.is_some(),
+        };
         let members: &'static [RuntimeMemberDescriptor] = Box::leak(
             class
                 .methods
@@ -372,7 +462,7 @@ impl<'h> Vm3<'h> {
                             .into_boxed_slice(),
                     );
                     RuntimeMemberDescriptor {
-                        name: Box::leak(method.name.clone().into_boxed_str()),
+                        name: leak_runtime_str(&method.name),
                         dispatch_id: method.dispid.unwrap_or_else(|| {
                             synthetic_dispatch_id(index, method.is_default_member)
                         }),
@@ -396,7 +486,15 @@ impl<'h> Vm3<'h> {
         };
         let interfaces: &'static [RuntimeInterfaceDescriptor] =
             Box::leak(vec![RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, dispatch].into_boxed_slice());
-        &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
+        &*Box::leak(Box::new(RuntimeClassDescriptor {
+            name,
+            predeclared: class.predeclared,
+            lifecycle,
+            fields,
+            as_new_fields,
+            implements,
+            interfaces,
+        }))
     }
 
     /// The index of the loaded program declaring unit `name` (its `unit_name`), for resolving a
@@ -4734,9 +4832,10 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use oxvba_bundle::coreir::{
-        CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreClassMethod, CoreConst, CoreGlobal,
-        CoreLocal, CoreParam, CorePlace, CoreProc, CoreProgram, CoreStmt, CoreValue, ErrorOp,
-        ExitKind, LabelId, LocalId as CoreLocalId, ProcId, PtrWriteback,
+        ClassId as CoreClassId, CoreArg, CoreAsNew, CoreBinOp, CoreCallee, CoreClass,
+        CoreClassAsNewField, CoreClassField, CoreClassMethod, CoreConst, CoreGlobal, CoreLocal,
+        CoreParam, CorePlace, CoreProc, CoreProgram, CoreStmt, CoreValue, ErrorOp, ExitKind,
+        LabelId, LocalId as CoreLocalId, ProcId, PtrWriteback,
     };
     use oxvba_bundle::{
         AssignmentIntent, AssignmentTargetKind, BuiltinType, DeclareParamType,
@@ -5304,6 +5403,22 @@ mod tests {
             None,
             Vec::new(),
         );
+        let initialize = proc(
+            "Class_Initialize",
+            ProcedureKind::Sub,
+            vec![long_param("me")],
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let terminate = proc(
+            "Class_Terminate",
+            ProcedureKind::Sub,
+            vec![long_param("me")],
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
         let main = proc(
             "Main",
             ProcedureKind::Sub,
@@ -5314,15 +5429,34 @@ mod tests {
         );
         let prog = CoreProgram {
             long_ptr_width: Default::default(),
-            procs: vec![main, get_value, let_value, reset],
+            procs: vec![main, get_value, let_value, reset, initialize, terminate],
             entry: Some(ProcId(0)),
             unit_name: "T".into(),
             classes: vec![CoreClass {
                 name: "Widget".into(),
-                predeclared: false,
-                initialize: None,
-                terminate: None,
-                fields: Vec::new(),
+                predeclared: true,
+                initialize: Some(ProcId(4)),
+                terminate: Some(ProcId(5)),
+                fields: vec![
+                    CoreClassField {
+                        name: "mCount".into(),
+                        token: 11,
+                        ty: VarTypeRef::Builtin(BuiltinType::Long),
+                        array_element: None,
+                    },
+                    CoreClassField {
+                        name: "Items".into(),
+                        token: 12,
+                        ty: VarTypeRef::Array(Box::new(VarTypeRef::Builtin(BuiltinType::Long))),
+                        array_element: Some(ArrayElementType::Long),
+                    },
+                    CoreClassField {
+                        name: "Child".into(),
+                        token: 13,
+                        ty: VarTypeRef::Object("Widget".into()),
+                        array_element: None,
+                    },
+                ],
                 methods: vec![
                     CoreClassMethod {
                         name: "Value".into(),
@@ -5352,8 +5486,13 @@ mod tests {
                         is_enumerator_member: false,
                     },
                 ],
-                as_new_fields: Vec::new(),
-                implements: Vec::new(),
+                as_new_fields: vec![CoreClassAsNewField {
+                    field: 13,
+                    binding: CoreAsNew::ProjectClass {
+                        class: CoreClassId(0),
+                    },
+                }],
+                implements: vec!["IWidget".into(), "IDisposable".into()],
             }],
             ..Default::default()
         };
@@ -5365,6 +5504,44 @@ mod tests {
         let mut vm = Vm3::activate(oxp, host).expect("activate");
         let widget = vm.create_project_instance("Widget").expect("create Widget");
         let obj = widget.as_object_ref().expect("Widget object");
+        let class_descriptor = obj.class_descriptor();
+
+        assert_eq!(class_descriptor.name, "Widget");
+        assert!(class_descriptor.predeclared);
+        assert!(class_descriptor.lifecycle.has_initialize);
+        assert!(class_descriptor.lifecycle.has_terminate);
+        assert_eq!(class_descriptor.implements, &["IWidget", "IDisposable"]);
+        assert_eq!(class_descriptor.fields.len(), 3);
+        assert_eq!(class_descriptor.fields[0].name, "mCount");
+        assert_eq!(class_descriptor.fields[0].token, 11);
+        assert_eq!(
+            class_descriptor.fields[0].value_type,
+            RuntimeValueType::Long
+        );
+        assert_eq!(class_descriptor.fields[0].array_element_type, None);
+        assert_eq!(class_descriptor.fields[1].name, "Items");
+        assert_eq!(class_descriptor.fields[1].token, 12);
+        assert_eq!(
+            class_descriptor.fields[1].value_type,
+            RuntimeValueType::Array
+        );
+        assert_eq!(
+            class_descriptor.fields[1].array_element_type,
+            Some(RuntimeValueType::Long)
+        );
+        assert_eq!(class_descriptor.fields[2].name, "Child");
+        assert_eq!(class_descriptor.fields[2].token, 13);
+        assert_eq!(
+            class_descriptor.fields[2].value_type,
+            RuntimeValueType::Object
+        );
+        assert_eq!(class_descriptor.fields[2].array_element_type, None);
+        assert_eq!(class_descriptor.as_new_fields.len(), 1);
+        assert_eq!(class_descriptor.as_new_fields[0].field_token, 13);
+        assert_eq!(
+            class_descriptor.as_new_fields[0].activation,
+            RuntimeClassActivationDescriptor::ProjectClass { class_index: 0 }
+        );
 
         assert!(
             obj.query_interface_descriptor(RuntimeInterfaceId::IUnknown)
@@ -5410,6 +5587,10 @@ mod tests {
         assert_eq!(method.params[0].value_type, RuntimeValueType::Long);
         assert!(method.params[0].by_ref);
         assert_eq!(method.return_type, None);
+
+        drop(obj);
+        drop(widget);
+        vm.maybe_drain();
     }
 
     #[test]

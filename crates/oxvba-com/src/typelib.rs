@@ -1,7 +1,7 @@
 use oxvba_runtime::{
-    RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RuntimeClassDescriptor, RuntimeInterfaceDescriptor,
-    RuntimeInterfaceId, RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor,
-    RuntimeValueType,
+    RUNTIME_CLASS_LIFECYCLE_NONE, RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RuntimeClassDescriptor,
+    RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeMemberDescriptor,
+    RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
     safe_array::{SafeArray, VT_VARIANT_VALUE},
 };
 
@@ -734,6 +734,11 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
     );
     Box::leak(Box::new(RuntimeClassDescriptor {
         name: class_name,
+        predeclared: false,
+        lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+        fields: &[],
+        as_new_fields: &[],
+        implements: &[],
         interfaces,
     }))
 }

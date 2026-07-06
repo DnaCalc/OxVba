@@ -299,6 +299,7 @@ pub enum RuntimeValueType {
     LongLong,
     LongPtr,
     Record,
+    Array,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -323,6 +324,39 @@ pub struct RuntimeMemberDescriptor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeClassFieldDescriptor {
+    pub name: &'static str,
+    pub token: i32,
+    pub value_type: RuntimeValueType,
+    pub array_element_type: Option<RuntimeValueType>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeClassActivationDescriptor {
+    ProjectClass { class_index: usize },
+    ExternClass { import_index: usize },
+    ComClass { prog_id: &'static str },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeClassAsNewFieldDescriptor {
+    pub field_token: i32,
+    pub activation: RuntimeClassActivationDescriptor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeClassLifecycleDescriptor {
+    pub has_initialize: bool,
+    pub has_terminate: bool,
+}
+
+pub const RUNTIME_CLASS_LIFECYCLE_NONE: RuntimeClassLifecycleDescriptor =
+    RuntimeClassLifecycleDescriptor {
+        has_initialize: false,
+        has_terminate: false,
+    };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeInterfaceDescriptor {
     pub id: RuntimeInterfaceId,
     pub identity: RuntimeInterfaceIdentity,
@@ -334,6 +368,11 @@ pub struct RuntimeInterfaceDescriptor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeClassDescriptor {
     pub name: &'static str,
+    pub predeclared: bool,
+    pub lifecycle: RuntimeClassLifecycleDescriptor,
+    pub fields: &'static [RuntimeClassFieldDescriptor],
+    pub as_new_fields: &'static [RuntimeClassAsNewFieldDescriptor],
+    pub implements: &'static [&'static str],
     pub interfaces: &'static [RuntimeInterfaceDescriptor],
 }
 
@@ -348,6 +387,11 @@ pub const RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR: RuntimeInterfaceDescriptor =
 
 pub const COMPAT_OBJECT_CLASS_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescriptor {
     name: "OxVba.CompatObject",
+    predeclared: false,
+    lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+    fields: &[],
+    as_new_fields: &[],
+    implements: &[],
     interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
 };
 
@@ -1247,9 +1291,10 @@ mod tests {
     use core::sync::atomic::{AtomicU32, Ordering};
 
     use super::{
-        ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN,
-        RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK,
-        RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeApartmentModel, RuntimeClassDescriptor,
+        ObjectRef, RUNTIME_CLASS_LIFECYCLE_NONE, RUNTIME_E_NOINTERFACE, RUNTIME_GUID_IDISPATCH,
+        RUNTIME_GUID_IUNKNOWN, RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+        RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK, RawRuntimeIUnknown,
+        RawRuntimeIUnknownVtbl, RuntimeApartmentModel, RuntimeClassDescriptor,
         RuntimeDispatchPlanCache, RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
         RuntimeInterfaceIdentity, RuntimeInterfaceKind, RuntimeLifetimePolicy,
         RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
@@ -1284,6 +1329,11 @@ mod tests {
         let object = ObjectRef::from_compat_identity(9);
         let class_descriptor = object.class_descriptor();
         assert_eq!(class_descriptor.name, "OxVba.CompatObject");
+        assert!(!class_descriptor.predeclared);
+        assert_eq!(class_descriptor.lifecycle, RUNTIME_CLASS_LIFECYCLE_NONE);
+        assert!(class_descriptor.fields.is_empty());
+        assert!(class_descriptor.as_new_fields.is_empty());
+        assert!(class_descriptor.implements.is_empty());
         assert_eq!(class_descriptor.interfaces.len(), 1);
         let iunknown = object
             .query_interface_descriptor(RuntimeInterfaceId::IUnknown)
@@ -1338,6 +1388,11 @@ mod tests {
         };
         static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
             name: "Project.Widget",
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
             interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, CUSTOM_INTERFACE],
         };
 
@@ -1362,6 +1417,11 @@ mod tests {
         // semantics — and box teardown reclaims it (no VM-side store, no leak).
         static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
             name: "VBA.Collection",
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
             interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
         };
         let c1 = ObjectRef::from_compat_identity_with_descriptor(404, &TEST_CLASS);
@@ -1419,6 +1479,11 @@ mod tests {
         };
         static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
             name: "Project.Widget",
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
             interfaces: &[
                 RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
                 DISPATCH_INTERFACE,
@@ -1476,6 +1541,11 @@ mod tests {
         };
         static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
             name: "Project.Widget",
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
             interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, DISPATCH_INTERFACE],
         };
 
@@ -1822,6 +1892,11 @@ mod tests {
         };
         static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
             name: "Project.Widget",
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
             interfaces: &[
                 RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
                 DISPATCH_INTERFACE,
