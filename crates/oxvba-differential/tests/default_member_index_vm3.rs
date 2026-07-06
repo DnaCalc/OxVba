@@ -16,6 +16,13 @@ fn assert_global_long(outcome: RunOutcome, expected: i32) {
         "vm3 declined default-member case as unsupported: {:?}",
         outcome.unsupported
     );
+    assert!(
+        outcome
+            .handle_balance
+            .is_some_and(|balance| balance.is_zero()),
+        "vm3 default-member case leaked runtime handles: {:?}",
+        outcome.handle_balance
+    );
     let snapshot = outcome.result.expect("vm3 default-member case completed");
     assert!(
         snapshot.contains(&canon(&Variant::from_i32(expected))),
@@ -112,4 +119,32 @@ fn variant_held_object_default_member_index_get_and_let() {
         End Property\n\
         Attribute Value.VB_UserMemId = 0\n";
     assert_global_long(run_case(main, &[("Widget", widget)]), 15);
+}
+
+#[test]
+fn variant_held_object_default_member_index_get_and_set() {
+    let main = "Public r As Long\n\
+        Sub Main()\n\
+            Dim v As Variant\n\
+            Dim t As Thing\n\
+            Dim got As Thing\n\
+            Set v = New Box\n\
+            Set t = New Thing\n\
+            Set v(3) = t\n\
+            Set got = v(2)\n\
+            r = got.GetVal()\n\
+        End Sub\n";
+    let box_cls = "Private stored As Thing\n\n\
+        Public Property Get Item(ByVal i As Long) As Thing\n\
+            Set Item = stored\n\
+        End Property\n\
+        Attribute Item.VB_UserMemId = 0\n\n\
+        Public Property Set Item(ByVal i As Long, ByVal v As Thing)\n\
+            Set stored = v\n\
+        End Property\n\
+        Attribute Item.VB_UserMemId = 0\n";
+    let thing = "Public Function GetVal() As Long\n\
+            GetVal = 29\n\
+        End Function\n";
+    assert_global_long(run_case(main, &[("Box", box_cls), ("Thing", thing)]), 29);
 }
