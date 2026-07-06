@@ -128,13 +128,7 @@ pub(crate) fn assign_repr_preserving(dst_ty: &OxTy, src_ty: &OxTy) -> bool {
     if dst_ty == src_ty {
         return true;
     }
-    // `Object(Untyped)` is currently also the fallback for unresolved UDT records
-    // (ProgramResolver lacks a record-layout table). Keep this representation-neutral for
-    // vm3 until record identities are fully threaded through OxIR.
-    matches!(
-        (dst_ty, src_ty),
-        (OxTy::Object(_), OxTy::Object(_)) | (OxTy::Object(ObjClass::Untyped), OxTy::Variant)
-    )
+    matches!((dst_ty, src_ty), (OxTy::Object(_), OxTy::Object(_)))
 }
 
 pub(crate) fn place_ty(
@@ -210,6 +204,14 @@ mod tests {
             param: None,
             escaped: false,
         }
+    }
+
+    #[test]
+    fn object_untyped_from_variant_is_not_repr_preserving() {
+        assert!(!assign_repr_preserving(
+            &OxTy::Object(ObjClass::Untyped),
+            &OxTy::Variant
+        ));
     }
 
     #[test]

@@ -9,7 +9,7 @@ Scope: `bd-h4oh.2` / `M4-1` IR-prep passes.
 - `OxFunc.temps: Vec<OxTy>` is populated by elaboration and carried by `.oxi` image version 2.
 - Escape analysis lives in `oxvba-oxir`, updates `OxLocal.escaped`, and exposes escaped-temp facts as analysis-only data.
 - Assign normalization is always-on before VM/JIT consumption; representation-changing `Assign` sites now go through `Box`, `Unbox`, or `Coerce`, with vm3 execution for `Box`/`Unbox`.
-- Static fixed-array declarations lower to `ArrayShape::Fixed { rank }`; inline UDT fixed-array fields remain the existing conservative `Variant` path until record-layout typing work owns them.
+- Static fixed-array declarations lower to `ArrayShape::Fixed { rank }`. Inline UDT fixed-array fields are owned by the enclosing record-layout metadata (`ArrayElementType::FixedArray` inside `OxProgram.record_layouts`), not by a standalone SAFEARRAY-shaped `OxTy`.
 - The verifier now checks local/global/temp references, `StmtBoundary` temp floors, recomputed escape flags, representation-preserving `Assign`, terminator operands, `FaultDispatch`/`GoSub` successor domains, and COM/table references.
 - ParamArray alias sufficiency is confirmed for caller-side copy-out through `ArrayLiteral { aliases }`; no IR extension was needed.
 
@@ -18,9 +18,9 @@ Scope: `bd-h4oh.2` / `M4-1` IR-prep passes.
 - Raw `Assign` from `Const Empty` is preserved as a VM-visible reset/finalization
   sentinel, notably for `For Each` exhaustion. Other representation-changing
   assignments must route through explicit `Box`, `Unbox`, or `Coerce`.
-- `Object(Untyped) <- Variant` remains a bounded representation-preserving exception
-  only for unresolved UDT record carriers while OxIR lacks full record-layout identity
-  threading. Follow-up bead `bd-h4oh.9.1` owns removing this exception under M4-7.
+- The former `Object(Untyped) <- Variant` assign-normalization exception for unresolved
+  UDT records was removed under M4-7 bead `bd-h4oh.9.1`; strict record initialization
+  evidence is recorded in `docs/evidence/jit/JIT_M4_RECORD_LAYOUT_STRICT_ASSIGN_20260706.md`.
 
 ## Checks
 

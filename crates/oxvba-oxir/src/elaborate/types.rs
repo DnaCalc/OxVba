@@ -59,9 +59,9 @@ pub fn lower_var_type_with_longptr_width(
             )
         }
         // A UDT fixed-array field is **inline record payload**, not a SAFEARRAY, so it
-        // is *not* `OxTy::Array` (a `*mut SAFEARRAY`). Conservatively `Variant` for now —
-        // consistent with the (also-deferred) record-layout typing; a precise
-        // inline-fixed-array `OxTy` rides with that record-layout work.
+        // is *not* `OxTy::Array` (a `*mut SAFEARRAY`). Its precise shape is owned by
+        // `ArrayElementType::FixedArray` inside the enclosing record layout; there is
+        // intentionally no standalone slot `OxTy` for that inline field payload.
         VarTypeRef::FixedArray { .. } => OxTy::Variant,
         // Name-driven (tag-agnostic): an `Object(name)` may denote a class, a COM or
         // project interface, a UDT, or an Enum — `Udt(name)` is the already-normalized
@@ -267,7 +267,8 @@ mod tests {
     #[test]
     fn udt_fixed_array_field_is_conservatively_variant() {
         // A UDT inline fixed-array field is record payload, not a SAFEARRAY, so it is
-        // *not* `OxTy::Array`; conservatively `Variant` until record-layout typing lands.
+        // *not* `OxTy::Array`. Its shape belongs to the enclosing record layout, so
+        // there is no standalone slot `OxTy` for this payload.
         let r = resolver();
         let ty = VarTypeRef::FixedArray {
             element: Box::new(VarTypeRef::Builtin(BuiltinType::Long)),

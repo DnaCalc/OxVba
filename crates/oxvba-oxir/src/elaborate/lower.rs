@@ -117,7 +117,11 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
             ),
             array_element: g.array_element.clone(),
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let global_tys = globals
+        .iter()
+        .map(|global| global.ty.clone())
+        .collect::<Vec<_>>();
 
     // The typed COM interface table is built as early-bound calls are lowered: each
     // call's resolved member is interned into it, and the call names the member by a
@@ -134,6 +138,7 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         funcs.push(elaborate_proc(
             proc,
             &resolver,
+            &global_tys,
             program.long_ptr_width,
             &proc_return_types,
             &mut com,
@@ -255,11 +260,11 @@ fn lower_as_new(binding: &CoreAsNew) -> OxAsNew {
 
 /// A [`NameResolver`] built from a [`CoreProgram`]: a declared type name that matches a
 /// project class (case-insensitively, by full name) is a typed `Class` instance;
-/// everything else — referenced COM coclasses, UDT records, `Enum`s — is the
-/// conservative [`ResolvedTypeName::Untyped`]. Precise COM-interface, record-layout and
-/// enum typing are later de-erasure steps (a cross-project-qualified class name like
-/// `Lib.Widget` is correctly *not* a class of this unit and stays untyped here, dispatched
-/// through the cross-bundle import path).
+/// UDT records resolve to descriptor-backed [`OxTy::Record`] identities harvested from
+/// declarations and record initializers. Referenced COM coclasses and unresolved names stay
+/// conservative [`ResolvedTypeName::Untyped`] values (a cross-project-qualified class name
+/// like `Lib.Widget` is correctly *not* a class of this unit and stays untyped here,
+/// dispatched through the cross-bundle import path).
 struct ProgramResolver {
     classes: HashMap<String, ClassId>,
     records: HashMap<String, RecordLayoutId>,
@@ -460,7 +465,8 @@ fn invoke_kind_from_member_kind(kind: Option<ProjectMemberKind>) -> TypeLibMembe
 
 fn elaborate_proc(
     proc: &CoreProc,
-    resolver: &impl NameResolver,
+    resolver: &ProgramResolver,
+    global_tys: &[OxTy],
     long_ptr_width: CoreLongPtrWidth,
     proc_return_types: &[Option<OxTy>],
     com: &mut ComInterner,
@@ -500,6 +506,8 @@ fn elaborate_proc(
         long_ptr_width,
         proc_return_types,
         com,
+        global_tys,
+        &resolver.records,
     );
     // Pre-assign a block to every source label so forward references resolve.
     lo.assign_labels(&proc.body)?;
@@ -559,6 +567,8 @@ struct Lowerer<'a> {
     /// The program-level typed-COM interface-table builder (shared across procs); an
     /// early-bound call interns its resolved member here and names it by a `ComMethodRef`.
     com: &'a mut ComInterner,
+    global_tys: &'a [OxTy],
+    record_ids: &'a HashMap<String, RecordLayoutId>,
     long_ptr_width: CoreLongPtrWidth,
     proc_return_types: &'a [Option<OxTy>],
 }
@@ -571,6 +581,8 @@ impl<'a> Lowerer<'a> {
         long_ptr_width: CoreLongPtrWidth,
         proc_return_types: &'a [Option<OxTy>],
         com: &'a mut ComInterner,
+        global_tys: &'a [OxTy],
+        record_ids: &'a HashMap<String, RecordLayoutId>,
     ) -> Self {
         // Entry = block 0, epilogue = block 1; both reserved up front.
         let blocks = vec![None, None];
@@ -591,6 +603,8 @@ impl<'a> Lowerer<'a> {
             label_lines,
             with_temps: HashMap::new(),
             com,
+            global_tys,
+            record_ids,
             long_ptr_width,
             proc_return_types,
         }
@@ -616,6 +630,50 @@ impl<'a> Lowerer<'a> {
         self.temps.push(ty);
         self.next_temp += 1;
         t
+    }
+
+    fn place_static_ty(&self, place: &coreir::CorePlace) -> Option<OxTy> {
+        match place {
+            coreir::CorePlace::Local(l) => self.locals.get(l.0).map(|local| local.ty.clone()),
+            coreir::CorePlace::Global(g) => self.global_tys.get(g.0).cloned(),
+            _ => None,
+        }
+    }
+
+    fn record_ty_for_name(&self, name: &str) -> Option<OxTy> {
+        if name.is_empty() {
+            return None;
+        }
+        self.record_ids
+            .get(&name.to_ascii_lowercase())
+            .map(|id| OxTy::Record(*id))
+    }
+
+    fn expected_new_record_ty(
+        &self,
+        place: &coreir::CorePlace,
+        target_type_name: &str,
+    ) -> Option<OxTy> {
+        self.place_static_ty(place)
+            .filter(|ty| matches!(ty, OxTy::Record(_)))
+            .or_else(|| self.record_ty_for_name(target_type_name))
+    }
+
+    fn lower_new_record_value(
+        &mut self,
+        fields: &[ArrayElementType],
+        expected_ty: Option<&OxTy>,
+    ) -> (OxOperand, OxTy) {
+        let ty = match expected_ty {
+            Some(OxTy::Record(id)) => OxTy::Record(*id),
+            _ => OxTy::Variant,
+        };
+        let t = self.new_temp(ty.clone());
+        self.emit(OxInst::NewRecord {
+            dst: OxPlace::Temp(t),
+            fields: fields.to_vec(),
+        });
+        (OxOperand::temp(t), ty)
     }
 
     fn emit(&mut self, inst: OxInst) {
@@ -808,7 +866,13 @@ impl<'a> Lowerer<'a> {
                 target_name,
                 target_type_name,
             } => {
-                let (src, src_ty) = self.lower_value(value)?;
+                let expected_ty = self.expected_new_record_ty(place, target_type_name.as_str());
+                let (src, src_ty) = match value {
+                    CoreValue::NewRecord { fields } => {
+                        self.lower_new_record_value(fields, expected_ty.as_ref())
+                    }
+                    _ => self.lower_value(value)?,
+                };
                 // A `Set` or object-typed assignment carries a run-time legality check
                 // (e.g. error 424 "Object required"), matching the linearize lowering.
                 if *intent == AssignmentIntent::Set
@@ -1811,16 +1875,7 @@ impl<'a> Lowerer<'a> {
                 });
                 Ok((OxOperand::temp(t), OxTy::Long))
             }
-            CoreValue::NewRecord { fields } => {
-                let t = self.new_temp(OxTy::Variant);
-                self.emit(OxInst::NewRecord {
-                    dst: OxPlace::Temp(t),
-                    fields: fields.clone(),
-                });
-                // A UDT record value; precise `Record(layout)` typing needs the record
-                // layout table (a later step), so it is conservatively `Variant` here.
-                Ok((OxOperand::temp(t), OxTy::Variant))
-            }
+            CoreValue::NewRecord { fields } => Ok(self.lower_new_record_value(fields, None)),
             // A `VB_PredeclaredId` class → its lazily-created global singleton instance.
             CoreValue::Predeclared { class } => {
                 let class = ClassId(class.0);
@@ -2448,7 +2503,9 @@ impl<'a> Lowerer<'a> {
                     record: rec,
                     index: *index,
                 });
-                // Field typing needs the record layout table (a later step).
+                // Field reads stay Variant-typed here because `CorePlace` does not carry the
+                // base record layout id. The authoritative inline field shape lives in
+                // `OxProgram::record_layouts` and is consumed by the record instructions.
                 Ok((OxOperand::temp(t), OxTy::Variant))
             }
             coreir::CorePlace::Field { object, field } => {
@@ -2821,8 +2878,9 @@ mod tests {
     use super::*;
     use crate::verify::{VerifyError, verify_program};
     use oxvba_bundle::coreir::{
-        BoundWhich, CoreBound, CoreCallee, CoreClassMethod, CoreIfArm, CoreLocal, CoreParam,
-        CorePlace, ErrField, ErrorOp, LocalId as CoreLocalId, ProcId as CoreProcId, PtrKind,
+        BoundWhich, CoreBound, CoreCallee, CoreClassMethod, CoreGlobal, CoreIfArm, CoreLocal,
+        CoreParam, CorePlace, ErrField, ErrorOp, LocalId as CoreLocalId, ProcId as CoreProcId,
+        PtrKind,
     };
     use oxvba_bundle::{
         ArrayElementType, AssignmentIntent, AssignmentTargetKind, BuiltinType, FixedArrayBound,
@@ -3527,6 +3585,82 @@ mod tests {
             oxp.funcs[0].locals[0].ty,
             OxTy::Array(Box::new(OxTy::Long), ArrayShape::Fixed { rank: 2 })
         );
+    }
+
+    #[test]
+    fn new_record_assignments_use_record_layout_identity() {
+        let fields = vec![
+            ArrayElementType::Long,
+            ArrayElementType::FixedArray {
+                element: Box::new(ArrayElementType::Integer),
+                bounds: vec![FixedArrayBound { lower: 1, len: 3 }],
+            },
+        ];
+        let record_assign = |place: CorePlace, target_type_name: &str| CoreStmt::Assign {
+            place,
+            value: CoreValue::NewRecord {
+                fields: fields.clone(),
+            },
+            intent: AssignmentIntent::Let,
+            target_kind: AssignmentTargetKind::Scalar,
+            target_name: "p".to_string(),
+            target_type_name: target_type_name.to_string(),
+        };
+        let proc = CoreProc {
+            name: "Main".to_string(),
+            kind: ProcedureKind::Sub,
+            params: vec![CoreParam {
+                name: "arg".to_string(),
+                ty: VarTypeRef::Udt("MyType".to_string()),
+                optional: false,
+                by_ref: false,
+                variadic: false,
+            }],
+            locals: vec![CoreLocal {
+                name: "p".to_string(),
+                ty: VarTypeRef::Udt("MyType".to_string()),
+                array_element: None,
+            }],
+            return_local: None,
+            label_lines: Vec::new(),
+            body: vec![
+                record_assign(CorePlace::Local(CoreLocalId(1)), "MyType"),
+                record_assign(CorePlace::Global(coreir::GlobalId(0)), ""),
+            ],
+        };
+        let prog = CoreProgram {
+            globals: vec![CoreGlobal {
+                name: "g".to_string(),
+                ty: VarTypeRef::Udt("MyType".to_string()),
+                array_element: None,
+            }],
+            procs: vec![proc],
+            unit_name: "T".to_string(),
+            ..Default::default()
+        };
+        let oxp = elaborate(&prog).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+
+        let record_ty = OxTy::Record(RecordLayoutId(0));
+        assert_eq!(oxp.record_layouts, vec![fields.clone()]);
+        assert_eq!(oxp.globals[0].ty, record_ty);
+        let f = &oxp.funcs[0];
+        assert_eq!(f.locals[0].ty, record_ty);
+        assert_eq!(f.locals[1].ty, record_ty);
+
+        let new_record_tys = f
+            .blocks
+            .iter()
+            .flat_map(|block| block.instrs.iter())
+            .filter_map(|inst| match inst {
+                OxInst::NewRecord {
+                    dst: OxPlace::Temp(t),
+                    ..
+                } => Some(f.temps[t.0].clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(new_record_tys, vec![record_ty.clone(), record_ty]);
     }
 
     /// `p.x = 1 : y = p.x` over a UDT value exercises RecordSet / RecordGet.
