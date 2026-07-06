@@ -181,6 +181,47 @@ fn class_terminate_field_release_cascades_to_child_termination() {
 }
 
 #[test]
+fn class_terminate_dropping_last_external_ref_drains_child_termination() {
+    let main = "Public result As Variant\n\
+                Public Log As String\n\
+                Public Held As Child\n\
+                Sub Main()\n\
+                \x20   Set Held = New Child\n\
+                \x20   Dim o As Owner\n\
+                \x20   Set o = New Owner\n\
+                \x20   Set o = Nothing\n\
+                \x20   result = Log\n\
+                End Sub\n";
+    let owner = "Private Sub Class_Initialize()\n\
+                 \x20   Main.Log = Main.Log & \"OI;\"\n\
+                 End Sub\n\
+                 Private Sub Class_Terminate()\n\
+                 \x20   Main.Log = Main.Log & \"OT;\"\n\
+                 \x20   Set Main.Held = Nothing\n\
+                 End Sub\n";
+    let child = "Private Sub Class_Initialize()\n\
+                 \x20   Main.Log = Main.Log & \"CI;\"\n\
+                 End Sub\n\
+                 Private Sub Class_Terminate()\n\
+                 \x20   Main.Log = Main.Log & \"CT;\"\n\
+                 \x20   Err.Raise 88\n\
+                 End Sub\n";
+
+    assert_contains_string(
+        run_modules(
+            Executor::Vm3,
+            &[
+                ("Main", Procedural, main),
+                ("Owner", Class, owner),
+                ("Child", Class, child),
+            ],
+            "VBAProject",
+        ),
+        "CI;OI;OT;CT;",
+    );
+}
+
+#[test]
 fn class_terminate_can_resurrect_me_without_double_terminating() {
     let main = "Public result As Variant\n\
                 Public Log As String\n\
