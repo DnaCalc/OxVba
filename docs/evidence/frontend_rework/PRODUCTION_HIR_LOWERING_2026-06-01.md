@@ -928,6 +928,11 @@ guard:
   as `HirProduction`.
 - A legacy bytecode assertion was relaxed from a specific `AddConstI32` peephole to equivalent add
   bytecode because the workset does not require byte-identical output from the new front-end.
+- A 2026-07-06 continuation makes invalid explicit enum initializers reject at
+  symbol/bind time as `InvalidConstValue` for fractional, over-wide, forward,
+  and self-referential initializer expressions, while preserving signed `Long`
+  bit-pattern folding and allowing final active-project enum folding to read
+  exported referenced-project constants.
 
 Remaining production residuals are still real semantic work, not marker-only gaps:
 

@@ -3279,17 +3279,10 @@ fn scanner_declares_enum_members() {
 }
 
 #[test]
-fn enum_initializers_do_not_auto_counter_invalid_explicit_values() {
+fn enum_initializers_keep_long_bit_patterns_and_auto_increment() {
     let src = "Public Enum LongBits\r\n\
                    AllBits = &HFFFFFFFF\r\n\
                    AfterBits\r\n\
-               End Enum\r\n\
-               Public Enum Fractional\r\n\
-                   Bad = 1.5\r\n\
-                   AfterBad\r\n\
-               End Enum\r\n\
-               Public Enum Wide\r\n\
-                   TooWide = 5000000000^\r\n\
                End Enum\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);
     let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
@@ -3302,9 +3295,73 @@ fn enum_initializers_do_not_auto_counter_invalid_explicit_values() {
 
     assert_eq!(val("AllBits"), Some(CoreConst::I32(-1)));
     assert_eq!(val("AfterBits"), Some(CoreConst::I32(0)));
-    assert_eq!(val("Bad"), None);
-    assert_eq!(val("AfterBad"), None);
-    assert_eq!(val("TooWide"), None);
+}
+
+#[test]
+fn enum_initializers_reject_invalid_explicit_values() {
+    for (source, expected) in [
+        (
+            "Public Enum Fractional\r\n    Bad = 1.5\r\nEnd Enum\r\n",
+            "Bad",
+        ),
+        (
+            "Public Enum Wide\r\n    TooWide = 5000000000^\r\nEnd Enum\r\n",
+            "TooWide",
+        ),
+        (
+            "Public Enum ForwardRef\r\n    First = Later\r\n    Later = 1\r\nEnd Enum\r\n",
+            "First",
+        ),
+        (
+            "Public Enum SelfRef\r\n    Same = Same\r\nEnd Enum\r\n",
+            "Same",
+        ),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", source)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("invalid enum initializer `{expected}` should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(&err, SymbolModelError::InvalidConstValue { name } if name == expected),
+            "unexpected error for {expected}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn enum_initializers_fold_referenced_project_constants() {
+    use crate::manifest::{ProjectReference, ReferencedProjectManifest};
+
+    let lib = ReferencedProjectManifest {
+        project_name: "Lib".into(),
+        project_kind: ProjectKind::Library,
+        modules: vec![module("LibMod", "Public Const Seed As Long = 7\n")],
+    };
+    let m = SymbolProjectManifest {
+        project_name: "App".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![module(
+            "Main",
+            "Public Enum Mode\n  FromLib = Seed\n  AfterLib\nEnd Enum\n",
+        )],
+        references: vec![ProjectReference::Project {
+            referenced_project_name: "Lib".into(),
+        }],
+        reference_projects: vec![lib],
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Main").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ctx, name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+
+    assert_eq!(val("FromLib"), Some(CoreConst::I32(7)));
+    assert_eq!(val("AfterLib"), Some(CoreConst::I32(8)));
 }
 
 #[test]

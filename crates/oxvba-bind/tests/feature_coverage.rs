@@ -396,6 +396,22 @@ fn longptr_const_overflows_above_long_on_win32_target() {
 }
 
 #[test]
+fn invalid_enum_initializer_is_bind_error() {
+    let err = run_result(
+        "Public Enum Fractional\n\
+         Bad = 1.5\n\
+         End Enum\n\
+         Sub Main()\n\
+         End Sub",
+    )
+    .expect_err("invalid Enum initializer should reject before execution");
+    assert!(
+        err.contains("InvalidConstValue") || err.contains("invalid constant value"),
+        "expected invalid constant value, got {err}"
+    );
+}
+
+#[test]
 fn longptr_optional_default_overflows_above_long_on_win32_target() {
     let err = run_result_with_target(
         "Sub Main()\n\

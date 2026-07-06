@@ -1418,8 +1418,12 @@ pub fn build_resolution_environment(
         .iter()
         .map(|m| (m.module_scope, m.parse.syntax()))
         .collect();
-    let preliminary_const_values =
-        crate::const_eval::fold_const_values(&symbols, &roots, active_target, &[])?;
+    let preliminary_const_values = crate::const_eval::fold_const_values_deferring_enum_diagnostics(
+        &symbols,
+        &roots,
+        active_target,
+        &[],
+    )?;
     let preliminary_referenced_surfaces: Vec<ProjectExportSurface> = manifest
         .reference_projects
         .iter()

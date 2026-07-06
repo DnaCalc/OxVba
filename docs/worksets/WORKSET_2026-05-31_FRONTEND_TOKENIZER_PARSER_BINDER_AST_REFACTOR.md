@@ -787,7 +787,10 @@ Required newly explicit delivery beads:
   `Enum.Member`, project-qualified enum forms, and direct module/member enum-member constants.
   A referenced-project slice then routes final active-project Const folding through synthesized
   export surfaces for public referenced constants and enum members by bare name, `Enum.Member`,
-  and `Project.Enum.Member`, without leaking `Option Private Module` members.
+  and `Project.Enum.Member`, without leaking `Option Private Module` members. A 2026-07-06
+  continuation tightens explicit Enum initializers so fractional, over-wide, forward-reference,
+  and self-reference forms reject as `InvalidConstValue`, while valid signed `Long` bit-patterns
+  and referenced-project constant seeds still fold.
   Remaining work: full VBA
   compile-time expression/name evaluation beyond source-prior and covered module-qualified
   constants, typed constant coercion outside the covered exact and string-to-declared-scalar carriers,
@@ -1721,7 +1724,9 @@ Candidate bead units:
   modules, `Enum.Member`, project-qualified enum forms, and direct module/member enum-member
   constants. A referenced-project continuation folds public referenced constants and enum members
   through synthesized export surfaces for bare, `Enum.Member`, and `Project.Enum.Member` forms,
-  preserving `Option Private Module` and non-exported-module boundaries.
+  preserving `Option Private Module` and non-exported-module boundaries. A 2026-07-06 diagnostic
+  continuation now rejects covered invalid explicit Enum initializers during symbol/bind setup
+  instead of publishing absent enum-member values and relying on unresolved use sites.
 - FE-8.5.f Broader declaration and type surface: finish `Property` procedure declarations,
   optional/default/ParamArray parameters, richer `Declare` signatures, dynamic/non-static UDT
   array-field storage/indexing, UDT lifetime/default initialization parity, and corresponding

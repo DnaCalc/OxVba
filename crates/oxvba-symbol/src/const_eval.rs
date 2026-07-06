@@ -41,15 +41,53 @@ pub struct ExternalConstValue {
 
 /// Fold every `Const` and `Enum` member reachable from the given module roots into
 /// a `SymbolId → value` map. Module- *and* proc-level consts are included (the
-/// binder reads proc-level consts too); failures are simply absent (a referrer/
-/// binder reading an absent value reports the error). One call per resolution
-/// environment covers the active project + every referenced project, since all are
-/// scanned into the one `SymbolTable`.
+/// binder reads proc-level consts too). Unresolvable dependencies are absent so a
+/// referrer/binder reading the missing value reports through its normal route;
+/// values that fold but cannot be coerced to their VBA compile-time carrier reject
+/// here. One call per resolution environment covers the active project + every
+/// referenced project, since all are scanned into the one `SymbolTable`.
 pub fn fold_const_values(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
     target: ConditionalCompilationTarget,
     external_projects: &[ExternalConstProject],
+) -> Result<HashMap<SymbolId, CoreConst>, SymbolModelError> {
+    fold_const_values_with_enum_policy(
+        symbols,
+        module_roots,
+        target,
+        external_projects,
+        EnumInitializerPolicy::RejectInvalid,
+    )
+}
+
+pub(crate) fn fold_const_values_deferring_enum_diagnostics(
+    symbols: &SymbolTable,
+    module_roots: &[(ScopeId, SyntaxNode<'_>)],
+    target: ConditionalCompilationTarget,
+    external_projects: &[ExternalConstProject],
+) -> Result<HashMap<SymbolId, CoreConst>, SymbolModelError> {
+    fold_const_values_with_enum_policy(
+        symbols,
+        module_roots,
+        target,
+        external_projects,
+        EnumInitializerPolicy::DeferInvalid,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EnumInitializerPolicy {
+    DeferInvalid,
+    RejectInvalid,
+}
+
+fn fold_const_values_with_enum_policy(
+    symbols: &SymbolTable,
+    module_roots: &[(ScopeId, SyntaxNode<'_>)],
+    target: ConditionalCompilationTarget,
+    external_projects: &[ExternalConstProject],
+    enum_policy: EnumInitializerPolicy,
 ) -> Result<HashMap<SymbolId, CoreConst>, SymbolModelError> {
     // The string comparison/`Like` regime is the declaring module's `Option Compare`.
     let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
@@ -79,7 +117,15 @@ pub fn fold_const_values(
             .get(module_scope)
             .copied()
             .unwrap_or(StringCompareMode::Binary);
-        fold_enums(symbols, *module_scope, *root, &mut values, mode);
+        fold_enums(
+            symbols,
+            *module_scope,
+            *root,
+            &mut values,
+            external_projects,
+            mode,
+            enum_policy,
+        )?;
     }
     // 4) Retry `Const` entries that referenced enum members now available as
     // compile-time `Long` constants.
@@ -191,7 +237,7 @@ fn collect_proc_defaults(
                 let parameter = parameter_name_token(*param)
                     .map(|t| t.text.to_string())
                     .unwrap_or_else(|| format!("arg{}", i + 1));
-                let default = match eval_const_expr(symbols, module_scope, def, values, mode) {
+                let default = match eval_const_expr(symbols, module_scope, def, values, &[], mode) {
                     ConstEval::Value(c) => {
                         coerce_param_default_value(symbols, proc_scope, *param, c, target)
                             .ok_or_else(|| SymbolModelError::InvalidOptionalDefault {
@@ -379,8 +425,10 @@ fn fold_enums(
     module_scope: ScopeId,
     node: SyntaxNode<'_>,
     values: &mut HashMap<SymbolId, CoreConst>,
+    external_projects: &[ExternalConstProject],
     mode: StringCompareMode,
-) {
+    enum_policy: EnumInitializerPolicy,
+) -> Result<(), SymbolModelError> {
     if node.kind() == SyntaxKind::EnumBlock {
         let mut next = 0i32;
         for member in node.enum_members() {
@@ -393,12 +441,33 @@ fn fold_enums(
                 continue;
             };
             let value = match member.first_expr_child() {
-                Some(init) => match eval_const_expr(symbols, module_scope, init, values, mode) {
+                Some(init) => match eval_const_expr(
+                    symbols,
+                    module_scope,
+                    init,
+                    values,
+                    external_projects,
+                    mode,
+                ) {
                     ConstEval::Value(c) => match as_i32(&c) {
                         Some(value) => value,
-                        None => break,
+                        None => match enum_policy {
+                            EnumInitializerPolicy::DeferInvalid => break,
+                            EnumInitializerPolicy::RejectInvalid => {
+                                return Err(SymbolModelError::InvalidConstValue {
+                                    name: const_symbol_name(symbols, sym),
+                                });
+                            }
+                        },
                     },
-                    _ => break,
+                    ConstEval::Pending | ConstEval::Unresolvable => match enum_policy {
+                        EnumInitializerPolicy::DeferInvalid => break,
+                        EnumInitializerPolicy::RejectInvalid => {
+                            return Err(SymbolModelError::InvalidConstValue {
+                                name: const_symbol_name(symbols, sym),
+                            });
+                        }
+                    },
                 },
                 None => next,
             };
@@ -407,8 +476,17 @@ fn fold_enums(
         }
     }
     for child in node.child_nodes() {
-        fold_enums(symbols, module_scope, child, values, mode);
+        fold_enums(
+            symbols,
+            module_scope,
+            child,
+            values,
+            external_projects,
+            mode,
+            enum_policy,
+        )?;
     }
+    Ok(())
 }
 
 fn as_i32(c: &CoreConst) -> Option<i32> {
@@ -586,15 +664,17 @@ fn eval_const_expr_syms(
     )
 }
 
-/// Evaluate with no pending set (enum initializers, read after consts are folded).
+/// Evaluate with no pending set (enum initializers/defaults, read after consts are
+/// folded), optionally allowing exported referenced-project constants.
 fn eval_const_expr(
     symbols: &SymbolTable,
     scope: ScopeId,
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
+    external_projects: &[ExternalConstProject],
     mode: StringCompareMode,
 ) -> ConstEval {
-    eval_inner(symbols, scope, node, values, None, &[], mode)
+    eval_inner(symbols, scope, node, values, None, external_projects, mode)
 }
 
 fn eval_inner(
