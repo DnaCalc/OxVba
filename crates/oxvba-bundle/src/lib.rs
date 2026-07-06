@@ -249,6 +249,11 @@ pub struct ClassMethod {
     pub kind: ProjectMemberKind,
     pub proc: usize,
     pub is_default_member: bool,
+    /// True for the VBA enumerator member (`_NewEnum`, `VB_UserMemId = -4`).
+    /// Carried in the executable package so VM/JIT/COM-export consumers do not
+    /// need to reconstruct enumerator identity from member names.
+    #[serde(default)]
+    pub is_enumerator_member: bool,
 }
 
 /// A project class: its name, lifecycle hooks, and late-bound member table.

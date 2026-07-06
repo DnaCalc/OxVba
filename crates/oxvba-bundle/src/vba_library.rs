@@ -113,6 +113,7 @@ fn build() -> Bundle {
             kind: spec.member_kind,
             proc,
             is_default_member: spec.name.eq_ignore_ascii_case("Item"),
+            is_enumerator_member: spec.name.eq_ignore_ascii_case("_NewEnum"),
         });
     }
 
@@ -224,6 +225,13 @@ mod tests {
         )));
         let collection = &b.classes[0];
         assert_eq!(collection.methods.len(), 5);
+        assert!(
+            collection
+                .methods
+                .iter()
+                .any(|m| m.name == "_NewEnum" && m.is_enumerator_member),
+            "Collection _NewEnum must carry enumerator metadata in the package"
+        );
         // Every method resolves to a native-bodied procedure.
         for m in &collection.methods {
             assert!(
