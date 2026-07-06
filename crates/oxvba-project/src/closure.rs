@@ -208,11 +208,23 @@ fn module_metadata_by_name(basproj: &BasProj) -> HashMap<String, &BasProjModule>
 }
 
 fn module_name_of(include: &str) -> String {
-    Path::new(include)
-        .file_stem()
-        .and_then(|s| s.to_str())
+    logical_include_file_stem(include)
         .unwrap_or(include)
         .to_string()
+}
+
+fn logical_include_file_stem(include: &str) -> Option<&str> {
+    let file_name = include
+        .rsplit(|ch| ch == '/' || ch == '\\')
+        .next()
+        .filter(|part| !part.is_empty())?;
+    Some(
+        file_name
+            .rsplit_once('.')
+            .map(|(stem, _)| stem)
+            .filter(|stem| !stem.is_empty())
+            .unwrap_or(file_name),
+    )
 }
 
 fn adapt_module(m: &legacy::ModuleUnit, meta: &HashMap<String, &BasProjModule>) -> sym::ModuleUnit {
@@ -333,6 +345,13 @@ fn canonical(path: &Path) -> Result<PathBuf, BasProjError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logical_include_stem_accepts_windows_project_paths() {
+        assert_eq!(module_name_of(r"..\CoreMath\CoreMath.basproj"), "CoreMath");
+        assert_eq!(module_name_of(r"Forms\Sheet1.cls"), "Sheet1");
+        assert_eq!(module_name_of("../Lib/Lib.basproj"), "Lib");
+    }
 
     fn unique_root(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

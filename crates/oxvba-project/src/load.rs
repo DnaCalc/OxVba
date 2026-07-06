@@ -121,7 +121,8 @@ pub(crate) fn build_loaded_project(
     } else {
         load_explicit_modules(&basproj.modules, project_dir)?
     };
-    let cc_constants = cond_comp::base_cc_constants(&conditional_constants);
+    let cc_target = load_time_conditional_compilation_target(props);
+    let cc_constants = cond_comp::base_cc_constants_for_target(&conditional_constants, cc_target);
     validate_top_level_mainline_policy(output_type, &modules, &cc_constants)?;
     let effective_entry_point = resolve_effective_entry_point(
         output_type,
@@ -198,9 +199,7 @@ pub(crate) fn build_loaded_project(
         if bm.kind == BasProjModuleKind::ClassModule
             && (bm.instancing.is_some() || bm.prog_id.is_some() || bm.description.is_some())
         {
-            let module_name = Path::new(&bm.include)
-                .file_stem()
-                .and_then(|s| s.to_str())
+            let module_name = logical_include_file_stem(&bm.include)
                 .unwrap_or("Unknown")
                 .to_string();
             class_module_metadata.insert(
@@ -242,6 +241,35 @@ pub(crate) fn build_loaded_project(
         entry_point: effective_entry_point,
         class_module_metadata,
     })
+}
+
+fn load_time_conditional_compilation_target(
+    props: &BasProjProperties,
+) -> cond_comp::ConditionalCompilationTarget {
+    use cond_comp::{
+        ConditionalCompilationHost, ConditionalCompilationPointerWidth,
+        ConditionalCompilationTarget,
+    };
+    let pointer_width = if cfg!(target_pointer_width = "64") {
+        ConditionalCompilationPointerWidth::Bits64
+    } else {
+        ConditionalCompilationPointerWidth::Bits32
+    };
+    let host = match props
+        .default_runtime_profile
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("macos-headless") => ConditionalCompilationHost::Mac,
+        _ => ConditionalCompilationHost::Windows,
+    };
+    ConditionalCompilationTarget {
+        host,
+        pointer_width,
+        vba7: true,
+    }
 }
 
 fn resolve_effective_entry_point(
@@ -1032,9 +1060,7 @@ fn load_explicit_modules(
             path: source_path.display().to_string(),
             source: e,
         })?;
-        let module_name = Path::new(&bm.include)
-            .file_stem()
-            .and_then(|s| s.to_str())
+        let module_name = logical_include_file_stem(&bm.include)
             .unwrap_or("Unknown")
             .to_string();
         let module_kind = match bm.kind {
@@ -1149,11 +1175,23 @@ fn project_manifest_instancing(instancing: Instancing) -> crate::manifest::Insta
 
 /// Extract a project name from a `ProjectReference` include path.
 fn project_ref_name(include: &str) -> String {
-    Path::new(include)
-        .file_stem()
-        .and_then(|s| s.to_str())
+    logical_include_file_stem(include)
         .unwrap_or(include)
         .to_string()
+}
+
+fn logical_include_file_stem(include: &str) -> Option<&str> {
+    let file_name = include
+        .rsplit(|ch| ch == '/' || ch == '\\')
+        .next()
+        .filter(|part| !part.is_empty())?;
+    Some(
+        file_name
+            .rsplit_once('.')
+            .map(|(stem, _)| stem)
+            .filter(|stem| !stem.is_empty())
+            .unwrap_or(file_name),
+    )
 }
 
 /// Get directory name as string, or "Project" as fallback.
@@ -1870,6 +1908,68 @@ mod tests {
 
         let loaded = load_basproj_from_str(xml, &temp_root)
             .expect("inactive conditional mainline code must not reject a library module");
+        assert_eq!(loaded.output_type, OutputType::Library);
+        assert!(loaded.entry_point.is_none());
+
+        std::fs::remove_dir_all(&temp_root).expect("cleanup temp project root");
+    }
+
+    #[test]
+    fn default_runtime_profile_selects_load_time_conditional_host() {
+        let unique = format!(
+            "oxvba_project_load_profile_conditional_host_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch")
+                .as_nanos()
+        );
+        let temp_root = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&temp_root).expect("create temp project root");
+        std::fs::write(
+            temp_root.join("ConditionalModule.bas"),
+            concat!(
+                "#If Mac Then\n",
+                "Public Sub Warmup()\n",
+                "End Sub\n",
+                "#Else\n",
+                "valueOut = 99\n",
+                "#End If\n",
+            ),
+        )
+        .expect("write module");
+        let windows_xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjectLibrary</ProjectName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"ConditionalModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+        let err = load_basproj_from_str(windows_xml, &temp_root)
+            .expect_err("default Windows target should keep the top-level Else branch active");
+        assert!(
+            matches!(err, BasProjError::TopLevelMainlineUnsupported { .. }),
+            "expected top-level mainline rejection, got {err:?}"
+        );
+
+        let mac_xml = "\
+<Project Sdk=\"OxVba.Sdk/0.1.0\">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <ProjectName>ProjectLibrary</ProjectName>
+    <DefaultRuntimeProfile>macos-headless</DefaultRuntimeProfile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Module Include=\"ConditionalModule.bas\" />
+  </ItemGroup>
+</Project>
+";
+        let loaded = load_basproj_from_str(mac_xml, &temp_root)
+            .expect("Mac profile should use Mac conditional constants during load");
         assert_eq!(loaded.output_type, OutputType::Library);
         assert!(loaded.entry_point.is_none());
 

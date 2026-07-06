@@ -1671,8 +1671,9 @@ Candidate bead units:
   basic `#Const`/`#If`/`#ElseIf`/`#Else`/`#End If` filtering before
   the default HIR route for otherwise completed single-source inputs, active project
   `ProjectManifest::conditional_constants` feeding the same preprocessor before project procedure
-  discovery/lowering plus manifest-based embedded host build requests and language-service
-  workspace semantic snapshots, conditional-compilation arithmetic with checked integer unary signs,
+  discovery/lowering plus manifest-based embedded host build requests, `.basproj`
+  load-time target selection from `DefaultRuntimeProfile` for pre-execution validation/rewrite
+  decisions, and language-service workspace semantic snapshots, conditional-compilation arithmetic with checked integer unary signs,
   `+`, `-`, `*`, guarded `\`, and `Mod` plus Boolean `Xor`/`Eqv`/`Imp` inside the existing
   `#Const`/`#If` comparison/logical evaluator, basic single-source module `Attribute VB_Name`,
   general module attributes such as `VB_Description`, Boolean module attribute lines, and member

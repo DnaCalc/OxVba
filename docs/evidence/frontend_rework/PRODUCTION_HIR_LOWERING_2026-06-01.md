@@ -706,6 +706,12 @@ requests that carry a compiler `ProjectManifest` observe the same constants. Lat
 language-service workspace work threads the manifest constants into the same compiler-owned
 preprocessor before semantic snapshots are built for active-project modules, so IDE diagnostics and
 symbol facts hide inactive conditional branches consistently with production project compilation.
+The `.basproj` loader now also derives the load-time preprocessor target from
+`DefaultRuntimeProfile` for validation/rewrite decisions that happen before host execution can
+overwrite the symbol manifest target. In particular, `macos-headless` selects the Mac conditional
+host during library top-level-mainline validation; the regression
+`default_runtime_profile_selects_load_time_conditional_host` proves a Mac-only safe branch is
+accepted while the default Windows target still rejects the active top-level `#Else` branch.
 This is not a lossless conditional CST yet: semantic snapshot spans are still based on the filtered
 analysis source when manifest constants are present, so editor-grade inactive-region/span
 preservation remains open. Later bounded evaluator work accepts checked integer `#Const` and `#If`
