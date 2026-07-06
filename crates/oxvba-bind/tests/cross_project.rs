@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 
 use oxvba_bind::bind_projects;
+use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreConst, CoreStmt, CoreValue};
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_symbol::manifest::{
@@ -869,6 +870,69 @@ fn cross_project_default_member_bare_let_get_preserves_object_reference() {
         vec![referenced("Lib", vec![widget()])],
     );
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(9));
+}
+
+#[test]
+fn cross_project_default_member_property_let_assigned_value_is_byval_even_when_declared_byref() {
+    let widget = || {
+        class_module(
+            "Widget",
+            "Public Property Get Value() As Long\nValue = 0\nEnd Property\n\
+             Attribute Value.VB_UserMemId = 0\n\
+             Public Property Let Value(ByRef v As Long)\nEnd Property\n\
+             Attribute Value.VB_UserMemId = 0\n",
+            true,
+        )
+    };
+    let lib = project("Lib", vec![widget()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Sub Main()\n\
+             \x20   Dim w As Widget\n\
+             \x20   Set w = New Lib.Widget\n\
+             \x20   w = 3\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![widget()])],
+    );
+    let programs = bind_projects(&[lib, app], &NullTypeLibs).expect("bind_projects");
+    let app_program = programs
+        .iter()
+        .find(|program| program.unit_name == "App")
+        .expect("App program");
+    let mut lowered_args = None;
+    for proc in &app_program.procs {
+        for stmt in &proc.body {
+            let CoreStmt::Eval(CoreValue::Call { callee, args }) = stmt else {
+                continue;
+            };
+            if matches!(
+                callee,
+                CoreCallee::LateDispatch {
+                    name,
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                    default_member: false,
+                } if name == "Value"
+            ) && args.len() == 2
+            {
+                lowered_args = Some(args.as_slice());
+            }
+        }
+    }
+    let args = lowered_args.expect("cross-project default-member PropertyLet call");
+    assert!(
+        matches!(args.first(), Some(CoreArg::ByVal(_))),
+        "receiver should be passed as a value argument, got {args:?}"
+    );
+    assert!(
+        matches!(
+            args.get(1),
+            Some(CoreArg::ByVal(CoreValue::Const(CoreConst::I16(3))))
+        ),
+        "assigned default-member value should lower as trailing ByVal runtime value, got {args:?}"
+    );
 }
 
 #[test]
