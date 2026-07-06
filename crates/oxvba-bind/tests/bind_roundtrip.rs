@@ -1942,6 +1942,24 @@ fn named_indexed_property_let_roundtrip() {
 }
 
 #[test]
+fn property_let_assigned_value_is_byval_even_when_declared_byref() {
+    let src = "Private mV As Long\n\n\
+               Public Sub Main()\n    Dim target As Long\n    Item(target) = 3\nEnd Sub\n\n\
+               Public Property Let Item(ByRef target As Long, ByRef newValue As Long)\n    target = newValue\n    mV = target\nEnd Property\n";
+    let program = bind(src);
+    let calls = top_level_calls(&program);
+    let (_, args) = calls
+        .into_iter()
+        .find(|(callee, args)| matches!(callee, CoreCallee::VbaProc { .. }) && args.len() == 2)
+        .expect("indexed Property Let should lower to a two-argument VBA proc call");
+    assert!(
+        matches!(args.first(), Some(CoreArg::ByRef(_))),
+        "indexed argument should retain the declared ByRef mode, got {args:?}"
+    );
+    assert_core_arg_i16(&args[1], 3);
+}
+
+#[test]
 fn assigning_to_get_only_property_is_bind_error() {
     let main =
         "Sub Main()\n    Dim w As Widget\n    Set w = New Widget\n    w.Value = 10\nEnd Sub\n";
