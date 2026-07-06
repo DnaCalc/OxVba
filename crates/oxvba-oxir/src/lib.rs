@@ -426,6 +426,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn verifier_catches_duplicate_class_method_dispatch_key() {
+        let mut p = sample_class_field_program();
+        let mut proc_program = sample_program();
+        p.funcs.push(proc_program.funcs.remove(0));
+        p.classes[0].methods.extend([
+            OxClassMethod {
+                name: "Value".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(0),
+                dispid: None,
+                vtable_slot: None,
+                is_default_member: false,
+                is_enumerator_member: false,
+            },
+            OxClassMethod {
+                name: "value".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(0),
+                dispid: None,
+                vtable_slot: None,
+                is_default_member: false,
+                is_enumerator_member: false,
+            },
+        ]);
+        let errs = verify_program(&p).expect_err("duplicate class method key");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::DuplicateClassMethod {
+                    class_index: 0,
+                    method_index: 1,
+                    name,
+                    kind: ProjectMemberKind::PropertyGet,
+                } if name == "value"
+            )),
+            "expected DuplicateClassMethod, got {errs:?}"
+        );
+    }
+
     // ── Typed COM model ──────────────────────────────────────────────────────
 
     use oxvba_com::{

@@ -16,6 +16,7 @@ use crate::passes::{assign_repr_preserving, operand_ty, place_ty};
 use crate::program::{OxFunc, OxProgram};
 use crate::ty::OxTy;
 use crate::value::{OxArg, OxCallArg, OxNativeCallee, OxOperand, OxPlace};
+use oxvba_bundle::ProjectMemberKind;
 
 /// A single structural defect found by [`verify_program`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +171,13 @@ pub enum VerifyError {
         method_index: usize,
         proc: usize,
         funcs: usize,
+    },
+    /// A class method dispatch table contains a duplicate case-insensitive name/kind key.
+    DuplicateClassMethod {
+        class_index: usize,
+        method_index: usize,
+        name: String,
+        kind: ProjectMemberKind,
     },
     /// An `On Error GoTo <label>` names a block that does not exist.
     BadLabelTarget {
@@ -410,6 +418,15 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} method {method_index} proc {proc} out of range ({funcs} funcs)"
             ),
+            VerifyError::DuplicateClassMethod {
+                class_index,
+                method_index,
+                name,
+                kind,
+            } => write!(
+                f,
+                "class {class_index} method {method_index}: duplicate dispatch key {name:?}/{kind:?}"
+            ),
             VerifyError::BadLabelTarget {
                 func,
                 block,
@@ -495,6 +512,7 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                 funcs,
             });
         }
+        let mut method_keys = HashSet::new();
         for (method_index, method) in class.methods.iter().enumerate() {
             if method.proc.0 >= funcs {
                 errors.push(VerifyError::BadClassMethodProcRef {
@@ -502,6 +520,14 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                     method_index,
                     proc: method.proc.0,
                     funcs,
+                });
+            }
+            if !method_keys.insert((method.name.to_ascii_lowercase(), method.kind)) {
+                errors.push(VerifyError::DuplicateClassMethod {
+                    class_index,
+                    method_index,
+                    name: method.name.clone(),
+                    kind: method.kind,
                 });
             }
         }
