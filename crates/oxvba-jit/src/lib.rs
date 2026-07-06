@@ -1382,6 +1382,11 @@ impl<'a> LowerFunc<'a> {
             OxInst::CompareObjectIs { dst, lhs, rhs } => {
                 self.emit_compare_object_is_slot_call(builder, module, *dst, lhs, rhs)
             }
+            OxInst::TypeOfIs {
+                dst,
+                object,
+                type_name,
+            } => self.lower_type_of_is(builder, module, *dst, object, type_name),
             OxInst::Compare {
                 dst,
                 op,
@@ -2494,6 +2499,24 @@ impl<'a> LowerFunc<'a> {
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
+    }
+
+    fn lower_type_of_is(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        object: &OxOperand,
+        type_name: &str,
+    ) -> Result<(), JitError> {
+        self.ensure_bool_place(dst)?;
+        if matches!(object, OxOperand::Const(OxConst::Nothing)) {
+            let false_value = builder.ins().iconst(types::I32, 0);
+            return self.emit_store_bool(builder, module, dst, false_value);
+        }
+        Err(JitError::unsupported(format!(
+            "JIT project object/class instruction TypeOfIs is unsupported for {type_name}: project class/interface matching requires runtime descriptors"
+        )))
     }
 
     fn emit_variant_logical_slot_call(
@@ -8919,9 +8942,6 @@ fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str
     match inst {
         OxInst::AsNew { .. } => Some(
             "JIT project object/class instruction AsNew is unsupported: lazy activation requires descriptor-backed construction and lifecycle hooks",
-        ),
-        OxInst::TypeOfIs { .. } => Some(
-            "JIT project object/class instruction TypeOfIs is unsupported: project class/interface matching requires runtime descriptors",
         ),
         OxInst::CallByName { .. } => Some(
             "JIT object dispatch instruction CallByName is unsupported: dynamic member invocation remains VM3-only",
@@ -16711,6 +16731,43 @@ mod tests {
         for (label, inst, expected_instruction) in cases {
             assert_jit_declines_project_object_instruction(label, inst, expected_instruction);
         }
+    }
+
+    #[test]
+    fn jit_typeof_nothing_is_false_without_object_descriptors() {
+        let main = OxFunc {
+            name: "Main".to_string(),
+            kind: ProcedureKind::Sub,
+            locals: vec![local("is_widget", OxTy::Bool, None)],
+            temps: Vec::new(),
+            param_count: 0,
+            return_local: None,
+            blocks: vec![
+                OxBlock {
+                    id: BlockId(0),
+                    instrs: vec![OxInst::TypeOfIs {
+                        dst: OxPlace::Local(LocalId(0)),
+                        object: OxOperand::Const(OxConst::Nothing),
+                        type_name: "Widget".to_string(),
+                    }],
+                    fault_target: Some(BlockId(1)),
+                    terminator: OxTerminator::Return,
+                },
+                fault_block(1, 0, 2),
+                return_block(2),
+            ],
+            entry: BlockId(0),
+        };
+        let program = OxProgram {
+            funcs: vec![main],
+            entry: Some(FuncId(0)),
+            unit_name: "VBAProject".to_string(),
+            ..OxProgram::empty()
+        };
+        assert_eq!(verify_program(&program), Ok(()));
+
+        let outcome = run_jit_program(&program);
+        assert_eq!(outcome.values[0].as_bool(), Some(false));
     }
 
     #[test]

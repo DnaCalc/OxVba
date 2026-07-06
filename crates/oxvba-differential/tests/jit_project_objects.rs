@@ -200,6 +200,24 @@ fn jit_project_typeof_declines_without_vm_fallback() {
 }
 
 #[test]
+fn jit_project_typeof_nothing_matches_vm3_without_descriptors() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  If TypeOf Nothing Is Widget Then\n    r = 7\n  Else\n    r = 3\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 3);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 3);
+}
+
+#[test]
 fn jit_project_typename_object_declines_without_vm_fallback() {
     let modules = [
         (
