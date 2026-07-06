@@ -826,6 +826,8 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   | imported no-paren/paren Call/stmt    | proved-exec  |
   | imported named-arg Call/stmt         | proved-exec  |
   | imported paren object PropertyGet    | proved-exec  |
+  | portable `Application.Workbooks.Count` chain | proved-exec  |
+  | portable `Application.Workbooks` default member | proved-exec  |
 
   **Remaining gaps (IP-08B exit gates unchecked):**
 
@@ -833,11 +835,15 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   |------------------------------------------------------|--------|
   | host root/global/project behavior matrix explicit     | open   |
   | host-returned COM-object matrix wider imported breadth| open   |
-  | blocker/worklist language cleanup                      | open   |
+  | blocker/worklist language cleanup                      | reconciled 2026-07-06 |
 
-- Status: **resolved** on 2026-03-20. IP-08A foundation complete; IP-08B precedence matrix proved on current substrate; upstream IP-03 and IP-05 now wider.
+- Status: **open / in-progress** as of 2026-07-06.
+  - `IP-08A` host foundation remains complete.
+  - Bounded `IP-08B` precedence, imported host/COM coexistence, and portable host-returned object-chain evidence are valid.
+  - The broader host/root/global and host-returned COM-object matrices are not yet terminally explicit across the scoped target.
+  - The V11 COM ByRef event writeback row remains blocked by synchronous callback transport; see `BLK-COM-EVENT-BYREF-001`.
 - Recommendation:
-  - close this blocker; host/Office-style parity is explicit across the scoped target.
+  - keep this blocker open until the remaining IP-08B matrix rows are explicit and any V11/event dependency is either implemented or split out of the scoped host parity gate with an owning bead.
 
 ### BLK-ORACLE-001: Required Office/host oracle matrix is no longer the active blocker
 - Status:
