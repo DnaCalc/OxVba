@@ -1626,11 +1626,11 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   scanner also rejects duplicate UDT field names with `SYM-E-DUPLICATE-TYPE-FIELD` before a
   duplicate folded field can publish ambiguous record metadata, and rejects public/default-public
   `Type` blocks in class/object modules with `SYM-E-PUBLIC-TYPE-NOT-VALID-IN-OBJECT-MODULE`,
-  matching the Type statement rule that object-module UDTs must be `Private`. Explicit `Public`
-  `Declare` statements in object modules now reject with
-  `SYM-E-PUBLIC-DECLARE-NOT-VALID-IN-OBJECT-MODULE`, while private class-module declares and public
-  standard-module declares remain accepted. The scanner also publishes the final `Property
-  Let`/`Set` writer slot as `ByVal` in signature metadata while
+  matching the Type statement rule that object-module UDTs must be `Private`. Public or
+  implicit-public `Declare` statements in object modules now reject with
+  `SYM-E-PUBLIC-DECLARE-NOT-VALID-IN-OBJECT-MODULE`, while explicit-private class-module declares
+  and public/implicit-public standard-module declares remain accepted. The scanner also publishes
+  the final `Property Let`/`Set` writer slot as `ByVal` in signature metadata while
   preserving declared/default `ByRef` modes for preceding indexed arguments. Duplicate property
   accessors now reject with `SYM-E-DUPLICATE-PROPERTY-ACCESSOR`, and paired `Property Get`/`Let`
   declarations reject with `SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR` when their index parameter

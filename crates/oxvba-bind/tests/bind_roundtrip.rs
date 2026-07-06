@@ -1491,23 +1491,24 @@ fn class_module_public_type_block_is_bind_error() {
 
 #[test]
 fn class_module_public_declare_is_bind_error() {
-    let manifest = manifest_modules(&[
-        ("Main", ModuleKind::Procedural, "Sub Main()\nEnd Sub\n"),
-        (
-            "Widget",
-            ModuleKind::Class,
-            "Public Declare PtrSafe Sub Host Lib \"kernel32\" ()\n",
-        ),
-    ]);
-    let err = format!(
-        "{:?}",
-        bind_program(&manifest, &NullTypeLibs)
-            .expect_err("public Declare in a class module should fail binding")
-    );
-    assert!(
-        err.contains("PublicDeclareNotValidInObjectModule") && err.contains("name: \"Host\""),
-        "unexpected error: {err}"
-    );
+    for declare_src in [
+        "Public Declare PtrSafe Sub Host Lib \"kernel32\" ()\n",
+        "Declare PtrSafe Sub Host Lib \"kernel32\" ()\n",
+    ] {
+        let manifest = manifest_modules(&[
+            ("Main", ModuleKind::Procedural, "Sub Main()\nEnd Sub\n"),
+            ("Widget", ModuleKind::Class, declare_src),
+        ]);
+        let err = format!(
+            "{:?}",
+            bind_program(&manifest, &NullTypeLibs)
+                .expect_err("public Declare in a class module should fail binding")
+        );
+        assert!(
+            err.contains("PublicDeclareNotValidInObjectModule") && err.contains("name: \"Host\""),
+            "unexpected error: {err}"
+        );
+    }
 }
 
 #[test]

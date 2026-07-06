@@ -817,8 +817,8 @@ impl ScanCtx<'_> {
             return Ok(());
         };
         let declared_name = normalize_identifier_token(name_token.text).to_string();
-        let visibility = decl_visibility(node, Visibility::Private);
-        if self.module_kind != ModuleKind::Procedural && visibility == Visibility::Public {
+        let visibility = decl_visibility(node, Visibility::Public);
+        if self.module_kind != ModuleKind::Procedural && visibility != Visibility::Private {
             return Err(SymbolModelError::PublicDeclareNotValidInObjectModule {
                 name: declared_name,
             });
