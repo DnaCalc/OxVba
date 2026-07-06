@@ -2218,9 +2218,8 @@
   - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
   - `cargo test -p oxvba-jit -- --format terse`
 
-# 2026-07-07 - JIT lazy As New active-project classes WIP
+# 2026-07-07 - JIT lazy As New active-project classes
 
-- Began `bd-h4oh.10.21`; the bead remains `in_progress`.
 - Added JIT runtime state for active-project `As New` slots, keyed by resolved slot alias and pruned
   with frame exits.
 - Lowered active-project `OxInst::AsNew` registration for project-class bindings without eager
@@ -2228,9 +2227,12 @@
 - Added As New-aware object reads for Variant stores, object identity/`Is`, `TypeOf`, `TypeName`,
   project field reads, field writes, and project member receivers.
 - Added focused differential rows proving local `Dim ... As New` is lazy, first `Is Nothing`
-  instantiates/runs `Class_Initialize`, and pre-access `Set ... = Nothing` does not instantiate.
-- Residual before closure: source-level re-instantiation after `Set ... = Nothing` still exposes an
-  adjacent Variant-temp branch/lowering shape. Keep `bd-h4oh.10.21` open until that row is green.
-- Verification completed for this WIP checkpoint:
+  instantiates/runs `Class_Initialize`, pre-access `Set ... = Nothing` does not instantiate,
+  post-access `Set ... = Nothing` re-arms lazy construction, and class-field `As New` re-instantiates
+  after field clear.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `br lint bd-h4oh.10.21 --json`
   - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
   - `cargo test -p oxvba-jit -- --format terse`

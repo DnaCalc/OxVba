@@ -1019,11 +1019,12 @@ Variant-held project receivers for default-member `Property Get`/`Property Let` 
 default-member `Property Set`. `As New`, predeclared singletons, cross-project classes, events, and
 `Class_Terminate` remain split to the follow-up beads.
 
-Current WIP addendum (2026-07-07): `bd-h4oh.10.21` now has a green partial JIT path for
-active-project `As New` slot registration, lazy first read through `Is Nothing`, and pre-access
-`Set ... = Nothing`. The bead remains open because source-level re-instantiation after
-`Set ... = Nothing` still exposes an adjacent Variant-temp branch/lowering shape; that row must be
-green before `10.21` is closed.
+Current evidence addendum (2026-07-07): `bd-h4oh.10.21` completed the active-project `As New`
+JIT slice for locals and class fields. The JIT now registers project-class `As New` slots without
+eager construction, instantiates on first read/`Is Nothing`, keeps pre-access `Set ... = Nothing`
+lazy, and re-instantiates after post-access `Set ... = Nothing` for both locals and class fields.
+Imported/cross-project `As New`, predeclared singletons, events, and `Class_Terminate` remain split
+to later beads.
 
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
@@ -1032,7 +1033,7 @@ Class/JIT follow-up bead order:
 3. `bd-h4oh.10.19` - active-project method/property dispatch breadth, hidden `Me`, named/positional
    arguments, optional parameters, and `ParamArray`. Complete 2026-07-07.
 4. `bd-h4oh.10.20` - default members and object-valued property compatibility. Complete 2026-07-07.
-5. `bd-h4oh.10.21` - lazy active-project `As New` locals and fields.
+5. `bd-h4oh.10.21` - lazy active-project `As New` locals and fields. Complete 2026-07-07.
 6. `bd-h4oh.10.22` - active-project `VB_PredeclaredId` singleton construction and reset.
 7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains.
 8. `bd-h4oh.10.24` - referenced-project class descriptors and construction.

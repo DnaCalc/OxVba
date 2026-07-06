@@ -168,6 +168,55 @@ fn jit_project_dim_as_new_set_nothing_before_access_is_lazy_without_fallback() {
 }
 
 #[test]
+fn jit_project_dim_as_new_reinstantiates_after_set_nothing_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nPublic initCount As Long\nSub Main()\n  Dim c As New Counter\n  If c Is Nothing Then r = r + 100\n  Set c = Nothing\n  If c Is Nothing Then r = r + 1000\n  r = r + initCount\nEnd Sub\n",
+        ),
+        (
+            "Counter",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 2);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 2);
+}
+
+#[test]
+fn jit_project_field_as_new_reinstantiates_after_set_nothing_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nPublic initCount As Long\nSub Main()\n  Dim h As Holder\n  Set h = New Holder\n  h.Touch\n  h.Clear\n  h.Touch\n  r = r + initCount\nEnd Sub\n",
+        ),
+        (
+            "Holder",
+            Class,
+            "Private child As New Counter\nPublic Sub Touch()\n  If child Is Nothing Then\n    Main.r = Main.r + 100\n  Else\n    Main.r = Main.r + 1\n  End If\nEnd Sub\nPublic Sub Clear()\n  Set child = Nothing\nEnd Sub\n",
+        ),
+        (
+            "Counter",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 4);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 4);
+}
+
+#[test]
 fn jit_project_typed_null_set_assignment_matches_vm3_without_construction() {
     let modules = [
         (
