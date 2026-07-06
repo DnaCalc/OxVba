@@ -275,6 +275,45 @@ pub struct ClassField {
     pub array_element: Option<ArrayElementType>,
 }
 
+/// Auto-instantiation metadata for a project class field declared `As New`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ClassAsNew {
+    /// `Dim field As New <project class>`.
+    ProjectClass { class: usize },
+    /// `Dim field As New <referenced project/library class>`.
+    ExternClass { import: usize },
+    /// `Dim field As New <COM coclass>`, represented by activation ProgID.
+    ComClass { prog_id: String },
+}
+
+impl From<&coreir::CoreAsNew> for ClassAsNew {
+    fn from(binding: &coreir::CoreAsNew) -> Self {
+        match binding {
+            coreir::CoreAsNew::ProjectClass { class } => Self::ProjectClass { class: class.0 },
+            coreir::CoreAsNew::ExternClass { import } => Self::ExternClass { import: *import },
+            coreir::CoreAsNew::ComClass { prog_id } => Self::ComClass {
+                prog_id: prog_id.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClassAsNewField {
+    /// Stable per-class field token, matching [`ClassField::token`].
+    pub field: i32,
+    pub binding: ClassAsNew,
+}
+
+impl From<&coreir::CoreClassAsNewField> for ClassAsNewField {
+    fn from(field: &coreir::CoreClassAsNewField) -> Self {
+        Self {
+            field: field.field,
+            binding: ClassAsNew::from(&field.binding),
+        }
+    }
+}
+
 /// A project class: its name, lifecycle hooks, and late-bound member table.
 /// Instances are allocated by [`Op::NewObject`] and refcounted via the runtime
 /// IUnknown object model; `Class_Initialize` runs on construction and
@@ -295,6 +334,9 @@ pub struct ClassDescriptor {
     /// Instance fields reachable by `FieldGet`/`FieldSet`.
     #[serde(default)]
     pub fields: Vec<ClassField>,
+    /// Per-instance lazy `As New` field bindings.
+    #[serde(default)]
+    pub as_new_fields: Vec<ClassAsNewField>,
     /// Members reachable by name on a late-bound receiver.
     pub methods: Vec<ClassMethod>,
     /// Display names of interfaces this class implements (for `TypeOf`/`Set`).
@@ -450,5 +492,55 @@ impl Bundle {
         self.external_calls
             .iter()
             .find(|d| d.descriptor_id == descriptor_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn package_class_as_new_metadata_converts_from_core() {
+        let project = coreir::CoreClassAsNewField {
+            field: 7,
+            binding: coreir::CoreAsNew::ProjectClass {
+                class: coreir::ClassId(2),
+            },
+        };
+        assert_eq!(
+            ClassAsNewField::from(&project),
+            ClassAsNewField {
+                field: 7,
+                binding: ClassAsNew::ProjectClass { class: 2 },
+            }
+        );
+
+        let extern_class = coreir::CoreClassAsNewField {
+            field: 8,
+            binding: coreir::CoreAsNew::ExternClass { import: 3 },
+        };
+        assert_eq!(
+            ClassAsNewField::from(&extern_class),
+            ClassAsNewField {
+                field: 8,
+                binding: ClassAsNew::ExternClass { import: 3 },
+            }
+        );
+
+        let com_class = coreir::CoreClassAsNewField {
+            field: 9,
+            binding: coreir::CoreAsNew::ComClass {
+                prog_id: "Excel.Application".to_string(),
+            },
+        };
+        assert_eq!(
+            ClassAsNewField::from(&com_class),
+            ClassAsNewField {
+                field: 9,
+                binding: ClassAsNew::ComClass {
+                    prog_id: "Excel.Application".to_string(),
+                },
+            }
+        );
     }
 }

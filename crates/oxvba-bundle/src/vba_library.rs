@@ -125,6 +125,7 @@ fn build() -> Bundle {
         initialize: None,
         terminate: None,
         fields: Vec::new(),
+        as_new_fields: Vec::new(),
         methods,
         implements: Vec::new(),
     }];
@@ -239,6 +240,8 @@ mod tests {
             ExportToken::Class { name } if name.eq_ignore_ascii_case("Collection")
         )));
         let collection = &b.classes[0];
+        assert!(collection.fields.is_empty());
+        assert!(collection.as_new_fields.is_empty());
         assert_eq!(collection.methods.len(), 5);
         assert!(
             collection
