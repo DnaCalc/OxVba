@@ -91,3 +91,6 @@ Follow-ups landed since:
   fallback return source after copying to the receiver temp. The oracle probe B now matches `gMT`:
   `.Tag` appends `g`, `Mark` appends `M`, then the returned `Foo` temporary releases at the
   statement boundary and appends `T`.
+- **Source-level `Me` resurrection regression** now pins the existing VM3 parking contract:
+  `Class_Terminate` can assign `Me` to a live module-level reference, the resurrected object keeps
+  its field state, and the later final drop does not run `Class_Terminate` a second time.
