@@ -1746,7 +1746,9 @@ Candidate bead units:
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
   `Property Set` writes through HIR, simple non-indexed property declarations through the default
   HIR route, simple positional ParamArray packing including empty packs through the default HIR
-  route, `LBound`/`UBound`
+  route, invalid `ParamArray` declarations with `Optional`, explicit `ByVal`, explicit `ByRef`,
+  or non-final parameter position now reject through scanner-owned
+  `SYM-E-INVALID-PARAMARRAY-DECLARATION`, and `LBound`/`UBound`
   array-bound intrinsics in HIR, one-argument `IsArray`,
   `VarType`, `TypeName`, `IsNumeric`, `IsDate`, `IsObject`, `IsEmpty`, `IsNull`, and `IsError`
   introspection/predicate intrinsics in HIR, deterministic string/search intrinsics `Len`, `Left`,

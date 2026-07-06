@@ -1656,6 +1656,62 @@ fn optional_object_defaults_accept_nothing_and_zero() {
 }
 
 #[test]
+fn scanner_rejects_invalid_paramarray_modifiers() {
+    for (src, procedure, parameter, reason) in [
+        (
+            "Sub S(Optional ParamArray xs() As Variant)\r\nEnd Sub\r\n",
+            "S",
+            "xs",
+            "ParamArray cannot be combined with Optional",
+        ),
+        (
+            "Sub S(ByVal ParamArray xs() As Variant)\r\nEnd Sub\r\n",
+            "S",
+            "xs",
+            "ParamArray cannot be combined with ByVal",
+        ),
+        (
+            "Sub S(ByRef ParamArray xs() As Variant)\r\nEnd Sub\r\n",
+            "S",
+            "xs",
+            "ParamArray cannot be combined with ByRef",
+        ),
+        (
+            "Sub S(ParamArray xs() As Variant, ByVal tail As Long)\r\nEnd Sub\r\n",
+            "S",
+            "xs",
+            "ParamArray must be the final parameter",
+        ),
+        (
+            "Declare PtrSafe Sub Host Lib \"h\" (ByVal n As Long, Optional ParamArray xs() As Variant)\r\n",
+            "Host",
+            "xs",
+            "ParamArray cannot be combined with Optional",
+        ),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("{src} should reject invalid ParamArray declaration"),
+            Err(err) => err,
+        };
+        assert!(matches!(
+            err,
+            SymbolModelError::InvalidParamArrayDeclaration {
+                procedure: ref actual_procedure,
+                parameter: ref actual_parameter,
+                reason: actual_reason,
+            } if actual_procedure == procedure
+                && actual_parameter == parameter
+                && actual_reason == reason
+        ));
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-PARAMARRAY-DECLARATION"
+        );
+    }
+}
+
+#[test]
 fn scanner_reads_per_declarator_types_from_structured_cst() {
     // Each declarator carries its own type (the old flat-token walker couldn't).
     let m = manifest(

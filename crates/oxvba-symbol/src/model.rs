@@ -205,6 +205,12 @@ pub enum SymbolModelError {
     UnsupportedDeclaredDecimal,
     #[error("unsupported Option Compare Database directive")]
     UnsupportedOptionCompareDatabase,
+    #[error("invalid ParamArray declaration for `{procedure}` parameter `{parameter}`: {reason}")]
+    InvalidParamArrayDeclaration {
+        procedure: String,
+        parameter: String,
+        reason: &'static str,
+    },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -282,6 +288,20 @@ impl SymbolModelError {
                 "Option Compare Database requires Microsoft Access database collation, which this target does not implement",
             )
             .with_help("Use Option Compare Binary or Option Compare Text, or compile with an Access collation implementation."),
+            SymbolModelError::InvalidParamArrayDeclaration {
+                procedure,
+                parameter,
+                reason,
+            } => Diagnostic::error(
+                "SYM-E-INVALID-PARAMARRAY-DECLARATION",
+                DiagnosticPhase::Symbol,
+                format!(
+                    "invalid ParamArray declaration for `{procedure}` parameter `{parameter}`: {reason}"
+                ),
+            )
+            .with_help(
+                "Declare ParamArray as the final parameter without Optional, ByVal, or ByRef.",
+            ),
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,

@@ -1279,6 +1279,18 @@ fn named_argument_to_paramarray_parameter_is_bind_error() {
 }
 
 #[test]
+fn invalid_paramarray_declaration_is_bind_error() {
+    let src =
+        "Sub Main()\nEnd Sub\n\nSub Capture(Optional ParamArray items() As Variant)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("InvalidParamArrayDeclaration")
+            || err.contains("SYM-E-INVALID-PARAMARRAY-DECLARATION"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn extra_argument_is_bind_error() {
     let src = "Sub Main()\n    TakeOne 1, 2\nEnd Sub\n\nSub TakeOne(ByVal n As Long)\nEnd Sub\n";
     let err = bind_error(src);
