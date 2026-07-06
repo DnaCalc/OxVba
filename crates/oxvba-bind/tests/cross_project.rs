@@ -936,6 +936,75 @@ fn cross_project_default_member_property_let_assigned_value_is_byval_even_when_d
 }
 
 #[test]
+fn cross_project_default_member_property_set_assigned_object_is_byval_even_when_declared_byref() {
+    let box_cls = || {
+        class_module(
+            "Box",
+            "Public Property Get Item(ByVal i As Long) As Thing\nSet Item = Nothing\nEnd Property\n\
+             Attribute Item.VB_UserMemId = 0\n\
+             Public Property Set Item(ByRef target As Long, ByRef value As Thing)\nEnd Property\n\
+             Attribute Item.VB_UserMemId = 0\n",
+            true,
+        )
+    };
+    let thing = || class_module("Thing", "Public Sub Touch()\nEnd Sub\n", true);
+    let lib_modules = || vec![box_cls(), thing()];
+    let lib = project("Lib", lib_modules(), vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Sub Main()\n\
+             \x20   Dim b As Box\n\
+             \x20   Dim t As Thing\n\
+             \x20   Dim target As Long\n\
+             \x20   Set b = New Lib.Box\n\
+             \x20   Set t = New Lib.Thing\n\
+             \x20   Set b(target) = t\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", lib_modules())],
+    );
+    let programs = bind_projects(&[lib, app], &NullTypeLibs).expect("bind_projects");
+    let app_program = programs
+        .iter()
+        .find(|program| program.unit_name == "App")
+        .expect("App program");
+    let mut lowered_args = None;
+    for proc in &app_program.procs {
+        for stmt in &proc.body {
+            let CoreStmt::Eval(CoreValue::Call { callee, args }) = stmt else {
+                continue;
+            };
+            if matches!(
+                callee,
+                CoreCallee::LateDispatch {
+                    name,
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertySet),
+                    default_member: false,
+                } if name == "Item"
+            ) && args.len() == 3
+            {
+                lowered_args = Some(args.as_slice());
+            }
+        }
+    }
+    let args = lowered_args.expect("cross-project default-member PropertySet call");
+    assert!(
+        matches!(args.first(), Some(CoreArg::ByVal(_))),
+        "receiver should be passed as a value argument, got {args:?}"
+    );
+    assert!(
+        matches!(args.get(1), Some(CoreArg::ByRef(_))),
+        "indexed argument should retain the declared ByRef mode, got {args:?}"
+    );
+    assert!(
+        matches!(args.get(2), Some(CoreArg::ByVal(_))),
+        "assigned default-member Property Set object should lower as trailing ByVal runtime value, got {args:?}"
+    );
+}
+
+#[test]
 fn cross_project_property_let_does_not_fallback_to_getter() {
     let widget = || {
         class_module(
