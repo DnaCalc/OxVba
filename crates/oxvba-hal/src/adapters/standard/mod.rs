@@ -62,7 +62,7 @@ use oxvba_com::{
 #[cfg(target_os = "windows")]
 use oxvba_com::{
     ComDirectDispatchSpec, ComEventPath, ComEventSpec, ComEventTriggerSpec, ComInvokeFailure,
-    WindowsComBridge, map_com_hresult_label,
+    TypeLibParamType, WindowsComBridge, map_com_hresult_label,
 };
 use oxvba_runtime::{VarType, Variant};
 #[cfg(target_os = "windows")]
@@ -714,6 +714,7 @@ impl StandardHostServices {
             override_cfg.event_token.into(),
             ComEventSpec {
                 callback_arity: override_cfg.callback_arity,
+                parameter_types: vec![TypeLibParamType::Variant; override_cfg.callback_arity],
                 path: override_cfg.path,
                 connection_point_iid: override_cfg.connection_point_iid.clone(),
                 dispatch_member_id: override_cfg.dispatch_member_id,

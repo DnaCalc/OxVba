@@ -650,6 +650,7 @@ pub struct TypeLibEventMetadata {
     pub name: String,
     pub token: i32,
     pub callback_arity: u8,
+    pub parameter_types: Vec<TypeLibParamType>,
     pub dispatch_path: TypeLibEventDispatchPath,
     pub connection_point_iid: Option<String>,
     pub dispatch_member_id: Option<i32>,

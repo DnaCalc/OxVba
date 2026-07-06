@@ -231,6 +231,7 @@ fn event_specs_from_typelib_metadata(
                 event.token.into(),
                 ComEventSpec {
                     callback_arity: usize::from(event.callback_arity),
+                    parameter_types: event.parameter_types.clone(),
                     path: match event.dispatch_path {
                         TypeLibEventDispatchPath::Dispatch => ComEventPath::Dispatch,
                         TypeLibEventDispatchPath::SourceInterface => ComEventPath::SourceInterface,
@@ -376,9 +377,16 @@ pub enum ComEventPath {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComEventSpec {
     pub callback_arity: usize,
+    pub parameter_types: Vec<TypeLibParamType>,
     pub path: ComEventPath,
     pub connection_point_iid: Option<String>,
     pub dispatch_member_id: Option<i32>,
+}
+
+impl ComEventSpec {
+    pub fn has_byref_parameters(&self) -> bool {
+        self.parameter_types.iter().any(TypeLibParamType::is_by_ref)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -645,8 +653,9 @@ mod tests {
         member_specs_from_typelib_metadata,
     };
     use crate::{
-        ComInterfaceIid, ComMemberToken, ComValue, TypeLibMemberInvokeKind, TypeLibMemberMetadata,
-        TypeLibMetadataBlob, TypeLibParamType, TypeLibResolvedIdentity, TypeLibWireType,
+        ComInterfaceIid, ComMemberToken, ComValue, TypeLibEventDispatchPath, TypeLibEventMetadata,
+        TypeLibMemberInvokeKind, TypeLibMemberMetadata, TypeLibMetadataBlob, TypeLibParamType,
+        TypeLibResolvedIdentity, TypeLibWireType,
     };
     use oxvba_runtime::{ObjectRef, RuntimeInterfaceId, RuntimeMemberInvokeKind, VarType};
 
@@ -733,6 +742,40 @@ mod tests {
             .expect("binding-level default descriptor plan should resolve");
         assert_eq!(default_plan.dispatch_id, 7);
         assert_eq!(binding.runtime_dispatch_plan_cache.len(), 2);
+    }
+
+    #[test]
+    fn event_specs_carry_byref_parameter_metadata() {
+        let metadata = TypeLibMetadataBlob {
+            identity: sample_typelib_identity(),
+            activation_prog_id: Some("TestLib.Widget".to_string()),
+            member_name_to_token: vec![("BeforeClose".to_string(), 22)],
+            members: Vec::new(),
+            events: vec![TypeLibEventMetadata {
+                name: "BeforeClose".to_string(),
+                token: 22,
+                callback_arity: 1,
+                parameter_types: vec![TypeLibParamType::ByRefBoolean],
+                dispatch_path: TypeLibEventDispatchPath::Dispatch,
+                connection_point_iid: Some("{00000000-0000-0000-0000-000000000022}".to_string()),
+                dispatch_member_id: Some(22),
+                coclass: Some("Widget".to_string()),
+            }],
+            coclass_names: Vec::new(),
+        };
+
+        let binding =
+            binding_from_typelib_metadata("TestLib.Widget".to_string(), 123, Some(&metadata));
+        let spec = binding
+            .event_specs
+            .get(&ComMemberToken::new(22))
+            .expect("typelib-backed event should be projected");
+
+        assert_eq!(spec.parameter_types, vec![TypeLibParamType::ByRefBoolean]);
+        assert!(
+            spec.has_byref_parameters(),
+            "ByRef event metadata must be visible before queued subscription"
+        );
     }
 
     #[test]

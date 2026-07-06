@@ -3593,10 +3593,18 @@ unsafe fn extract_events_from_coclass(
 
         if let Ok(source_members) = source_members {
             for member in source_members {
+                let parameter_types =
+                    if member.parameter_types.is_empty() && !member.parameter_names.is_empty() {
+                        vec![TypeLibParamType::Variant; member.parameter_names.len()]
+                    } else {
+                        member.parameter_types.clone()
+                    };
+                let callback_arity = parameter_types.len().max(member.parameter_names.len());
                 events.push(TypeLibEventMetadata {
                     name: member.name,
                     token: member.token,
-                    callback_arity: member.parameter_names.len() as u8,
+                    callback_arity: callback_arity as u8,
+                    parameter_types,
                     dispatch_path,
                     connection_point_iid: iid.clone(),
                     dispatch_member_id: Some(member.token),

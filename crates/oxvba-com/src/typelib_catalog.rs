@@ -337,6 +337,7 @@ pub(crate) fn map_member_metadata_to_spec(member: &TypeLibMemberMetadata) -> Com
 fn map_event_metadata_to_spec(event: &TypeLibEventMetadata) -> ComEventSpec {
     ComEventSpec {
         callback_arity: usize::from(event.callback_arity),
+        parameter_types: event.parameter_types.clone(),
         path: match event.dispatch_path {
             crate::typelib::TypeLibEventDispatchPath::Dispatch => ComEventPath::Dispatch,
             crate::typelib::TypeLibEventDispatchPath::SourceInterface => {

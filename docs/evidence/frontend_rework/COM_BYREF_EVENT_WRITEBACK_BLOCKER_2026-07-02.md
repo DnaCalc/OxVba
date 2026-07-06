@@ -45,6 +45,23 @@ it cannot preserve real ByRef event writeback:
 Adding only a fixture event such as `OnBeforeCancel(ByRef cancel As Boolean)` would
 therefore create a fake convenience path unless the callback transport is changed.
 
+### 2026-07-06 Metadata/Diagnostic Progress
+
+Event metadata now preserves semantic parameter shape:
+
+- `TypeLibEventMetadata` carries `parameter_types`;
+- `ComEventSpec` carries the same vector and exposes ByRef detection;
+- live typelib event extraction stamps event specs from source-interface member
+  parameter types;
+- fixture event metadata keeps existing by-value events explicit as `Long` or
+  zero-arity;
+- the Windows subscription path rejects ByRef event specs before queue-backed
+  `Advise`/subscription insertion with `COM-E-EVENT-BYREF-UNSUPPORTED`.
+
+This prevents a ByRef event from being accepted onto the existing queued callback
+transport, but it does not close V11. The remaining blocker is still the
+synchronous same-call handler execution/writeback path.
+
 ## Required Unblock
 
 V11 needs a synchronous, scoped COM event callback transport for ByRef-capable

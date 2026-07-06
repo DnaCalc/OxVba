@@ -1013,6 +1013,15 @@ pub unsafe fn subscribe_event_shared(
                 event.raw()
             ));
         };
+        if let Some(spec) = binding.event_specs.get(&event)
+            && spec.has_byref_parameters()
+        {
+            return Err(format!(
+                "COM-E-EVENT-BYREF-UNSUPPORTED: queued COM event transport cannot preserve ByRef writeback for object `{}` event token {}",
+                binding.prog_id_name,
+                event.raw()
+            ));
+        }
         let subscription = state.allocate_subscription();
         (binding, expected_arity, subscription)
     };
@@ -1143,7 +1152,7 @@ mod tests {
     };
     use crate::{
         ComBinding, ComEventPath, ComEventSpec, ComEventSubscription, ComEventTriggerSpec,
-        ComInvokeArg, ComMemberToken, ComValue,
+        ComInvokeArg, ComMemberToken, ComObjectToken, ComValue,
     };
     use oxvba_runtime::{ObjectRef, bstr::BStr};
     use std::sync::{Arc, Mutex};
@@ -1188,6 +1197,41 @@ mod tests {
     }
 
     #[test]
+    fn byref_event_subscription_declines_before_queued_transport() {
+        let object = ObjectRef::from_compat_identity(20_222);
+        let event = ComMemberToken::new(22);
+        let state = Arc::new(Mutex::new(WindowsComClientState::default()));
+        let mut binding = ComBinding::new("ByRef.Event.Source".to_string(), 0);
+        binding.event_specs.insert(
+            event,
+            ComEventSpec {
+                callback_arity: 1,
+                parameter_types: vec![crate::TypeLibParamType::ByRefBoolean],
+                path: ComEventPath::Dispatch,
+                connection_point_iid: None,
+                dispatch_member_id: Some(event.raw()),
+            },
+        );
+        state
+            .lock()
+            .expect("state")
+            .bindings
+            .insert(ComObjectToken::new(object.raw()), binding);
+
+        let err = unsafe { super::subscribe_event_shared(&state, object, event) }
+            .expect_err("ByRef COM events require synchronous writeback transport");
+
+        assert!(
+            err.contains("COM-E-EVENT-BYREF-UNSUPPORTED"),
+            "expected stable ByRef event decline, got {err}"
+        );
+        assert!(
+            state.lock().expect("state").subscriptions.is_empty(),
+            "declined ByRef events must not leave queued subscriptions behind"
+        );
+    }
+
+    #[test]
     fn projection_event_callback_args_accept_non_legacy_com_values() {
         let mut binding = ComBinding::new("Test.Object".to_string(), 0);
         binding.event_trigger_specs.insert(
@@ -1202,6 +1246,7 @@ mod tests {
             ComMemberToken::new(11),
             ComEventSpec {
                 callback_arity: 1,
+                parameter_types: vec![crate::TypeLibParamType::String],
                 path: ComEventPath::Dispatch,
                 connection_point_iid: None,
                 dispatch_member_id: Some(11),
@@ -1252,6 +1297,7 @@ mod tests {
             ComMemberToken::new(11),
             ComEventSpec {
                 callback_arity: 1,
+                parameter_types: vec![crate::TypeLibParamType::String],
                 path: ComEventPath::Dispatch,
                 connection_point_iid: None,
                 dispatch_member_id: Some(11),

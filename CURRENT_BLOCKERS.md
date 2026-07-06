@@ -75,11 +75,17 @@ Run context: active parity/compliance execution plus in-progress feature worklis
   - Blocks broad claims for Excel-style cancellable events such as `Workbook.BeforeClose(Cancel)` where the handler must mutate a ByRef argument before the event source continues.
 - Current state:
   - By-value COM events are delivered through the existing native connection-point sink and later drained by `Vm3::pump_com_events`.
+  - As of 2026-07-06, typelib-backed event metadata now preserves per-parameter
+    `TypeLibParamType` shape through `TypeLibEventMetadata` and `ComEventSpec`, and
+    the Windows subscription path rejects ByRef event specs before queue-backed
+    `Advise`/subscription insertion with `COM-E-EVENT-BYREF-UNSUPPORTED`.
   - The current callback queue stores owned value snapshots (`ComEventCallbackValue`) and returns `S_OK` from `IDispatch::Invoke` before the VBA handler runs.
   - COM ByRef event writeback requires mutating the source-owned `VT_BYREF` argument during the active `Invoke` call. A later `DoEvents` drain cannot write back to the event source.
   - Evidence: `docs/evidence/frontend_rework/COM_BYREF_EVENT_WRITEBACK_BLOCKER_2026-07-02.md`.
 - Exact unblocking steps:
   - Extend event metadata to preserve per-parameter ByRef/value and wire-type shape.
+    - 2026-07-06 progress: semantic parameter type preservation is in place for
+      event specs; exact raw `VT_BYREF` dispatch-sink slot capture is still not.
   - Add a synchronous, scoped dispatch-event callback path for supported ByRef scalar slots that runs the VBA handler before returning from native `IDispatch::Invoke`.
   - Copy supported handler-side changes back to the raw `DISPPARAMS` `VT_BYREF` slots before returning to the COM event source.
   - Explicitly reject or separately design cross-apartment/out-of-process event-thread cases where synchronous VM re-entry is not sound.
