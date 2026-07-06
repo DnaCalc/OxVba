@@ -211,6 +211,14 @@ pub enum SymbolModelError {
         parameter: String,
         reason: &'static str,
     },
+    #[error(
+        "invalid Optional parameter declaration for `{procedure}` parameter `{parameter}`: {reason}"
+    )]
+    InvalidOptionalParameterDeclaration {
+        procedure: String,
+        parameter: String,
+        reason: &'static str,
+    },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -302,6 +310,18 @@ impl SymbolModelError {
             .with_help(
                 "Declare ParamArray as the final parameter without Optional, ByVal, or ByRef.",
             ),
+            SymbolModelError::InvalidOptionalParameterDeclaration {
+                procedure,
+                parameter,
+                reason,
+            } => Diagnostic::error(
+                "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION",
+                DiagnosticPhase::Symbol,
+                format!(
+                    "invalid Optional parameter declaration for `{procedure}` parameter `{parameter}`: {reason}"
+                ),
+            )
+            .with_help("Declare every parameter after an Optional parameter as Optional."),
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,

@@ -1588,6 +1588,20 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `scanner_accepts_implicit_variant_paramarray_array`;
   `invalid_paramarray_declaration_is_bind_error`; `non_variant_paramarray_declaration_is_bind_error`;
   existing ParamArray binder/runtime regressions remain green.
+- Follow-up Optional declaration-order validation now rejects signatures that publish a required
+  parameter after an `Optional` parameter. The scanner reports
+  `SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION` before building ordinary procedure,
+  `Property Get`, property index-argument, event, or `Declare` descriptors, including the
+  `Optional ..., ParamArray ...` case where the `ParamArray` slot is still not explicitly
+  Optional. `Property Let`/`Set` keep their VBA-specific required final value/reference parameter
+  after optional index arguments, and now reject that final parameter if it is explicitly marked
+  `Optional`. This follows the same Microsoft Learn Function and Property Let statement rules, and
+  remains a declaration-shape diagnostic rather than broader call-site optional argument closure.
+  Evidence: `scanner_rejects_required_parameters_after_optional`;
+  `property_let_allows_required_value_after_optional_index_args`;
+  `property_let_value_parameter_cannot_be_optional`;
+  `property_set_reference_parameter_cannot_be_optional`;
+  `required_parameter_after_optional_is_bind_error`.
 - The i64 optional-default follow-up also found a front-end symbol-model miss where a later
   parameter following a string default could be absent from the HIR parameter list even though the
   signature parser saw it. Procedure symbol collection now reconciles missing parameter symbols

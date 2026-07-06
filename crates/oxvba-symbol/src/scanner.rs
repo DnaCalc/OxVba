@@ -188,7 +188,7 @@ impl ScanCtx<'_> {
             SyntaxKind::EventDecl => {
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
-                    self.validate_param_array_declaration(node, name)?;
+                    self.validate_parameter_declaration(node, name)?;
                     let sig = self
                         .signatures
                         .alloc(self.build_signature(node, CallShape::EventRaise));
@@ -355,7 +355,7 @@ impl ScanCtx<'_> {
         {
             return Err(SymbolModelError::FriendNotValidInStandardModule { name: logical });
         }
-        self.validate_param_array_declaration(node, &logical)?;
+        self.validate_parameter_declaration(node, &logical)?;
         let sig = self
             .signatures
             .alloc(self.build_signature(node, CallShape::Ordinary));
@@ -546,7 +546,7 @@ impl ScanCtx<'_> {
             return Ok(());
         };
         let declared_name = normalize_identifier_token(name_token.text).to_string();
-        self.validate_param_array_declaration(node, &declared_name)?;
+        self.validate_parameter_declaration(node, &declared_name)?;
         let library = node.lib_string().unwrap_or_default();
         let alias_raw = node.alias_string();
         let (alias, ordinal_alias) = match alias_raw {
@@ -656,6 +656,72 @@ impl ScanCtx<'_> {
             return_type,
             call_shape,
         }
+    }
+
+    fn validate_parameter_declaration(
+        &self,
+        proc_node: SyntaxNode<'_>,
+        procedure: &str,
+    ) -> Result<(), SymbolModelError> {
+        self.validate_optional_parameter_declaration(proc_node, procedure)?;
+        self.validate_param_array_declaration(proc_node, procedure)
+    }
+
+    fn validate_optional_parameter_declaration(
+        &self,
+        proc_node: SyntaxNode<'_>,
+        procedure: &str,
+    ) -> Result<(), SymbolModelError> {
+        let Some(param_list) = proc_node.param_list() else {
+            return Ok(());
+        };
+        let params = param_list.params();
+        let property_put_accessor = (proc_node.kind() == SyntaxKind::PropertyDecl)
+            .then(|| property_accessor(proc_node))
+            .filter(|accessor| matches!(accessor, PropertyAccessor::Let | PropertyAccessor::Set));
+        if let Some(accessor) = property_put_accessor
+            && let Some(value_param) = params.last()
+        {
+            if parameter_has_modifier(*value_param, SyntaxKind::KwOptional) {
+                let parameter = parameter_name_token(*value_param)
+                    .map(|t| normalize_identifier_token(t.text).to_string())
+                    .unwrap_or_else(|| format!("arg{}", params.len()));
+                let reason = match accessor {
+                    PropertyAccessor::Let => "Property Let value parameter cannot be Optional",
+                    PropertyAccessor::Set => "Property Set reference parameter cannot be Optional",
+                    PropertyAccessor::Get => unreachable!(),
+                };
+                return Err(SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure: procedure.to_string(),
+                    parameter,
+                    reason,
+                });
+            }
+        }
+        let ordering_len = if property_put_accessor.is_some() {
+            params.len().saturating_sub(1)
+        } else {
+            params.len()
+        };
+        let mut seen_optional = false;
+        for (index, param) in params.iter().take(ordering_len).enumerate() {
+            let optional = parameter_has_modifier(*param, SyntaxKind::KwOptional);
+            if optional {
+                seen_optional = true;
+                continue;
+            }
+            if seen_optional {
+                let parameter = parameter_name_token(*param)
+                    .map(|t| normalize_identifier_token(t.text).to_string())
+                    .unwrap_or_else(|| format!("arg{}", index + 1));
+                return Err(SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure: procedure.to_string(),
+                    parameter,
+                    reason: "required parameters cannot follow Optional parameters",
+                });
+            }
+        }
+        Ok(())
     }
 
     fn validate_param_array_declaration(

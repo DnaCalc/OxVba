@@ -1726,6 +1726,137 @@ fn scanner_rejects_invalid_paramarray_modifiers() {
 }
 
 #[test]
+fn scanner_rejects_required_parameters_after_optional() {
+    for (module_kind, src, procedure, parameter) in [
+        (
+            ModuleKind::Procedural,
+            "Sub S(Optional ByVal first As Long, ByVal second As Long)\r\nEnd Sub\r\n",
+            "S",
+            "second",
+        ),
+        (
+            ModuleKind::Procedural,
+            "Property Get Item(Optional ByVal index As Long, ByVal tail As Long) As Long\r\nEnd Property\r\n",
+            "Item",
+            "tail",
+        ),
+        (
+            ModuleKind::Procedural,
+            "Declare PtrSafe Sub Host Lib \"h\" (Optional ByVal first As Long, ByVal second As Long)\r\n",
+            "Host",
+            "second",
+        ),
+        (
+            ModuleKind::Class,
+            "Event Changed(Optional ByVal oldValue As Long, ByVal newValue As Long)\r\n",
+            "Changed",
+            "newValue",
+        ),
+        (
+            ModuleKind::Procedural,
+            "Sub S(Optional ByVal first As Long, ParamArray rest() As Variant)\r\nEnd Sub\r\n",
+            "S",
+            "rest",
+        ),
+    ] {
+        let module = ModuleUnit {
+            module_name: "Mod1".into(),
+            module_kind,
+            attributes: ModuleAttributes::named("Mod1"),
+            source: src.into(),
+        };
+        let m = manifest("Proj", vec![module]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("{src} should reject required parameter after Optional"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure: actual_procedure,
+                    parameter: actual_parameter,
+                    reason,
+                } if actual_procedure == procedure
+                    && actual_parameter == parameter
+                    && *reason == "required parameters cannot follow Optional parameters"
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION"
+        );
+    }
+}
+
+#[test]
+fn property_let_allows_required_value_after_optional_index_args() {
+    let src =
+        "Property Let Item(Optional ByVal index As Long, ByVal value As Long)\r\nEnd Property\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "Item")
+        .expect("property resolves");
+    let symbol = env
+        .symbols
+        .symbol(binding.symbol.expect("symbol id"))
+        .expect("symbol");
+    let SymbolImpl::Property(group) = &symbol.imp else {
+        panic!("expected Property group");
+    };
+    assert!(group.let_.is_some(), "Property Let accessor should publish");
+}
+
+#[test]
+fn property_let_value_parameter_cannot_be_optional() {
+    let src = "Property Let Item(Optional ByVal value As Long)\r\nEnd Property\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("Property Let value parameter should reject Optional"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::InvalidOptionalParameterDeclaration {
+                procedure,
+                parameter,
+                reason,
+            } if procedure == "Item"
+                && parameter == "value"
+                && *reason == "Property Let value parameter cannot be Optional"
+        ),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn property_set_reference_parameter_cannot_be_optional() {
+    let src = "Property Set Item(Optional value As Object)\r\nEnd Property\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("Property Set reference parameter should reject Optional"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::InvalidOptionalParameterDeclaration {
+                procedure,
+                parameter,
+                reason,
+            } if procedure == "Item"
+                && parameter == "value"
+                && *reason == "Property Set reference parameter cannot be Optional"
+        ),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn scanner_accepts_implicit_variant_paramarray_array() {
     let src = "DefStr X-Z\r\nSub S(ParamArray xs())\r\nEnd Sub\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

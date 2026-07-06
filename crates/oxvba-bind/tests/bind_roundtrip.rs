@@ -1379,6 +1379,17 @@ fn invalid_optional_default_is_bind_error() {
 }
 
 #[test]
+fn required_parameter_after_optional_is_bind_error() {
+    let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("InvalidOptionalParameterDeclaration")
+            || err.contains("SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn paramarray_still_accepts_extra_arguments() {
     let src = "Sub Main()\n    Dim r As Long\n    r = SumAll(1, 2, 3)\nEnd Sub\n\nFunction SumAll(ParamArray xs() As Variant) As Long\n    Dim i As Long\n    For i = LBound(xs) To UBound(xs)\n        SumAll = SumAll + CLng(xs(i))\n    Next i\nEnd Function\n";
     assert_eq!(run_main_local0(src), Some(6.0));
