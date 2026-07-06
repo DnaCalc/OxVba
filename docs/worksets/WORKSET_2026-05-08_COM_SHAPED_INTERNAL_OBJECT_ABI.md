@@ -180,6 +180,10 @@ First implementation slice:
   `paramarray_instance_class_method_packs_tail_after_hidden_me_receiver` prove receiver-qualified
   project class method calls bind named arguments and `ParamArray` tails against the
   source-visible parameter list after the hidden `Me` receiver.
+- VM3 differential coverage now pins project-object assignment compatibility across declared
+  class variables, implemented interfaces, and object-valued `Property Set` setters. Valid
+  project instances and `Nothing` are accepted, while incompatible project class/interface values
+  raise VBA error 13 and leave runtime handles balanced.
 - JIT/VM3 differential coverage now proves the supported object-carrier subset remains explicit
   rather than fallback-backed: typed object slots can stay `Nothing`, `Set` object assignment from
   a scalar raises 424, `Let` object assignment from `Nothing` raises 91, scalar `Variant Is

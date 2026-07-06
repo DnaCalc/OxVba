@@ -54,6 +54,10 @@ front-end symbol index:
 - Instance class method call coverage now includes out-of-order named arguments and `ParamArray`
   tail packing through an explicit receiver. These rows prove call mapping skips only hidden `Me`
   and still binds source-visible parameters in VBA order.
+- Project-object assignment compatibility is now pinned by VM3 differential rows for direct
+  class-typed `Set`, interface-typed `Set`, and object-valued `Property Set` calls. Compatible
+  project instances are accepted, `Nothing` remains assignable, and incompatible project
+  class/interface values raise VBA error 13 without leaking handles.
 - JIT object-carrier coverage now includes the supported no-construction subset: typed object
   locals remain `Nothing`, null object `Set` assignment matches VM3, `Set Object = 1` raises 424,
   `Object = Nothing` raises 91, scalar `Variant Is Variant` raises 424, and construction/member
@@ -108,6 +112,11 @@ Production-route proof:
   `paramarray_instance_class_method_packs_tail_after_hidden_me_receiver` prove receiver-qualified
   project class method dispatch maps named arguments and `ParamArray` tails against the
   source-visible parameter list after hidden `Me`.
+- `project_class_set_rejects_incompatible_project_class`,
+  `project_interface_set_accepts_implementer_and_rejects_non_implementer`, and
+  `project_property_set_rejects_incompatible_project_class_value` prove VM3 checks declared
+  project class/interface compatibility for ordinary `Set` and object-valued `Property Set`
+  traffic while preserving valid assignments and `Nothing`.
 - `jit_set_object_from_scalar_raises_object_required_without_vm_fallback`,
   `jit_let_object_from_nothing_raises_object_variable_not_set_without_vm_fallback`, and
   `jit_is_operator_variant_scalars_raise_object_required_without_vm_fallback` prove JIT-supported
@@ -177,6 +186,7 @@ Compatibility quarantine / residual classification:
 - `cargo test -p oxvba-bind predeclared --test cross_project --quiet`
 - `cargo test -p oxvba-bind named_args_to_instance_class_method_skip_hidden_me_receiver --quiet`
 - `cargo test -p oxvba-bind paramarray_instance_class_method_packs_tail_after_hidden_me_receiver --quiet`
+- `cargo test -p oxvba-differential --test project_object_identity_vm3 -- --nocapture`
 - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
 - `cargo test -p oxvba-host pure_oxvba_class --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
@@ -219,3 +229,6 @@ Compatibility quarantine / residual classification:
   package metadata. It does not infer Office-only export policy, require live COM interop, or close
   broader default-member runtime parity; those remain governed by the property/default-member and
   COM-export lanes.
+- The Set-compatibility differential slice exercises VM3 runtime assignment validation through
+  project descriptors. It does not claim imported COM assignment coercion or Windows COM server
+  publication behavior; those remain separate boundary lanes.
