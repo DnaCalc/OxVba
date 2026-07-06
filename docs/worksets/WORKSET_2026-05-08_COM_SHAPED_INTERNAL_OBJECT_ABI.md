@@ -171,6 +171,11 @@ First implementation slice:
   prove binder-emitted `As New` slot metadata is lazy rather than eager: local slots and class
   fields that are cleared with `Set ... = Nothing` instantiate a fresh initialized project object
   on the next read.
+- `predeclared_instance_reset_to_nothing_recreates_active_singleton` and
+  `cross_project_predeclared_reset_to_nothing_recreates_referenced_singleton` prove
+  `VB_PredeclaredId` singleton storage follows the same reset rule in active and referenced
+  projects: `Set ClassName = Nothing` clears the cached singleton and the next class-name access
+  constructs a fresh instance in the owning bundle.
 - `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed/default property get, property let, property set, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values, including natural `widget(5)` default-member syntax.
 - `pure_oxvba_interface_receiver_executes_through_project_descriptor_shape` covers the required pure OxVba interface receiver path (`Dim iface As IWidget`, `Set iface = widget`, `iface.Value(5)`) and validates dispatch to the implementing `IWidget_Value` member.
 

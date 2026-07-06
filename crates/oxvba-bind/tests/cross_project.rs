@@ -777,6 +777,35 @@ fn predeclared_instance_singleton_in_active_project() {
 }
 
 #[test]
+fn predeclared_instance_reset_to_nothing_recreates_active_singleton() {
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Main",
+                "Public r As Long\n\
+                 Sub Main()\n\
+                 \x20   Counter.Bump\n\
+                 \x20   r = Counter.Total\n\
+                 \x20   Set Counter = Nothing\n\
+                 \x20   Counter.Bump\n\
+                 \x20   r = r + Counter.Total * 10\n\
+                 End Sub\n",
+            ),
+            predeclared_class_module(
+                "Counter",
+                "Private n As Long\n\
+                 Public Sub Bump()\nn = n + 1\nEnd Sub\n\
+                 Public Property Get Total() As Long\nTotal = n\nEnd Property\n",
+            ),
+        ],
+        vec![],
+    );
+    // First singleton reaches 1, reset clears it, then the replacement reaches 1.
+    assert_eq!(link_run_global0_i32(&[app]), Some(11));
+}
+
+#[test]
 fn predeclared_new_makes_independent_instance() {
     // `New <predeclared class>` allocates a fresh instance, independent of the
     // global singleton — bumping the new one does not change the singleton's state.
@@ -830,6 +859,35 @@ fn cross_project_predeclared_instance_property() {
         vec![referenced("Lib", vec![host()])],
     );
     assert_eq!(link_run_global0_i32(&[lib, app]), Some(42));
+}
+
+#[test]
+fn cross_project_predeclared_reset_to_nothing_recreates_referenced_singleton() {
+    let host = || {
+        predeclared_class_module(
+            "HostEnv",
+            "Private n As Long\n\
+             Public Sub Bump()\nn = n + 1\nEnd Sub\n\
+             Public Property Get Total() As Long\nTotal = n\nEnd Property\n",
+        )
+    };
+    let lib = project("Lib", vec![host()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             \x20   HostEnv.Bump\n\
+             \x20   r = HostEnv.Total\n\
+             \x20   Set HostEnv = Nothing\n\
+             \x20   HostEnv.Bump\n\
+             \x20   r = r + HostEnv.Total * 10\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![host()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(11));
 }
 
 #[test]
