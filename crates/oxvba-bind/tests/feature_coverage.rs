@@ -2203,6 +2203,43 @@ fn logical_operators_as_rvalues() {
 }
 
 #[test]
+fn longlong_logical_operators_preserve_64_bit_width() {
+    // LongLong cannot be implicitly narrowed to Long; bitwise logical operators
+    // must keep the 64-bit lane when the operands are LongLong.
+    let snap = run(
+        "Sub Main()\nDim a As LongLong\nDim andRes As LongLong\nDim orRes As LongLong\nDim notRes As LongLong\na = 5000000012^\nandRes = a And 4294967296^\norRes = a Or 3^\nnotRes = Not a\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_i64(5_000_000_012),
+            Variant::from_i64(4_294_967_296),
+            Variant::from_i64(5_000_000_015),
+            Variant::from_i64(-5_000_000_013),
+        ]
+    );
+}
+
+#[test]
+fn mixed_fixed_integer_longlong_logical_operators_preserve_64_bit_width() {
+    let snap = run(
+        "Sub Main()\nDim a As LongLong\nDim l As Long\nDim i As Integer\nDim b As Byte\nDim mixLong As LongLong\nDim mixInt As LongLong\nDim mixByte As LongLong\na = 5000000012^\nl = 3\ni = 4\nb = 8\nmixLong = a Or l\nmixInt = a Xor i\nmixByte = a And b\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_i64(5_000_000_012),
+            Variant::from_i32(3),
+            Variant::from_i16(4),
+            Variant::from_u8(8),
+            Variant::from_i64(5_000_000_015),
+            Variant::from_i64(5_000_000_008),
+            Variant::from_i64(8),
+        ]
+    );
+}
+
+#[test]
 fn type_suffix_numeric_literals() {
     // VBA type-suffix literals: # Double, & Long.
     let snap = run("Sub Main()\nDim d As Double\nDim n As Long\nd = 2# * 1.5\nn = 100&\nEnd Sub");

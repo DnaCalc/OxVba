@@ -274,6 +274,8 @@ impl<'a> ProcLower<'a> {
             SyntaxKind::KwNot => {
                 let ty = if types::is_boolean(&operand.ty) {
                     builtin(BuiltinType::Boolean)
+                } else if self.g.is_longlong(&operand.ty) {
+                    builtin(BuiltinType::LongLong)
                 } else {
                     builtin(BuiltinType::Long)
                 };

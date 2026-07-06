@@ -1708,9 +1708,20 @@ impl<'a> ProcLower<'a> {
             match item {
                 ArgItem::Positional(expr, passing) => {
                     if seen_named {
-                        return Err(BindError::Unsupported(
-                            "positional argument cannot follow named argument".into(),
-                        ));
+                        if variadic_index.is_some() {
+                            // VBA permits named fixed arguments before the
+                            // positional ParamArray tail. Once a named argument
+                            // appears, later positional arguments cannot fill
+                            // fixed slots; they are variadic elements.
+                            let alias = self.paramarray_alias_place(expr, passing);
+                            tail.push((self.bind_one_arg(expr, None, passing)?, alias));
+                            pos += 1;
+                            continue;
+                        } else {
+                            return Err(BindError::Unsupported(
+                                "positional argument cannot follow named argument".into(),
+                            ));
+                        }
                     }
                     if pos < bindable_fixed_count {
                         slots[pos] =

@@ -44,6 +44,9 @@ pub enum BindError {
     /// VBA's generic compile-time type mismatch diagnostic.
     #[error("Type mismatch")]
     TypeMismatch,
+    /// VBA's compile diagnostic for non-Variant/non-Object `For Each` loop variables.
+    #[error("For Each control variable must be Variant or Object")]
+    ForEachControlVariableMustBeVariantOrObject,
     /// Too many arguments were supplied for a procedure/property call.
     #[error("Wrong number of arguments or invalid property assignment")]
     WrongNumberOfArgumentsOrInvalidPropertyAssignment,
@@ -159,6 +162,14 @@ impl BindError {
                 "Type mismatch",
             )
             .with_help("Use compatible declared types for this statement."),
+            BindError::ForEachControlVariableMustBeVariantOrObject => Diagnostic::error(
+                "BIND-E-FOREACH-CONTROL-VARIABLE-MUST-BE-VARIANT-OR-OBJECT",
+                DiagnosticPhase::Bind,
+                "For Each control variable must be Variant or Object",
+            )
+            .with_help(
+                "Use a Variant loop variable for arrays, or a Variant/Object loop variable for collections.",
+            ),
             BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment => Diagnostic::error(
                 "BIND-E-WRONG-NUMBER-OF-ARGUMENTS",
                 DiagnosticPhase::Bind,

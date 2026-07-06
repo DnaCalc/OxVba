@@ -630,6 +630,41 @@ fn for_each_over_array() {
 }
 
 #[test]
+fn for_each_array_control_variable_must_be_variant() {
+    let scalar = bind_error_display(
+        "Sub Main()\n    Dim item As Long\n    For Each item In Array(10, 20, 30)\n    Next\nEnd Sub\n",
+    );
+    assert!(
+        scalar.contains("For Each control variable must be Variant or Object"),
+        "unexpected error: {scalar}"
+    );
+
+    let object = bind_error_display(
+        "Sub Main()\n    Dim item As Object\n    For Each item In Array(10, 20, 30)\n    Next\nEnd Sub\n",
+    );
+    assert!(
+        object.contains("For Each control variable must be Variant or Object"),
+        "unexpected error: {object}"
+    );
+
+    let fixed = bind_error_display(
+        "Sub Main()\n    Dim values(1) As Long\n    Dim item As Long\n    For Each item In values\n    Next\nEnd Sub\n",
+    );
+    assert!(
+        fixed.contains("For Each control variable must be Variant or Object"),
+        "unexpected error: {fixed}"
+    );
+
+    let dynamic = bind_error_display(
+        "Sub Main()\n    Dim values() As Long\n    ReDim values(1)\n    Dim item As Long\n    For Each item In values\n    Next\nEnd Sub\n",
+    );
+    assert!(
+        dynamic.contains("For Each control variable must be Variant or Object"),
+        "unexpected error: {dynamic}"
+    );
+}
+
+#[test]
 fn do_while_loop() {
     let body = "    Dim n As Long\n    n = 0\n    Do While n < 10\n        n = n + 1\n    Loop\n";
     assert_eq!(run_main_local0(&main_sub(body)), Some(10.0));
@@ -1221,6 +1256,22 @@ fn positional_after_named_argument_is_bind_error() {
     let err = bind_error(src);
     assert!(
         err.contains("positional argument cannot follow named argument"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn positional_paramarray_tail_after_named_fixed_argument_binds() {
+    let src = "Sub Main()\n    Dim r As Long\n    Call Capture(target := r, 3, 4)\nEnd Sub\n\nSub Capture(ByRef target As Long, ParamArray items() As Variant)\n    target = UBound(items)\nEnd Sub\n";
+    assert_eq!(run_main_local0(src), Some(1.0));
+}
+
+#[test]
+fn named_argument_to_paramarray_parameter_is_bind_error() {
+    let src = "Sub Main()\n    Dim x\n    Call Capture(target := x, items := 5)\nEnd Sub\n\nSub Capture(ByRef target, ParamArray items() As Variant)\n    target = UBound(items)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("named argument to a ParamArray parameter"),
         "unexpected error: {err}"
     );
 }

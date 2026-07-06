@@ -706,10 +706,18 @@ impl<'a> ProcLower<'a> {
             let var_node = node
                 .foreach_var()
                 .ok_or_else(|| BindError::Malformed("For Each variable".into()))?;
-            let (item, _ty) = self.bind_place(var_node)?;
-            let source = self.bind_required(node.foreach_collection(), "For Each collection")?;
+            let (item, item_ty) = self.bind_place(var_node)?;
+            let source_node = node
+                .foreach_collection()
+                .ok_or_else(|| BindError::Malformed("missing For Each collection".into()))?;
+            let source = self.bind_expr(source_node)?;
+            validate_for_each_control_variable(&item_ty, &source.value, &source.ty)?;
             let body = self.bind_loop_body(node.body_block(), LoopContext::For)?;
-            Ok(vec![CoreStmt::ForEach { item, source, body }])
+            Ok(vec![CoreStmt::ForEach {
+                item,
+                source: source.value,
+                body,
+            }])
         } else {
             let counter = node
                 .for_counter_token()
@@ -2174,6 +2182,29 @@ impl<'a> ProcLower<'a> {
             help_context: None,
             inherit: false,
         })])
+    }
+}
+
+fn validate_for_each_control_variable(
+    item_ty: &VarTypeRef,
+    source: &CoreValue,
+    source_ty: &VarTypeRef,
+) -> Result<(), BindError> {
+    let source_is_array = matches!(source, CoreValue::ArrayLiteral { .. })
+        || matches!(
+            source_ty,
+            VarTypeRef::Array(_) | VarTypeRef::FixedArray { .. }
+        );
+    if source_is_array {
+        if !matches!(item_ty, VarTypeRef::Variant) {
+            return Err(BindError::ForEachControlVariableMustBeVariantOrObject);
+        }
+        return Ok(());
+    }
+    if matches!(item_ty, VarTypeRef::Variant | VarTypeRef::Object(_)) {
+        Ok(())
+    } else {
+        Err(BindError::ForEachControlVariableMustBeVariantOrObject)
     }
 }
 

@@ -121,6 +121,11 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
     // call's resolved member is interned into it, and the call names the member by a
     // stable `ComMethodRef`.
     let mut com = ComInterner::default();
+    let proc_return_types: Vec<Option<OxTy>> = program
+        .procs
+        .iter()
+        .map(|proc| proc_return_ty(proc, &resolver, program.long_ptr_width))
+        .collect();
 
     let mut funcs = Vec::with_capacity(program.procs.len());
     for proc in &program.procs {
@@ -128,6 +133,7 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
             proc,
             &resolver,
             program.long_ptr_width,
+            &proc_return_types,
             &mut com,
         )?);
     }
@@ -165,6 +171,18 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
     };
     normalize_assigns(&mut ox_program);
     Ok(ox_program)
+}
+
+fn proc_return_ty(
+    proc: &CoreProc,
+    resolver: &impl NameResolver,
+    long_ptr_width: CoreLongPtrWidth,
+) -> Option<OxTy> {
+    let ret = proc.return_local?;
+    let local_index = ret.0.checked_sub(proc.params.len())?;
+    proc.locals.get(local_index).map(|local| {
+        lower_declared_var_type_with_longptr_width(&local.ty, resolver, long_ptr_width)
+    })
 }
 
 /// Lower a Core IR project class to its OxIR form (the index is its [`ClassId`]; the
@@ -309,6 +327,7 @@ fn elaborate_proc(
     proc: &CoreProc,
     resolver: &impl NameResolver,
     long_ptr_width: CoreLongPtrWidth,
+    proc_return_types: &[Option<OxTy>],
     com: &mut ComInterner,
 ) -> Result<OxFunc> {
     // The unified local index space is params first, then locals (the binder's
@@ -343,6 +362,7 @@ fn elaborate_proc(
         proc.params.len(),
         proc.label_lines.clone(),
         long_ptr_width,
+        proc_return_types,
         com,
     );
     // Pre-assign a block to every source label so forward references resolve.
@@ -404,6 +424,7 @@ struct Lowerer<'a> {
     /// early-bound call interns its resolved member here and names it by a `ComMethodRef`.
     com: &'a mut ComInterner,
     long_ptr_width: CoreLongPtrWidth,
+    proc_return_types: &'a [Option<OxTy>],
 }
 
 impl<'a> Lowerer<'a> {
@@ -412,6 +433,7 @@ impl<'a> Lowerer<'a> {
         param_count: usize,
         label_lines: Vec<Option<i32>>,
         long_ptr_width: CoreLongPtrWidth,
+        proc_return_types: &'a [Option<OxTy>],
         com: &'a mut ComInterner,
     ) -> Self {
         // Entry = block 0, epilogue = block 1; both reserved up front.
@@ -434,6 +456,7 @@ impl<'a> Lowerer<'a> {
             with_temps: HashMap::new(),
             com,
             long_ptr_width,
+            proc_return_types,
         }
     }
 
@@ -1741,7 +1764,7 @@ impl<'a> Lowerer<'a> {
             | CoreBinOp::Gt
             | CoreBinOp::Ge => compare_result_type(&l_ty, &r_ty),
             CoreBinOp::And | CoreBinOp::Or | CoreBinOp::Xor | CoreBinOp::Eqv | CoreBinOp::Imp => {
-                OxTy::Variant
+                logical_result_type(&l_ty, &r_ty)
             }
             CoreBinOp::Is => OxTy::Bool,
             CoreBinOp::Like => OxTy::Variant,
@@ -1870,16 +1893,25 @@ impl<'a> Lowerer<'a> {
     }
 
     /// Lower a call as an expression: emit it with a fresh result temp and return that
-    /// temp. The result type is recovered when the callee tables are typed;
-    /// conservatively `Variant` for now.
+    /// temp. Direct project procedure calls can preserve the callee return type; dynamic
+    /// and external calls remain conservatively `Variant` until their typed metadata is
+    /// threaded through this expression surface.
     fn lower_call(
         &mut self,
         callee: &coreir::CoreCallee,
         args: &[CoreArg],
     ) -> Result<(OxOperand, OxTy)> {
-        let t = self.new_temp(OxTy::Variant);
+        let ty = match callee {
+            coreir::CoreCallee::VbaProc { proc } => self
+                .proc_return_types
+                .get(proc.0)
+                .and_then(Clone::clone)
+                .unwrap_or(OxTy::Variant),
+            _ => OxTy::Variant,
+        };
+        let t = self.new_temp(ty.clone());
         self.lower_call_into(Some(OxPlace::Temp(t)), callee, args)?;
-        Ok((OxOperand::temp(t), OxTy::Variant))
+        Ok((OxOperand::temp(t), ty))
     }
 
     /// Emit a call writing its result to `dst` (`None` in statement position, so a
@@ -2562,9 +2594,33 @@ fn numeric_result_type(mode: NumericMode) -> OxTy {
 fn not_result_type(src: &OxTy) -> OxTy {
     match src {
         OxTy::Bool => OxTy::Bool,
+        OxTy::LongLong => OxTy::LongLong,
         OxTy::Variant => OxTy::Variant,
         _ => OxTy::Long,
     }
+}
+
+fn logical_result_type(lhs: &OxTy, rhs: &OxTy) -> OxTy {
+    if lhs.is_variant() || rhs.is_variant() {
+        OxTy::Variant
+    } else if matches!((lhs, rhs), (OxTy::Bool, OxTy::Bool)) {
+        OxTy::Bool
+    } else if (matches!(lhs, OxTy::LongLong) || matches!(rhs, OxTy::LongLong))
+        && is_fixed_integer_ty(lhs)
+        && is_fixed_integer_ty(rhs)
+    {
+        OxTy::LongLong
+    } else if matches!(lhs, OxTy::Byte | OxTy::Long | OxTy::Integer)
+        && matches!(rhs, OxTy::Byte | OxTy::Long | OxTy::Integer)
+    {
+        OxTy::Long
+    } else {
+        OxTy::Variant
+    }
+}
+
+fn is_fixed_integer_ty(ty: &OxTy) -> bool {
+    matches!(ty, OxTy::Byte | OxTy::Integer | OxTy::Long | OxTy::LongLong)
 }
 
 fn compare_result_type(lhs: &OxTy, rhs: &OxTy) -> OxTy {

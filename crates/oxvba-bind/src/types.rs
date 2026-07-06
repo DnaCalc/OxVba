@@ -230,6 +230,16 @@ pub(crate) fn is_longlong_with(ctx: TypeContext, ty: &VarTypeRef) -> bool {
         || (matches!(ty, VarTypeRef::Builtin(BuiltinType::LongPtr)) && ctx.longptr_is_64())
 }
 
+fn is_fixed_integer(ty: &VarTypeRef) -> bool {
+    match ty {
+        VarTypeRef::Builtin(
+            BuiltinType::Byte | BuiltinType::Integer | BuiltinType::Long | BuiltinType::LongLong,
+        ) => true,
+        VarTypeRef::Builtin(BuiltinType::LongPtr) => true,
+        _ => false,
+    }
+}
+
 // ── Operator result lattice ─────────────────────────────────────────────────
 
 /// The (over-approximated) result type of a binary operator.
@@ -248,6 +258,11 @@ pub(crate) fn result_type_with(
                 builtin(BuiltinType::Boolean)
             } else if is_variant(lhs) || is_variant(rhs) {
                 VarTypeRef::Variant
+            } else if (is_longlong_with(ctx, lhs) || is_longlong_with(ctx, rhs))
+                && is_fixed_integer(lhs)
+                && is_fixed_integer(rhs)
+            {
+                builtin(BuiltinType::LongLong)
             } else {
                 builtin(BuiltinType::Long)
             }
