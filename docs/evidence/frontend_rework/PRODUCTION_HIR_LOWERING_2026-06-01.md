@@ -424,14 +424,16 @@ consumers. The semantic model now indexes event argument expressions, and the lo
 collector now includes structural facts from event arguments. Focused regressions cover
 `RaiseEvent Tick(n)` symbol queries and `RaiseEvent Tick(Null)` lowering-contract intrinsics.
 
-Named event arguments and full project event binding remain broader event/COM work outside this
-narrow route slice.
+Follow-up validation now rejects non-VBA `RaiseEvent` argument-list shapes before lowering:
+arguments must be parenthesized when present, zero-argument events must be raised without empty
+parentheses, named event arguments reject, omitted event slots reject, and event arity must match
+the declared event signature. Full project event binding remains broader event/COM work outside
+this narrow route slice.
 
 Follow-up continuation accepts module-level `Event` declarations on the HIR production route when
 paired with the already-supported `RaiseEvent` statement. The event declaration is currently a
-symbol/fact declaration with no direct bytecode; declared-event signature validation, named event
-arguments, WithEvents handler matching, Implements coupling, and project event binding remain
-broader event/COM work.
+symbol/fact declaration with no direct bytecode; full WithEvents handler matching, Implements
+coupling, and project event binding remain broader event/COM work.
 
 Follow-up continuation accepts the existing single-source `Implements IFoo` directive shape on the
 HIR production route as a directive with no direct bytecode. Project/class Implements validation,

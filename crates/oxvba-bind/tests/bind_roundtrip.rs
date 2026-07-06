@@ -3193,6 +3193,43 @@ fn event_declaration_rejects_optional_and_paramarray_parameters() {
 }
 
 #[test]
+fn raise_event_rejects_invalid_argument_syntax() {
+    for (source, expected) in [
+        (
+            "Public Event Fired()\nPublic Sub Fire()\n    RaiseEvent Fired()\nEnd Sub\n",
+            "RaiseEvent without arguments must omit parentheses",
+        ),
+        (
+            "Public Event Fired(ByVal v As Long)\nPublic Sub Fire()\n    RaiseEvent Fired 1\nEnd Sub\n",
+            "RaiseEvent arguments must be enclosed in parentheses",
+        ),
+        (
+            "Public Event Fired(ByVal v As Long)\nPublic Sub Fire()\n    RaiseEvent Fired(v:=1)\nEnd Sub\n",
+            "RaiseEvent arguments cannot be named",
+        ),
+        (
+            "Public Event Fired(ByVal v As Long)\nPublic Sub Fire()\n    RaiseEvent Fired(,)\nEnd Sub\n",
+            "ArgumentNotOptional",
+        ),
+        (
+            "Public Event Fired(ByVal v As Long)\nPublic Sub Fire()\n    RaiseEvent Fired\nEnd Sub\n",
+            "WrongNumberOfArgumentsOrInvalidPropertyAssignment",
+        ),
+    ] {
+        let manifest = manifest_modules(&[("Source", ModuleKind::Class, source)]);
+        let err = format!(
+            "{:?}",
+            bind_program(&manifest, &NullTypeLibs)
+                .expect_err("invalid RaiseEvent argument list should fail binding")
+        );
+        assert!(
+            err.contains(expected),
+            "expected `{expected}` in bind error, got {err}"
+        );
+    }
+}
+
+#[test]
 fn raise_event_undeclared_event_is_bind_error() {
     let err = format!(
         "{:?}",

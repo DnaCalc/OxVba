@@ -1310,8 +1310,10 @@ Candidate bead units:
   makes event argument expressions visible to the compiler-owned SemanticModel and HIR lowering
   contract instead of only to bytecode emission. Follow-up continuation accepts module-level
   `Event` declarations as symbol/fact declarations on the HIR route when paired with `RaiseEvent`;
-  event signature validation, WithEvents handler matching, Implements coupling, and project event
-  binding remain broader FE-7/FE-8 event work. Follow-up continuation accepts the existing
+  follow-up validation rejects non-VBA `RaiseEvent` argument-list shapes, including named event
+  arguments, bare argument lists, empty parentheses on zero-argument events, omitted event slots,
+  and wrong event arity. WithEvents handler matching, Implements coupling, and project event binding
+  remain broader FE-7/FE-8 event work. Follow-up continuation accepts the existing
   single-source `Implements` directive shape as a no-bytecode directive on the HIR route; project/
   class Implements validation and interface member matching remain broader FE-7/FE-8 work.
   Twenty-fourth reopened continuation adds simple literal `Const` substitution through HIR

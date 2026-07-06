@@ -13,7 +13,7 @@ use oxvba_bundle::{
 };
 use oxvba_symbol::binding::{Binding, DispatchRoute};
 use oxvba_symbol::model::{SymbolId, SymbolKind, fold_identifier};
-use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
+use oxvba_symbol::signature::{BuiltinType, Signature, VarTypeRef};
 use oxvba_syntax::red::{ArgItem, CaseSpec};
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
@@ -616,13 +616,70 @@ impl<'a> ProcLower<'a> {
         // VBA default) bind ByRef and write back to the raiser, and ByVal
         // parameters bind ByVal. Without it every argument defaulted to ByVal,
         // silently dropping ByRef event-parameter write-backs.
-        let signature = self.event_signature(symbol);
-        let args = self.bind_args(node.raise_event_arg_list(), signature.as_ref())?;
+        let signature = self
+            .event_signature(symbol)
+            .ok_or_else(|| BindError::Malformed(format!("event `{name}` without signature")))?;
+        Self::validate_raise_event_arg_list(node.raise_event_arg_list(), &signature)?;
+        let args = self.bind_args(node.raise_event_arg_list(), Some(&signature))?;
         Ok(vec![CoreStmt::RaiseEvent {
             source,
             event,
             args,
         }])
+    }
+
+    fn validate_raise_event_arg_list(
+        arglist: Option<SyntaxNode<'_>>,
+        signature: &Signature,
+    ) -> Result<(), BindError> {
+        let expected = signature.params.len();
+        let Some(arglist) = arglist else {
+            if expected != 0 {
+                return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+            }
+            return Ok(());
+        };
+
+        let has_parentheses = arglist
+            .child_tokens()
+            .into_iter()
+            .any(|token| token.kind == SyntaxKind::LParen);
+        if !has_parentheses {
+            return Err(BindError::InvalidRaiseEventArgumentList {
+                reason: "RaiseEvent arguments must be enclosed in parentheses".to_string(),
+            });
+        }
+
+        let items = arglist.arg_items();
+        if items.is_empty() && expected == 0 {
+            return Err(BindError::InvalidRaiseEventArgumentList {
+                reason: "RaiseEvent without arguments must omit parentheses".to_string(),
+            });
+        }
+
+        for (index, item) in items.iter().enumerate() {
+            match *item {
+                ArgItem::Named { .. } => {
+                    return Err(BindError::InvalidRaiseEventArgumentList {
+                        reason: "RaiseEvent arguments cannot be named".to_string(),
+                    });
+                }
+                ArgItem::Omitted => {
+                    let parameter = signature
+                        .params
+                        .get(index)
+                        .map(|param| param.name.clone())
+                        .unwrap_or_else(|| format!("arg{}", index + 1));
+                    return Err(BindError::ArgumentNotOptional { parameter });
+                }
+                ArgItem::Positional(_, _) => {}
+            }
+        }
+
+        if items.len() != expected {
+            return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+        }
+        Ok(())
     }
 
     fn resolve_event_in_enclosing_module(&self, name: &str) -> Result<Option<SymbolId>, BindError> {

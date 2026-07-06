@@ -57,6 +57,10 @@ pub enum BindError {
     /// statically known target signature.
     #[error("Named argument not found: {name}")]
     NamedArgumentNotFound { name: String },
+    /// A `RaiseEvent` argument list used syntax VBA does not allow for event
+    /// firing.
+    #[error("invalid RaiseEvent argument list: {reason}")]
+    InvalidRaiseEventArgumentList { reason: String },
     /// A statement-only Sub was used where a value-producing expression is required.
     #[error("Expected Function or variable: {name}")]
     ExpectedFunctionOrVariable { name: String },
@@ -188,6 +192,14 @@ impl BindError {
                 format!("Named argument not found: {name}"),
             )
             .with_help("Use one of the parameter names declared by the target signature."),
+            BindError::InvalidRaiseEventArgumentList { reason } => Diagnostic::error(
+                "BIND-E-INVALID-RAISEEVENT-ARGUMENT-LIST",
+                DiagnosticPhase::Bind,
+                format!("invalid RaiseEvent argument list: {reason}"),
+            )
+            .with_help(
+                "Use `RaiseEvent Name(arg1, ...)` for events with arguments, and `RaiseEvent Name` for events without arguments.",
+            ),
             BindError::ExpectedFunctionOrVariable { name } => Diagnostic::error(
                 "BIND-E-EXPECTED-FUNCTION-OR-VARIABLE",
                 DiagnosticPhase::Bind,
