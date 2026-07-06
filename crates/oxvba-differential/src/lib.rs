@@ -22256,6 +22256,65 @@ End Sub
         assert_eq!(o.err.number, 5, "raised error number");
     }
 
+    #[test]
+    fn vm3_class_initialize_failure_releases_unassigned_instance() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gTerm As Long\nPublic gErr As Long\nPublic gAfter As Long\nSub Main()\n  On Error Resume Next\n  Dim w As Widget\n  Set w = New Widget\n  gErr = Err.Number\n  gAfter = gTerm\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Private Sub Class_Initialize()\n  Err.Raise 5\nEnd Sub\nPrivate Sub Class_Terminate()\n  gTerm = gTerm + 1\nEnd Sub\n",
+            ),
+        ]);
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(1))),
+            "failed Class_Initialize should release the unassigned instance and run Terminate before the next statement: {snap:?}"
+        );
+        assert_eq!(
+            snap.get(1),
+            Some(&canon(&Variant::from_i32(5))),
+            "initializer fault should remain visible through Err.Number: {snap:?}"
+        );
+        assert_eq!(
+            snap.get(2),
+            Some(&canon(&Variant::from_i32(1))),
+            "statement after the caught initializer fault should observe Terminate: {snap:?}"
+        );
+    }
+
+    #[test]
+    fn vm3_class_initialize_failure_drains_child_fields_after_terminate() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gLog As String\nSub Main()\n  On Error Resume Next\n  Dim p As Parent\n  Set p = New Parent\n  gLog = gLog & \"A;\"\nEnd Sub\n",
+            ),
+            (
+                "Parent",
+                Class,
+                "Private child As Child\nPrivate Sub Class_Initialize()\n  Set child = New Child\n  Err.Raise 5\nEnd Sub\nPrivate Sub Class_Terminate()\n  gLog = gLog & \"P;\"\nEnd Sub\n",
+            ),
+            (
+                "Child",
+                Class,
+                "Private Sub Class_Terminate()\n  gLog = gLog & \"C;\"\nEnd Sub\n",
+            ),
+        ]);
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_string("P;C;A;"))),
+            "failed parent initializer should run parent Terminate, then release child fields to the same drain fixpoint, before Main continues: {snap:?}"
+        );
+    }
+
     /// A late-bound method call on a typed project instance returns its function result and
     /// passes its ByVal arg (M3-6 project method dispatch via `ComCallLate`).
     #[test]
