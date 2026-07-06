@@ -1469,6 +1469,27 @@ fn type_block_duplicate_field_is_bind_error() {
 }
 
 #[test]
+fn class_module_public_type_block_is_bind_error() {
+    let manifest = manifest_modules(&[
+        ("Main", ModuleKind::Procedural, "Sub Main()\nEnd Sub\n"),
+        (
+            "Widget",
+            ModuleKind::Class,
+            "Public Type Payload\n    Item As Long\nEnd Type\n",
+        ),
+    ]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("public Type block in a class module should fail binding")
+    );
+    assert!(
+        err.contains("PublicTypeNotValidInObjectModule") && err.contains("name: \"Payload\""),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);

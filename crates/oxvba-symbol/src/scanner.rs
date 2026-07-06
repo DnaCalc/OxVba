@@ -209,10 +209,10 @@ impl ScanCtx<'_> {
             SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
                 // `Type`/`Enum` default to Public; the members of an enum inherit the
                 // enum's visibility.
-                if node.kind() == SyntaxKind::TypeBlock {
-                    self.validate_type_block_declaration(node)?;
-                }
                 let vis = decl_visibility(node, Visibility::Public);
+                if node.kind() == SyntaxKind::TypeBlock {
+                    self.validate_type_block_declaration(node, vis)?;
+                }
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
                     let kind = if node.kind() == SyntaxKind::EnumBlock {
@@ -362,10 +362,14 @@ impl ScanCtx<'_> {
     fn validate_type_block_declaration(
         &self,
         type_node: SyntaxNode<'_>,
+        visibility: Visibility,
     ) -> Result<(), SymbolModelError> {
         let type_name = first_identifier_token(type_node)
             .map(|token| normalize_identifier_token(token.text).to_string())
             .unwrap_or_else(|| "Type".to_string());
+        if self.module_kind != ModuleKind::Procedural && visibility != Visibility::Private {
+            return Err(SymbolModelError::PublicTypeNotValidInObjectModule { name: type_name });
+        }
         let mut fields = BTreeSet::new();
         for field in type_node.type_fields() {
             if let Some(token) = field.declarator_name() {
