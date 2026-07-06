@@ -3001,7 +3001,7 @@ fn implements_typeof_true_for_implementer() {
 
 #[test]
 fn as_new_auto_instantiates_a_user_class() {
-    // `Dim t As New Thing` auto-instantiates `t` at scope entry — not Collection-
+    // `Dim t As New Thing` auto-instantiates `t` on first read — not Collection-
     // specific: any project class works. Without the fix `t` was `Nothing` (and was
     // mis-typed `Object("new")` by the parser-absorbs-`New` bug), so `t.GetVal()`
     // would fault.
@@ -3014,6 +3014,44 @@ fn as_new_auto_instantiates_a_user_class() {
             ("Thing", ModuleKind::Class, thing),
         ]),
         Some(7.0)
+    );
+}
+
+#[test]
+fn as_new_local_reinstantiates_after_set_nothing() {
+    let main = "Private counter As Long\n\n\
+                Public Function NextId() As Long\n    counter = counter + 1\n    NextId = counter\nEnd Function\n\n\
+                Sub Main()\n    Dim r As Long\n    Dim t As New Thing\n    r = t.Id\n    Set t = Nothing\n    r = r + 10 * t.Id\nEnd Sub\n";
+    let thing = "Private mId As Long\n\n\
+                 Private Sub Class_Initialize()\n    mId = NextId()\nEnd Sub\n\n\
+                 Public Property Get Id() As Long\n    Id = mId\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Thing", ModuleKind::Class, thing),
+        ]),
+        Some(21.0)
+    );
+}
+
+#[test]
+fn as_new_field_reinstantiates_after_set_nothing() {
+    let main = "Private counter As Long\n\n\
+                Public Function NextId() As Long\n    counter = counter + 1\n    NextId = counter\nEnd Function\n\n\
+                Sub Main()\n    Dim r As Long\n    Dim h As New Holder\n    r = h.Child.Id\n    h.ClearChild\n    r = r + 10 * h.Child.Id\nEnd Sub\n";
+    let holder = "Private mChild As New Thing\n\n\
+                  Public Property Get Child() As Thing\n    Set Child = mChild\nEnd Property\n\n\
+                  Public Sub ClearChild()\n    Set mChild = Nothing\nEnd Sub\n";
+    let thing = "Private mId As Long\n\n\
+                 Private Sub Class_Initialize()\n    mId = NextId()\nEnd Sub\n\n\
+                 Public Property Get Id() As Long\n    Id = mId\nEnd Property\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Holder", ModuleKind::Class, holder),
+            ("Thing", ModuleKind::Class, thing),
+        ]),
+        Some(21.0)
     );
 }
 

@@ -45,6 +45,9 @@ front-end symbol index:
 - The typed-local object classification path now uses the same frontend class-construction route
   for active-project `Dim x As ClassName` declarations. The previous `resolve_interface_module`
   check remains only as the fallback path when no active-project frontend class route is available.
+- `As New` execution coverage now includes reset-to-`Nothing` re-instantiation for both local
+  object slots and class fields. The binder emits slot metadata rather than eager construction,
+  and VM3 lazily constructs a fresh instance on the next read after the slot is cleared.
 - 2026-07-06 package/runtime metadata continuation: OxIR class descriptor verification now enforces
   that class lifecycle hooks and method/property descriptor targets start with the hidden `Me`
   receiver parameter. VM runtime member descriptor extraction and project-member argument name
@@ -78,6 +81,10 @@ Production-route proof:
 - `record_internal_class_object_local_uses_frontend_class_route` uses a deliberately different
   manifest module id and `VB_Name` class spelling to prove typed object-local classification is
   accepted by the frontend class route rather than by manifest-name-only lookup.
+- `as_new_local_reinstantiates_after_set_nothing` and
+  `as_new_field_reinstantiates_after_set_nothing` prove `Dim x As New T` and `Private x As New T`
+  retain their lazy-construction slot metadata after `Set x = Nothing`; the next read creates a
+  distinct initialized instance.
 - `cargo test -p oxvba-compiler predeclared --quiet` covers the existing predeclared/default-root
   matrix after adding the frontend route gate.
 - Existing host/runtime tests prove the bd-1ufc field/lifetime behavior remains executable:
@@ -135,6 +142,7 @@ Compatibility quarantine / residual classification:
 - `cargo test -p oxvba-compiler compile_project_internal_dynamic_routes_do_not_keep_transitional_token_table --quiet`
 - `cargo test -p oxvba-compiler compile_project_ --quiet`
 - `cargo test -p oxvba-compiler predeclared --quiet`
+- `cargo test -p oxvba-bind as_new_ --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_terminate_cascades_through_object_field --quiet`
