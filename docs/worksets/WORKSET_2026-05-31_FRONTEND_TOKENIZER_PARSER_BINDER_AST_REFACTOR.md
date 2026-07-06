@@ -640,7 +640,7 @@ graph is therefore repaired in place:
 | FE-5 harness and route gate | Harness exists and can classify non-byte-identical output. | Keep closed as support/delivery foundation, but FE-9 terminal audit must expand corpus coverage and fail if "v2" means fallback. |
 | FE-6 binder/HIR/SemanticModel | Core structures and selected production facts exist. | Keep scoped closed slices, but any missing SymbolId/type/coercion facts discovered during FE-7/FE-8 delivery reopen the owning FE-6 bead or spawn a focused child. |
 | FE-7 project semantics | Active-project slices landed, but project/class/default-member/COM/property behavior is not fully retired from text rewrites. | Reopen FE-7 epic and affected child beads for direct production replacement or explicit compatibility quarantine. Partial work must be noted as already done. |
-| FE-8 production HIR lowering | Many statement/expression families are HIR-routed. `bd-aprs.9.5` remains open and is too broad to be the only executable unit. | Add child delivery beads under FE-8/FE-8.5 for remaining concrete HIR-lowering lanes: direct project construction, properties/default members, arrays/ReDim/indexing, compile-time options/constants, declarations/attributes, and final broad matrix sweep. |
+| FE-8 production HIR lowering | Many statement/expression families are HIR-routed, and the split child delivery lanes now close the concrete FE-8.5 blockers for `bd-aprs.9.5`. | Keep FE-8 root tied to downstream FE-9 route-audit, fallback-quarantine, and terminal proof; create delivery beads only if broad audit exposes accepted surfaces still depending on fallback. |
 | FE-9 flip/retirement/IDE | Default route and audit scaffolding exist; bounded audit fixtures pass. | Reopen or add terminal retirement beads so no accepted route closes on bounded smoke evidence. Terminal closure waits for broad matrix/corpus route proof. |
 
 Tracker audit, 2026-06-02:
@@ -652,9 +652,10 @@ Tracker audit, 2026-06-02:
   `bd-aprs.8.3`, `bd-aprs.8.4`, `bd-aprs.8.6`, `bd-aprs.8.7`, `bd-aprs.8.8`,
   `bd-aprs.9.5`, `bd-aprs.9.8`, `bd-aprs.9.9`, `bd-aprs.9.10`, `bd-aprs.9.11`,
   `bd-aprs.9.12`, `bd-aprs.9.13`, `bd-aprs.10.2`, and `bd-aprs.10.8`.
-- 2026-07-06 update: `bd-aprs.9.13` is now closed for the accepted project/class
-  field-array carrier-retirement surface; the remaining FE-8 open beads are `bd-aprs.9.5`,
-  `bd-aprs.9.9`, and `bd-aprs.9.10`.
+- 2026-07-06 update: `bd-aprs.9.13`, `bd-aprs.9.9`, `bd-aprs.9.10`,
+  `bd-aprs.9.10.3`, and `bd-aprs.9.5` are now closed for the scoped FE-8.5 delivery lanes.
+  FE-8 root scope remains tied to the downstream FE-9 route-audit, fallback-quarantine, and
+  terminal replacement gates rather than a remaining concrete FE-8.5 child blocker.
 - Closed FE-0 through FE-6 beads are treated as scoped foundation evidence, not proof that the
   production compiler front-end has been replaced. They do not need to be reopened unless later
   delivery/audit work finds a concrete defect in their stated scope.
@@ -1456,7 +1457,8 @@ Candidate bead units:
   production legacy-route audit as HIR production. Imported/reference/COM activation remains open
   under FE-7.6.a / `bd-aprs.8.8`, and unsupported fallback shapes remain compatibility fallback
   until the broad route audit.
-  FE-8.5 remains open for unaudited broader language surfaces outside that subset.
+  Broader unaudited language surfaces outside that subset are owned by FE-9 route-audit and
+  fallback-quarantine beads, not by the closed scoped FE-8.5 lowering bead.
   Evidence: `docs/evidence/frontend_rework/PRODUCTION_HIR_LOWERING_2026-06-01.md`.
 - FE-8.5.a Direct project construction on HIR: finish the already-started `New <Class>` migration
   by making project compilation call the HIR compile entry point with the generated
@@ -1594,8 +1596,9 @@ Candidate bead units:
   and the active-project, referenced-project, imported-COM, host-injected, and late-bound
   property/default-member rows covered by production binder/Core IR evidence, `bd-aprs.9.12` is
   eligible to close for its scoped lowering surface. Broader reference/COM activation/member
-  breadth remains owned by FE-7.6.a / `bd-aprs.8.8`, while the aggregate FE-8.5 lowering gate still
-  depends on `bd-aprs.9.9`, `bd-aprs.9.10`, and `bd-aprs.9.5`. The V11 ByRef COM event writeback row
+  breadth remains owned by FE-7.6.a / `bd-aprs.8.8`; the former aggregate FE-8.5 dependencies on
+  `bd-aprs.9.9`, `bd-aprs.9.10`, and `bd-aprs.9.5` have since closed for their scoped surfaces.
+  The V11 ByRef COM event writeback row
   remains in-progress rather than being closed through a fake fixture-only path: current event callbacks are
   queued as value snapshots and drained later, while real COM/VBA ByRef event writeback requires
   synchronous handler execution and `VT_BYREF` mutation before native `IDispatch::Invoke` returns.
@@ -1917,6 +1920,10 @@ Candidate bead units:
   no-argument call routing covers `Call <procedure>` statements as zero-argument calls through HIR.
   The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in
   FE-8.5.d.
+  FE-8.5 scoped closure reconciliation: with `bd-aprs.9.6` through `bd-aprs.9.13` and the
+  `bd-aprs.9.10.3` optional-default boundary closed, `bd-aprs.9.5` is closed for the concrete
+  production lowering blockers named by this workset. The remaining fallback/quarantine and broad
+  route-proof obligations are owned by FE-9 beads, especially `bd-aprs.10.6` and `bd-aprs.10.7`.
   Closure reconciliation: `bd-aprs.9.10` is no longer open on concrete declaration/type-surface
   rows for property declarations, optional/default metadata carriers, `ParamArray` shape
   diagnostics, richer `Declare` signatures, UDT layout/field/default/reset behavior,

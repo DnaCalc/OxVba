@@ -1985,14 +1985,29 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo fmt --check -p oxvba-symbol -p oxvba-bind`
 - `git diff --check`
 
+## 2026-07-06 Scoped Closure Reconciliation
+
+`bd-aprs.9.5` is no longer open on a concrete FE-8.5 lowering blocker. The executable child lanes
+that were split out of the broad bead are closed: direct project construction (`bd-aprs.9.6`),
+`As New`/construction metadata (`bd-aprs.9.7`), arrays/ReDim/indexing (`bd-aprs.9.8`), compile-time
+options/declarations/constants (`bd-aprs.9.9`), declaration/type metadata and diagnostics
+(`bd-aprs.9.10` plus `bd-aprs.9.10.3`), accepted-surface residual sweep (`bd-aprs.9.11`),
+property/default-member writeback lowering (`bd-aprs.9.12`), and project/class field-array carrier
+retirement (`bd-aprs.9.13`). Current repository layout no longer contains the historical
+`oxvba-compiler` crate or `oxvba-compiler/src/project.rs`; the live production truth surfaces are
+the clean `oxvba-symbol`, `oxvba-bind`, `oxvba-project`, `oxvba-host`, and VM/JIT package routes.
+Remaining unsupported fallback, broad route-audit expansion, bundle fallback quarantine, and
+terminal frontend replacement evidence are FE-9/terminal-audit work, not hidden FE-8.5 lowering
+blockers.
+
 ## Fresh-Eyes Review
 
 - This bead does not remove the fallback bridge; FE-9 default-route and audit beads must decide which
   construct families are flipped and which residuals remain tracked.
-- Call-site descriptors, object/member bindings, and writebacks remain out of the current HIR
-  production scope beyond the simple same-module call route above. Broader argument binding,
-  optional/default breadth, intrinsic-backed ParamArray callee bodies, member dispatch, and
-  writeback semantics remain open FE-8.5/FE-7 delivery work.
+- The first HIR-production slice did not cover broader call-site descriptors, object/member
+  bindings, or writebacks beyond the simple same-module call route. Those scoped FE-8.5 lowering
+  residuals have since been split and closed where covered by child beads; broader FE-7/FE-9
+  reference, COM, fallback-quarantine, and terminal audit breadth remains separately owned.
 - The first attempt let HIR production lowering silently ignore call statements. The production guard
   now rejects unsupported syntax kinds up front, and call statements are covered by direct HIR
   lowering tests so scoped HIR lowering is not allowed to compile a partial program.
