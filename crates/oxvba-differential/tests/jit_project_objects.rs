@@ -124,6 +124,24 @@ fn jit_project_typed_local_is_nothing_matches_vm3_without_construction() {
 }
 
 #[test]
+fn jit_project_typed_null_set_assignment_matches_vm3_without_construction() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim a As Widget\n  Dim b As Widget\n  Set b = a\n  If b Is Nothing Then\n    r = 21\n  Else\n    r = 22\n  End If\n  Set b = Nothing\n  If Not (b Is Nothing) Then\n    r = 23\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 21);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 21);
+}
+
+#[test]
 fn jit_project_typeof_declines_without_vm_fallback() {
     let modules = [
         (
