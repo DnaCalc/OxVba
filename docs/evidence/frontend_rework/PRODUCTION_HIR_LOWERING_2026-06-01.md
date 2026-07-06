@@ -1626,8 +1626,11 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   scanner also rejects duplicate UDT field names with `SYM-E-DUPLICATE-TYPE-FIELD` before a
   duplicate folded field can publish ambiguous record metadata, and rejects public/default-public
   `Type` blocks in class/object modules with `SYM-E-PUBLIC-TYPE-NOT-VALID-IN-OBJECT-MODULE`,
-  matching the Type statement rule that object-module UDTs must be `Private`. It also publishes
-  the final `Property Let`/`Set` writer slot as `ByVal` in signature metadata while
+  matching the Type statement rule that object-module UDTs must be `Private`. Explicit `Public`
+  `Declare` statements in object modules now reject with
+  `SYM-E-PUBLIC-DECLARE-NOT-VALID-IN-OBJECT-MODULE`, while private class-module declares and public
+  standard-module declares remain accepted. The scanner also publishes the final `Property
+  Let`/`Set` writer slot as `ByVal` in signature metadata while
   preserving declared/default `ByRef` modes for preceding indexed arguments. Duplicate property
   accessors now reject with `SYM-E-DUPLICATE-PROPERTY-ACCESSOR`, and paired `Property Get`/`Let`
   declarations reject with `SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR` when their index parameter
@@ -1646,6 +1649,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-let-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-set-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/type-statement`,
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/declare-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/definitions-of-property-procedures-for-the-same-property-are-inconsistent`),
   and remains a declaration-shape diagnostic rather than broader call-site
   optional argument closure. Evidence: `scanner_rejects_required_parameters_after_optional`;
@@ -1670,6 +1674,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `type_block_fields_reject_as_new_types`;
   `type_block_fields_reject_duplicate_names`;
   `object_module_type_blocks_must_be_private`;
+  `public_declare_is_not_valid_in_object_modules`;
   `property_set_accepts_variant_object_and_class_reference_parameters`;
   `property_writer_final_parameter_cannot_be_paramarray`;
   `property_set_udt_reference_parameter_is_bind_error`;
@@ -1688,6 +1693,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `type_block_field_as_new_is_bind_error`;
   `type_block_duplicate_field_is_bind_error`;
   `class_module_public_type_block_is_bind_error`;
+  `class_module_public_declare_is_bind_error`;
   `event_declaration_rejects_invalid_parameters`;
   `event_declaration_as_new_parameter_is_bind_error`;
   `required_parameter_after_optional_is_bind_error`.
@@ -1812,6 +1818,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-symbol type_block_fields_reject_as_new_types -- --nocapture`
 - `cargo test -p oxvba-symbol type_block_fields_reject_duplicate_names -- --nocapture`
 - `cargo test -p oxvba-symbol object_module_type_blocks_must_be_private -- --nocapture`
+- `cargo test -p oxvba-symbol public_declare_is_not_valid_in_object_modules -- --nocapture`
 - `cargo test -p oxvba-symbol withevents -- --nocapture`
 - `cargo test -p oxvba-symbol required_parameter_defaults -- --nocapture`
 - `cargo test -p oxvba-symbol invalid_event_parameter_modifiers -- --nocapture`
@@ -1822,6 +1829,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-bind type_block_field_as_new_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind type_block_duplicate_field_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind class_module_public_type_block_is_bind_error -- --nocapture`
+- `cargo test -p oxvba-bind class_module_public_declare_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind required_parameter_default_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind event_declaration_rejects_invalid_parameters -- --nocapture`
 - `cargo test -p oxvba-bind event_declaration_as_new_parameter_is_bind_error -- --nocapture`

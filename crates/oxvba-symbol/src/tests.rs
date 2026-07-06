@@ -1586,6 +1586,36 @@ fn object_module_type_blocks_must_be_private() {
 }
 
 #[test]
+fn public_declare_is_not_valid_in_object_modules() {
+    let src = "Public Declare PtrSafe Sub Host Lib \"kernel32\" ()\r\n";
+    let m = manifest("Proj", vec![class_module("Widget", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("public Declare in class module should reject"),
+        Err(err) => err,
+    };
+    assert_eq!(
+        err,
+        SymbolModelError::PublicDeclareNotValidInObjectModule {
+            name: "Host".to_string()
+        }
+    );
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-PUBLIC-DECLARE-NOT-VALID-IN-OBJECT-MODULE"
+    );
+
+    let private_src = "Private Declare PtrSafe Sub Host Lib \"kernel32\" ()\r\n";
+    let m = manifest("Proj", vec![class_module("Widget", private_src)]);
+    build_resolution_environment(&m, &NullTypeLibs)
+        .expect("private Declare should remain accepted in class modules");
+
+    let public_standard_src = "Public Declare PtrSafe Sub Host Lib \"kernel32\" ()\r\n";
+    let m = manifest("Proj", vec![module("Mod1", public_standard_src)]);
+    build_resolution_environment(&m, &NullTypeLibs)
+        .expect("public Declare should remain accepted in standard modules");
+}
+
+#[test]
 fn property_get_let_pairing_accepts_matching_accessors_in_any_order() {
     for src in [
         "Property Get Foo(ByVal index As Long) As String\r\nEnd Property\r\n\

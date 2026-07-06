@@ -246,6 +246,8 @@ pub enum SymbolModelError {
     DuplicateTypeField { type_name: String, field: String },
     #[error("public Type `{name}` is not valid in object modules")]
     PublicTypeNotValidInObjectModule { name: String },
+    #[error("public Declare `{name}` is not valid in object modules")]
+    PublicDeclareNotValidInObjectModule { name: String },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -433,6 +435,12 @@ impl SymbolModelError {
                 format!("public Type `{name}` is not valid in object modules"),
             )
             .with_help("Declare Type blocks in class, document, form, and extension modules as Private."),
+            SymbolModelError::PublicDeclareNotValidInObjectModule { name } => Diagnostic::error(
+                "SYM-E-PUBLIC-DECLARE-NOT-VALID-IN-OBJECT-MODULE",
+                DiagnosticPhase::Symbol,
+                format!("public Declare `{name}` is not valid in object modules"),
+            )
+            .with_help("Declare external procedures in class, document, form, and extension modules as Private."),
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,

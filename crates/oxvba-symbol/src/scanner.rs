@@ -817,6 +817,12 @@ impl ScanCtx<'_> {
             return Ok(());
         };
         let declared_name = normalize_identifier_token(name_token.text).to_string();
+        let visibility = decl_visibility(node, Visibility::Private);
+        if self.module_kind != ModuleKind::Procedural && visibility == Visibility::Public {
+            return Err(SymbolModelError::PublicDeclareNotValidInObjectModule {
+                name: declared_name,
+            });
+        }
         self.validate_parameter_declaration(node, &declared_name)?;
         let library = node.lib_string().unwrap_or_default();
         let alias_raw = node.alias_string();
@@ -886,7 +892,7 @@ impl ScanCtx<'_> {
             name_token,
             SymbolImpl::Declare(declare),
             module_level,
-            decl_visibility(node, Visibility::Private),
+            visibility,
             None,
         )?;
         Ok(())

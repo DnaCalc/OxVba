@@ -1490,6 +1490,27 @@ fn class_module_public_type_block_is_bind_error() {
 }
 
 #[test]
+fn class_module_public_declare_is_bind_error() {
+    let manifest = manifest_modules(&[
+        ("Main", ModuleKind::Procedural, "Sub Main()\nEnd Sub\n"),
+        (
+            "Widget",
+            ModuleKind::Class,
+            "Public Declare PtrSafe Sub Host Lib \"kernel32\" ()\n",
+        ),
+    ]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("public Declare in a class module should fail binding")
+    );
+    assert!(
+        err.contains("PublicDeclareNotValidInObjectModule") && err.contains("name: \"Host\""),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);
