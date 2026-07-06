@@ -652,6 +652,9 @@ Tracker audit, 2026-06-02:
   `bd-aprs.8.3`, `bd-aprs.8.4`, `bd-aprs.8.6`, `bd-aprs.8.7`, `bd-aprs.8.8`,
   `bd-aprs.9.5`, `bd-aprs.9.8`, `bd-aprs.9.9`, `bd-aprs.9.10`, `bd-aprs.9.11`,
   `bd-aprs.9.12`, `bd-aprs.9.13`, `bd-aprs.10.2`, and `bd-aprs.10.8`.
+- 2026-07-06 update: `bd-aprs.9.13` is now closed for the accepted project/class
+  field-array carrier-retirement surface; the remaining FE-8 open beads are `bd-aprs.9.5`,
+  `bd-aprs.9.9`, and `bd-aprs.9.10`.
 - Closed FE-0 through FE-6 beads are treated as scoped foundation evidence, not proof that the
   production compiler front-end has been replaced. They do not need to be reopened unless later
   delivery/audit work finds a concrete defect in their stated scope.
@@ -1625,12 +1628,17 @@ Candidate bead units:
   `ProjectCompileRoute::HirProduction` from original field-array statements while bytecode still
   emits the existing runtime field-array get/set/resize operations from HIR facts. The backend
   rewritten source remains available as fallback/parity evidence.
-  Production-selector correction: `compile_project(...)` already selects the module-aware plan; the
-  old rewrite bridge is parity evidence, not native production ownership. Remaining work: finish
-  any residual project/class field-array surfaces outside the covered statement/read/write/resize
-  fixtures, harden source maps/metadata for the helper-free HIR stream, and then delete or
-  quarantine the compatibility source rewrite bridge once broad route evidence shows it is no
-  longer needed for accepted production shapes.
+  2026-07-06 closure update: the live crate graph no longer contains the old
+  `oxvba-compiler`/`project.rs` rewrite bridge, `lower_module_source_module_aware`, or
+  `__oxvba_array_field_*` helper-source carriers under `crates/`. The current binder rebuilds
+  dotted field-array `ReDim` targets as `CorePlace::Field`, OxIR lowers compound `ReDim` through
+  explicit materialize-resize-writeback over that place, and field-array element get/set lower
+  directly to fused `OxInst::FieldArrayGet` / `OxInst::FieldArraySet` instructions rather than
+  materializing the whole field array. VM3 executes those fused instructions through
+  `ObjectRef::with_project_field(_mut)`, preserving O(1) element access. The accepted
+  project/class field-array carrier retirement surface is therefore closed by current Core IR/OxIR
+  ownership plus VM3 evidence; broader project/property/default-member and final legacy-route
+  retirement remain tracked by the FE-7/FE-9 beads, not by FE-8.5.h.
 - FE-8.5.e Compile-time options/declarations/constants: route `Option Explicit`,
   non-binary `Option Compare`, `Option Private Module`, DefType, attributes, conditional
   compilation, typed constants, and broader compile-time constant evaluation through HIR. Partial

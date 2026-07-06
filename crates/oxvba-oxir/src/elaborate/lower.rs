@@ -3369,6 +3369,56 @@ mod tests {
         assert_eq!(oxp, back, "object-construct OxProgram must round-trip");
     }
 
+    #[test]
+    fn class_field_arrays_elaborate_to_fused_ops() {
+        let obj = || CoreValue::Load(CorePlace::Local(CoreLocalId(0)));
+        let field_array = || CorePlace::Field {
+            object: Box::new(obj()),
+            field: 7,
+        };
+        let field_array_1 = || CorePlace::Index {
+            array: Box::new(field_array()),
+            indices: vec![CoreValue::Const(CoreConst::I32(1))],
+        };
+        let body = vec![
+            assign(field_array_1(), CoreValue::Const(CoreConst::I32(5))),
+            assign(
+                CorePlace::Local(CoreLocalId(1)),
+                CoreValue::Load(field_array_1()),
+            ),
+        ];
+        let locals = vec![
+            CoreLocal {
+                name: "w".into(),
+                ty: VarTypeRef::Object("Widget".into()),
+                array_element: None,
+            },
+            long_local("y"),
+        ];
+        let prog = program(sub("Main", locals, body));
+        let oxp = elaborate(&prog).expect("elaborate");
+        assert_eq!(verify_program(&oxp), Ok(()));
+
+        let f = &oxp.funcs[0];
+        let has = |pred: fn(&OxInst) -> bool| f.blocks.iter().any(|b| b.instrs.iter().any(pred));
+        assert!(
+            has(|i| matches!(i, OxInst::FieldArraySet { .. })),
+            "expected FieldArraySet"
+        );
+        assert!(
+            has(|i| matches!(i, OxInst::FieldArrayGet { .. })),
+            "expected FieldArrayGet"
+        );
+        assert!(
+            !has(|i| matches!(i, OxInst::FieldGet { .. })),
+            "field-array element access must not materialize the whole field array"
+        );
+        assert!(
+            !has(|i| matches!(i, OxInst::ArraySet { .. } | OxInst::ArrayGet { .. })),
+            "field-array element access must lower to fused field-array ops"
+        );
+    }
+
     /// `On Error GoTo H : x = 1/0 : Exit Sub : H: Resume Next` exercises the full
     /// error model — `SetErrorHandler`, a faulting statement's `FaultDispatch` pad, a
     /// label block, `Exit Sub`, and a `Resume Next` terminator.

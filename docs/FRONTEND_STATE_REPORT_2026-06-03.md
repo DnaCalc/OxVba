@@ -115,13 +115,18 @@ The migration is one bead tree rooted at **`bd-aprs`**. Status as of 2026-06-03 
 | FE-5 Semantic harness + `frontend_v2` gate | `bd-aprs.6` | **CLOSED** | `CompileOptions.frontend_v2`, diff harness |
 | FE-6 Binder, HIR, SemanticModel core | `bd-aprs.7` | **CLOSED** | Core bound-tree + semantic model |
 | **FE-7 Project semantics migration from `project.rs`** | `bd-aprs.8` | **OPEN** | Children open: **8.3, 8.4, 8.6, 8.7, 8.8** (8.1/8.2/8.5 closed) |
-| **FE-8 Typed intrinsics, lowering, optimizer split** | `bd-aprs.9` | **OPEN** | Open: **9.5, 9.9, 9.10, 9.12**; in-progress: **9.13**; closed: 9.1–9.4, 9.6–9.8, 9.11 |
+| **FE-8 Typed intrinsics, lowering, optimizer split** | `bd-aprs.9` | **OPEN** | Open: **9.5, 9.9, 9.10, 9.12**; closed: 9.1–9.4, 9.6–9.8, 9.11, **9.13** |
 | **FE-9 Flip, retirement, IDE query foundation** | `bd-aprs.10` | **OPEN** | Open: **10.2, 10.5, 10.6, 10.7, 10.8**; closed: 10.1, 10.3, 10.4 |
 | FE-10 Final default flip (planned) | — | **NOT STARTED** | Make `frontend_v2` the default; delete legacy |
 
 `*` The closed FE-0…FE-6 beads are, in the workset's own words, *"scoped foundation evidence, not proof that the production compiler front-end has been replaced."*
 
-The actual **deletion of legacy code** concentrates in three still-open/in-progress beads — `bd-aprs.9.13` (array-field carrier retirement, *in progress*), `bd-aprs.10.2` (legacy parser/rewriter retirement), and `bd-aprs.10.8` (final legacy-route retirement) — gated by audits `10.6`/`10.7` and terminal closure `10.5`, and themselves blocked by the open FE-7 binding beads.
+2026-07-06 superseding note: `bd-aprs.9.13` has since been closed in the current crate graph after
+the old compiler/project rewrite bridge was removed and class field-array lowering was proved
+through Core IR/OxIR/VM3 fused field-array operations. The remaining legacy-code deletion pressure
+is now concentrated in `bd-aprs.10.2` (legacy parser/rewriter retirement) and `bd-aprs.10.8`
+(final legacy-route retirement), gated by audits `10.6`/`10.7` and terminal closure `10.5`, plus
+the still-open FE-7 binding beads.
 
 ---
 
@@ -170,7 +175,10 @@ This is the crux. The in-code gates are green, yet the workset is reopened and F
 ### 7.3 The hard remaining frontier (open FE-7/FE-8/FE-9 beads)
 
 - **Project/class/COM property & default-member writeback** (`bd-aprs.8.7`, `8.8`, lowering half `9.12`). Large progress recorded (imported-COM dispatch-id validation, host-injected `HostGlobal` validation, statement-form named args through HIR, late-bound `obj(42)` default-member, `BoundStmt::AssignDefaultMember`, default-member ambiguity rejection) — **but** broad writeback breadth, type-overload validation, early-bound COM property-put, and **deletion of the remaining `property_*_pmr_*` rewrite bodies** remain open. Several routes still *validate then retain* a compatibility carrier rather than owning the semantics in HIR.
-- **Project/class array-field carriers** (`bd-aprs.9.13`, *in progress*). `lower_module_source_module_aware` still injects internal field-array intrinsic source lines before binding; native closure needs a project-aware HIR lowering boundary that binds original field-array statements from project-symbol facts without that pre-HIR source rewrite. Fixed project/class array-field semantics + broader project-owned array shapes remain open.
+- **Project/class array-field carriers** (`bd-aprs.9.13`, closed after this report). The old
+  `lower_module_source_module_aware` / helper-source carrier residual is superseded in the current
+  crate graph: field-array `ReDim` is bound as a `CorePlace::Field` compound resize/writeback, and
+  element get/set lower to fused `FieldArrayGet`/`FieldArraySet` VM3 operations.
 - **Reference / imported-COM activation & member binding** (`bd-aprs.8.6`, `8.8`). Referenced-project class construction and early-bound COM activation still partly legacy.
 - **Broad compile-time evaluation breadth** (`bd-aprs.9.9`, `9.10`): richer constant/default expressions, locale-sensitive `Date`, full `LongPtr`, remaining DefType/preprocessor/typed-constant breadth, broader declaration/type surface.
 - **Broad route audit + final retirement** (`bd-aprs.10.7` broad matrix/corpus/host/IDE/Excel audit; `10.2`/`10.8` delete/quarantine legacy `parse_expr`, CST→legacy lowering, `project.rs` rewrites, duplicate language-service semantics; `10.5` terminal closure). None complete.

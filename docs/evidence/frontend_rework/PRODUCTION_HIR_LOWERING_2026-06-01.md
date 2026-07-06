@@ -569,12 +569,26 @@ legacy declaration-line scan as the authoritative name source. Full closure stil
 or quarantining the remaining project rewrite bridge that injects internal field-array intrinsics
 before HIR lowering.
 
-Fresh residual after the 2026-06-03 reductions: the remaining `bd-aprs.9.13` gap is structural, not
-another temp-carrier source pattern. `lower_module_source_module_aware` still rewrites original
-project/class field-array statements into internal intrinsic source before `build_line_bind_plan`
-and `compile_source_with_runtime_metadata_via_hir`. Native closure requires a project-aware HIR
-lowering boundary that can bind those original field-array statements from frontend project-symbol
-facts directly.
+Superseding 2026-07-06 field-array closure: the structural residual above no longer exists in the
+live crate graph. Static route review finds no `oxvba-compiler` crate, no
+`lower_module_source_module_aware`, and no `__oxvba_array_field_*` helper-source carriers under
+`crates/`. The current binder resolves dotted field-array `ReDim` targets into `CorePlace::Field`
+and emits `CoreStmt::ReDim`; OxIR performs explicit materialize-resize-writeback for compound
+`ReDim` targets and fuses `obj.field(i...)` / `obj.field(i...) = value` into
+`OxInst::FieldArrayGet` / `OxInst::FieldArraySet`. VM3 executes the fused element operations
+through borrowed project-field SAFEARRAY descriptors, preserving O(1) field-array element access.
+Evidence for this closure includes:
+
+- `cargo test -p oxvba-oxir class_field_arrays_elaborate_to_fused_ops -- --nocapture`
+- `cargo test -p oxvba-oxir record_array_fields_elaborate_to_fused_ops -- --nocapture`
+- `cargo test -p oxvba-bind redim_member_array_then_use -- --nocapture`
+- `cargo test -p oxvba-differential --test field_array_access_vm3 -- --nocapture`
+- `rg -n "__oxvba_array_field_|lower_module_source_module_aware|compile_project_rewrites" crates -g '*.rs'`
+  returns no live helper-source/rewrite hits.
+
+This closes `bd-aprs.9.13` for the accepted project/class field-array carrier-retirement surface.
+It does not close broader FE-7 property/default-member semantics, reference/imported-COM
+activation, or FE-9 final legacy-route retirement.
 
 Follow-up default-route correction narrows the earlier `OptionStmt` exclusion: `Option Base 0`,
 `Option Base 1`, default-equivalent `Option Compare Binary`, and `Option Compare Text` no longer
