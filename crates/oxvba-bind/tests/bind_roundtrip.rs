@@ -3178,6 +3178,32 @@ fn named_argument_to_private_class_method_binds_caller_parameter_value() {
 }
 
 #[test]
+fn named_args_to_instance_class_method_skip_hidden_me_receiver() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim c As New Calculator\n    r = c.Combine(right := 3, left := 2)\nEnd Sub\n";
+    let calculator = "Public Function Combine(left As Long, right As Long) As Long\n    Combine = left * 10 + right\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Calculator", ModuleKind::Class, calculator),
+        ]),
+        Some(23.0)
+    );
+}
+
+#[test]
+fn paramarray_instance_class_method_packs_tail_after_hidden_me_receiver() {
+    let main = "Sub Main()\n    Dim r As Long\n    Dim c As New Calculator\n    r = c.SumAll(4, 1, 2, 3)\nEnd Sub\n";
+    let calculator = "Public Function SumAll(seed As Long, ParamArray xs() As Variant) As Long\n    Dim i As Long\n    SumAll = seed\n    For i = LBound(xs) To UBound(xs)\n        SumAll = SumAll + CLng(xs(i))\n    Next i\nEnd Function\n";
+    assert_eq!(
+        run_multi_main_local0(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Calculator", ModuleKind::Class, calculator),
+        ]),
+        Some(10.0)
+    );
+}
+
+#[test]
 fn statement_form_named_argument_binds_in_standard_module() {
     let source = "Sub Main()\n    Dim r As Long\n    ToEqual \"expected\"\n    r = g\nEnd Sub\n\n\
                   Public g As Long\n\n\

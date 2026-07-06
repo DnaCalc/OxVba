@@ -51,6 +51,9 @@ front-end symbol index:
 - Predeclared class singleton coverage now includes `Set ClassName = Nothing` for both active and
   referenced projects. VM3 clears the singleton slot and creates a fresh initialized default
   instance on the next class-name access.
+- Instance class method call coverage now includes out-of-order named arguments and `ParamArray`
+  tail packing through an explicit receiver. These rows prove call mapping skips only hidden `Me`
+  and still binds source-visible parameters in VBA order.
 - 2026-07-06 package/runtime metadata continuation: OxIR class descriptor verification now enforces
   that class lifecycle hooks and method/property descriptor targets start with the hidden `Me`
   receiver parameter. VM runtime member descriptor extraction and project-member argument name
@@ -92,6 +95,10 @@ Production-route proof:
   `cross_project_predeclared_reset_to_nothing_recreates_referenced_singleton` prove active-project
   and referenced-project `VB_PredeclaredId` singleton slots clear on `Set ClassName = Nothing` and
   re-create fresh singleton instances on the next access.
+- `named_args_to_instance_class_method_skip_hidden_me_receiver` and
+  `paramarray_instance_class_method_packs_tail_after_hidden_me_receiver` prove receiver-qualified
+  project class method dispatch maps named arguments and `ParamArray` tails against the
+  source-visible parameter list after hidden `Me`.
 - `cargo test -p oxvba-compiler predeclared --quiet` covers the existing predeclared/default-root
   matrix after adding the frontend route gate.
 - Existing host/runtime tests prove the bd-1ufc field/lifetime behavior remains executable:
@@ -151,6 +158,8 @@ Compatibility quarantine / residual classification:
 - `cargo test -p oxvba-compiler predeclared --quiet`
 - `cargo test -p oxvba-bind as_new_ --quiet`
 - `cargo test -p oxvba-bind predeclared --test cross_project --quiet`
+- `cargo test -p oxvba-bind named_args_to_instance_class_method_skip_hidden_me_receiver --quiet`
+- `cargo test -p oxvba-bind paramarray_instance_class_method_packs_tail_after_hidden_me_receiver --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_terminate_cascades_through_object_field --quiet`
