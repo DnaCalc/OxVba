@@ -22412,6 +22412,74 @@ End Sub
         );
     }
 
+    /// Property Set/Get on a project instance must preserve the assigned object reference, not
+    /// copy or default-coerce it through the scalar property path.
+    #[test]
+    fn vm3_project_property_set_get_object_preserves_identity() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gSame As Boolean\nPublic gValue As Long\nSub Main()\n  Dim b As Box\n  Dim t As Thing\n  Dim got As Thing\n  Set b = New Box\n  Set t = New Thing\n  t.SetVal 23\n  Set b.Item = t\n  Set got = b.Item\n  gSame = (got Is t)\n  gValue = got.GetVal()\nEnd Sub\n",
+            ),
+            (
+                "Box",
+                Class,
+                "Private stored As Thing\nPublic Property Get Item() As Thing\n  Set Item = stored\nEnd Property\nPublic Property Set Item(ByVal v As Thing)\n  Set stored = v\nEnd Property\n",
+            ),
+            (
+                "Thing",
+                Class,
+                "Private m As Long\nPublic Sub SetVal(ByVal n As Long)\n  m = n\nEnd Sub\nPublic Function GetVal() As Long\n  GetVal = m\nEnd Function\n",
+            ),
+        ]);
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_bool(true))),
+            "{snap:?}"
+        );
+        assert_eq!(
+            snap.get(1),
+            Some(&canon(&Variant::from_i32(23))),
+            "{snap:?}"
+        );
+    }
+
+    /// A Variant-valued project Property Set can store an object reference and return it later
+    /// for ordinary member dispatch.
+    #[test]
+    fn vm3_project_variant_property_set_get_preserves_object() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gSame As Boolean\nPublic gValue As Long\nSub Main()\n  Dim h As Holder\n  Dim w As Widget\n  Dim got As Variant\n  Set h = New Holder\n  Set w = New Widget\n  w.SetVal 41\n  Set h.Body = w\n  Set got = h.Body\n  gSame = (got Is w)\n  gValue = got.GetVal()\nEnd Sub\n",
+            ),
+            (
+                "Holder",
+                Class,
+                "Private pBody As Variant\nPublic Property Get Body() As Variant\n  Set Body = pBody\nEnd Property\nPublic Property Set Body(ByVal Value As Variant)\n  Set pBody = Value\nEnd Property\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Private m As Long\nPublic Sub SetVal(ByVal n As Long)\n  m = n\nEnd Sub\nPublic Function GetVal() As Long\n  GetVal = m\nEnd Function\n",
+            ),
+        ]);
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_bool(true))),
+            "{snap:?}"
+        );
+        assert_eq!(
+            snap.get(1),
+            Some(&canon(&Variant::from_i32(41))),
+            "{snap:?}"
+        );
+    }
+
     /// End-to-end project events: a sink wires a source via `WithEvents`, the source
     /// `RaiseEvent`s, and the sink's handler fires with the event arg (M3-6).
     #[test]
