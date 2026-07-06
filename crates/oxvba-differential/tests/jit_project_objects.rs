@@ -1,6 +1,84 @@
-use oxvba_differential::{Executor, canon, run_modules};
+use std::collections::BTreeMap;
+
+use oxvba_differential::{Executor, RunOutcome, canon, run_modules, run_project_closure};
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+use oxvba_symbol::manifest::{
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
+};
+
+fn module(name: &str, kind: ModuleKind, src: &str) -> ModuleUnit {
+    ModuleUnit {
+        module_name: name.to_string(),
+        module_kind: kind,
+        attributes: ModuleAttributes::named(name),
+        source: src.to_string(),
+    }
+}
+
+fn proc_module(name: &str, src: &str) -> ModuleUnit {
+    module(name, Procedural, src)
+}
+
+fn predeclared_class_module(name: &str, src: &str) -> ModuleUnit {
+    let mut module = module(name, Class, src);
+    module.attributes.vb_predeclared_id = true;
+    module.attributes.vb_exposed = true;
+    module.attributes.vb_creatable = true;
+    module
+}
+
+fn project(modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
+    SymbolProjectManifest {
+        project_name: "VBAProject".to_string(),
+        project_kind: ProjectKind::Source,
+        modules,
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    }
+}
+
+fn assert_completed_with_i32(outcome: RunOutcome, expected: i32) {
+    assert!(
+        outcome.unsupported.is_none(),
+        "VM3 should execute the project-object oracle case: {outcome:?}"
+    );
+    assert!(
+        outcome
+            .handle_balance
+            .is_some_and(oxvba_runtime::HandleBalance::is_zero),
+        "VM3 handle imbalance: {:?}",
+        outcome.handle_balance
+    );
+    assert_eq!(
+        outcome.result.expect("VM3 should complete").first(),
+        Some(&canon(&Variant::from_i32(expected)))
+    );
+}
+
+fn assert_jit_declines(outcome: RunOutcome, instruction: &str, expected_detail: &str) {
+    let unsupported = outcome
+        .unsupported
+        .as_deref()
+        .unwrap_or_else(|| panic!("JIT should decline {instruction} explicitly: {outcome:?}"));
+    assert!(
+        unsupported.contains(instruction) && unsupported.contains(expected_detail),
+        "unexpected JIT unsupported diagnostic for {instruction}: {unsupported}"
+    );
+    assert!(
+        matches!(outcome.result.as_ref(), Ok(values) if values.is_empty()),
+        "JIT decline must not return a VM3 result: {outcome:?}"
+    );
+    assert!(
+        outcome
+            .handle_balance
+            .is_some_and(oxvba_runtime::HandleBalance::is_zero),
+        "jit decline handle imbalance: {:?}",
+        outcome.handle_balance
+    );
+}
 
 #[test]
 fn jit_project_class_new_declines_without_vm_fallback() {
@@ -18,38 +96,46 @@ fn jit_project_class_new_declines_without_vm_fallback() {
     ];
 
     let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
-    assert!(
-        vm3.unsupported.is_none(),
-        "vm3 should execute the project-object oracle case: {vm3:?}"
-    );
-    assert!(
-        vm3.handle_balance
-            .is_some_and(oxvba_runtime::HandleBalance::is_zero),
-        "vm3 handle imbalance: {:?}",
-        vm3.handle_balance
-    );
-    assert_eq!(
-        vm3.result.expect("vm3 should complete").first(),
-        Some(&canon(&Variant::from_i32(42)))
-    );
+    assert_completed_with_i32(vm3, 42);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
-    let unsupported = jit
-        .unsupported
-        .as_deref()
-        .expect("JIT should decline project-object construction explicitly");
-    assert!(
-        unsupported.contains("NewObject") && unsupported.contains("VM3-only"),
-        "unexpected JIT unsupported diagnostic: {unsupported}"
-    );
-    assert!(
-        matches!(jit.result.as_ref(), Ok(values) if values.is_empty()),
-        "JIT decline must not return the VM3 result: {jit:?}"
-    );
-    assert!(
-        jit.handle_balance
-            .is_some_and(oxvba_runtime::HandleBalance::is_zero),
-        "jit decline handle imbalance: {:?}",
-        jit.handle_balance
-    );
+    assert_jit_declines(jit, "NewObject", "VM3-only");
+}
+
+#[test]
+fn jit_project_typeof_declines_without_vm_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As Widget\n  If TypeOf w Is Widget Then\n    r = 7\n  Else\n    r = 3\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32(vm3, 3);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_jit_declines(jit, "TypeOfIs", "runtime descriptors");
+}
+
+#[test]
+fn jit_predeclared_default_instance_declines_without_vm_fallback() {
+    let app = project(vec![
+        proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\n  r = Counter.Total\nEnd Sub\n",
+        ),
+        predeclared_class_module(
+            "Counter",
+            "Private n As Long\nPrivate Sub Class_Initialize()\n  n = 10\nEnd Sub\nPublic Property Get Total() As Long\n  Total = n\nEnd Property\n",
+        ),
+    ]);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    assert_completed_with_i32(vm3, 10);
+
+    let jit = run_project_closure(Executor::Jit, &[app]);
+    assert_jit_declines(jit, "Predeclared", "VM3-only");
 }
