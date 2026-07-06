@@ -979,15 +979,19 @@ SAFEARRAY element load/store (typed + Variant lanes), Bound, ReDim(Preserve), Er
 New/AsNew, predeclared singletons, Is/TypeOf, member dispatch on project classes, Release{may_terminate}, DrainTerminations fixpoint through ProcInvoker (Terminate runs **compiled** code re-entrantly), project RaiseEvent → WithEvents fan-out.
 **Verify:** lifecycle micro-corpus green under `Executor::Jit` incl. the Terminate-timing axis; drain re-entrancy (a Terminate dropping the last ref of another object) covered. **Depends:** M4-7.
 
-Current continuation (2026-07-06): `bd-h4oh.10.17` is the active class/JIT setup bead. Its first
-slice is intentionally narrower than full M4-8: one active-project class, `Set w = New Widget`,
-`Class_Initialize` setting an instance field, and a simple property/method read executing under
-`Executor::Jit` with no VM fallback and matching VM3. `AsNew`, predeclared singletons,
-cross-project construction, events, object-valued properties, default members, arrays/UDT fields,
-and `Class_Terminate` stay behind deterministic unsupported diagnostics until later child beads.
+Current continuation (2026-07-07): `bd-h4oh.10.17` delivered the first non-fallback class/JIT
+slice: one active-project class, `Set w = New Widget`, `Class_Initialize` setting an instance
+field, and a no-argument property/method read now execute under `Executor::Jit` and match VM3.
+The JIT path builds shared runtime class descriptors, allocates descriptor-backed `ObjectRef`
+instances through `oxvba-rt-abi`, invokes initializer/member bodies through compiled hidden-`Me`
+frames, and preserves deterministic unsupported diagnostics for the later child-bead shapes.
+An unset receiver on the same member-read path now also matches VM3 by seating VBA error 91 under
+`On Error Resume Next`. `AsNew`, predeclared singletons, cross-project construction, events,
+object-valued properties/default members, argument-bearing member dispatch, arrays/UDT fields, and
+`Class_Terminate` remain outside this slice.
 
 Class/JIT follow-up bead order:
-1. `bd-h4oh.10.17` - active-project construction and property-read slice.
+1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
    `TypeName`.
 3. `bd-h4oh.10.19` - active-project method/property dispatch breadth, hidden `Me`, named/positional

@@ -2113,3 +2113,33 @@
     `oxvba-build` test `tests::wrapped_com_server_build_emits_package_descriptor_and_idl`
     remained stuck. Running that single test directly also timed out after five
     minutes.
+
+# 2026-07-07 - JIT active-project class construction and property-read slice
+
+- Closed the implementation scope for `bd-h4oh.10.17`, the first non-fallback class-module JIT
+  slice.
+- Added shared runtime class descriptor construction in `oxvba-rt-abi` so JIT-loaded programs carry
+  the same descriptor-backed class shape expected by `ObjectRef::from_project_instance`.
+- Added `rt_project_new_object` and JIT slot helpers for active-project `NewObject`, instance
+  `FieldGet`/`FieldSet`, and no-argument project member property/method reads through hidden-`Me`
+  compiled frames.
+- Converted the source-level Widget differential row from an unsupported `NewObject` assertion to
+  VM3/JIT parity: `Set w = New Widget`, `Class_Initialize` writes a private field, and
+  `w.Value` returns 42 under `Executor::Jit` without VM fallback.
+- The same project-member path now matches VM3 for an unset object receiver under
+  `On Error Resume Next` by surfacing error 91 instead of declining.
+- Fresh-eyes review tightened the `ComCallLate` admission guard so only statically typed
+  active-project class receivers enter this slice; untyped/COM receivers still decline with an
+  explicit unsupported diagnostic.
+- Residuals remain explicitly split to follow-up beads: active-project reference ownership and
+  richer identity (`bd-h4oh.10.18`), member dispatch breadth (`bd-h4oh.10.19`), default/object-valued
+  properties (`bd-h4oh.10.20`), `As New`, predeclared singletons, termination drains,
+  cross-project classes, and project events.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `cargo test -p oxvba-jit`
+  - `cargo test -p oxvba-rt-abi`
+  - `cargo test -p oxvba-runtime`
+  - `cargo test -p oxvba-bind`
+  - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`

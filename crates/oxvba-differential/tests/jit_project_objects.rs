@@ -84,7 +84,7 @@ fn assert_jit_declines(outcome: RunOutcome, instruction: &str, expected_detail: 
 }
 
 #[test]
-fn jit_project_class_new_declines_without_vm_fallback() {
+fn jit_project_class_new_property_get_matches_vm3_without_fallback() {
     let modules = [
         (
             "Main",
@@ -102,7 +102,7 @@ fn jit_project_class_new_declines_without_vm_fallback() {
     assert_completed_with_i32("VM3", vm3, 42);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
-    assert_jit_declines(jit, "NewObject", "VM3-only");
+    assert_completed_with_i32("JIT", jit, 42);
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn jit_is_operator_variant_scalars_raise_object_required_without_vm_fallback() {
 }
 
 #[test]
-fn jit_project_member_dispatch_on_unset_object_declines_without_vm_fallback() {
+fn jit_project_member_dispatch_on_unset_object_matches_vm3_without_fallback() {
     let modules = [
         (
             "Main",
@@ -232,7 +232,7 @@ fn jit_project_member_dispatch_on_unset_object_declines_without_vm_fallback() {
     assert_completed_with_i32("VM3", vm3, 91);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
-    assert_jit_declines(jit, "ComCallLate", "late-bound COM invocation");
+    assert_completed_with_i32("JIT", jit, 91);
 }
 
 #[test]

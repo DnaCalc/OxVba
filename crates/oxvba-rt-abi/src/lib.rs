@@ -3,15 +3,27 @@
 //! This crate is intentionally free of Cranelift and interpreter-frame state. It hosts
 //! the VM-agnostic cells and helper decisions that both engines must share.
 
-use oxvba_bundle::{NativeImplId, NumericCoerceTarget, NumericMode, StringCompareMode};
+use oxvba_bundle::{
+    ArrayElementType, NativeImplId, NumericCoerceTarget, NumericMode, ProjectMemberKind,
+    StringCompareMode,
+};
 use oxvba_com::ComSubscriptionToken;
 use oxvba_eval::arith::{self, ArithError, CmpOp as EvalCmpOp};
 use oxvba_eval::typed;
 use oxvba_hal::HostServices;
 use oxvba_lib::LibContext;
 use oxvba_oxir::value::{OxArg, OxCallArg, OxOperand, OxPlace};
-use oxvba_oxir::{BlockId, ErrorHandler, FuncId, OxProgram};
-use oxvba_runtime::object_ref::{ObjectRef, RuntimeClassDescriptor};
+use oxvba_oxir::{
+    BlockId, ErrorHandler, FuncId, OxProgram, OxTy, inst::OxAsNew, program::OxClassMethod,
+};
+use oxvba_runtime::object_ref::{
+    ObjectRef, RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
+    RuntimeClassActivationDescriptor, RuntimeClassAsNewFieldDescriptor, RuntimeClassDescriptor,
+    RuntimeClassFieldDescriptor, RuntimeClassLifecycleDescriptor, RuntimeGuid,
+    RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeInterfaceIdentity, RuntimeInterfaceKind,
+    RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor,
+    RuntimeProjectClassIdentity, RuntimeValueType,
+};
 use oxvba_runtime::{VarType, Variant};
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -210,6 +222,344 @@ pub struct LoadedProgram<'h> {
     pub class_descriptors: Vec<&'static RuntimeClassDescriptor>,
     pub predeclared_singletons: HashMap<usize, Variant>,
     pub event_routes: HashMap<(i32, i32), usize>,
+}
+
+pub fn runtime_class_descriptors_for_program(
+    program: &OxProgram,
+) -> Vec<&'static RuntimeClassDescriptor> {
+    program
+        .classes
+        .iter()
+        .enumerate()
+        .map(|(class_index, class)| build_runtime_class_descriptor(program, class_index, class))
+        .collect()
+}
+
+fn synthetic_dispatch_id(index: usize, default_member: bool) -> i32 {
+    if default_member {
+        0
+    } else {
+        i32::try_from(index)
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .unwrap_or(i32::MAX)
+    }
+}
+
+fn runtime_member_invoke_kind(kind: ProjectMemberKind) -> RuntimeMemberInvokeKind {
+    match kind {
+        ProjectMemberKind::Method => RuntimeMemberInvokeKind::Method,
+        ProjectMemberKind::PropertyGet => RuntimeMemberInvokeKind::PropertyGet,
+        ProjectMemberKind::PropertyLet => RuntimeMemberInvokeKind::PropertyLet,
+        ProjectMemberKind::PropertySet => RuntimeMemberInvokeKind::PropertySet,
+    }
+}
+
+fn leak_runtime_str(value: &str) -> &'static str {
+    Box::leak(value.to_string().into_boxed_str())
+}
+
+fn hidden_me_receiver_param_count(func: &oxvba_oxir::OxFunc) -> usize {
+    usize::from(
+        func.param_count > 0
+            && func.locals.first().is_some_and(|local| {
+                local.param.is_some() && local.name.eq_ignore_ascii_case("Me")
+            }),
+    )
+}
+
+fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescriptor> {
+    func.locals
+        .iter()
+        .take(func.param_count)
+        .skip(hidden_me_receiver_param_count(func))
+        .map(|local| {
+            let param = local.param.as_ref();
+            RuntimeParamDescriptor {
+                name: leak_runtime_str(&local.name),
+                value_type: runtime_value_type(&local.ty),
+                by_ref: param.map(|p| p.by_ref).unwrap_or(false),
+                optional: param.map(|p| p.optional).unwrap_or(false),
+                param_array: param.map(|p| p.variadic).unwrap_or(false),
+            }
+        })
+        .collect()
+}
+
+fn runtime_return_type(func: &oxvba_oxir::OxFunc) -> Option<RuntimeValueType> {
+    func.return_local
+        .and_then(|local| func.locals.get(local.0))
+        .map(|local| runtime_value_type(&local.ty))
+}
+
+fn runtime_value_type(ty: &OxTy) -> RuntimeValueType {
+    match ty {
+        OxTy::Bool => RuntimeValueType::Boolean,
+        OxTy::Byte => RuntimeValueType::Byte,
+        OxTy::Integer => RuntimeValueType::Integer,
+        OxTy::Long => RuntimeValueType::Long,
+        OxTy::LongLong => RuntimeValueType::LongLong,
+        OxTy::Currency => RuntimeValueType::Currency,
+        OxTy::Single => RuntimeValueType::Single,
+        OxTy::Double => RuntimeValueType::Double,
+        OxTy::Date => RuntimeValueType::Date,
+        OxTy::Decimal => RuntimeValueType::Decimal,
+        OxTy::Str | OxTy::FixedStr(_) => RuntimeValueType::String,
+        OxTy::Object(_) => RuntimeValueType::Object,
+        OxTy::Record(_) => RuntimeValueType::Record,
+        OxTy::Array(_, _) => RuntimeValueType::Array,
+        OxTy::Variant | OxTy::ProcRef => RuntimeValueType::Variant,
+    }
+}
+
+fn runtime_array_element_type(element: &ArrayElementType) -> RuntimeValueType {
+    match element {
+        ArrayElementType::Variant => RuntimeValueType::Variant,
+        ArrayElementType::Integer => RuntimeValueType::Integer,
+        ArrayElementType::Long => RuntimeValueType::Long,
+        ArrayElementType::LongLong => RuntimeValueType::LongLong,
+        ArrayElementType::Byte => RuntimeValueType::Byte,
+        ArrayElementType::Single => RuntimeValueType::Single,
+        ArrayElementType::Double => RuntimeValueType::Double,
+        ArrayElementType::Currency => RuntimeValueType::Currency,
+        ArrayElementType::Date => RuntimeValueType::Date,
+        ArrayElementType::String | ArrayElementType::FixedString(_) => RuntimeValueType::String,
+        ArrayElementType::Boolean => RuntimeValueType::Boolean,
+        ArrayElementType::Record(_) => RuntimeValueType::Record,
+        ArrayElementType::FixedArray { .. } => RuntimeValueType::Array,
+    }
+}
+
+fn runtime_class_field_descriptor(
+    field: &oxvba_oxir::program::OxClassField,
+) -> RuntimeClassFieldDescriptor {
+    RuntimeClassFieldDescriptor {
+        name: leak_runtime_str(&field.name),
+        token: field.token,
+        value_type: runtime_value_type(&field.ty),
+        array_element_type: field.array_element.as_ref().map(runtime_array_element_type),
+    }
+}
+
+fn runtime_class_activation_descriptor(binding: &OxAsNew) -> RuntimeClassActivationDescriptor {
+    match binding {
+        OxAsNew::ProjectClass { class } => RuntimeClassActivationDescriptor::ProjectClass {
+            class_index: class.0,
+        },
+        OxAsNew::ExternClass { import } => RuntimeClassActivationDescriptor::ExternClass {
+            import_index: import.0,
+        },
+        OxAsNew::ComClass { prog_id } => RuntimeClassActivationDescriptor::ComClass {
+            prog_id: leak_runtime_str(prog_id),
+        },
+    }
+}
+
+fn runtime_as_new_field_descriptor(
+    field: &oxvba_oxir::program::OxClassAsNewField,
+) -> RuntimeClassAsNewFieldDescriptor {
+    RuntimeClassAsNewFieldDescriptor {
+        field_token: field.field,
+        activation: runtime_class_activation_descriptor(&field.binding),
+    }
+}
+
+fn runtime_member_descriptor(
+    program: &OxProgram,
+    method: &OxClassMethod,
+    display_name: &str,
+    dispatch_index: usize,
+    dispatch_id: Option<i32>,
+    vtable_slot: Option<u16>,
+    is_default_member: bool,
+    is_enumerator_member: bool,
+) -> RuntimeMemberDescriptor {
+    let proc = program.funcs.get(method.proc.0);
+    let params: &'static [RuntimeParamDescriptor] = Box::leak(
+        proc.map(runtime_member_params)
+            .unwrap_or_default()
+            .into_boxed_slice(),
+    );
+    RuntimeMemberDescriptor {
+        name: leak_runtime_str(display_name),
+        dispatch_id: dispatch_id
+            .unwrap_or_else(|| synthetic_dispatch_id(dispatch_index, is_default_member)),
+        vtable_slot,
+        invoke_kind: runtime_member_invoke_kind(method.kind),
+        arity: params.len(),
+        params,
+        return_type: proc.and_then(runtime_return_type),
+        is_default_member,
+        is_enumerator_member,
+    }
+}
+
+const PROJECT_INTERFACE_GUID_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const PROJECT_INTERFACE_GUID_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn fnv1a64(seed: u64, input: &str) -> u64 {
+    let mut hash = seed;
+    for byte in input.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(PROJECT_INTERFACE_GUID_PRIME);
+    }
+    hash
+}
+
+fn runtime_project_interface_guid(unit_name: &str, interface_name: &str) -> RuntimeGuid {
+    let key = format!(
+        "oxvba:project-interface:{}:{}",
+        unit_name.to_ascii_lowercase(),
+        interface_name.to_ascii_lowercase()
+    );
+    let hi = fnv1a64(PROJECT_INTERFACE_GUID_OFFSET, &key);
+    let lo = fnv1a64(!PROJECT_INTERFACE_GUID_OFFSET, &key);
+    RuntimeGuid::new(
+        (hi >> 32) as u32,
+        (hi >> 16) as u16,
+        hi as u16,
+        lo.to_be_bytes(),
+    )
+}
+
+fn runtime_project_interface_descriptor(
+    program: &OxProgram,
+    class: &oxvba_oxir::OxClass,
+    interface_name: &str,
+) -> Option<RuntimeInterfaceDescriptor> {
+    let bare_interface = interface_name.rsplit('.').next().unwrap_or(interface_name);
+    let interface_class = program
+        .classes
+        .iter()
+        .find(|candidate| candidate.name.eq_ignore_ascii_case(bare_interface))?;
+    let mut members = Vec::new();
+    for interface_method in &interface_class.methods {
+        let mangled = format!("{bare_interface}_{}", interface_method.name);
+        let Some(implementation_method) = class.methods.iter().find(|method| {
+            method.kind == interface_method.kind && method.name.eq_ignore_ascii_case(&mangled)
+        }) else {
+            continue;
+        };
+        let index = members.len();
+        members.push(runtime_member_descriptor(
+            program,
+            implementation_method,
+            &interface_method.name,
+            index,
+            interface_method.dispid.or(implementation_method.dispid),
+            interface_method
+                .vtable_slot
+                .or(implementation_method.vtable_slot),
+            interface_method.is_default_member || implementation_method.is_default_member,
+            interface_method.is_enumerator_member || implementation_method.is_enumerator_member,
+        ));
+    }
+    let members: &'static [RuntimeMemberDescriptor] = Box::leak(members.into_boxed_slice());
+    let qualified_name = if program.unit_name.is_empty() {
+        bare_interface.to_string()
+    } else {
+        format!("{}.{}", program.unit_name, bare_interface)
+    };
+    let identity_name = leak_runtime_str(&qualified_name);
+    Some(RuntimeInterfaceDescriptor {
+        id: RuntimeInterfaceId::Unsupported,
+        identity: RuntimeInterfaceIdentity::custom(
+            runtime_project_interface_guid(&program.unit_name, bare_interface),
+            identity_name,
+            RuntimeInterfaceKind::Custom,
+            None,
+            None,
+            None,
+        ),
+        name: leak_runtime_str(bare_interface),
+        members,
+        dual_dispatch: false,
+    })
+}
+
+fn build_runtime_class_descriptor(
+    program: &OxProgram,
+    class_index: usize,
+    class: &oxvba_oxir::OxClass,
+) -> &'static RuntimeClassDescriptor {
+    let name: &'static str = leak_runtime_str(&class.name);
+    let project_identity = RuntimeProjectClassIdentity {
+        unit_name: leak_runtime_str(&program.unit_name),
+        class_index,
+    };
+    let fields: &'static [RuntimeClassFieldDescriptor] = Box::leak(
+        class
+            .fields
+            .iter()
+            .map(runtime_class_field_descriptor)
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    let as_new_fields: &'static [RuntimeClassAsNewFieldDescriptor] = Box::leak(
+        class
+            .as_new_fields
+            .iter()
+            .map(runtime_as_new_field_descriptor)
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    let implements: &'static [&'static str] = Box::leak(
+        class
+            .implements
+            .iter()
+            .map(|interface| leak_runtime_str(interface))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    let lifecycle = RuntimeClassLifecycleDescriptor {
+        has_initialize: class.initialize.is_some(),
+        has_terminate: class.terminate.is_some(),
+    };
+    let members: &'static [RuntimeMemberDescriptor] = Box::leak(
+        class
+            .methods
+            .iter()
+            .enumerate()
+            .map(|(index, method)| {
+                runtime_member_descriptor(
+                    program,
+                    method,
+                    &method.name,
+                    index,
+                    method.dispid,
+                    method.vtable_slot,
+                    method.is_default_member,
+                    method.is_enumerator_member,
+                )
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    let dispatch = RuntimeInterfaceDescriptor {
+        id: RuntimeInterfaceId::IDispatch,
+        identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+        name: "IDispatch",
+        members,
+        dual_dispatch: true,
+    };
+    let mut interface_descriptors = vec![RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, dispatch];
+    interface_descriptors.extend(
+        class.implements.iter().filter_map(|interface| {
+            runtime_project_interface_descriptor(program, class, interface)
+        }),
+    );
+    let interfaces: &'static [RuntimeInterfaceDescriptor] =
+        Box::leak(interface_descriptors.into_boxed_slice());
+    &*Box::leak(Box::new(RuntimeClassDescriptor {
+        name,
+        project_identity: Some(project_identity),
+        predeclared: class.predeclared,
+        lifecycle,
+        fields,
+        as_new_fields,
+        implements,
+        interfaces,
+    }))
 }
 
 /// Shared procedure invocation seam used by host/event ingress and future JIT tiering.
@@ -1278,6 +1628,60 @@ pub extern "C" fn rt_clear_proc_invoker(state: *mut RawExecState) -> i32 {
         };
         exec.proc_invoker = None;
         ST_OK
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_project_new_object(
+    state: *mut RawExecState,
+    program_index: usize,
+    class_index: usize,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let Some(loaded) = exec.programs.get(program_index) else {
+            return seat_fault(
+                state,
+                Fault::new(5, format!("unknown program {program_index}")),
+            );
+        };
+        let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
+            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+        };
+        let Some(class) = loaded.program.classes.get(class_index) else {
+            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+        };
+        let instance_id = exec.next_instance_id;
+        exec.next_instance_id += 1;
+        let object = ObjectRef::from_project_instance(
+            instance_id,
+            class_index as i32,
+            program_index as i32,
+            class.terminate.is_some(),
+            descriptor,
+        );
+        let value = Variant::from_object_ref(object.clone());
+        if let Some(init) = class.initialize {
+            let Some(bridge) = exec.proc_invoker else {
+                return seat_fault(
+                    state,
+                    Fault::new(
+                        5,
+                        "rt_project_new_object requires an installed ProcInvoker for Class_Initialize",
+                    ),
+                );
+            };
+            // SAFETY: the installed bridge owns its opaque context for this run. The `Me`
+            // Variant is borrowed only for the duration of the synchronous initializer call.
+            let status = unsafe { (bridge.invoke)(bridge.ctx, program_index, init.0, &value, 0) };
+            if status != ST_OK {
+                return status;
+            }
+        }
+        write_out(state, out, value)
     })
 }
 

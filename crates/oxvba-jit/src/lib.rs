@@ -15,20 +15,21 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId as ClifFuncId, Linkage, Module, default_libcall_names};
 use oxvba_bundle::{
     ArrayElementType, AssignmentIntent, AssignmentTargetKind, ExportTarget, NativeBody,
-    NativeImplId, NumericCoerceTarget, NumericMode, StringCompareMode,
+    NativeImplId, NumericCoerceTarget, NumericMode, ProjectMemberKind, StringCompareMode,
     array_element_type_for_vartype, default_array_element, redim_safearray_from_elements,
     safearray_vartype_for_element, vba_library_bundle, vba_record_layout_for_fields,
 };
+use oxvba_com::TypeLibMemberInvokeKind;
 use oxvba_hal::HostServices;
 use oxvba_oxir::{
     ArithOp, ArrayShape, BlockId, BoundWhich, CmpOp, ErrField, ErrorHandler, FuncId, LogicalOp,
-    OxArg, OxCallArg, OxCoerceTarget, OxConst, OxFunc, OxInst, OxLocal, OxNativeCallee, OxOperand,
-    OxPlace, OxProgram, OxTerminator, OxTy,
+    ObjClass, OxArg, OxCallArg, OxCoerceTarget, OxConst, OxFunc, OxInst, OxLocal, OxNativeCallee,
+    OxOperand, OxPlace, OxProgram, OxTerminator, OxTy,
 };
 use oxvba_rt_abi::{
-    ExecState, LoadedProgram, RT_ARITH_ADD, RT_ARITH_DIV, RT_ARITH_INT_DIV, RT_ARITH_MOD,
-    RT_ARITH_MUL, RT_ARITH_POW, RT_ARITH_SUB, RT_COMPARE_EQ, RT_COMPARE_GE, RT_COMPARE_GT,
-    RT_COMPARE_LE, RT_COMPARE_LT, RT_COMPARE_NE, RT_ERR_FIELD_DESCRIPTION,
+    ExecState, LoadedProgram, ProcInvokeBridge, RT_ARITH_ADD, RT_ARITH_DIV, RT_ARITH_INT_DIV,
+    RT_ARITH_MOD, RT_ARITH_MUL, RT_ARITH_POW, RT_ARITH_SUB, RT_COMPARE_EQ, RT_COMPARE_GE,
+    RT_COMPARE_GT, RT_COMPARE_LE, RT_COMPARE_LT, RT_COMPARE_NE, RT_ERR_FIELD_DESCRIPTION,
     RT_ERR_FIELD_HELP_CONTEXT, RT_ERR_FIELD_HELP_FILE, RT_ERR_FIELD_LAST_DLL_ERROR,
     RT_ERR_FIELD_NUMBER, RT_ERR_FIELD_SOURCE, RT_ERROR_HANDLER_GOTO_0, RT_ERROR_HANDLER_GOTO_LABEL,
     RT_ERROR_HANDLER_GOTO_MINUS_1, RT_ERROR_HANDLER_RESUME_NEXT, RT_FAULT_DISP_HANDLER,
@@ -44,12 +45,12 @@ use oxvba_rt_abi::{
     rt_div_i32, rt_div_i64, rt_err_clear, rt_err_enter_activation, rt_err_i32_field,
     rt_err_restore_activation, rt_err_string_field_utf8, rt_lib_invoke_with_policy, rt_logical_v,
     rt_maybe_drain, rt_mul_i16, rt_mul_i32, rt_mul_i64, rt_mul_u8, rt_neg_v, rt_not_v,
-    rt_raise_array_has_no_bounds, rt_raise_error_number, rt_raise_expected_array,
-    rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref, rt_raise_out_of_memory,
-    rt_raise_out_of_stack, rt_raise_runtime_error_number, rt_raise_subscript_out_of_range,
-    rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume, rt_route_fault,
-    rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8, rt_truthy_v,
-    variant_changed,
+    rt_project_new_object, rt_raise_array_has_no_bounds, rt_raise_error_number,
+    rt_raise_expected_array, rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref,
+    rt_raise_out_of_memory, rt_raise_out_of_stack, rt_raise_runtime_error_number,
+    rt_raise_subscript_out_of_range, rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume,
+    rt_route_fault, rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8,
+    rt_truthy_v, runtime_class_descriptors_for_program, variant_changed,
 };
 use oxvba_runtime::{
     Decimal96, VarType, Variant, VbaRecord,
@@ -60,6 +61,7 @@ use oxvba_runtime::{
     },
 };
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use thiserror::Error;
 
@@ -204,6 +206,14 @@ impl<'p> CompiledImage<'p> {
             function_count: self.functions.len(),
         };
         let state = exec_state_as_raw(&mut exec);
+        let mut bridge_ctx = JitProcInvokeCtx {
+            run: &mut run as *mut JitRun,
+            state,
+        };
+        exec.proc_invoker = Some(ProcInvokeBridge {
+            ctx: &mut bridge_ctx as *mut JitProcInvokeCtx as *mut c_void,
+            invoke: jit_proc_invoke,
+        });
 
         oxvba_runtime::reset_pending_terminations();
         if let Some(init) = self.program.global_initializer {
@@ -303,6 +313,79 @@ struct JitRun {
     function_count: usize,
 }
 
+struct JitProcInvokeCtx {
+    run: *mut JitRun,
+    state: *mut RawExecState,
+}
+
+unsafe extern "C" fn jit_proc_invoke(
+    ctx: *mut c_void,
+    target_prog: usize,
+    proc: usize,
+    me: *const Variant,
+    _suppress: i32,
+) -> i32 {
+    status_guard(|| {
+        if ctx.is_null() || target_prog != 0 || me.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: `ctx` is installed from `CompiledImage::run` and remains live while
+        // runtime callbacks can synchronously enter compiled procedures.
+        let ctx = unsafe { &mut *(ctx as *mut JitProcInvokeCtx) };
+        if ctx.run.is_null() || ctx.state.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and the run is uniquely borrowed by the active helper.
+        let run = unsafe { &mut *ctx.run };
+        if run.program.is_null() || run.functions.is_null() || proc >= run.function_count {
+            return ST_FAULT;
+        }
+        // SAFETY: installed from the owning CompiledImage for this run.
+        let program = unsafe { &*run.program };
+        let Some(func) = program.funcs.get(proc) else {
+            return ST_FAULT;
+        };
+        if func.param_count != 1 {
+            return ST_FAULT;
+        }
+        let Some(param) = func.locals.first() else {
+            return ST_FAULT;
+        };
+        if param.param.as_ref().is_none_or(|param| param.by_ref)
+            || !is_jit_variant_carrier_ty(&param.ty)
+        {
+            return ST_FAULT;
+        }
+        if run.frames.len() >= MAX_JIT_FRAMES {
+            return rt_raise_out_of_stack(ctx.state);
+        }
+        let Ok(mut frame) = new_jit_frame(program, func) else {
+            return ST_FAULT;
+        };
+        // SAFETY: `me` was checked non-null and is borrowed only for this synchronous call.
+        frame.locals[0] = unsafe { (*me).clone() };
+        let mut saved_err = RtSavedErrState::default();
+        let enter_status = rt_err_enter_activation(ctx.state, &mut saved_err);
+        if enter_status != ST_OK {
+            return enter_status;
+        }
+        run.frames.push(frame);
+        // SAFETY: function pointer bounds were checked above.
+        let entry = unsafe { *run.functions.add(proc) };
+        // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
+        let status = unsafe { entry(run as *mut JitRun, ctx.state) };
+        run.frames.pop();
+        prune_for_each_from_depth(run, run.frames.len());
+        prune_param_array_aliases_from_depth(run, run.frames.len());
+        let restore_status = rt_err_restore_activation(ctx.state, &saved_err);
+        if restore_status != ST_OK {
+            restore_status
+        } else {
+            status
+        }
+    })
+}
+
 struct JitForEachState {
     elements: Vec<Variant>,
     position: usize,
@@ -387,7 +470,7 @@ fn build_loaded<'p>(program: &'p OxProgram) -> Result<LoadedProgram<'p>, JitErro
     Ok(LoadedProgram {
         program,
         globals,
-        class_descriptors: Vec::new(),
+        class_descriptors: runtime_class_descriptors_for_program(program),
         predeclared_singletons: HashMap::new(),
         event_routes: HashMap::new(),
     })
@@ -506,6 +589,10 @@ struct Imports {
     store_bool: ClifFuncId,
     store_proc_ref: ClifFuncId,
     store_variant: ClifFuncId,
+    new_object_slot: ClifFuncId,
+    field_get_slot: ClifFuncId,
+    field_set_slot: ClifFuncId,
+    project_member_get_slot: ClifFuncId,
     new_record_slot: ClifFuncId,
     validate_assignment: ClifFuncId,
     err_clear: ClifFuncId,
@@ -867,6 +954,34 @@ impl<'a> LowerFunc<'a> {
             OxInst::NewRecord { dst, fields } => {
                 self.emit_new_record_to_slot(builder, module, *dst, fields)
             }
+            OxInst::NewObject { dst, class } => {
+                self.emit_new_object_to_slot(builder, module, *dst, class.0)
+            }
+            OxInst::FieldGet { dst, object, field } => {
+                self.emit_field_get_to_slot(builder, module, *dst, object, *field)
+            }
+            OxInst::FieldSet {
+                object,
+                field,
+                value,
+            } => self.emit_field_set(builder, module, object, *field, value),
+            OxInst::ComCallLate {
+                dst,
+                recv,
+                name,
+                default_member,
+                invoke_kind,
+                args,
+            } => self.emit_project_member_get_to_slot(
+                builder,
+                module,
+                *dst,
+                recv,
+                name,
+                *default_member,
+                *invoke_kind,
+                args,
+            ),
             OxInst::Box { dst, src, from } => {
                 self.ensure_variant_place(*dst)?;
                 if !is_jit_supported_slot_ty(from) {
@@ -2701,6 +2816,152 @@ impl<'a> LowerFunc<'a> {
         let call = builder
             .ins()
             .call(callee, &[self.run, operand_ptr, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_new_object_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        class_index: usize,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let class_index = i32::try_from(class_index)
+            .map_err(|_| JitError::unsupported("JIT NewObject class index is too large"))?;
+        let (area, index) = place_addr(dst);
+        let program = builder.ins().iconst(types::I32, 0);
+        let class = builder.ins().iconst(types::I32, i64::from(class_index));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.new_object_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, program, class, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_field_get_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        object: &OxOperand,
+        field: i32,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let object = self.lower_variant_operand(builder, object)?;
+        let object_ptr = self.emit_variant_operand_descriptors(builder, module, &[object])?;
+        let (area, index) = place_addr(dst);
+        let field = builder.ins().iconst(types::I32, i64::from(field));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.field_get_slot);
+        let call = builder.ins().call(
+            callee,
+            &[self.state, self.run, object_ptr, field, area, index],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_field_set(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        object: &OxOperand,
+        field: i32,
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        let object = self.lower_variant_operand(builder, object)?;
+        let value = self.lower_variant_operand(builder, value)?;
+        let operands = [object, value];
+        let operands_ptr = self.emit_variant_operand_descriptors(builder, module, &operands)?;
+        let field = builder.ins().iconst(types::I32, i64::from(field));
+        let callee = self.import(builder, module, self.imports.field_set_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, operands_ptr, field]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_project_member_get_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: Option<OxPlace>,
+        recv: &OxOperand,
+        name: &str,
+        default_member: bool,
+        invoke_kind: TypeLibMemberInvokeKind,
+        args: &[OxCallArg],
+    ) -> Result<(), JitError> {
+        if default_member {
+            return Err(JitError::unsupported(
+                "JIT ComCallLate default-member dispatch remains VM3-only",
+            ));
+        }
+        if !args.is_empty() {
+            return Err(JitError::unsupported(
+                "JIT project ComCallLate currently supports only no-argument members",
+            ));
+        }
+        if !matches!(
+            invoke_kind,
+            TypeLibMemberInvokeKind::PropertyGet | TypeLibMemberInvokeKind::Method
+        ) {
+            return Err(JitError::unsupported(
+                "JIT project ComCallLate currently supports only PropertyGet/Method reads",
+            ));
+        }
+        if !matches!(
+            operand_static_ty(self.program, self.func, recv)?,
+            OxTy::Object(ObjClass::Class(_))
+        ) {
+            return Err(JitError::unsupported(
+                "JIT ComCallLate is unsupported for non-project-class receivers: currently supports only statically typed active-project class receivers",
+            ));
+        }
+        let Some(dst) = dst else {
+            return Err(JitError::unsupported(
+                "JIT project ComCallLate currently requires a destination",
+            ));
+        };
+        self.ensure_variant_carrier_place(dst)?;
+        let recv = self.lower_variant_operand(builder, recv)?;
+        let recv_ptr = self.emit_variant_operand_descriptors(builder, module, &[recv])?;
+        let ptr_ty = module.target_config().pointer_type();
+        let name_ptr = builder.ins().iconst(ptr_ty, name.as_ptr() as i64);
+        let name_len = i32::try_from(name.len())
+            .map_err(|_| JitError::unsupported("JIT project member name is too long"))?;
+        let name_len = builder.ins().iconst(types::I32, i64::from(name_len));
+        let invoke_kind = builder
+            .ins()
+            .iconst(types::I32, i64::from(raw_member_invoke_kind(invoke_kind)));
+        let (area, index) = place_addr(dst);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.project_member_get_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                recv_ptr,
+                name_ptr,
+                name_len,
+                invoke_kind,
+                area,
+                index,
+            ],
+        );
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
@@ -7185,6 +7446,17 @@ impl<'a> LowerFunc<'a> {
         }
     }
 
+    fn ensure_variant_carrier_place(&self, place: OxPlace) -> Result<(), JitError> {
+        let ty = place_ty(self.program, self.func, place)?;
+        if is_jit_variant_carrier_ty(ty) {
+            Ok(())
+        } else {
+            Err(JitError::unsupported(format!(
+                "JIT object lowering requires a Variant-backed carrier place, got {ty:?} at {place:?}"
+            )))
+        }
+    }
+
     fn ensure_string_place(&self, place: OxPlace) -> Result<(), JitError> {
         let ty = place_ty(self.program, self.func, place)?;
         if matches!(ty, OxTy::Str) {
@@ -7267,6 +7539,22 @@ fn register_symbols(builder: &mut JITBuilder) {
     builder.symbol("rt_jit_store_bool", rt_jit_store_bool as *const u8);
     builder.symbol("rt_jit_store_proc_ref", rt_jit_store_proc_ref as *const u8);
     builder.symbol("rt_jit_store_variant", rt_jit_store_variant as *const u8);
+    builder.symbol(
+        "rt_jit_new_object_to_slot",
+        rt_jit_new_object_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_project_field_get_to_slot",
+        rt_jit_project_field_get_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_project_field_set",
+        rt_jit_project_field_set as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_project_member_get_to_slot",
+        rt_jit_project_member_get_to_slot as *const u8,
+    );
     builder.symbol(
         "rt_jit_new_record_to_slot",
         rt_jit_new_record_to_slot as *const u8,
@@ -7600,6 +7888,88 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
     store_variant_sig.returns.push(AbiParam::new(types::I32));
     let store_variant = module
         .declare_function("rt_jit_store_variant", Linkage::Import, &store_variant_sig)
+        .map_err(module_err)?;
+
+    let mut new_object_slot_sig = module.make_signature();
+    new_object_slot_sig.params.push(AbiParam::new(ptr_ty));
+    new_object_slot_sig.params.push(AbiParam::new(ptr_ty));
+    new_object_slot_sig.params.push(AbiParam::new(types::I32));
+    new_object_slot_sig.params.push(AbiParam::new(types::I32));
+    new_object_slot_sig.params.push(AbiParam::new(types::I32));
+    new_object_slot_sig.params.push(AbiParam::new(types::I32));
+    new_object_slot_sig.returns.push(AbiParam::new(types::I32));
+    let new_object_slot = module
+        .declare_function(
+            "rt_jit_new_object_to_slot",
+            Linkage::Import,
+            &new_object_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut field_get_slot_sig = module.make_signature();
+    field_get_slot_sig.params.push(AbiParam::new(ptr_ty));
+    field_get_slot_sig.params.push(AbiParam::new(ptr_ty));
+    field_get_slot_sig.params.push(AbiParam::new(ptr_ty));
+    field_get_slot_sig.params.push(AbiParam::new(types::I32));
+    field_get_slot_sig.params.push(AbiParam::new(types::I32));
+    field_get_slot_sig.params.push(AbiParam::new(types::I32));
+    field_get_slot_sig.returns.push(AbiParam::new(types::I32));
+    let field_get_slot = module
+        .declare_function(
+            "rt_jit_project_field_get_to_slot",
+            Linkage::Import,
+            &field_get_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut field_set_slot_sig = module.make_signature();
+    field_set_slot_sig.params.push(AbiParam::new(ptr_ty));
+    field_set_slot_sig.params.push(AbiParam::new(ptr_ty));
+    field_set_slot_sig.params.push(AbiParam::new(ptr_ty));
+    field_set_slot_sig.params.push(AbiParam::new(types::I32));
+    field_set_slot_sig.returns.push(AbiParam::new(types::I32));
+    let field_set_slot = module
+        .declare_function(
+            "rt_jit_project_field_set",
+            Linkage::Import,
+            &field_set_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut project_member_get_slot_sig = module.make_signature();
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(ptr_ty));
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(ptr_ty));
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(ptr_ty));
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(ptr_ty));
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    project_member_get_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    project_member_get_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let project_member_get_slot = module
+        .declare_function(
+            "rt_jit_project_member_get_to_slot",
+            Linkage::Import,
+            &project_member_get_slot_sig,
+        )
         .map_err(module_err)?;
 
     let mut new_record_slot_sig = module.make_signature();
@@ -8550,6 +8920,10 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         store_bool,
         store_proc_ref,
         store_variant,
+        new_object_slot,
+        field_get_slot,
+        field_set_slot,
+        project_member_get_slot,
         new_record_slot,
         validate_assignment,
         err_clear,
@@ -8949,12 +9323,6 @@ fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str
         OxInst::ComCallEarly { .. } => Some(
             "JIT COM object dispatch instruction ComCallEarly is unsupported: typed COM invocation remains VM3-only",
         ),
-        OxInst::ComCallLate { .. } => Some(
-            "JIT COM object dispatch instruction ComCallLate is unsupported: late-bound COM invocation remains VM3-only",
-        ),
-        OxInst::NewObject { .. } => Some(
-            "JIT project object/class instruction NewObject is unsupported: descriptor-backed allocation, Class_Initialize, and termination ownership remain VM3-only",
-        ),
         OxInst::NewExtern { .. } => Some(
             "JIT cross-project object/class instruction NewExtern is unsupported: referenced-project construction requires linked runtime descriptors",
         ),
@@ -8969,12 +9337,6 @@ fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str
         ),
         OxInst::PredeclaredExternSet { .. } => Some(
             "JIT cross-project object/class instruction PredeclaredExternSet is unsupported: referenced-project singleton ownership remains VM3-only",
-        ),
-        OxInst::FieldGet { .. } => Some(
-            "JIT project object/class instruction FieldGet is unsupported: instance field reads require descriptor-backed object state",
-        ),
-        OxInst::FieldSet { .. } => Some(
-            "JIT project object/class instruction FieldSet is unsupported: instance field writes require descriptor-backed object state and reference ownership",
         ),
         OxInst::FieldArrayGet { .. } => Some(
             "JIT project object/class instruction FieldArrayGet is unsupported: in-place array field reads require descriptor-backed object state",
@@ -9030,6 +9392,27 @@ fn place_ty<'a>(
             .temps
             .get(id.0)
             .ok_or_else(|| JitError::Compile(format!("temp {} out of range", id.0))),
+    }
+}
+
+fn operand_static_ty<'a>(
+    program: &'a OxProgram,
+    func: &'a OxFunc,
+    operand: &'a OxOperand,
+) -> Result<OxTy, JitError> {
+    match operand {
+        OxOperand::Use(place) => place_ty(program, func, *place).cloned(),
+        OxOperand::Const(OxConst::Nothing) => Ok(OxTy::Object(ObjClass::Untyped)),
+        OxOperand::Const(OxConst::Bool(_)) => Ok(OxTy::Bool),
+        OxOperand::Const(OxConst::I16(_)) => Ok(OxTy::Integer),
+        OxOperand::Const(OxConst::I32(_)) => Ok(OxTy::Long),
+        OxOperand::Const(OxConst::I64(_)) => Ok(OxTy::LongLong),
+        OxOperand::Const(OxConst::F32(_)) => Ok(OxTy::Single),
+        OxOperand::Const(OxConst::F64(_)) => Ok(OxTy::Double),
+        OxOperand::Const(OxConst::Currency(_)) => Ok(OxTy::Currency),
+        OxOperand::Const(OxConst::Date(_)) => Ok(OxTy::Date),
+        OxOperand::Const(OxConst::Str(_)) => Ok(OxTy::Str),
+        OxOperand::Const(OxConst::Empty | OxConst::Null) => Ok(OxTy::Variant),
     }
 }
 
@@ -9686,6 +10069,15 @@ fn raw_assignment_target_kind(kind: AssignmentTargetKind) -> i32 {
         AssignmentTargetKind::Variant => JIT_ASSIGN_TARGET_VARIANT,
         AssignmentTargetKind::Object => JIT_ASSIGN_TARGET_OBJECT,
         AssignmentTargetKind::Scalar => JIT_ASSIGN_TARGET_SCALAR,
+    }
+}
+
+fn raw_member_invoke_kind(kind: TypeLibMemberInvokeKind) -> i32 {
+    match kind {
+        TypeLibMemberInvokeKind::PropertyGet => 2,
+        TypeLibMemberInvokeKind::Method => 1,
+        TypeLibMemberInvokeKind::PropertyPut => 4,
+        TypeLibMemberInvokeKind::PropertyPutRef => 8,
     }
 }
 
@@ -10533,6 +10925,304 @@ unsafe extern "C" fn rt_jit_store_variant(
             return ST_FAULT;
         };
         *slot = src;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_new_object_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    program_index: i32,
+    class_index: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || program_index < 0
+            || class_index < 0
+            || dst_area < 0
+            || dst_index < 0
+        {
+            return ST_FAULT;
+        }
+        let mut value = Variant::empty();
+        let status = rt_project_new_object(
+            state,
+            program_index as usize,
+            class_index as usize,
+            &mut value,
+        );
+        if status != ST_OK {
+            return status;
+        }
+        // SAFETY: null was rejected and the compiled caller gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+fn variant_to_project_object_for_jit(
+    state: *mut RawExecState,
+    value: &Variant,
+) -> Result<oxvba_runtime::object_ref::ObjectRef, i32> {
+    if let Some(object) = value.as_object_ref() {
+        return Ok(object);
+    }
+    if matches!(
+        value.vtype(),
+        VarType::Object | VarType::Empty | VarType::Null
+    ) {
+        return Err(rt_raise_runtime_error_number(state, 91));
+    }
+    Err(rt_raise_runtime_error_number(state, 424))
+}
+
+unsafe extern "C" fn rt_jit_project_field_get_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    object: *const JitVariantOperandDesc,
+    field: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || object.is_null() || dst_area < 0 || dst_index < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run_ref = unsafe { &*run };
+        // SAFETY: the compiled caller provides one live descriptor.
+        let object_operand = unsafe { *object };
+        let Some(object_value) = variant_operand_value(run_ref, object_operand) else {
+            return ST_FAULT;
+        };
+        let object = match variant_to_project_object_for_jit(state, &object_value) {
+            Ok(object) => object,
+            Err(status) => return status,
+        };
+        let Some(value) = object.project_field_get(field) else {
+            return rt_raise_runtime_error_number(state, 438);
+        };
+        // SAFETY: null was rejected and source values no longer borrow from `run`.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_project_field_set(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    operands: *const JitVariantOperandDesc,
+    field: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || operands.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and the compiled caller writes two live descriptors.
+        let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
+        // SAFETY: null was rejected and this helper clones before mutating object state.
+        let run_ref = unsafe { &*run };
+        let Some(object_value) = variant_operand_value(run_ref, operands[0]) else {
+            return ST_FAULT;
+        };
+        let Some(value) = variant_operand_value(run_ref, operands[1]) else {
+            return ST_FAULT;
+        };
+        let object = match variant_to_project_object_for_jit(state, &object_value) {
+            Ok(object) => object,
+            Err(status) => return status,
+        };
+        if object.project_field_set(field, value) {
+            ST_OK
+        } else {
+            rt_raise_runtime_error_number(state, 438)
+        }
+    })
+}
+
+fn project_member_kind_from_raw(raw: i32) -> Option<ProjectMemberKind> {
+    match raw {
+        2 => Some(ProjectMemberKind::PropertyGet),
+        1 => Some(ProjectMemberKind::Method),
+        4 => Some(ProjectMemberKind::PropertyLet),
+        8 => Some(ProjectMemberKind::PropertySet),
+        _ => None,
+    }
+}
+
+fn invoke_project_noarg_member_with_me(
+    run: &mut JitRun,
+    state: *mut RawExecState,
+    proc: usize,
+    me: Variant,
+) -> Result<Variant, i32> {
+    if run.program.is_null() || run.functions.is_null() || proc >= run.function_count {
+        return Err(ST_FAULT);
+    }
+    // SAFETY: installed from the owning CompiledImage for this run.
+    let program = unsafe { &*run.program };
+    let Some(func) = program.funcs.get(proc) else {
+        return Err(ST_FAULT);
+    };
+    if func.param_count != 1 {
+        return Err(ST_FAULT);
+    }
+    let Some(param) = func.locals.first() else {
+        return Err(ST_FAULT);
+    };
+    if param.param.as_ref().is_none_or(|param| param.by_ref)
+        || !is_jit_variant_carrier_ty(&param.ty)
+    {
+        return Err(ST_FAULT);
+    }
+    let Some(ret) = func.return_local else {
+        return Err(ST_FAULT);
+    };
+    let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
+        return Err(ST_FAULT);
+    };
+    if !is_jit_static_call_ty(&ret_ty) {
+        return Err(ST_FAULT);
+    }
+    if run.frames.len() >= MAX_JIT_FRAMES {
+        return Err(rt_raise_out_of_stack(state));
+    }
+    let mut frame = new_jit_frame(program, func).map_err(|_| ST_FAULT)?;
+    frame.locals[0] = me;
+    let mut saved_err = RtSavedErrState::default();
+    let enter_status = rt_err_enter_activation(state, &mut saved_err);
+    if enter_status != ST_OK {
+        return Err(enter_status);
+    }
+    run.frames.push(frame);
+    // SAFETY: function pointer bounds were checked above.
+    let entry = unsafe { *run.functions.add(proc) };
+    // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
+    let status = unsafe { entry(run as *mut JitRun, state) };
+    let return_value = if status == ST_OK {
+        run.frames
+            .last()
+            .and_then(|frame| frame.locals.get(ret.0))
+            .and_then(|value| call_return_variant(&ret_ty, value))
+    } else {
+        None
+    };
+    run.frames.pop();
+    prune_for_each_from_depth(run, run.frames.len());
+    prune_param_array_aliases_from_depth(run, run.frames.len());
+    let restore_status = rt_err_restore_activation(state, &saved_err);
+    if restore_status != ST_OK {
+        return Err(restore_status);
+    }
+    if status != ST_OK {
+        return Err(status);
+    }
+    return_value.ok_or(ST_FAULT)
+}
+
+unsafe extern "C" fn rt_jit_project_member_get_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    recv: *const JitVariantOperandDesc,
+    name_ptr: *const u8,
+    name_len: i32,
+    invoke_kind: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || recv.is_null()
+            || name_ptr.is_null()
+            || name_len < 0
+            || dst_area < 0
+            || dst_index < 0
+        {
+            return ST_FAULT;
+        }
+        let Some(kind) = project_member_kind_from_raw(invoke_kind) else {
+            return ST_FAULT;
+        };
+        if !matches!(
+            kind,
+            ProjectMemberKind::PropertyGet | ProjectMemberKind::Method
+        ) {
+            return ST_FAULT;
+        }
+        // SAFETY: pointer/length were provided by compiled constants for a live member name.
+        let name = match std::str::from_utf8(unsafe {
+            std::slice::from_raw_parts(name_ptr, name_len as usize)
+        }) {
+            Ok(name) => name,
+            Err(_) => return ST_FAULT,
+        };
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run_ref = unsafe { &*run };
+        // SAFETY: the compiled caller provides one live descriptor.
+        let recv_operand = unsafe { *recv };
+        let Some(recv_value) = variant_operand_value(run_ref, recv_operand) else {
+            return ST_FAULT;
+        };
+        let object = match variant_to_project_object_for_jit(state, &recv_value) {
+            Ok(object) => object,
+            Err(status) => return status,
+        };
+        if !object.is_project_instance() || object.bundle_id() != 0 {
+            return ST_FAULT;
+        }
+        let class_idx = object.route_key() as usize;
+        let Some(program) = (!run_ref.program.is_null()).then(|| {
+            // SAFETY: installed from the owning CompiledImage for this run.
+            unsafe { &*run_ref.program }
+        }) else {
+            return ST_FAULT;
+        };
+        let Some(class) = program.classes.get(class_idx) else {
+            return rt_raise_runtime_error_number(state, 438);
+        };
+        let exact = class
+            .methods
+            .iter()
+            .find(|method| method.name.eq_ignore_ascii_case(name) && method.kind == kind);
+        let member = exact.or_else(|| {
+            if kind == ProjectMemberKind::PropertyGet {
+                class.methods.iter().find(|method| {
+                    method.name.eq_ignore_ascii_case(name)
+                        && method.kind == ProjectMemberKind::Method
+                })
+            } else {
+                class.methods.iter().find(|method| {
+                    method.name.eq_ignore_ascii_case(name)
+                        && method.kind == ProjectMemberKind::PropertyGet
+                })
+            }
+        });
+        let Some(member) = member else {
+            return rt_raise_runtime_error_number(state, 438);
+        };
+        // SAFETY: null was rejected and the compiled caller gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let value = match invoke_project_noarg_member_with_me(run, state, member.proc.0, recv_value)
+        {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
         ST_OK
     })
 }
@@ -16580,14 +17270,6 @@ mod tests {
                 "TypeOfIs",
             ),
             (
-                "NewObject",
-                OxInst::NewObject {
-                    dst: OxPlace::Local(LocalId(0)),
-                    class: ClassId(0),
-                },
-                "NewObject",
-            ),
-            (
                 "NewExtern",
                 OxInst::NewExtern {
                     dst: OxPlace::Local(LocalId(0)),
@@ -16628,22 +17310,16 @@ mod tests {
                 "PredeclaredExternSet",
             ),
             (
-                "FieldGet",
-                OxInst::FieldGet {
-                    dst: value,
-                    object: object(),
-                    field: 1,
+                "ComCallLate",
+                OxInst::ComCallLate {
+                    dst: Some(value),
+                    recv: other(),
+                    name: "Value".to_string(),
+                    default_member: false,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                    args: Vec::new(),
                 },
-                "FieldGet",
-            ),
-            (
-                "FieldSet",
-                OxInst::FieldSet {
-                    object: object(),
-                    field: 1,
-                    value: OxOperand::Const(OxConst::I32(42)),
-                },
-                "FieldSet",
+                "ComCallLate",
             ),
             (
                 "FieldArrayGet",
