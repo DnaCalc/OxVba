@@ -2396,6 +2396,49 @@ fn project_default_member_bare_get_let_roundtrip() {
 }
 
 #[test]
+fn bare_default_member_property_let_assigned_value_is_byval_even_when_declared_byref() {
+    let main = "Sub Main()\n    Dim w As Widget\n    Set w = New Widget\n    w = 3\nEnd Sub\n";
+    let widget = "Public Property Get Value() As Long\n    Value = 0\nEnd Property\nAttribute Value.VB_UserMemId = 0\n\n\
+                  Public Property Let Value(ByRef v As Long)\nEnd Property\nAttribute Value.VB_UserMemId = 0\n";
+    let program =
+        bind_program(&class_manifest(main, "Widget", widget), &NullTypeLibs).expect("bind");
+    let setter = program
+        .procs
+        .iter()
+        .find(|proc| {
+            proc.name.eq_ignore_ascii_case("Value")
+                && proc.kind == oxvba_bundle::ProcedureKind::PropertyLet
+        })
+        .expect("Property Let procedure should be present");
+    assert_eq!(setter.params.len(), 2);
+    assert_eq!(setter.params[0].name, "Me");
+    assert!(!setter.params[0].by_ref);
+    assert!(!setter.params[1].by_ref);
+
+    let calls = top_level_calls(&program);
+    let (_, args) = calls
+        .into_iter()
+        .find(|(callee, args)| {
+            matches!(
+                callee,
+                CoreCallee::LateDispatch {
+                    name,
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertyLet),
+                    default_member: false,
+                } if name == "Value"
+            ) && args.len() == 2
+        })
+        .expect(
+            "bare default-member Property Let should lower to receiver and assigned value args",
+        );
+    assert!(
+        matches!(args.first(), Some(CoreArg::ByVal(_))),
+        "receiver should be passed as a value argument, got {args:?}"
+    );
+    assert_core_arg_i16(&args[1], 3);
+}
+
+#[test]
 fn set_assignment_keeps_defaulted_object_reference() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Dim w2 As Widget\n    Set w = New Widget\n    w = 10\n    Set w2 = w\n    w2 = 12\n    r = w\nEnd Sub\n";
     let widget = "Private mV As Long\n\n\
