@@ -979,6 +979,26 @@ SAFEARRAY element load/store (typed + Variant lanes), Bound, ReDim(Preserve), Er
 New/AsNew, predeclared singletons, Is/TypeOf, member dispatch on project classes, Release{may_terminate}, DrainTerminations fixpoint through ProcInvoker (Terminate runs **compiled** code re-entrantly), project RaiseEvent → WithEvents fan-out.
 **Verify:** lifecycle micro-corpus green under `Executor::Jit` incl. the Terminate-timing axis; drain re-entrancy (a Terminate dropping the last ref of another object) covered. **Depends:** M4-7.
 
+Current continuation (2026-07-06): `bd-h4oh.10.17` is the active class/JIT setup bead. Its first
+slice is intentionally narrower than full M4-8: one active-project class, `Set w = New Widget`,
+`Class_Initialize` setting an instance field, and a simple property/method read executing under
+`Executor::Jit` with no VM fallback and matching VM3. `AsNew`, predeclared singletons,
+cross-project construction, events, object-valued properties, default members, arrays/UDT fields,
+and `Class_Terminate` stay behind deterministic unsupported diagnostics until later child beads.
+
+Class/JIT follow-up bead order:
+1. `bd-h4oh.10.17` - active-project construction and property-read slice.
+2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
+   `TypeName`.
+3. `bd-h4oh.10.19` - active-project method/property dispatch breadth, hidden `Me`, named/positional
+   arguments, optional parameters, and `ParamArray`.
+4. `bd-h4oh.10.20` - default members and object-valued property compatibility.
+5. `bd-h4oh.10.21` - lazy active-project `As New` locals and fields.
+6. `bd-h4oh.10.22` - active-project `VB_PredeclaredId` singleton construction and reset.
+7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains.
+8. `bd-h4oh.10.24` - referenced-project class descriptors and construction.
+9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT.
+
 ### M4-9 — COM late/early, Declare, pointer helpers (L)
 ComCall lowering (rich HRESULT→Err through the same shims vm3 uses); late IDispatch + early vtable transports (axis-5 counts must match); typed-arg writebacks (axis 6); Declare lane + `last_dll_error`; GetObject; pointer helpers.
 **Verify:** COM corpus slice green; **live com_matrix legs green on the JIT** in- and out-of-proc. **Depends:** M4-8.
