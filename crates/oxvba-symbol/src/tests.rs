@@ -2941,6 +2941,67 @@ fn scanner_reads_per_declarator_types_from_structured_cst() {
 }
 
 #[test]
+fn scanner_applies_option_base_to_single_bound_fixed_array_declarations() {
+    let src = "Option Base 1\r\n\
+               Private implicit(3) As Long\r\n\
+               Private explicit(0 To 2) As Long\r\n\
+               Private defaulted(2) As String\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+
+    let type_of = |name: &str| {
+        let binding = env.resolve(&ctx, name).expect("resolves");
+        match &env
+            .symbols
+            .symbol(binding.symbol.expect("symbol"))
+            .expect("symbol")
+            .imp
+        {
+            SymbolImpl::DeclaredType(ty) => ty.clone(),
+            other => panic!("expected declared type, got {other:?}"),
+        }
+    };
+
+    let VarTypeRef::FixedArray {
+        element: implicit_element,
+        bounds: implicit_bounds,
+    } = type_of("implicit")
+    else {
+        panic!("implicit should publish a fixed-array type");
+    };
+    assert_eq!(*implicit_element, VarTypeRef::Builtin(BuiltinType::Long));
+    assert_eq!(implicit_bounds.len(), 1);
+    assert_eq!(implicit_bounds[0].lower, 1);
+    assert_eq!(implicit_bounds[0].len, 3);
+
+    let VarTypeRef::FixedArray {
+        element: explicit_element,
+        bounds: explicit_bounds,
+    } = type_of("explicit")
+    else {
+        panic!("explicit should publish a fixed-array type");
+    };
+    assert_eq!(*explicit_element, VarTypeRef::Builtin(BuiltinType::Long));
+    assert_eq!(explicit_bounds.len(), 1);
+    assert_eq!(explicit_bounds[0].lower, 0);
+    assert_eq!(explicit_bounds[0].len, 3);
+
+    let VarTypeRef::FixedArray {
+        element: defaulted_element,
+        bounds: defaulted_bounds,
+    } = type_of("defaulted")
+    else {
+        panic!("defaulted should publish a fixed-array type");
+    };
+    assert_eq!(*defaulted_element, VarTypeRef::Builtin(BuiltinType::String));
+    assert_eq!(defaulted_bounds.len(), 1);
+    assert_eq!(defaulted_bounds[0].lower, 1);
+    assert_eq!(defaulted_bounds[0].len, 2);
+}
+
+#[test]
 fn scanner_applies_deftype_to_variables_params_and_returns() {
     let src = "DefLng A-Z\r\n\
                Public fieldValue\r\n\

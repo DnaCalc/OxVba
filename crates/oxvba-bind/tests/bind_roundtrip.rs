@@ -2533,8 +2533,9 @@ fn predeclared_class_descriptor_carries_singleton_flag() {
 #[test]
 fn class_descriptor_carries_instance_field_table() {
     let main = "Sub Main()\nEnd Sub\n";
-    let widget = "Private count As Long\n\
-                  Private names(1 To 2) As String\n\
+    let widget = "Option Base 1\n\
+                  Private count As Long\n\
+                  Private names(3) As String\n\
                   Private current As Widget\n\
                   Public Sub Touch()\nEnd Sub\n";
     let program = bind_program(
@@ -2586,6 +2587,14 @@ fn class_descriptor_carries_instance_field_table() {
         names.array_element,
         Some(oxvba_bundle::ArrayElementType::String)
     );
+    match &names.ty {
+        oxvba_bundle::VarTypeRef::FixedArray { bounds, .. } => {
+            assert_eq!(bounds.len(), 1);
+            assert_eq!(bounds[0].lower, 1);
+            assert_eq!(bounds[0].len, 3);
+        }
+        other => panic!("names should carry fixed-array bounds, got {other:?}"),
+    }
 
     let current = class
         .fields

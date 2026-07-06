@@ -96,6 +96,7 @@ pub fn scan_module(
     reject_unsupported_declared_decimal_storage(module_syntax)?;
     reject_unsupported_option_compare_database(module_syntax)?;
     let default_types = module_default_types(module_syntax)?;
+    let option_base = module_option_base(module_syntax);
     let module_name = source_attributes
         .vb_name
         .clone()
@@ -147,6 +148,7 @@ pub fn scan_module(
         default_member_attrs,
         enumerator_member_attrs,
         default_types,
+        option_base,
         target,
         proc_is_static: false,
     };
@@ -164,6 +166,7 @@ struct ScanCtx<'a> {
     default_member_attrs: BTreeSet<String>,
     enumerator_member_attrs: BTreeSet<String>,
     default_types: DefaultTypeTable,
+    option_base: i32,
     target: ConditionalCompilationTarget,
     /// Set while walking the body of a `Static Sub/Function/Property`, so every
     /// proc-local declarator becomes a `StaticLocal` even without its own
@@ -267,8 +270,12 @@ impl ScanCtx<'_> {
                     };
                     let name = normalize_identifier_token(token.text);
                     validate_fixed_string_length(declarator, name)?;
-                    let declared_type =
-                        declared_var_type_with_default(declarator, &self.default_types, !is_const);
+                    let declared_type = declared_var_type_with_default(
+                        declarator,
+                        &self.default_types,
+                        !is_const,
+                        self.option_base,
+                    );
                     if module_level
                         && self.module_kind != ModuleKind::Procedural
                         && vis == Visibility::Public
@@ -1439,6 +1446,23 @@ fn option_private_module(root: SyntaxNode<'_>) -> bool {
     })
 }
 
+fn module_option_base(root: SyntaxNode<'_>) -> i32 {
+    for node in root.child_nodes() {
+        if node.kind() != SyntaxKind::OptionStmt {
+            continue;
+        }
+        let toks = node.child_tokens();
+        if !toks.iter().any(|t| t.kind == SyntaxKind::KwBase) {
+            continue;
+        }
+        let is_one = toks
+            .iter()
+            .any(|t| t.kind == SyntaxKind::IntLiteral && t.text.trim() == "1");
+        return i32::from(is_one);
+    }
+    0
+}
+
 fn reject_unsupported_option_compare_database(
     root: SyntaxNode<'_>,
 ) -> Result<(), SymbolModelError> {
@@ -2022,6 +2046,7 @@ fn declared_var_type_with_default(
     declarator: SyntaxNode<'_>,
     default_types: &DefaultTypeTable,
     apply_default_type: bool,
+    option_base: i32,
 ) -> VarTypeRef {
     let base = declarator
         .declared_type()
@@ -2036,7 +2061,7 @@ fn declared_var_type_with_default(
         .unwrap_or(VarTypeRef::Variant);
     let element = fixed_string_refine(base, declarator);
     if let Some(bounds) = declarator.array_bounds() {
-        if let Some(bounds) = fixed_array_bounds_from_bounds(bounds) {
+        if let Some(bounds) = fixed_array_bounds_from_bounds(bounds, option_base) {
             return VarTypeRef::FixedArray {
                 element: Box::new(element),
                 bounds,
@@ -2241,11 +2266,14 @@ fn collect_udt_fields_in(
 }
 
 fn declared_udt_field_type(field: SyntaxNode<'_>) -> VarTypeRef {
-    declared_var_type_with_default(field, &DefaultTypeTable::default(), false)
+    // Existing record-layout evidence treats single-bound inline UDT fixed arrays
+    // as zero-based even when the containing module has `Option Base 1`.
+    declared_var_type_with_default(field, &DefaultTypeTable::default(), false, 0)
 }
 
 fn fixed_array_bounds_from_bounds(
     bounds: SyntaxNode<'_>,
+    option_base: i32,
 ) -> Option<Vec<crate::signature::FixedArrayBound>> {
     let mut out = Vec::new();
     let mut saw_bound = false;
@@ -2253,7 +2281,7 @@ fn fixed_array_bounds_from_bounds(
         saw_bound = true;
         let exprs = bound.expr_children();
         let (lower, upper) = match exprs.as_slice() {
-            [upper] => (0, literal_i32(*upper)?),
+            [upper] => (option_base, literal_i32(*upper)?),
             [lower, upper] => (literal_i32(*lower)?, literal_i32(*upper)?),
             _ => return None,
         };

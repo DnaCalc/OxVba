@@ -1639,6 +1639,12 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   declarations now also reject zero,
   negative, and over-65,526 lengths with `SYM-E-INVALID-FIXED-STRING-LENGTH` before variable or
   UDT metadata is published, matching the Microsoft Learn fixed-length string diagnostic. The
+  symbol scanner now also applies module-local `Option Base` to single-bound fixed-array
+  declarators in published `VarTypeRef::FixedArray` metadata, while explicit `lower To upper`
+  bounds keep their written lower bound and inline UDT field collection keeps the existing
+  zero-based record-layout contract. This matches the Microsoft Learn `Option Base`/`Public`
+  statement rule that omitted lower bounds use the module's `Option Base` for ordinary array
+  declarations. The
   scanner also publishes the final `Property Let`/`Set` writer slot as
   `ByVal` in signature metadata while
   preserving declared/default `ByRef` modes for preceding indexed arguments. Duplicate property
@@ -1663,6 +1669,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/constants-fixed-length-strings-arrays-user-defined-types-and-declare-statements`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/fixed-length-strings-not-allowed-as-the-type-of-a-public-member-of-an-object-mod`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/invalid-length-for-fixed-length-string`,
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/option-base-statement`,
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/public-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/definitions-of-property-procedures-for-the-same-property-are-inconsistent`),
   and remains a declaration-shape diagnostic rather than broader call-site
   optional argument closure. Evidence: `scanner_rejects_required_parameters_after_optional`;
@@ -1690,6 +1698,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `public_declare_is_not_valid_in_object_modules`;
   `public_object_module_data_members_are_rejected`;
   `fixed_string_lengths_must_be_in_vba_range`;
+  `scanner_applies_option_base_to_single_bound_fixed_array_declarations`;
   `public_object_module_data_members_cannot_use_private_object_module_types`;
   `public_object_module_signatures_cannot_use_private_object_module_types`;
   `property_set_accepts_variant_object_and_class_reference_parameters`;
@@ -1713,6 +1722,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `class_module_public_declare_is_bind_error`;
   `class_module_public_data_members_are_bind_errors`;
   `invalid_fixed_string_length_is_bind_error`;
+  `class_descriptor_carries_instance_field_table`;
   `public_object_member_private_class_type_is_bind_error`;
   `public_object_signature_private_class_type_is_bind_error`;
   `event_declaration_rejects_invalid_parameters`;
