@@ -105,6 +105,17 @@ pub struct OxClassAsNewField {
     pub binding: OxAsNew,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OxClassField {
+    pub name: String,
+    /// Stable per-class instance-field token used by field get/set instructions.
+    pub token: i32,
+    pub ty: OxTy,
+    /// Element layout for declared array fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub array_element: Option<ArrayElementType>,
+}
+
 /// A project class: lifecycle hooks, late-bound member table, implemented interfaces.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OxClass {
@@ -115,6 +126,8 @@ pub struct OxClass {
     pub predeclared: bool,
     pub initialize: Option<FuncId>,
     pub terminate: Option<FuncId>,
+    #[serde(default)]
+    pub fields: Vec<OxClassField>,
     pub methods: Vec<OxClassMethod>,
     #[serde(default)]
     pub as_new_fields: Vec<OxClassAsNewField>,

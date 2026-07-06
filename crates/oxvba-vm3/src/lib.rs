@@ -5122,6 +5122,7 @@ mod tests {
                 predeclared: false,
                 initialize: None,
                 terminate: None,
+                fields: Vec::new(),
                 methods: vec![CoreClassMethod {
                     name: "Twice".into(),
                     kind: ProjectMemberKind::Method,

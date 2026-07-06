@@ -65,7 +65,8 @@ use crate::ids::{BlockId, FuncId, GlobalId, ImportId, LocalId, TempId};
 use crate::inst::{ErrorHandler, OxAsNew, OxBlock, OxInst, OxTerminator};
 use crate::passes::normalize_assigns;
 use crate::program::{
-    OxClass, OxClassAsNewField, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram,
+    OxClass, OxClassAsNewField, OxClassField, OxClassMethod, OxFunc, OxGlobal, OxLocal,
+    OxParamInfo, OxProgram,
 };
 use crate::ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy, RecordLayoutId};
 use crate::value::{
@@ -139,7 +140,11 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         )?);
     }
 
-    let classes = program.classes.iter().map(lower_class).collect();
+    let classes = program
+        .classes
+        .iter()
+        .map(|class| lower_class(class, &resolver, program.long_ptr_width))
+        .collect();
 
     let mut ox_program = OxProgram {
         funcs,
@@ -189,12 +194,26 @@ fn proc_return_ty(
 
 /// Lower a Core IR project class to its OxIR form (the index is its [`ClassId`]; the
 /// lifecycle hooks and late-bound member table map across 1:1).
-fn lower_class(c: &CoreClass) -> OxClass {
+fn lower_class(
+    c: &CoreClass,
+    resolver: &impl NameResolver,
+    long_ptr_width: CoreLongPtrWidth,
+) -> OxClass {
     OxClass {
         name: c.name.clone(),
         predeclared: c.predeclared,
         initialize: c.initialize.map(|p| FuncId(p.0)),
         terminate: c.terminate.map(|p| FuncId(p.0)),
+        fields: c
+            .fields
+            .iter()
+            .map(|field| OxClassField {
+                name: field.name.clone(),
+                token: field.token,
+                ty: lower_declared_var_type_with_longptr_width(&field.ty, resolver, long_ptr_width),
+                array_element: field.array_element.clone(),
+            })
+            .collect(),
         methods: c
             .methods
             .iter()
@@ -262,6 +281,11 @@ impl ProgramResolver {
         };
         for global in &program.globals {
             this.harvest_record_layout_from_decl(&global.ty, global.array_element.as_ref());
+        }
+        for class in &program.classes {
+            for field in &class.fields {
+                this.harvest_record_layout_from_decl(&field.ty, field.array_element.as_ref());
+            }
         }
         for proc in &program.procs {
             for local in &proc.locals {
@@ -3222,6 +3246,7 @@ mod tests {
                 predeclared: false,
                 initialize: None,
                 terminate: None,
+                fields: Vec::new(),
                 methods: vec![CoreClassMethod {
                     name: "Value".into(),
                     kind: ProjectMemberKind::PropertyGet,

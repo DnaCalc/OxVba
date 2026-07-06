@@ -164,6 +164,17 @@ pub struct CoreClassAsNewField {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreClassField {
+    pub name: String,
+    /// Stable per-class instance-field token used by [`CorePlace::Field`].
+    pub token: i32,
+    /// The declared static type (the binder's resolved `VarTypeRef`).
+    pub ty: VarTypeRef,
+    /// `Some` for a declared array field; mirrors [`CoreLocal::array_element`].
+    pub array_element: Option<ArrayElementType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreClass {
     pub name: String,
     /// True for a `VB_PredeclaredId = True` class whose name denotes a singleton
@@ -171,6 +182,8 @@ pub struct CoreClass {
     pub predeclared: bool,
     pub initialize: Option<ProcId>,
     pub terminate: Option<ProcId>,
+    /// Instance field descriptors keyed by their stable per-class field token.
+    pub fields: Vec<CoreClassField>,
     pub methods: Vec<CoreClassMethod>,
     /// Per-instance `Dim field As New T` field metadata. The field itself remains
     /// sparse/default until read; this records which field tokens auto-instantiate.

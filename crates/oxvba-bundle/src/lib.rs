@@ -32,8 +32,8 @@ pub use vartype::{BuiltinType, FixedArrayBound, VarTypeRef};
 pub use vba_library::vba_library_bundle;
 
 pub use coreir::{
-    CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreConst, CoreParam, CorePlace, CoreProc,
-    CoreProgram, CoreStmt, CoreUnOp, CoreValue, GlobalId, LabelId, LocalId, ProcId,
+    CoreArg, CoreBinOp, CoreCallee, CoreClass, CoreClassField, CoreConst, CoreParam, CorePlace,
+    CoreProc, CoreProgram, CoreStmt, CoreUnOp, CoreValue, GlobalId, LabelId, LocalId, ProcId,
     PtrWritebackKind,
 };
 
@@ -264,6 +264,17 @@ pub struct ClassMethod {
     pub is_enumerator_member: bool,
 }
 
+/// A project class instance field, keyed by the same stable token used by the
+/// runtime field get/set instructions.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClassField {
+    pub name: String,
+    pub token: i32,
+    pub ty: VarTypeRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub array_element: Option<ArrayElementType>,
+}
+
 /// A project class: its name, lifecycle hooks, and late-bound member table.
 /// Instances are allocated by [`Op::NewObject`] and refcounted via the runtime
 /// IUnknown object model; `Class_Initialize` runs on construction and
@@ -281,6 +292,9 @@ pub struct ClassDescriptor {
     pub initialize: Option<usize>,
     /// `Class_Terminate` procedure index (run on final release), if any.
     pub terminate: Option<usize>,
+    /// Instance fields reachable by `FieldGet`/`FieldSet`.
+    #[serde(default)]
+    pub fields: Vec<ClassField>,
     /// Members reachable by name on a late-bound receiver.
     pub methods: Vec<ClassMethod>,
     /// Display names of interfaces this class implements (for `TypeOf`/`Set`).

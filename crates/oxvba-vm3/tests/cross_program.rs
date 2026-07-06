@@ -349,6 +349,7 @@ fn app_with_thing_program() -> CoreProgram {
             predeclared: false,
             initialize: None,
             terminate: None,
+            fields: Vec::new(),
             methods: vec![CoreClassMethod {
                 name: "GetVal".into(),
                 kind: ProjectMemberKind::Method,
@@ -516,6 +517,7 @@ fn app_echo_program() -> CoreProgram {
             predeclared: false,
             initialize: None,
             terminate: None,
+            fields: Vec::new(),
             methods: vec![CoreClassMethod {
                 name: "Echo".into(),
                 kind: ProjectMemberKind::Method,
@@ -589,6 +591,7 @@ fn lib_widget_program() -> CoreProgram {
             predeclared: false,
             initialize: None,
             terminate: None,
+            fields: Vec::new(),
             methods: vec![CoreClassMethod {
                 name: "Val".into(),
                 kind: ProjectMemberKind::Method,

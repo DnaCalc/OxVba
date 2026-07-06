@@ -2191,6 +2191,98 @@ fn predeclared_class_descriptor_carries_singleton_flag() {
 }
 
 #[test]
+fn class_descriptor_carries_instance_field_table() {
+    let main = "Sub Main()\nEnd Sub\n";
+    let widget = "Private count As Long\n\
+                  Private names(1 To 2) As String\n\
+                  Private current As Widget\n\
+                  Public Sub Touch()\nEnd Sub\n";
+    let program = bind_program(
+        &multi_manifest(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Widget", ModuleKind::Class, widget),
+        ]),
+        &NullTypeLibs,
+    )
+    .expect("bind");
+    let class = program
+        .classes
+        .iter()
+        .find(|class| class.name == "Widget")
+        .expect("Widget class");
+    assert_eq!(
+        class.fields.len(),
+        3,
+        "class descriptor should carry only ordinary instance fields: {:?}",
+        class.fields
+    );
+    let count = class
+        .fields
+        .iter()
+        .find(|field| field.name == "count")
+        .expect("count field");
+    assert_eq!(count.token, 0);
+    assert_eq!(
+        count.ty,
+        oxvba_bundle::VarTypeRef::Builtin(oxvba_bundle::BuiltinType::Long)
+    );
+    assert_eq!(count.array_element, None);
+
+    let names = class
+        .fields
+        .iter()
+        .find(|field| field.name == "names")
+        .expect("names field");
+    assert_eq!(names.token, 1);
+    assert!(
+        matches!(
+            names.ty,
+            oxvba_bundle::VarTypeRef::Array(_) | oxvba_bundle::VarTypeRef::FixedArray { .. }
+        ),
+        "array field should carry its declared array type: {:?}",
+        names.ty
+    );
+    assert_eq!(
+        names.array_element,
+        Some(oxvba_bundle::ArrayElementType::String)
+    );
+
+    let current = class
+        .fields
+        .iter()
+        .find(|field| field.name == "current")
+        .expect("current field");
+    assert_eq!(current.token, 2);
+    assert_eq!(
+        current.ty,
+        oxvba_bundle::VarTypeRef::Object("widget".into())
+    );
+
+    let ox = oxvba_oxir::elaborate::elaborate(&program).expect("elaborate");
+    let ox_class = ox
+        .classes
+        .iter()
+        .find(|class| class.name == "Widget")
+        .expect("OxIR Widget class");
+    let ox_count = ox_class
+        .fields
+        .iter()
+        .find(|field| field.name == "count")
+        .expect("OxIR count field");
+    assert_eq!(ox_count.token, 0);
+    assert_eq!(ox_count.ty, oxvba_oxir::OxTy::Long);
+    let ox_current = ox_class
+        .fields
+        .iter()
+        .find(|field| field.name == "current")
+        .expect("OxIR current field");
+    assert_eq!(
+        ox_current.ty,
+        oxvba_oxir::OxTy::Object(oxvba_oxir::ObjClass::Class(oxvba_oxir::ClassId(0)))
+    );
+}
+
+#[test]
 fn project_default_member_set_roundtrip() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Dim t As Thing\n    Dim got As Thing\n    Set b = New Box\n    Set t = New Thing\n    Set b(3) = t\n    Set got = b(2)\n    r = got.GetVal()\nEnd Sub\n";
     let box_cls = "Private stored As Thing\n\n\

@@ -18,8 +18,8 @@
 use std::collections::{HashMap, HashSet};
 
 use oxvba_bundle::coreir::{
-    ClassId, CoreClass, CoreClassMethod, CoreGlobal, CoreLocal, CoreParam, GlobalId, LocalId,
-    ProcId,
+    ClassId, CoreClass, CoreClassField, CoreClassMethod, CoreGlobal, CoreLocal, CoreParam,
+    GlobalId, LocalId, ProcId,
 };
 use oxvba_bundle::{ProcedureKind, ProjectMemberKind, StringCompareMode};
 use oxvba_symbol::binding::DispatchRoute;
@@ -271,6 +271,7 @@ impl IdAllocator {
             }
             let folded = fold_identifier(&display);
             let surface_facts = class_member_surface_facts(env, &display);
+            let fields = class_fields(env, type_ctx, module.module_scope, &alloc.field_token_of)?;
             let default_member = env
                 .resolve_default_member(&VarTypeRef::Object(display.clone()))
                 .and_then(|binding| {
@@ -330,6 +331,7 @@ impl IdAllocator {
                 predeclared,
                 initialize,
                 terminate,
+                fields,
                 methods,
                 as_new_fields: Vec::new(),
                 implements,
@@ -515,6 +517,43 @@ fn declared_var_type(imp: &SymbolImpl) -> VarTypeRef {
         SymbolImpl::DeclaredType(t) => t.clone(),
         _ => VarTypeRef::Variant,
     }
+}
+
+fn class_fields(
+    env: &ResolutionEnvironment,
+    type_ctx: types::TypeContext,
+    module_scope: ScopeId,
+    field_token_of: &HashMap<SymbolId, i32>,
+) -> Result<Vec<CoreClassField>, BindError> {
+    let symbols = &env.symbols;
+    let mut fields = Vec::new();
+    for sym_id in symbols
+        .symbols_in_scope(module_scope)
+        .map_err(|e| BindError::Malformed(format!("{e:?}")))?
+    {
+        let sym = symbols.symbol(sym_id).expect("symbol in scope");
+        if sym.kind != SymbolKind::Field {
+            continue;
+        }
+        let token = *field_token_of.get(&sym_id).ok_or_else(|| {
+            BindError::Malformed(format!(
+                "class field `{}` has no field token",
+                alloc_name(env, sym.name)
+            ))
+        })?;
+        let array_element = match &sym.imp {
+            SymbolImpl::DeclaredType(t) => types::array_element_with(type_ctx, t),
+            _ => None,
+        };
+        fields.push(CoreClassField {
+            name: alloc_name(env, sym.name),
+            token,
+            ty: normalize_declared_type(env, declared_var_type(&sym.imp)),
+            array_element,
+        });
+    }
+    fields.sort_by_key(|field| field.token);
+    Ok(fields)
 }
 
 /// The frame layout [`build_frame`] computes for one procedure.

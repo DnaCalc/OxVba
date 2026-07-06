@@ -124,6 +124,7 @@ fn build() -> Bundle {
         predeclared: false,
         initialize: None,
         terminate: None,
+        fields: Vec::new(),
         methods,
         implements: Vec::new(),
     }];

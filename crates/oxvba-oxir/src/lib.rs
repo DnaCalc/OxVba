@@ -49,7 +49,9 @@ pub use inst::{
     ErrorHandler, OxBlock, OxInst, OxTerminator, terminator_operands, terminator_successors,
 };
 pub use passes::normalize_assigns;
-pub use program::{OxClass, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram};
+pub use program::{
+    OxClass, OxClassField, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram,
+};
 pub use ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy, RecordLayoutId};
 pub use value::{
     ArithOp, BoundWhich, CmpOp, DeclarePtrWriteback, ErrField, LogicalOp, OxArg, OxCallArg,

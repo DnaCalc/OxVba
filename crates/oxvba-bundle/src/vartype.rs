@@ -11,7 +11,7 @@
 
 /// A VBA scalar/declared builtin type. Self-contained (not the runtime's
 /// `VarType`, which carries COM/array encodings irrelevant to resolution).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BuiltinType {
     Boolean,
     Byte,
@@ -38,7 +38,7 @@ pub struct FixedArrayBound {
 /// A resolved type reference. `Object(name)` is the object-reference discriminator
 /// the binder uses to pick early vs late COM dispatch. A known project class name
 /// binds early; bare `Object` and foreign/COM object names bind late.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum VarTypeRef {
     Builtin(BuiltinType),
     /// A typed object/class/coclass receiver, by (folded) type name.
