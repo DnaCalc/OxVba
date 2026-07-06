@@ -29,6 +29,12 @@ Non-blocking formal issues and follow-up items for later ladder profiles.
   Current status (`todo` / `investigating` / `resolved`): investigating
   Reproduction command: `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet -NoArtifacts`
   Suggested next action: install PowerShell for this Linux runner or rerun the no-artifact formal lane on a host with PowerShell available.
+- ID: FTODO-M4-4-001
+  Profile: M4-4 control/calls implemented-subset
+  Summary: The non-blocking formal runner could not start in the current Linux environment because neither `pwsh` nor `powershell` is available on `PATH`.
+  Current status (`todo` / `investigating` / `resolved`): investigating
+  Reproduction command: `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-formal.ps1 -Quiet -NoArtifacts`
+  Suggested next action: install PowerShell for this Linux runner or rerun the no-artifact formal lane on a host with PowerShell available.
 - ID: FTODO-V2-001
   Profile: v2-v4
   Summary: Native Windows `cargo-kani` remains unavailable; strict Kani is routed through WSL lanes.
