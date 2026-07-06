@@ -1416,6 +1416,33 @@ fn optional_udt_parameter_is_bind_error() {
 }
 
 #[test]
+fn signature_as_new_is_bind_error() {
+    for (source, expected_name, expected_context) in [
+        (
+            "Sub Main()\nEnd Sub\n\nSub Fill(ByVal value As New Widget)\nEnd Sub\n",
+            "name: \"value\"",
+            "context: \"parameter\"",
+        ),
+        (
+            "Sub Main()\nEnd Sub\n\nFunction Make() As New Widget\nEnd Function\n",
+            "name: \"Make\"",
+            "context: \"return type\"",
+        ),
+    ] {
+        let err = bind_error(source);
+        assert!(
+            err.contains("InvalidAsNewDeclaration")
+                || err.contains("SYM-E-INVALID-AS-NEW-DECLARATION"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains(expected_name) && err.contains(expected_context),
+            "expected `{expected_name}` and `{expected_context}` in bind error, got {err}"
+        );
+    }
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);

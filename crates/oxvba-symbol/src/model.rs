@@ -240,6 +240,8 @@ pub enum SymbolModelError {
         procedure: String,
         parameter: String,
     },
+    #[error("As New is not valid for {context} `{name}`")]
+    InvalidAsNewDeclaration { name: String, context: &'static str },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -409,6 +411,12 @@ impl SymbolModelError {
                 ),
             )
             .with_help("Declare the final Property Set parameter As Object, As Variant, or as a class/object type."),
+            SymbolModelError::InvalidAsNewDeclaration { name, context } => Diagnostic::error(
+                "SYM-E-INVALID-AS-NEW-DECLARATION",
+                DiagnosticPhase::Symbol,
+                format!("`As New` is not valid for {context} `{name}`"),
+            )
+            .with_help("Use `As New` only on variable declarations; use `As <type>` in signatures and instantiate with `New` in executable code."),
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,

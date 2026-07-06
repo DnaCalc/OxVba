@@ -896,7 +896,39 @@ impl ScanCtx<'_> {
         self.validate_property_writer_value_parameter_present(proc_node, procedure)?;
         self.validate_optional_parameter_declaration(proc_node, procedure)?;
         self.validate_param_array_declaration(proc_node, procedure)?;
-        self.validate_property_set_reference_parameter(proc_node, procedure)
+        self.validate_property_set_reference_parameter(proc_node, procedure)?;
+        self.validate_as_new_signature_type(proc_node, procedure)
+    }
+
+    fn validate_as_new_signature_type(
+        &self,
+        proc_node: SyntaxNode<'_>,
+        procedure: &str,
+    ) -> Result<(), SymbolModelError> {
+        if let Some(param_list) = proc_node.param_list() {
+            for (index, param) in param_list.params().iter().enumerate() {
+                let Some(type_ref) = param.declared_type() else {
+                    continue;
+                };
+                if !type_ref_has_new(type_ref) {
+                    continue;
+                }
+                let parameter = parameter_name_token(*param)
+                    .map(|t| normalize_identifier_token(t.text).to_string())
+                    .unwrap_or_else(|| format!("arg{}", index + 1));
+                return Err(SymbolModelError::InvalidAsNewDeclaration {
+                    name: parameter,
+                    context: "parameter",
+                });
+            }
+        }
+        if proc_node.return_type().is_some_and(type_ref_has_new) {
+            return Err(SymbolModelError::InvalidAsNewDeclaration {
+                name: procedure.to_string(),
+                context: "return type",
+            });
+        }
+        Ok(())
     }
 
     fn validate_event_declaration(
@@ -1879,6 +1911,12 @@ pub(crate) fn parameter_has_modifier(node: SyntaxNode<'_>, keyword: SyntaxKind) 
     node.child_tokens()
         .iter()
         .any(|token| token.kind == keyword)
+}
+
+fn type_ref_has_new(node: SyntaxNode<'_>) -> bool {
+    node.child_tokens()
+        .iter()
+        .any(|token| token.kind == SyntaxKind::KwNew)
 }
 
 fn parameter_passing_mode(node: SyntaxNode<'_>) -> PassingMode {

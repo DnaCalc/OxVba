@@ -1760,9 +1760,11 @@ Candidate bead units:
   `Object`, and named class/object references remain accepted; known same-module and cross-module
   UDT-typed `Optional` parameters now reject through
   `SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION` after provider type-index construction, matching
-  VBA's rule that UDT parameter types are only valid when not Optional; final `Property Let`/`Set`
-  writer slots also publish `ByVal` signature metadata while preceding indexed arguments keep their
-  declared/default modes;
+  VBA's rule that UDT parameter types are only valid when not Optional; procedure, Property, and
+  Declare signatures now reject `As New` on parameters and return types with
+  `SYM-E-INVALID-AS-NEW-DECLARATION` before normalized signature metadata is published; final
+  `Property Let`/`Set` writer slots also publish `ByVal` signature metadata while preceding
+  indexed arguments keep their declared/default modes;
   duplicate property accessors plus mismatched `Property Get`/`Let`, `Property Get`/`Set`, and
   `Property Let`/`Set` index/value/reference pairings reject through scanner-owned
   property-accessor diagnostics, with Set-side index pairing currently enforcing count/type rather
