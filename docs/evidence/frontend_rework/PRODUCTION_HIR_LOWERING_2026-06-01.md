@@ -1632,8 +1632,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   and public/implicit-public standard-module declares remain accepted. Public object-module
   constants, fixed-length string fields, and array fields now reject with
   `SYM-E-PUBLIC-OBJECT-MODULE-DATA-NOT-VALID`, while private storage and ordinary public scalar
-  fields remain accepted. Exposed/public object modules now also reject public data members typed as
-  private object modules with
+  fields remain accepted. Exposed/public object modules now also reject public data members and
+  public procedure/property/event signature type references typed as private object modules with
   `SYM-E-PRIVATE-OBJECT-MODULE-TYPE-NOT-VALID-IN-PUBLIC-MEMBER`; private containers, private
   members, and public object-module target types remain accepted. Literal fixed-length `String * N`
   declarations now also reject zero,
@@ -1691,6 +1691,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `public_object_module_data_members_are_rejected`;
   `fixed_string_lengths_must_be_in_vba_range`;
   `public_object_module_data_members_cannot_use_private_object_module_types`;
+  `public_object_module_signatures_cannot_use_private_object_module_types`;
   `property_set_accepts_variant_object_and_class_reference_parameters`;
   `property_writer_final_parameter_cannot_be_paramarray`;
   `property_set_udt_reference_parameter_is_bind_error`;
@@ -1713,6 +1714,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `class_module_public_data_members_are_bind_errors`;
   `invalid_fixed_string_length_is_bind_error`;
   `public_object_member_private_class_type_is_bind_error`;
+  `public_object_signature_private_class_type_is_bind_error`;
   `event_declaration_rejects_invalid_parameters`;
   `event_declaration_as_new_parameter_is_bind_error`;
   `required_parameter_after_optional_is_bind_error`.

@@ -1814,6 +1814,103 @@ fn public_object_module_data_members_cannot_use_private_object_module_types() {
 }
 
 #[test]
+fn public_object_module_signatures_cannot_use_private_object_module_types() {
+    for (src, member) in [
+        (
+            "Public Function Make() As PrivateChild\r\nEnd Function\r\n",
+            "Make",
+        ),
+        (
+            "Public Sub Use(ByVal child As PrivateChild)\r\nEnd Sub\r\n",
+            "Use",
+        ),
+        (
+            "Public Property Get Child() As PrivateChild\r\nEnd Property\r\n",
+            "Child",
+        ),
+        (
+            "Public Event Changed(ByVal child As PrivateChild)\r\n",
+            "Changed",
+        ),
+    ] {
+        let mut attrs = ModuleAttributes::named("PublicWidget");
+        attrs.vb_exposed = true;
+        let public_widget = ModuleUnit {
+            module_name: "PublicWidget".into(),
+            module_kind: ModuleKind::Class,
+            attributes: attrs,
+            source: src.into(),
+        };
+        let m = manifest(
+            "Proj",
+            vec![public_widget, class_module("PrivateChild", "")],
+        );
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("public signature typed as private object module should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::PrivateObjectModuleTypeNotValidInPublicObjectMember {
+                    name,
+                    type_name,
+                } if name == member && type_name == "PrivateChild"
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    let mut public_child_attrs = ModuleAttributes::named("PublicChild");
+    public_child_attrs.vb_exposed = true;
+    let public_child = ModuleUnit {
+        module_name: "PublicChild".into(),
+        module_kind: ModuleKind::Class,
+        attributes: public_child_attrs,
+        source: "".into(),
+    };
+    for modules in [
+        vec![
+            class_module(
+                "PrivateWidget",
+                "Public Function Make() As PrivateChild\r\nEnd Function\r\n",
+            ),
+            class_module("PrivateChild", ""),
+        ],
+        vec![
+            {
+                let mut attrs = ModuleAttributes::named("PublicWidget");
+                attrs.vb_exposed = true;
+                ModuleUnit {
+                    module_name: "PublicWidget".into(),
+                    module_kind: ModuleKind::Class,
+                    attributes: attrs,
+                    source: "Private Function Make() As PrivateChild\r\nEnd Function\r\n".into(),
+                }
+            },
+            class_module("PrivateChild", ""),
+        ],
+        vec![
+            {
+                let mut attrs = ModuleAttributes::named("PublicWidget");
+                attrs.vb_exposed = true;
+                ModuleUnit {
+                    module_name: "PublicWidget".into(),
+                    module_kind: ModuleKind::Class,
+                    attributes: attrs,
+                    source: "Public Function Make() As PublicChild\r\nEnd Function\r\n".into(),
+                }
+            },
+            public_child,
+        ],
+    ] {
+        let m = manifest("Proj", modules);
+        build_resolution_environment(&m, &NullTypeLibs)
+            .expect("accepted object-module signature type should remain accepted");
+    }
+}
+
+#[test]
 fn property_get_let_pairing_accepts_matching_accessors_in_any_order() {
     for src in [
         "Property Get Foo(ByVal index As Long) As String\r\nEnd Property\r\n\

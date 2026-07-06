@@ -881,6 +881,94 @@ fn validate_public_object_module_data_member_types(
     Ok(())
 }
 
+fn validate_public_object_module_signature_member_types(
+    modules: &[ModuleCst],
+) -> Result<(), SymbolModelError> {
+    let object_modules = object_module_type_visibility(modules);
+    for module in modules {
+        if module.module_kind == ModuleKind::Procedural || !module.is_exposed {
+            continue;
+        }
+        validate_public_object_module_signature_member_types_in(
+            module,
+            module.parse.syntax(),
+            &object_modules,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_public_object_module_signature_member_types_in(
+    module: &ModuleCst,
+    node: SyntaxNode<'_>,
+    object_modules: &HashMap<String, ObjectModuleTypeInfo>,
+) -> Result<(), SymbolModelError> {
+    if is_signature_declaration(node.kind()) {
+        validate_public_object_module_signature_member_type(module, node, object_modules)?;
+        return Ok(());
+    }
+    for child in node.child_nodes() {
+        validate_public_object_module_signature_member_types_in(module, child, object_modules)?;
+    }
+    Ok(())
+}
+
+fn validate_public_object_module_signature_member_type(
+    module: &ModuleCst,
+    node: SyntaxNode<'_>,
+    object_modules: &HashMap<String, ObjectModuleTypeInfo>,
+) -> Result<(), SymbolModelError> {
+    if scanner::decl_visibility(node, Visibility::Public) != Visibility::Public {
+        return Ok(());
+    }
+    let member = signature_member_name(node);
+    if let Some(return_type) = node.return_type() {
+        validate_public_object_module_member_type_ref(
+            module,
+            &member,
+            return_type,
+            object_modules,
+        )?;
+    }
+    if let Some(param_list) = node.param_list() {
+        for param in param_list.params() {
+            let Some(type_ref) = param.declared_type() else {
+                continue;
+            };
+            validate_public_object_module_member_type_ref(
+                module,
+                &member,
+                type_ref,
+                object_modules,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn signature_member_name(node: SyntaxNode<'_>) -> String {
+    if let Some(token) = node.proc_name_token() {
+        return normalize_source_name(token.text);
+    }
+    if node.kind() == SyntaxKind::EventDecl {
+        let mut saw_event = false;
+        for token in node.child_tokens() {
+            if token.kind == SyntaxKind::KwEvent {
+                saw_event = true;
+                continue;
+            }
+            if saw_event
+                && (token.kind == SyntaxKind::Ident
+                    || token.kind == SyntaxKind::BracketedIdent
+                    || token.kind.is_keyword())
+            {
+                return normalize_source_name(token.text);
+            }
+        }
+    }
+    "member".to_string()
+}
+
 fn validate_public_object_module_data_member_types_in(
     module: &ModuleCst,
     node: SyntaxNode<'_>,
@@ -927,6 +1015,28 @@ fn validate_public_object_module_data_member_type(
         .declarator_name()
         .map(|token| normalize_source_name(token.text))
         .unwrap_or_else(|| "member".to_string());
+    private_object_module_member_type_error(name, type_name)
+}
+
+fn validate_public_object_module_member_type_ref(
+    module: &ModuleCst,
+    member: &str,
+    type_ref: SyntaxNode<'_>,
+    object_modules: &HashMap<String, ObjectModuleTypeInfo>,
+) -> Result<(), SymbolModelError> {
+    let type_name = type_ref_name(type_ref);
+    if type_name.is_empty()
+        || !type_ref_is_private_object_module(module, &type_name, object_modules)
+    {
+        return Ok(());
+    }
+    private_object_module_member_type_error(member.to_string(), type_name)
+}
+
+fn private_object_module_member_type_error(
+    name: String,
+    type_name: String,
+) -> Result<(), SymbolModelError> {
     Err(SymbolModelError::PrivateObjectModuleTypeNotValidInPublicObjectMember { name, type_name })
 }
 
@@ -1356,6 +1466,7 @@ pub fn build_resolution_environment(
     validate_property_set_reference_types(&module_csts, &type_index.udt_fields)?;
     validate_optional_udt_parameter_types(&module_csts, &type_index.udt_fields)?;
     validate_public_object_module_data_member_types(&module_csts)?;
+    validate_public_object_module_signature_member_types(&module_csts)?;
     let used_type_names = collect_type_ref_names(&module_csts);
 
     // Each referenced project's public surface — a referencing call binds through

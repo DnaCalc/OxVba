@@ -1772,8 +1772,8 @@ Candidate bead units:
   explicit-private class-module declares and public/implicit-public standard-module declares remain
   accepted; public object-module constants, fixed-length string fields, and array fields now reject
   with `SYM-E-PUBLIC-OBJECT-MODULE-DATA-NOT-VALID` while private storage and ordinary public scalar
-  fields remain accepted; exposed/public object modules now also reject public data members typed as
-  private object modules with
+  fields remain accepted; exposed/public object modules now also reject public data members and
+  public procedure/property/event signature type references typed as private object modules with
   `SYM-E-PRIVATE-OBJECT-MODULE-TYPE-NOT-VALID-IN-PUBLIC-MEMBER` while private containers, private
   members, and public object-module target types remain accepted, matching the Microsoft Learn
   diagnostic for public members of public object modules
