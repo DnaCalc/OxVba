@@ -1606,13 +1606,18 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   reference parameters with `SYM-E-INVALID-PROPERTY-SET-REFERENCE`, while preserving
   default/explicit `Variant`, `Object`, and named class/object reference parameters. The scanner
   also publishes the final `Property Let`/`Set` writer slot as `ByVal` in signature metadata while
-  preserving declared/default `ByRef` modes for preceding indexed arguments. This follows the same
-  Microsoft Learn Function/Property Let rules and the Property Set statement's object-reference
-  contract
+  preserving declared/default `ByRef` modes for preceding indexed arguments. Duplicate property
+  accessors now reject with `SYM-E-DUPLICATE-PROPERTY-ACCESSOR`, and paired `Property Get`/`Let`
+  declarations reject with `SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR` when their index parameter
+  names/types or final value-vs-return type do not match. This follows the same Microsoft Learn
+  Function/Property Let rules and the Property Set statement's object-reference contract
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-let-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-set-statement`),
   and remains a declaration-shape diagnostic rather than broader call-site
   optional argument closure. Evidence: `scanner_rejects_required_parameters_after_optional`;
+  `duplicate_property_accessors_reject`;
+  `property_get_let_pairing_accepts_matching_accessors_in_any_order`;
+  `property_get_let_pairing_rejects_mismatches`;
   `property_let_allows_required_value_after_optional_index_args`;
   `property_writers_require_final_value_or_reference_parameter`;
   `property_writer_final_parameter_is_published_byval`;

@@ -378,6 +378,7 @@ impl ScanCtx<'_> {
                         SymbolImpl::Property(group) => group.clone(),
                         _ => PropertyGroup::default(),
                     };
+                    self.validate_property_accessor_pairing(&group, accessor, sig, &logical)?;
                     set_accessor(&mut group, accessor, sig);
                     self.symbols.update_impl(id, SymbolImpl::Property(group));
                 }
@@ -477,6 +478,104 @@ impl ScanCtx<'_> {
             self.proc_is_static = outer;
             result?;
             self.scan_implicit_redim_locals(proc_scope, body, node.is_static())?;
+        }
+        Ok(())
+    }
+
+    fn validate_property_accessor_pairing(
+        &self,
+        group: &PropertyGroup,
+        accessor: PropertyAccessor,
+        sig: SignatureId,
+        property: &str,
+    ) -> Result<(), SymbolModelError> {
+        if property_accessor_signature(group, accessor).is_some() {
+            return Err(SymbolModelError::DuplicatePropertyAccessor {
+                property: property.to_string(),
+                accessor: property_accessor_label(accessor),
+            });
+        }
+
+        match accessor {
+            PropertyAccessor::Get => {
+                if let Some(let_sig) = group.let_ {
+                    self.validate_property_get_let_pair(sig, let_sig, property, accessor)?;
+                }
+            }
+            PropertyAccessor::Let => {
+                if let Some(get_sig) = group.get {
+                    self.validate_property_get_let_pair(get_sig, sig, property, accessor)?;
+                }
+            }
+            PropertyAccessor::Set => {}
+        }
+        Ok(())
+    }
+
+    fn validate_property_get_let_pair(
+        &self,
+        get_id: SignatureId,
+        let_id: SignatureId,
+        property: &str,
+        new_accessor: PropertyAccessor,
+    ) -> Result<(), SymbolModelError> {
+        let Some(get_sig) = self.signatures.get(get_id) else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Get signature metadata is missing",
+            );
+        };
+        let Some(let_sig) = self.signatures.get(let_id) else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Let signature metadata is missing",
+            );
+        };
+        if let_sig.params.len() != get_sig.params.len() + 1 {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Let must have the Property Get index parameters plus one final value parameter",
+            );
+        }
+        for (get_param, let_param) in get_sig.params.iter().zip(let_sig.params.iter()) {
+            if fold_identifier(&get_param.name) != fold_identifier(&let_param.name) {
+                return incompatible_property_accessor(
+                    property,
+                    new_accessor,
+                    "Property Let index parameter names must match Property Get",
+                );
+            }
+            if get_param.ty != let_param.ty {
+                return incompatible_property_accessor(
+                    property,
+                    new_accessor,
+                    "Property Let index parameter types must match Property Get",
+                );
+            }
+        }
+        let Some(get_return) = get_sig.return_type.as_ref() else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Get return type metadata is missing",
+            );
+        };
+        let Some(value_param) = let_sig.params.last() else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Let value parameter metadata is missing",
+            );
+        };
+        if &value_param.ty != get_return {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Let value parameter type must match Property Get return type",
+            );
         }
         Ok(())
     }
@@ -910,6 +1009,37 @@ impl ScanCtx<'_> {
 
 fn property_set_reference_type_compatible(ty: &VarTypeRef) -> bool {
     matches!(ty, VarTypeRef::Variant | VarTypeRef::Object(_))
+}
+
+fn property_accessor_signature(
+    group: &PropertyGroup,
+    accessor: PropertyAccessor,
+) -> Option<SignatureId> {
+    match accessor {
+        PropertyAccessor::Get => group.get,
+        PropertyAccessor::Let => group.let_,
+        PropertyAccessor::Set => group.set,
+    }
+}
+
+fn property_accessor_label(accessor: PropertyAccessor) -> &'static str {
+    match accessor {
+        PropertyAccessor::Get => "Get",
+        PropertyAccessor::Let => "Let",
+        PropertyAccessor::Set => "Set",
+    }
+}
+
+fn incompatible_property_accessor<T>(
+    property: &str,
+    accessor: PropertyAccessor,
+    reason: &'static str,
+) -> Result<T, SymbolModelError> {
+    Err(SymbolModelError::IncompatiblePropertyAccessor {
+        property: property.to_string(),
+        accessor: property_accessor_label(accessor),
+        reason,
+    })
 }
 
 fn procedure_parameter_passing_mode(

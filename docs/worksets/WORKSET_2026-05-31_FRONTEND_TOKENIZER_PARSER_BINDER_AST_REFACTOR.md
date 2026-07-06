@@ -1753,7 +1753,9 @@ Candidate bead units:
   `Property Set` scalar/value final reference parameters now reject through scanner-owned
   `SYM-E-INVALID-PROPERTY-SET-REFERENCE` while default/explicit `Variant`, `Object`, and named
   class/object references remain accepted; final `Property Let`/`Set` writer slots also publish
-  `ByVal` signature metadata while preceding indexed arguments keep their declared/default modes,
+  `ByVal` signature metadata while preceding indexed arguments keep their declared/default modes;
+  duplicate property accessors and mismatched `Property Get`/`Let` index/value pairings reject
+  through scanner-owned property-accessor diagnostics,
   context-aware project class member lookup now rejects external receiver access to `Private`
     class members while preserving same-class `Private` calls and same-project `Friend` calls,
     with Excel/VBA compile oracle rows for `w.Secret()` rejection and internal/private plus

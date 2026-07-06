@@ -224,6 +224,17 @@ pub enum SymbolModelError {
         procedure: String,
         accessor: &'static str,
     },
+    #[error("duplicate Property {accessor} accessor for `{property}`")]
+    DuplicatePropertyAccessor {
+        property: String,
+        accessor: &'static str,
+    },
+    #[error("incompatible Property {accessor} accessor for `{property}`: {reason}")]
+    IncompatiblePropertyAccessor {
+        property: String,
+        accessor: &'static str,
+        reason: &'static str,
+    },
     #[error("invalid Property Set reference parameter for `{procedure}` parameter `{parameter}`")]
     InvalidPropertySetReferenceParameter {
         procedure: String,
@@ -353,6 +364,22 @@ impl SymbolModelError {
                 )
                 .with_help("Declare at least one final value/reference parameter for Property Let/Set.")
             }
+            SymbolModelError::DuplicatePropertyAccessor { property, accessor } => Diagnostic::error(
+                "SYM-E-DUPLICATE-PROPERTY-ACCESSOR",
+                DiagnosticPhase::Symbol,
+                format!("duplicate Property {accessor} accessor for `{property}`"),
+            )
+            .with_help("Keep at most one Get, one Let, and one Set accessor in a property group."),
+            SymbolModelError::IncompatiblePropertyAccessor {
+                property,
+                accessor,
+                reason,
+            } => Diagnostic::error(
+                "SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR",
+                DiagnosticPhase::Symbol,
+                format!("incompatible Property {accessor} accessor for `{property}`: {reason}"),
+            )
+            .with_help("Match Property Let index parameter names/types to Property Get and use the Get return type for the final value parameter."),
             SymbolModelError::InvalidPropertySetReferenceParameter {
                 procedure,
                 parameter,
