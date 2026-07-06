@@ -1748,7 +1748,10 @@ Candidate bead units:
   `SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION` before ordinary procedure, `Property Get`,
   property index-argument, event, or `Declare` metadata is published, while `Property Let`/`Set`
   still allow their required final value/reference parameter after optional index arguments and
-  reject that final parameter if it is explicitly marked `Optional` or `ParamArray`,
+  reject that final parameter if it is explicitly marked `Optional` or `ParamArray`, and
+  `Property Set` scalar/value final reference parameters now reject through scanner-owned
+  `SYM-E-INVALID-PROPERTY-SET-REFERENCE` while default/explicit `Variant`, `Object`, and named
+  class/object references remain accepted,
   context-aware project class member lookup now rejects external receiver access to `Private`
     class members while preserving same-class `Private` calls and same-project `Friend` calls,
     with Excel/VBA compile oracle rows for `w.Secret()` rejection and internal/private plus

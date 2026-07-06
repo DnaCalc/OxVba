@@ -1857,6 +1857,58 @@ fn property_set_reference_parameter_cannot_be_optional() {
 }
 
 #[test]
+fn property_set_reference_parameter_must_be_object_compatible() {
+    for src in [
+        "Property Set Item(ByVal value As Long)\r\nEnd Property\r\n",
+        "Property Set Item(ByVal value As String)\r\nEnd Property\r\n",
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("Property Set scalar reference parameter should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidPropertySetReferenceParameter {
+                    procedure,
+                    parameter,
+                } if procedure == "Item" && parameter == "value"
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-PROPERTY-SET-REFERENCE"
+        );
+    }
+}
+
+#[test]
+fn property_set_accepts_variant_object_and_class_reference_parameters() {
+    let src = "Property Set DefaultItem(value)\r\nEnd Property\r\n\
+               Property Set VariantItem(value As Variant)\r\nEnd Property\r\n\
+               Property Set ObjectItem(value As Object)\r\nEnd Property\r\n\
+               Property Set WidgetItem(value As Widget)\r\nEnd Property\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+
+    for name in ["DefaultItem", "VariantItem", "ObjectItem", "WidgetItem"] {
+        let binding = env.resolve(&ctx, name).expect("property resolves");
+        let symbol = env
+            .symbols
+            .symbol(binding.symbol.expect("symbol"))
+            .expect("symbol");
+        let SymbolImpl::Property(group) = &symbol.imp else {
+            panic!("expected Property group for {name}");
+        };
+        assert!(group.set.is_some(), "Property Set accessor should publish");
+    }
+}
+
+#[test]
 fn property_writer_final_parameter_cannot_be_paramarray() {
     for (src, reason) in [
         (

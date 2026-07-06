@@ -664,7 +664,8 @@ impl ScanCtx<'_> {
         procedure: &str,
     ) -> Result<(), SymbolModelError> {
         self.validate_optional_parameter_declaration(proc_node, procedure)?;
-        self.validate_param_array_declaration(proc_node, procedure)
+        self.validate_param_array_declaration(proc_node, procedure)?;
+        self.validate_property_set_reference_parameter(proc_node, procedure)
     }
 
     fn validate_optional_parameter_declaration(
@@ -782,6 +783,35 @@ impl ScanCtx<'_> {
         Ok(())
     }
 
+    fn validate_property_set_reference_parameter(
+        &self,
+        proc_node: SyntaxNode<'_>,
+        procedure: &str,
+    ) -> Result<(), SymbolModelError> {
+        if proc_node.kind() != SyntaxKind::PropertyDecl
+            || property_accessor(proc_node) != PropertyAccessor::Set
+        {
+            return Ok(());
+        }
+        let Some(param_list) = proc_node.param_list() else {
+            return Ok(());
+        };
+        let params = param_list.params();
+        let Some(reference_param) = params.last() else {
+            return Ok(());
+        };
+        if property_set_reference_type_compatible(&self.param_type(*reference_param)) {
+            return Ok(());
+        }
+        let parameter = parameter_name_token(*reference_param)
+            .map(|t| normalize_identifier_token(t.text).to_string())
+            .unwrap_or_else(|| format!("arg{}", params.len()));
+        Err(SymbolModelError::InvalidPropertySetReferenceParameter {
+            procedure: procedure.to_string(),
+            parameter,
+        })
+    }
+
     fn param_type(&self, node: SyntaxNode<'_>) -> VarTypeRef {
         let explicit = node
             .child_nodes()
@@ -844,6 +874,10 @@ impl ScanCtx<'_> {
         }
         Ok(())
     }
+}
+
+fn property_set_reference_type_compatible(ty: &VarTypeRef) -> bool {
+    matches!(ty, VarTypeRef::Variant | VarTypeRef::Object(_))
 }
 
 // ── CST helpers (ported) ───────────────────────────────────────────────────

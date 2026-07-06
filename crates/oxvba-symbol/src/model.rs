@@ -219,6 +219,11 @@ pub enum SymbolModelError {
         parameter: String,
         reason: &'static str,
     },
+    #[error("invalid Property Set reference parameter for `{procedure}` parameter `{parameter}`")]
+    InvalidPropertySetReferenceParameter {
+        procedure: String,
+        parameter: String,
+    },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -327,6 +332,17 @@ impl SymbolModelError {
                 ),
             )
             .with_help("Declare every parameter after an Optional parameter as Optional."),
+            SymbolModelError::InvalidPropertySetReferenceParameter {
+                procedure,
+                parameter,
+            } => Diagnostic::error(
+                "SYM-E-INVALID-PROPERTY-SET-REFERENCE",
+                DiagnosticPhase::Symbol,
+                format!(
+                    "Property Set `{procedure}` parameter `{parameter}` must accept an object reference"
+                ),
+            )
+            .with_help("Declare the final Property Set parameter As Object, As Variant, or as a class/object type."),
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,
