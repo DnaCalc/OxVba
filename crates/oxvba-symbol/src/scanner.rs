@@ -923,6 +923,13 @@ impl ScanCtx<'_> {
                     reason: "Event arguments cannot be Optional",
                 });
             }
+            if param.param_default().is_some() {
+                return Err(SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure: event.to_string(),
+                    parameter,
+                    reason: "Event arguments cannot have default values",
+                });
+            }
             if parameter_has_modifier(*param, SyntaxKind::KwParamArray) {
                 return Err(SymbolModelError::InvalidParamArrayDeclaration {
                     procedure: event.to_string(),
@@ -975,6 +982,21 @@ impl ScanCtx<'_> {
         let property_put_accessor = (proc_node.kind() == SyntaxKind::PropertyDecl)
             .then(|| property_accessor(proc_node))
             .filter(|accessor| matches!(accessor, PropertyAccessor::Let | PropertyAccessor::Set));
+        for (index, param) in params.iter().enumerate() {
+            if param.param_default().is_none()
+                || parameter_has_modifier(*param, SyntaxKind::KwOptional)
+            {
+                continue;
+            }
+            let parameter = parameter_name_token(*param)
+                .map(|t| normalize_identifier_token(t.text).to_string())
+                .unwrap_or_else(|| format!("arg{}", index + 1));
+            return Err(SymbolModelError::InvalidOptionalParameterDeclaration {
+                procedure: procedure.to_string(),
+                parameter,
+                reason: "parameter default values require Optional",
+            });
+        }
         if let Some(accessor) = property_put_accessor
             && let Some(value_param) = params.last()
         {
@@ -2280,6 +2302,32 @@ mod tests {
     }
 
     #[test]
+    fn scanner_rejects_required_parameter_defaults() {
+        for (source, procedure) in [
+            ("Sub S(ByVal n As Long = 1)\nEnd Sub\n", "S"),
+            (
+                "Private Declare PtrSafe Sub Host Lib \"kernel32\" (ByVal n As Long = 1)\n",
+                "Host",
+            ),
+        ] {
+            let err = scan_members_for_kind(ModuleKind::Procedural, source)
+                .expect_err("required parameter default should be rejected");
+            assert_eq!(
+                err,
+                SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure: procedure.to_string(),
+                    parameter: "n".to_string(),
+                    reason: "parameter default values require Optional",
+                }
+            );
+            assert_eq!(
+                err.to_diagnostic().code.as_str(),
+                "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION"
+            );
+        }
+    }
+
+    #[test]
     fn scanner_rejects_withevents_in_standard_modules() {
         let err =
             scan_members_for_kind(ModuleKind::Procedural, "Private WithEvents src As Clock\n")
@@ -2415,6 +2463,12 @@ mod tests {
                 "Public Event Changed(Optional ByVal value As Long)\n",
                 "value",
                 "Event arguments cannot be Optional",
+                "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION",
+            ),
+            (
+                "Public Event Changed(ByVal value As Long = 1)\n",
+                "value",
+                "Event arguments cannot have default values",
                 "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION",
             ),
             (

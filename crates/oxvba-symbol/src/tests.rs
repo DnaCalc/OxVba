@@ -1668,12 +1668,18 @@ fn event_declaration_rejects_standard_module() {
 }
 
 #[test]
-fn event_declaration_rejects_optional_and_paramarray_parameters() {
+fn event_declaration_rejects_invalid_parameters() {
     for (src, parameter, reason, diagnostic) in [
         (
             "Public Event Changed(Optional ByVal value As Long)\r\n",
             "value",
             "Event arguments cannot be Optional",
+            "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION",
+        ),
+        (
+            "Public Event Changed(ByVal value As Long = 1)\r\n",
+            "value",
+            "Event arguments cannot have default values",
             "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION",
         ),
         (

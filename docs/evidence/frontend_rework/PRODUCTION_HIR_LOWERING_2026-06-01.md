@@ -1623,17 +1623,22 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   names/types or final value-vs-return type do not match; `Property Get`/`Set` and `Property
   Let`/`Set` index count/type mismatches use the same diagnostic while still allowing different
   index parameter names and allowing the final `Property Set` reference to differ from the Get
-  return type if it is object-compatible. Event declarations now reject standard-module placement
-  with `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` and reject `Optional` or `ParamArray` arguments
-  through the existing parameter-shape diagnostics before event metadata is published. This
+  return type if it is object-compatible. Required procedure/Declare parameters now reject
+  default values before signature metadata is published, and Event declarations now reject
+  standard-module placement with `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` plus `Optional`,
+  default-valued, or `ParamArray` arguments through the existing parameter-shape diagnostics
+  before event metadata is published. This
   follows the same Microsoft Learn Function/Event/Property Let rules, the Property Set statement's
   object-reference contract, and the inconsistent property definitions diagnostic
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/event-statement`,
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/function-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-let-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-set-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/definitions-of-property-procedures-for-the-same-property-are-inconsistent`),
   and remains a declaration-shape diagnostic rather than broader call-site
   optional argument closure. Evidence: `scanner_rejects_required_parameters_after_optional`;
+  `scanner_rejects_required_parameter_defaults`;
+  `scanner_rejects_invalid_event_parameter_modifiers`;
   `duplicate_property_accessors_reject`;
   `property_get_let_pairing_accepts_matching_accessors_in_any_order`;
   `property_get_let_pairing_rejects_mismatches`;
@@ -1659,6 +1664,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `withevents_const_declaration_is_bind_error`;
   `withevents_scalar_field_type_is_bind_error`;
   `withevents_as_new_field_is_bind_error`;
+  `required_parameter_default_is_bind_error`;
+  `event_declaration_rejects_invalid_parameters`;
   `required_parameter_after_optional_is_bind_error`.
 - The latest declaration/type-surface pass also stops local-scope and `Const` `WithEvents`
   declarations, plus fields with value, explicit/implicit `Variant`, array, or `As New`
@@ -1777,7 +1784,11 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_named_indexed_property_set_through_hir --quiet`
 - `cargo test -p oxvba-symbol property_set_reference_parameter_rejects_udt_types -- --nocapture`
 - `cargo test -p oxvba-symbol withevents -- --nocapture`
+- `cargo test -p oxvba-symbol required_parameter_defaults -- --nocapture`
+- `cargo test -p oxvba-symbol invalid_event_parameter_modifiers -- --nocapture`
 - `cargo test -p oxvba-bind property_set_udt_reference_parameter_is_bind_error -- --nocapture`
+- `cargo test -p oxvba-bind required_parameter_default_is_bind_error -- --nocapture`
+- `cargo test -p oxvba-bind event_declaration_rejects_invalid_parameters -- --nocapture`
 - `cargo test -p oxvba-bind withevents_local_declaration_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind withevents_const_declaration_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind withevents_scalar_field_type_is_bind_error -- --nocapture`

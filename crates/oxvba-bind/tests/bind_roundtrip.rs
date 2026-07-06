@@ -1379,6 +1379,17 @@ fn invalid_optional_default_is_bind_error() {
 }
 
 #[test]
+fn required_parameter_default_is_bind_error() {
+    let src = "Sub Main()\nEnd Sub\n\nSub Fill(ByVal n As Long = 7)\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("InvalidOptionalParameterDeclaration")
+            && err.contains("parameter default values require Optional"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);
@@ -3244,11 +3255,15 @@ fn withevents_const_declaration_is_bind_error() {
 }
 
 #[test]
-fn event_declaration_rejects_optional_and_paramarray_parameters() {
+fn event_declaration_rejects_invalid_parameters() {
     for (source, expected) in [
         (
             "Public Event Tick(Optional ByVal n As Long)\n",
             "Event arguments cannot be Optional",
+        ),
+        (
+            "Public Event Tick(ByVal n As Long = 1)\n",
+            "Event arguments cannot have default values",
         ),
         (
             "Public Event Tick(ParamArray xs() As Variant)\n",

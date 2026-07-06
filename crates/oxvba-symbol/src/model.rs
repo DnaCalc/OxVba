@@ -357,7 +357,13 @@ impl SymbolModelError {
                     "invalid Optional parameter declaration for `{procedure}` parameter `{parameter}`: {reason}"
                 ),
             )
-            .with_help("Declare every parameter after an Optional parameter as Optional."),
+            .with_help(if reason.starts_with("Event arguments") {
+                "Declare Event arguments as required ByVal/ByRef parameters without Optional/defaults."
+            } else if reason.contains("default") {
+                "Use default values only on Optional parameters."
+            } else {
+                "Declare every parameter after an Optional parameter as Optional."
+            }),
             SymbolModelError::MissingPropertyWriterParameter {
                 procedure,
                 accessor,
