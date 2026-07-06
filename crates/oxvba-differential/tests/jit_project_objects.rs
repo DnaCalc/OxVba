@@ -124,6 +124,24 @@ fn jit_project_typed_local_is_nothing_matches_vm3_without_construction() {
 }
 
 #[test]
+fn jit_project_dim_as_new_is_nothing_declines_without_vm_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim w As New Widget\n  If w Is Nothing Then\n    r = 41\n  Else\n    r = 43\n  End If\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 43);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_jit_declines(jit, "AsNew", "lazy activation");
+}
+
+#[test]
 fn jit_project_typed_null_set_assignment_matches_vm3_without_construction() {
     let modules = [
         (
