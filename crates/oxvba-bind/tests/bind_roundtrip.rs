@@ -2328,6 +2328,65 @@ fn project_default_member_set_roundtrip() {
 }
 
 #[test]
+fn default_member_property_set_assigned_object_is_byval_after_byref_index_arg() {
+    let main = "Sub Main()\n    Dim b As Box\n    Dim t As Thing\n    Dim target As Long\n    Set b = New Box\n    Set t = New Thing\n    Set b(target) = t\nEnd Sub\n";
+    let box_cls = "Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = Nothing\nEnd Property\nAttribute Item.VB_UserMemId = 0\n\n\
+                   Public Property Set Item(ByRef target As Long, ByRef value As Thing)\nEnd Property\nAttribute Item.VB_UserMemId = 0\n";
+    let thing = "Public Sub Touch()\nEnd Sub\n";
+    let program = bind_program(
+        &multi_manifest(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Box", ModuleKind::Class, box_cls),
+            ("Thing", ModuleKind::Class, thing),
+        ]),
+        &NullTypeLibs,
+    )
+    .expect("bind");
+    let setter = program
+        .procs
+        .iter()
+        .find(|proc| {
+            proc.name.eq_ignore_ascii_case("Item")
+                && proc.kind == oxvba_bundle::ProcedureKind::PropertySet
+        })
+        .expect("Property Set procedure should be present");
+    assert_eq!(setter.params.len(), 3);
+    assert_eq!(setter.params[0].name, "Me");
+    assert!(!setter.params[0].by_ref);
+    assert!(setter.params[1].by_ref);
+    assert!(!setter.params[2].by_ref);
+
+    let calls = top_level_calls(&program);
+    let (_, args) = calls
+        .into_iter()
+        .find(|(callee, args)| {
+            matches!(
+                callee,
+                CoreCallee::LateDispatch {
+                    name,
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertySet),
+                    default_member: false,
+                } if name == "Item"
+            ) && args.len() == 3
+        })
+        .expect(
+            "default-member Property Set should lower to receiver, index, and assigned value args",
+        );
+    assert!(
+        matches!(args.first(), Some(CoreArg::ByVal(_))),
+        "receiver should be passed as a value argument, got {args:?}"
+    );
+    assert!(
+        matches!(args.get(1), Some(CoreArg::ByRef(_))),
+        "indexed argument should retain the declared ByRef mode, got {args:?}"
+    );
+    assert!(
+        matches!(args.get(2), Some(CoreArg::ByVal(_))),
+        "assigned default-member Property Set object should lower as the trailing ByVal runtime value, got {args:?}"
+    );
+}
+
+#[test]
 fn project_default_member_bare_get_let_roundtrip() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim w As Widget\n    Set w = New Widget\n    w = 10\n    r = w\nEnd Sub\n";
     let widget = "Private mV As Long\n\n\
