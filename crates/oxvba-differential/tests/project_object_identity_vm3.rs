@@ -96,3 +96,29 @@ fn project_class_typeof_uses_runtime_descriptor_for_object_variables() {
         "True|False|False",
     );
 }
+
+#[test]
+fn project_class_typename_uses_runtime_descriptor_for_object_variables() {
+    let main = "Public result As Variant\n\
+                Sub Main()\n\
+                \x20   Dim o As Object\n\
+                \x20   Set o = New Widget\n\
+                \x20   Dim liveName As String\n\
+                \x20   liveName = TypeName(o)\n\
+                \x20   Set o = Nothing\n\
+                \x20   result = liveName & \"|\" & TypeName(o)\n\
+                End Sub\n";
+    let widget = "Private n As Long\n\
+                  Private Sub Class_Initialize()\n\
+                  \x20   n = 1\n\
+                  End Sub\n";
+
+    assert_contains_string(
+        run_modules(
+            Executor::Vm3,
+            &[("Main", Procedural, main), ("Widget", Class, widget)],
+            "VBAProject",
+        ),
+        "Widget|Nothing",
+    );
+}
