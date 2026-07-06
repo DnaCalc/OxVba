@@ -1914,6 +1914,19 @@ fn optional_object_defaults_accept_nothing_and_zero() {
 }
 
 #[test]
+fn optional_boolean_like_default_folds_charlists_and_ranges() {
+    let src = "Sub S(Optional ByVal flag As Boolean = (\"f\" Like \"[a-z]\") And (\"9\" Like \"[0-9a-f]\") And (\"]\" Like \"[]x]\") And (\"F\" Like \"[!a-z]\"))\r\nEnd Sub\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "S")
+        .expect("proc resolves");
+    let proc = binding.symbol.expect("proc symbol");
+    assert_eq!(env.optional_default(proc, 0), Some(&CoreConst::Bool(true)));
+}
+
+#[test]
 fn scanner_rejects_invalid_paramarray_modifiers() {
     for (src, procedure, parameter, reason) in [
         (

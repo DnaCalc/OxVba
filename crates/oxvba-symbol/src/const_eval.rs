@@ -1389,29 +1389,67 @@ fn fold_string_relational(
 }
 
 /// VBA `Like` pattern match: `?` any char, `*` any run, `#` any digit,
-/// `[chars]`/`[!chars]` a (negated) set. Case is already normalised by the caller.
+/// `[chars]`/`[!chars]` charlists with `a-z` ranges and literal `]` when it is the
+/// first charlist member. Case is already normalised by the caller.
 fn like_match(s: &[char], p: &[char]) -> bool {
     match p.first() {
         None => s.is_empty(),
         Some('*') => (0..=s.len()).any(|i| like_match(&s[i..], &p[1..])),
         Some('?') => !s.is_empty() && like_match(&s[1..], &p[1..]),
         Some('#') => !s.is_empty() && s[0].is_ascii_digit() && like_match(&s[1..], &p[1..]),
-        Some('[') => match p.iter().position(|&c| c == ']') {
+        Some('[') => match charlist_end(&p[1..]) {
             Some(end) => {
-                let set = &p[1..end];
-                let (negate, set) = if set.first() == Some(&'!') {
-                    (true, &set[1..])
-                } else {
-                    (false, set)
-                };
                 !s.is_empty()
-                    && (set.contains(&s[0]) != negate)
-                    && like_match(&s[1..], &p[end + 1..])
+                    && char_in_charlist(s[0], &p[1..1 + end])
+                    && like_match(&s[1..], &p[end + 2..])
             }
             None => !s.is_empty() && s[0] == '[' && like_match(&s[1..], &p[1..]),
         },
         Some(&c) => !s.is_empty() && s[0] == c && like_match(&s[1..], &p[1..]),
     }
+}
+
+/// Index within `body` (the chars after `[`) of the closing `]`. A `]` that is
+/// first in the charlist, optionally after `!`, is a literal member.
+fn charlist_end(body: &[char]) -> Option<usize> {
+    let mut i = 0;
+    if body.first() == Some(&'!') {
+        i += 1;
+    }
+    if body.get(i) == Some(&']') {
+        i += 1;
+    }
+    while i < body.len() {
+        if body[i] == ']' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn char_in_charlist(c: char, body: &[char]) -> bool {
+    let (negate, body) = match body.split_first() {
+        Some((&'!', rest)) => (true, rest),
+        _ => (false, body),
+    };
+    let mut i = 0;
+    let mut found = false;
+    while i < body.len() {
+        if i + 2 < body.len() && body[i + 1] == '-' {
+            let (lo, hi) = (body[i], body[i + 2]);
+            if (lo <= c && c <= hi) || (hi <= c && c <= lo) {
+                found = true;
+            }
+            i += 3;
+        } else {
+            if body[i] == c {
+                found = true;
+            }
+            i += 1;
+        }
+    }
+    found != negate
 }
 
 pub(crate) fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {

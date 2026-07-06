@@ -1299,10 +1299,11 @@ constant expressions:
   `SYM-E-UNSUPPORTED-OPTION-COMPARE-DATABASE` instead of using a Binary approximation until Access
   collation semantics are implemented.
 - A bounded `Like` follow-up extends that same string Boolean-constant lane to the current runtime
-  `Like` subset, which is equality after compare-mode normalization rather than full VBA pattern
-  matching. `Option Compare Text` now lets
-  `Const CFlag As Boolean = Prefix & "llo" Like "HELLO"` fold to `LoadConstBool true` through
-  resolver optional-default parsing, HIR/default route selection, route audit, and VM execution.
+  `Like` subset. `Option Compare Text` now lets
+  `Const CFlag As Boolean = Prefix & "llo" Like "HELLO"` fold to `LoadConstBool true`, and the
+  compile-time evaluator now shares the runtime charlist rules for `?`, `*`, `#`, `[chars]`,
+  `[!chars]`, `a-z` ranges, and literal `]` first in a charlist through resolver optional-default
+  parsing, HIR/default route selection, route audit, and VM execution.
 - A companion `String` typed-constant pass reuses the same bounded string evaluator for declared
   module constants. `Const Prefix As String = "re"` followed by
   `Const CText As String = Prefix & "ady"` now substitutes as `LoadConstString "ready"` through
@@ -1574,10 +1575,12 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   and module constants, into the same explicit Boolean optional-default carrier. Collation-sensitive
   unequal strings, ordering comparisons, full `Like` pattern semantics, and `Is` remain outside this
   bounded evaluator.
-- Follow-up Boolean `Like` default work narrows that residual for the current equality-based runtime
-  `Like` subset. `Optional ... As Boolean = Prefix & "llo" Like "hello"` now binds to
-  `ExplicitBool(true)` through HIR/default metadata, route audit, and VM omitted-argument
-  execution; full VBA pattern matching and locale/database collation remain outside this slice.
+- Follow-up Boolean `Like` default work narrows that residual for the current runtime `Like` subset.
+  `Optional ... As Boolean = Prefix & "llo" Like "hello"` now binds to `ExplicitBool(true)`, and the
+  compile-time optional-default path now also folds charlists/ranges/literal-`]` cases such as
+  `"f" Like "[a-z]"` and `"]" Like "[]x]"` through HIR/default metadata, route audit, and VM
+  omitted-argument execution; locale/database collation and unsupported pattern edge diagnostics
+  remain outside this slice.
 - Follow-up i64 optional-default work adds an explicit `OptionalDefaultValue::ExplicitI64` carrier
   and binds covered `LongLong`/`LongPtr` source-prior integer constant defaults through resolver,
   HIR/default metadata, direct optional-entry bytecode, and VM omitted-argument execution for
@@ -1650,9 +1653,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   same-string equality/inequality subset, bounded Date/Currency arithmetic numeric subset, and
   exact i64 optional-default carrier subset, plus the covered `Single` f32 metadata carrier and
   string-to-declared-scalar default coercions, nor exact Excel modal text for invalid default
-  diagnostics beyond the covered reject-vs-accept behavior.
-  Collation-sensitive string comparisons, `Like`/`Is`, and coercive comparison defaults remain
-  FE-8.5.f residuals.
+  diagnostics beyond the covered reject-vs-accept behavior. Collation-sensitive string comparisons,
+  locale/database-sensitive `Like`, `Is`, and coercive comparison defaults remain FE-8.5.f
+  residuals.
 
 ## Checks
 
@@ -1708,11 +1711,14 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler resolve_optional_boolean_like_default --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_like_const_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_like_const_expression_executes --quiet`
+- `cargo test -p oxvba-symbol optional_boolean_like_default_folds_charlists_and_ranges -- --nocapture`
+- `cargo test -p oxvba-bind scalar_boolean_like_charlist_const_expression_executes -- --nocapture`
 - `cargo test -p oxvba-compiler resolve_optional_string_scalar_concat_default --quiet`
 - `cargo test -p oxvba-compiler optional_string_scalar_concat_defaults_route_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_string_scalar_concat_defaults_are_bound_for_omitted_args --quiet`
 - `cargo test -p oxvba-compiler optional_boolean_like_defaults_route_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage optional_boolean_like_defaults_are_bound_for_omitted_args --quiet`
+- `cargo test -p oxvba-bind optional_boolean_like_charlist_defaults_are_bound_for_omitted_args -- --nocapture`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_untyped_string_const_scalar_concat_expression_executes --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_string_const_expression_executes --quiet`

@@ -925,6 +925,14 @@ fn scalar_boolean_like_const_expression_executes() {
 }
 
 #[test]
+fn scalar_boolean_like_charlist_const_expression_executes() {
+    let snap = run(
+        "Const CFlag As Boolean = (\"f\" Like \"[a-z]\") And (\"9\" Like \"[0-9a-f]\") And (\"]\" Like \"[]x]\") And (\"F\" Like \"[!a-z]\")\nSub Main()\nDim flag As Boolean\nflag = CFlag\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_bool(true)]);
+}
+
+#[test]
 fn filter_datepart_and_ismissing_intrinsics() {
     // Filter keeps the matching elements; DatePart("q") is the quarter;
     // IsMissing is True for an omitted optional Variant, False when supplied.
@@ -1806,6 +1814,14 @@ fn optional_boolean_expression_defaults_are_bound_for_omitted_args() {
 fn optional_boolean_like_defaults_are_bound_for_omitted_args() {
     let snap = run(
         "Const Prefix = \"he\"\nSub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = Prefix & \"llo\" Like \"hello\")\ntarget = flag\nEnd Sub",
+    );
+    assert_eq!(snap, vec![Variant::from_bool(true)]);
+}
+
+#[test]
+fn optional_boolean_like_charlist_defaults_are_bound_for_omitted_args() {
+    let snap = run(
+        "Sub Main()\nDim b As Boolean\nCall Fill(b)\nEnd Sub\nSub Fill(ByRef target As Boolean, Optional ByVal flag As Boolean = (\"f\" Like \"[a-z]\") And (\"9\" Like \"[0-9a-f]\") And (\"]\" Like \"[]x]\") And (\"F\" Like \"[!a-z]\"))\ntarget = flag\nEnd Sub",
     );
     assert_eq!(snap, vec![Variant::from_bool(true)]);
 }

@@ -1699,8 +1699,9 @@ Candidate bead units:
   default metadata/runtime binding for covered `LongLong` and `LongPtr` defaults,
   string-to-declared-scalar optional default metadata/runtime binding for covered Boolean,
   integer, Currency, and deterministic Date text defaults, deterministic string-to-Date store
-  coercion through the shared runtime parser, plus bounded equality-based `Like` folding for
-  covered string Boolean constants. A 2026-07-03 scalar `LongPtr` continuation now routes the
+  coercion through the shared runtime parser, plus bounded runtime-aligned `Like` folding for
+  covered string Boolean constants, including charlists, `a-z` ranges, negation, and literal
+  `]` first in a charlist. A 2026-07-03 scalar `LongPtr` continuation now routes the
   clean binder's declared scalar `LongPtr` coercion/default/arithmetic/file-read type-code decisions
   through the manifest pointer-width target, so Win32-target execution uses `Long`-sized behavior
   for those paths while Win64 retains the existing `LongLong`-sized behavior; clean-bind
@@ -1769,7 +1770,8 @@ Candidate bead units:
     with Excel/VBA compile oracle rows for `w.Secret()` rejection and internal/private plus
     friend acceptance,
   optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
-  optional `Boolean` defaults over bounded equality-based string `Like`,
+  optional `Boolean` defaults over bounded string `Like`, including charlists/ranges/literal
+  `]` charlists,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
