@@ -2628,6 +2628,40 @@ fn optional_boolean_mixed_string_scalar_relational_defaults_fold() {
 }
 
 #[test]
+fn optional_default_residual_expressions_reject_instead_of_falling_back() {
+    for (src, parameter) in [
+        (
+            "Sub S(Optional ByVal flag As Boolean = (1 Is 1))\r\nEnd Sub\r\n",
+            "flag",
+        ),
+        (
+            "Sub S(Optional ByVal stamp As Date = \"2/3/2026\")\r\nEnd Sub\r\n",
+            "stamp",
+        ),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("unsupported Optional default should not compile"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidOptionalDefault {
+                    procedure,
+                    parameter: actual,
+                } if procedure == "S" && actual == parameter
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-OPTIONAL-DEFAULT"
+        );
+    }
+}
+
+#[test]
 fn scanner_rejects_invalid_paramarray_modifiers() {
     for (src, procedure, parameter, reason) in [
         (

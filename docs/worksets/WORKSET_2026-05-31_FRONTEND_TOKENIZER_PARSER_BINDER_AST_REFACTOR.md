@@ -904,8 +904,11 @@ Required newly explicit delivery beads:
   evaluate into explicit Boolean carriers, and bounded mixed `String`/scalar relational defaults
   now fold through the same effective non-string scalar type used by VBA relational Let-coercion;
   broader typed coercion, locale-sensitive/Variant-origin comparison defaults,
-  locale/database-sensitive `Like`, `Is`, and expression expansion remain open. The
-  same continuation proves the `ParamArray` flag on both surfaces.
+  locale/database-sensitive `Like`, `Is`, and expression expansion remain outside the accepted
+  optional-default subset. Follow-up `bd-aprs.9.10.3` bounds that breadth with fail-closed
+  `InvalidOptionalDefault` coverage for unsupported `Is` default expressions and ambiguous
+  date-text defaults, so those shapes cannot silently publish fallback metadata. The same
+  continuation proves the `ParamArray` flag on both surfaces.
   Follow-up corpus coverage adds
   `RouteChecked` corpus rows for all seed host/project/imported-COM/predeclared-document and Excel
   oracle fixtures that have compiler-local HIR route helpers, folding HIR production route evidence
@@ -1919,8 +1922,10 @@ Candidate bead units:
   diagnostics, richer `Declare` signatures, UDT layout/field/default/reset behavior,
   fixed-length string metadata/coercion, object-module visibility, event/`WithEvents` declaration
   legality, fixed-array `Option Base` metadata, and class-member visibility. The broader
-  optional/default expression-coercion breadth that remains outside the covered subsets is split to
-  `bd-aprs.9.10.3`, which blocks `bd-aprs.9.5`; it is not hidden inside this parent closure.
+  optional/default expression-coercion breadth that remains outside the covered subsets was split to
+  `bd-aprs.9.10.3`; its follow-up fail-closed tests prove unsupported `Is` defaults and ambiguous
+  date-text defaults report `InvalidOptionalDefault` instead of falling back or publishing partial
+  metadata.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

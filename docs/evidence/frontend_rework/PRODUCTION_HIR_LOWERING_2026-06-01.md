@@ -1800,8 +1800,11 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `String`/scalar effective-type subset. Collation-sensitive string comparisons,
   locale/database-sensitive `Like`, `Is`, Variant-origin string/numeric comparison exceptions,
   coercions outside the covered mixed `String`/scalar subset, and broader optional call-entry
-  combinations are split to `bd-aprs.9.10.3`, which blocks the broad `bd-aprs.9.5` FE-8.5
-  production-lowering gate rather than remaining hidden in this parent.
+  combinations were split to `bd-aprs.9.10.3`. That follow-up now pins the fail-closed boundary:
+  unsupported `Is` default expressions and ambiguous date-text defaults report
+  `SYM-E-INVALID-OPTIONAL-DEFAULT` / `InvalidOptionalDefault` through symbol and bind coverage
+  instead of falling back or publishing partial metadata. Broader locale/Variant behavior remains
+  future compatibility work, not accepted optional-default surface.
 
 ## Checks
 

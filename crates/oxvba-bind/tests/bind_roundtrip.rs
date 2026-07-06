@@ -1392,6 +1392,16 @@ fn invalid_optional_default_is_bind_error() {
 }
 
 #[test]
+fn residual_optional_default_expression_is_bind_error() {
+    let src = "Sub Main()\n    Fill\nEnd Sub\n\nSub Fill(Optional ByVal stamp As Date = \"2/3/2026\")\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("InvalidOptionalDefault") && err.contains("Fill") && err.contains("stamp"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_default_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(ByVal n As Long = 7)\nEnd Sub\n";
     let err = bind_error(src);
