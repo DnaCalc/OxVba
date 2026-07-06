@@ -22339,6 +22339,79 @@ End Sub
         );
     }
 
+    /// Project-instance dispatch must preserve VBA call binding semantics after the object
+    /// descriptor resolves the target member: named args reorder and omitted Optional args
+    /// receive their declared default.
+    #[test]
+    fn vm3_project_method_named_optional_args_reorder_and_default() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gResult As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  gResult = w.Combine(c:=30, a:=2)\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Public Function Combine(ByVal a As Long, Optional ByVal b As Long = 7, Optional ByVal c As Long = 11) As Long\n  Combine = a * 100 + b * 10 + c\nEnd Function\n",
+            ),
+        ]);
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(300))),
+            "{snap:?}"
+        );
+    }
+
+    /// Once a named fixed argument has been bound, later positional arguments form the
+    /// ParamArray tail rather than trying to backfill fixed slots.
+    #[test]
+    fn vm3_project_method_named_fixed_paramarray_tail() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gResult As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  gResult = w.SumFrom(start:=5, 10, 20, 30)\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Public Function SumFrom(ByVal start As Long, ParamArray xs() As Variant) As Long\n  Dim i As Long\n  SumFrom = start\n  For i = LBound(xs) To UBound(xs)\n    SumFrom = SumFrom + CLng(xs(i))\n  Next i\nEnd Function\n",
+            ),
+        ]);
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(65))),
+            "{snap:?}"
+        );
+    }
+
+    /// Property Get calls on project instances use the same descriptor-selected dispatch path as
+    /// methods, including named argument mapping and Optional defaults.
+    #[test]
+    fn vm3_project_property_get_named_optional_args() {
+        use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
+        let snap = run_obj_ok(&[
+            (
+                "Main",
+                Procedural,
+                "Public gResult As Long\nSub Main()\n  Dim w As Widget\n  Set w = New Widget\n  gResult = w.Value(b:=8, a:=4)\nEnd Sub\n",
+            ),
+            (
+                "Widget",
+                Class,
+                "Public Property Get Value(ByVal a As Long, Optional ByVal b As Long = 3) As Long\n  Value = a * 10 + b\nEnd Property\n",
+            ),
+        ]);
+        assert_eq!(
+            snap.first(),
+            Some(&canon(&Variant::from_i32(48))),
+            "{snap:?}"
+        );
+    }
+
     /// End-to-end project events: a sink wires a source via `WithEvents`, the source
     /// `RaiseEvent`s, and the sink's handler fires with the event arg (M3-6).
     #[test]
