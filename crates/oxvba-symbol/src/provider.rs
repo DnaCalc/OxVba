@@ -10,7 +10,7 @@ use oxvba_syntax::{Parse, SyntaxKind, SyntaxNode};
 
 use crate::binding::{Binding, DispatchRoute};
 use crate::cond_comp;
-use crate::const_eval::{ExternalConstProject, ExternalConstValue};
+use crate::const_eval::{ExternalConstProject, ExternalConstValue, FoldedOptionalDefaults};
 use crate::manifest::{ModuleKind, ProjectReference, SymbolProjectManifest};
 use crate::model::{
     ScopeId, ScopeKind, SymbolId, SymbolImpl, SymbolKind, SymbolModelError, SymbolNamespace,
@@ -213,10 +213,10 @@ pub struct ResolutionEnvironment {
     /// (active + referenced), keyed by `SymbolId`. Const-folding is a published
     /// type-system property, computed once here and read uniformly by the binder.
     const_values: std::collections::HashMap<SymbolId, oxvba_bundle::coreir::CoreConst>,
-    /// Folded `Optional` parameter defaults, keyed by `(procedure symbol, parameter
-    /// index)`. The binder substitutes these for omitted optional arguments.
-    optional_defaults:
-        std::collections::HashMap<(SymbolId, usize), oxvba_bundle::coreir::CoreConst>,
+    /// Folded `Optional` parameter defaults. Symbol-keyed defaults feed same-project
+    /// omitted arguments; signature-keyed defaults feed export-surface publication
+    /// for methods and individual property accessors.
+    optional_defaults: FoldedOptionalDefaults,
     /// User-defined `Type` (UDT) field tables: folded type name → ordered
     /// `(folded field name, field type)`. The binder reads field index + type for
     /// `p.X` access and the field count for record allocation.
@@ -432,7 +432,7 @@ impl ResolutionEnvironment {
         proc: SymbolId,
         index: usize,
     ) -> Option<&oxvba_bundle::coreir::CoreConst> {
-        self.optional_defaults.get(&(proc, index))
+        self.optional_defaults.by_proc.get(&(proc, index))
     }
 
     /// Is `name` (any case) a user-defined `Type`?

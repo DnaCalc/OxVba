@@ -2426,6 +2426,73 @@ fn export_surface_publishes_folded_method_optional_defaults() {
 }
 
 #[test]
+fn export_surface_publishes_folded_property_optional_defaults() {
+    let m = manifest(
+        "Lib",
+        vec![module(
+            "LibMod",
+            "Public Const DefaultIndex As Long = 4\n\
+             Public Property Get Item(Optional ByVal index As Long = DefaultIndex + 1) As Long\n\
+             Item = index\n\
+             End Property\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let surface = env.export_surfaces().first().expect("active surface");
+    let module = surface
+        .types
+        .iter()
+        .find(|ty| ty.name.eq_ignore_ascii_case("LibMod"))
+        .expect("module surface");
+    let getter = module
+        .members
+        .iter()
+        .find(|member| {
+            member.name.eq_ignore_ascii_case("Item")
+                && member.invoke_kind == TypeLibMemberInvokeKind::PropertyGet
+        })
+        .expect("property get surface");
+
+    assert_eq!(
+        getter.parameter_optional_defaults,
+        vec![Some(CoreConst::I32(5))]
+    );
+}
+
+#[test]
+fn export_surface_publishes_folded_property_put_index_optional_defaults() {
+    let m = manifest(
+        "Lib",
+        vec![module(
+            "LibMod",
+            "Public Const DefaultIndex As Long = 4\n\
+             Public Property Let Item(Optional ByVal index As Long = DefaultIndex + 1, ByVal value As Long)\n\
+             End Property\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let surface = env.export_surfaces().first().expect("active surface");
+    let module = surface
+        .types
+        .iter()
+        .find(|ty| ty.name.eq_ignore_ascii_case("LibMod"))
+        .expect("module surface");
+    let putter = module
+        .members
+        .iter()
+        .find(|member| {
+            member.name.eq_ignore_ascii_case("Item")
+                && member.invoke_kind == TypeLibMemberInvokeKind::PropertyPut
+        })
+        .expect("property put surface");
+
+    assert_eq!(
+        putter.parameter_optional_defaults,
+        vec![Some(CoreConst::I32(5)), None]
+    );
+}
+
+#[test]
 fn invalid_optional_defaults_reject_instead_of_falling_back() {
     for (src, parameter) in [
         (

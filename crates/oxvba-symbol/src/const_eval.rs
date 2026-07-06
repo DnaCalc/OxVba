@@ -11,8 +11,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use oxvba_bundle::StringCompareMode;
 use oxvba_bundle::coreir::{CoreBinOp, CoreConst};
+use oxvba_bundle::{ProjectMemberKind, StringCompareMode};
 use oxvba_runtime::CurrencyValue;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
@@ -23,7 +23,7 @@ use crate::model::{
 };
 use crate::providers::vba_library;
 use crate::scanner::parameter_name_token;
-use crate::signature::{BuiltinType, VarTypeRef};
+use crate::signature::{BuiltinType, SignatureId, VarTypeRef};
 
 #[derive(Debug, Clone)]
 pub struct ExternalConstProject {
@@ -37,6 +37,14 @@ pub struct ExternalConstValue {
     pub name: String,
     pub enum_name: Option<String>,
     pub value: CoreConst,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FoldedOptionalDefaults {
+    /// Existing same-project call path: logical procedure/property symbol + parameter index.
+    pub by_proc: HashMap<(SymbolId, usize), CoreConst>,
+    /// Export-surface path: concrete procedure/accessor signature + parameter index.
+    pub by_signature: HashMap<(SignatureId, usize), CoreConst>,
 }
 
 /// Fold every `Const` and `Enum` member reachable from the given module roots into
@@ -182,24 +190,23 @@ fn mode_for_scope(
     StringCompareMode::Binary
 }
 
-/// Fold every `Optional` parameter's **default expression** to a constant, keyed by
-/// `(procedure symbol, parameter index)`. VBA Optional defaults are constant
-/// expressions (they may reference module/global `Const`s), so they fold here in the
-/// published type system, after `fold_const_values`. A parameter with no default, or
-/// one that does not fold, is simply absent (the binder supplies the declared-type
-/// zero / `Missing`).
+/// Fold every `Optional` parameter's **default expression** to a constant. VBA
+/// Optional defaults are constant expressions (they may reference module/global
+/// `Const`s), so they fold here in the published type system, after
+/// `fold_const_values`. A parameter with no default, or one that does not fold, is
+/// simply absent (the binder supplies the declared-type zero / `Missing`).
 pub fn fold_optional_defaults(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
     values: &HashMap<SymbolId, CoreConst>,
     external_projects: &[ExternalConstProject],
     target: ConditionalCompilationTarget,
-) -> Result<HashMap<(SymbolId, usize), CoreConst>, SymbolModelError> {
+) -> Result<FoldedOptionalDefaults, SymbolModelError> {
     let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
         .iter()
         .map(|(scope, root)| (*scope, module_compare_mode(*root)))
         .collect();
-    let mut out = HashMap::new();
+    let mut out = FoldedOptionalDefaults::default();
     for (module_scope, root) in module_roots {
         let mode = mode_for_scope(symbols, *module_scope, &module_modes);
         collect_proc_defaults(
@@ -224,7 +231,7 @@ fn collect_proc_defaults(
     external_projects: &[ExternalConstProject],
     mode: StringCompareMode,
     target: ConditionalCompilationTarget,
-    out: &mut HashMap<(SymbolId, usize), CoreConst>,
+    out: &mut FoldedOptionalDefaults,
 ) -> Result<(), SymbolModelError> {
     if matches!(
         node.kind(),
@@ -235,6 +242,7 @@ fn collect_proc_defaults(
         && let Some(param_list) = node.param_list()
     {
         let proc_scope = proc_scope_under(symbols, module_scope, name.text);
+        let signature_id = node_signature_id(symbols, proc_sym, node);
         for (i, param) in param_list.params().iter().enumerate() {
             if let Some(def) = param.param_default().and_then(|d| d.first_expr_child()) {
                 let parameter = parameter_name_token(*param)
@@ -262,7 +270,10 @@ fn collect_proc_defaults(
                         });
                     }
                 };
-                out.insert((proc_sym, i), default);
+                out.by_proc.insert((proc_sym, i), default.clone());
+                if let Some(signature_id) = signature_id {
+                    out.by_signature.insert((signature_id, i), default);
+                }
             }
         }
     }
@@ -279,6 +290,37 @@ fn collect_proc_defaults(
         )?;
     }
     Ok(())
+}
+
+fn node_signature_id(
+    symbols: &SymbolTable,
+    proc_sym: SymbolId,
+    node: SyntaxNode<'_>,
+) -> Option<SignatureId> {
+    match symbols.symbol(proc_sym).map(|s| &s.imp) {
+        Some(SymbolImpl::Signature(sig)) => Some(*sig),
+        Some(SymbolImpl::Property(group)) => match property_accessor_kind(node) {
+            Some(ProjectMemberKind::PropertyGet) => group.get,
+            Some(ProjectMemberKind::PropertyLet) => group.let_,
+            Some(ProjectMemberKind::PropertySet) => group.set,
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn property_accessor_kind(node: SyntaxNode<'_>) -> Option<ProjectMemberKind> {
+    if node.kind() != SyntaxKind::PropertyDecl {
+        return None;
+    }
+    let tokens = node.child_tokens();
+    if tokens.iter().any(|t| t.kind == SyntaxKind::KwLet) {
+        Some(ProjectMemberKind::PropertyLet)
+    } else if tokens.iter().any(|t| t.kind == SyntaxKind::KwSet) {
+        Some(ProjectMemberKind::PropertySet)
+    } else {
+        Some(ProjectMemberKind::PropertyGet)
+    }
 }
 
 /// Walk for `ConstStmt`s under `scope`; proc bodies open their own `Procedure`

@@ -1598,12 +1598,13 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   read public constants exported by referenced projects during the final folded-default pass. The
   bounded proof covers an active-project procedure `Optional ByVal mode As Long = DefaultMode`
   where `DefaultMode` is a public referenced-project `Const`, and omitted calls bind the folded
-  `Long` value. A follow-up publication slice also exports folded defaults for referenced-project
-  methods/functions whose own defaults use non-literal constant expressions, proven with
-  `Optional ByVal mode As Long = DefaultMode + 1` and a cross-bundle omitted call. Exported
-  referenced-project property accessor defaults with non-literal constant expressions remain a
-  separate surface-default publication residual until property accessors expose distinct procedure
-  symbols for folded-default lookup.
+  `Long` value. Follow-up publication slices also export folded defaults for referenced-project
+  methods/functions and property accessors whose own defaults use non-literal constant
+  expressions. The surface now keys folded defaults by accessor signature as well as by logical
+  procedure symbol, proven with `Optional ByVal mode As Long = DefaultMode + 1`,
+  `Property Get Item(Optional ByVal index As Long = DefaultIndex + 1)`, `Property Let` optional
+  index surface metadata, and cross-bundle omitted calls for method/function and property-get
+  shapes.
 - Follow-up ParamArray declaration validation now rejects invalid clean-stack signatures before
   publishing partial metadata. The scanner reports `SYM-E-INVALID-PARAMARRAY-DECLARATION` for
   `ParamArray` combined with `Optional`, explicit `ByVal`, explicit `ByRef`, or a non-final

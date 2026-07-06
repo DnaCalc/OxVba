@@ -25,11 +25,12 @@ use oxvba_bundle::ProjectMemberKind;
 use oxvba_bundle::coreir::CoreConst;
 use oxvba_com::{TypeLibMemberInvokeKind, TypeLibParamType};
 
+use crate::const_eval::FoldedOptionalDefaults;
 use crate::manifest::{Instancing, ModuleKind, ModuleUnit};
 use crate::model::{SymbolId, SymbolImpl, SymbolKind, SymbolTable, Visibility};
 use crate::scanner::{ModuleScan, ScannedMember};
 use crate::signature::{
-    BuiltinType, DefaultValue, PassingMode, Signature, SignatureTable, VarTypeRef,
+    BuiltinType, DefaultValue, PassingMode, Signature, SignatureId, SignatureTable, VarTypeRef,
 };
 
 /// A project's complete public export surface.
@@ -154,7 +155,7 @@ pub fn synthesize_export_surface(
     symbols: &SymbolTable,
     signatures: &SignatureTable,
     const_values: &HashMap<SymbolId, CoreConst>,
-    optional_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
+    optional_defaults: Option<&FoldedOptionalDefaults>,
 ) -> ProjectExportSurface {
     let mut types = Vec::new();
     let mut consts = Vec::new();
@@ -367,14 +368,14 @@ fn method_member(
     next_vtable: &mut u16,
     symbols: &SymbolTable,
     signatures: &SignatureTable,
-    optional_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
+    optional_defaults: Option<&FoldedOptionalDefaults>,
 ) -> SurfaceMember {
-    let sig = member_signature(symbols, signatures, member.symbol);
+    let sig = member_signature_with_id(symbols, signatures, member.symbol);
     let (names, types, optional, defaults, variadic) = sig
-        .map(|sig| param_lists(sig, Some(member.symbol), optional_defaults))
+        .map(|(sig_id, sig)| param_lists(sig_id, sig, Some(member.symbol), optional_defaults))
         .unwrap_or_default();
     let return_type = sig
-        .and_then(|s| s.return_type.as_ref())
+        .and_then(|(_, s)| s.return_type.as_ref())
         .map(|t| param_type(t, false));
     SurfaceMember {
         name: member_name(symbols, member),
@@ -401,7 +402,7 @@ fn property_members(
     next_vtable: &mut u16,
     symbols: &SymbolTable,
     signatures: &SignatureTable,
-    optional_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
+    optional_defaults: Option<&FoldedOptionalDefaults>,
     out: &mut Vec<SurfaceMember>,
 ) {
     let name = member_name(symbols, member);
@@ -429,10 +430,8 @@ fn property_members(
     for (sig_id, invoke_kind, member_kind) in accessors {
         let Some(sig_id) = sig_id else { continue };
         let sig = signatures.get(sig_id);
-        // Property groups do not publish distinct accessor procedure symbols here yet,
-        // so folded defaults can only override method/function defaults for now.
         let (names, types, optional, defaults, variadic) = sig
-            .map(|sig| param_lists(sig, None, optional_defaults))
+            .map(|sig| param_lists(sig_id, sig, Some(member.symbol), optional_defaults))
             .unwrap_or_default();
         let return_type = sig
             .and_then(|s| s.return_type.as_ref())
@@ -523,8 +522,16 @@ fn member_signature<'a>(
     signatures: &'a SignatureTable,
     sym: SymbolId,
 ) -> Option<&'a Signature> {
+    member_signature_with_id(symbols, signatures, sym).map(|(_, sig)| sig)
+}
+
+fn member_signature_with_id<'a>(
+    symbols: &SymbolTable,
+    signatures: &'a SignatureTable,
+    sym: SymbolId,
+) -> Option<(SignatureId, &'a Signature)> {
     match symbols.symbol(sym).map(|s| &s.imp) {
-        Some(SymbolImpl::Signature(id)) => signatures.get(*id),
+        Some(SymbolImpl::Signature(id)) => signatures.get(*id).map(|sig| (*id, sig)),
         _ => None,
     }
 }
@@ -537,9 +544,10 @@ fn event_arity(symbols: &SymbolTable, signatures: &SignatureTable, sym: SymbolId
 
 #[allow(clippy::type_complexity)]
 fn param_lists(
+    sig_id: SignatureId,
     sig: &Signature,
     proc_symbol: Option<SymbolId>,
-    folded_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
+    folded_defaults: Option<&FoldedOptionalDefaults>,
 ) -> (
     Vec<String>,
     Vec<TypeLibParamType>,
@@ -556,9 +564,11 @@ fn param_lists(
         names.push(p.name.clone());
         types.push(param_type(&p.ty, p.mode == PassingMode::ByRef));
         optional.push(p.optional);
-        let folded = proc_symbol.and_then(|proc| {
-            folded_defaults
-                .and_then(|defaults| defaults.get(&(proc, index)))
+        let folded = folded_defaults.and_then(|defaults| {
+            defaults
+                .by_signature
+                .get(&(sig_id, index))
+                .or_else(|| proc_symbol.and_then(|proc| defaults.by_proc.get(&(proc, index))))
                 .cloned()
         });
         defaults.push(folded.or_else(|| p.default.as_ref().and_then(default_value_to_core_const)));

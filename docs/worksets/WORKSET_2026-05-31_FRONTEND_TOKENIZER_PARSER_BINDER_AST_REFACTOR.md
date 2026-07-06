@@ -1934,8 +1934,6 @@ Candidate bead units:
   constant-expression subset, deterministic Date literal defaults, and typed declared defaults
   (`""`, `False`, integer zero, Currency zero, and Date serial zero),
   exact i64 optional defaults outside the covered source-prior integer evaluator subset,
-  exported referenced-project property accessor defaults whose own defaults are non-literal
-  constant expressions,
   and broader optional call-entry combinations. The
   legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9
