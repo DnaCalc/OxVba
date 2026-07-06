@@ -1625,6 +1625,53 @@ fn public_declare_is_not_valid_in_object_modules() {
 }
 
 #[test]
+fn public_object_module_data_members_are_rejected() {
+    for (src, name, member) in [
+        ("Public Const K As Long = 1\r\n", "K", "constant"),
+        (
+            "Public Name As String * 8\r\n",
+            "Name",
+            "fixed-length string",
+        ),
+        ("Public Items() As Long\r\n", "Items", "array"),
+        ("Public Values(1 To 3) As Long\r\n", "Values", "array"),
+    ] {
+        let m = manifest("Proj", vec![class_module("Widget", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("public object-module data member should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::PublicObjectModuleDataMemberNotValid {
+                    name: actual_name,
+                    member: actual_member,
+                } if actual_name == name && *actual_member == member
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-PUBLIC-OBJECT-MODULE-DATA-NOT-VALID"
+        );
+    }
+
+    for src in [
+        "Private Const K As Long = 1\r\n",
+        "Private Name As String * 8\r\n",
+        "Private Items() As Long\r\n",
+        "Public Count As Long\r\n",
+        "Public Name As String\r\n",
+    ] {
+        let m = manifest("Proj", vec![class_module("Widget", src)]);
+        build_resolution_environment(&m, &NullTypeLibs).unwrap_or_else(|err| {
+            panic!("accepted object-module data declaration failed: {err:?}")
+        });
+    }
+}
+
+#[test]
 fn property_get_let_pairing_accepts_matching_accessors_in_any_order() {
     for src in [
         "Property Get Foo(ByVal index As Long) As String\r\nEnd Property\r\n\

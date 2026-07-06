@@ -248,6 +248,8 @@ pub enum SymbolModelError {
     PublicTypeNotValidInObjectModule { name: String },
     #[error("public Declare `{name}` is not valid in object modules")]
     PublicDeclareNotValidInObjectModule { name: String },
+    #[error("public {member} `{name}` is not valid in object modules")]
+    PublicObjectModuleDataMemberNotValid { name: String, member: &'static str },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -441,6 +443,14 @@ impl SymbolModelError {
                 format!("public Declare `{name}` is not valid in object modules"),
             )
             .with_help("Declare external procedures in class, document, form, and extension modules as Private."),
+            SymbolModelError::PublicObjectModuleDataMemberNotValid { name, member } => {
+                Diagnostic::error(
+                    "SYM-E-PUBLIC-OBJECT-MODULE-DATA-NOT-VALID",
+                    DiagnosticPhase::Symbol,
+                    format!("public {member} `{name}` is not valid in object modules"),
+                )
+                .with_help("Use Private storage or expose the value through Property procedures.")
+            }
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,

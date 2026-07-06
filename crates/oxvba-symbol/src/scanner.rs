@@ -266,6 +266,19 @@ impl ScanCtx<'_> {
                     let name = normalize_identifier_token(token.text);
                     let declared_type =
                         declared_var_type_with_default(declarator, &self.default_types, !is_const);
+                    if module_level
+                        && self.module_kind != ModuleKind::Procedural
+                        && vis == Visibility::Public
+                    {
+                        if let Some(member) =
+                            public_object_module_data_member_kind(is_const, &declared_type)
+                        {
+                            return Err(SymbolModelError::PublicObjectModuleDataMemberNotValid {
+                                name: name.to_string(),
+                                member,
+                            });
+                        }
+                    }
                     if is_const && declarator.is_with_events() {
                         return Err(SymbolModelError::InvalidWithEventsConstDeclaration {
                             name: name.to_string(),
@@ -1286,6 +1299,17 @@ fn property_set_reference_type_compatible(ty: &VarTypeRef) -> bool {
 
 fn withevents_field_type_compatible(ty: &VarTypeRef) -> bool {
     matches!(ty, VarTypeRef::Object(_))
+}
+
+fn public_object_module_data_member_kind(is_const: bool, ty: &VarTypeRef) -> Option<&'static str> {
+    if is_const {
+        return Some("constant");
+    }
+    match ty {
+        VarTypeRef::FixedString(_) => Some("fixed-length string"),
+        VarTypeRef::Array(_) | VarTypeRef::FixedArray { .. } => Some("array"),
+        _ => None,
+    }
 }
 
 fn property_accessor_signature(

@@ -1770,8 +1770,10 @@ Candidate bead units:
   UDT metadata is published from an object module; public or implicit-public `Declare` statements
   in class/object modules now reject with `SYM-E-PUBLIC-DECLARE-NOT-VALID-IN-OBJECT-MODULE` while
   explicit-private class-module declares and public/implicit-public standard-module declares remain
-  accepted; final `Property Let`/`Set` writer slots also publish `ByVal` signature metadata while
-  preceding indexed arguments keep their declared/default modes;
+  accepted; public object-module constants, fixed-length string fields, and array fields now reject
+  with `SYM-E-PUBLIC-OBJECT-MODULE-DATA-NOT-VALID` while private storage and ordinary public scalar
+  fields remain accepted; final `Property Let`/`Set` writer slots also publish `ByVal` signature
+  metadata while preceding indexed arguments keep their declared/default modes;
   duplicate property accessors plus mismatched `Property Get`/`Let`, `Property Get`/`Set`, and
   `Property Let`/`Set` index/value/reference pairings reject through scanner-owned
   property-accessor diagnostics, with Set-side index pairing currently enforcing count/type rather

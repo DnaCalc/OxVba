@@ -1512,6 +1512,32 @@ fn class_module_public_declare_is_bind_error() {
 }
 
 #[test]
+fn class_module_public_data_members_are_bind_errors() {
+    for (member_src, expected_name, expected_member) in [
+        ("Public Const K As Long = 1\n", "K", "constant"),
+        ("Public Name As String * 8\n", "Name", "fixed-length string"),
+        ("Public Items() As Long\n", "Items", "array"),
+        ("Public Values(1 To 3) As Long\n", "Values", "array"),
+    ] {
+        let manifest = manifest_modules(&[
+            ("Main", ModuleKind::Procedural, "Sub Main()\nEnd Sub\n"),
+            ("Widget", ModuleKind::Class, member_src),
+        ]);
+        let err = format!(
+            "{:?}",
+            bind_program(&manifest, &NullTypeLibs)
+                .expect_err("public data member in a class module should fail binding")
+        );
+        assert!(
+            err.contains("PublicObjectModuleDataMemberNotValid")
+                && err.contains(&format!("name: \"{expected_name}\""))
+                && err.contains(&format!("member: \"{expected_member}\"")),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);
@@ -2767,10 +2793,11 @@ fn byref_object_reassign_through_proc() {
 
 #[test]
 fn redim_member_array_then_use() {
-    // ReDim a class instance's array field through a dotted target, then write and
+    // ReDim a private class array field through a dotted Me target, then write and
     // read an element of it (the resized array must be stored back into the field).
-    let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Set b = New Box\n    ReDim b.arr(5)\n    b.arr(2) = 7\n    r = b.arr(2)\nEnd Sub\n";
-    let box_cls = "Public arr() As Long\n";
+    let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Set b = New Box\n    r = b.UseIt()\nEnd Sub\n";
+    let box_cls = "Private arr() As Long\n\n\
+                   Public Function UseIt() As Long\n    ReDim Me.arr(5)\n    Me.arr(2) = 7\n    UseIt = Me.arr(2)\nEnd Function\n";
     assert_eq!(run_class_main_local0(main, "Box", box_cls), Some(7.0));
 }
 
