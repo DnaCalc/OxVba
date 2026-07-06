@@ -199,6 +199,115 @@ fn held_reference_survives_default_slot_reset() {
 }
 
 #[test]
+fn failed_predeclared_initialize_clears_default_slot_for_retry() {
+    let counter = predeclared_class_module(
+        "Counter",
+        "Private n As Long\n\
+         Private Sub Class_Initialize()\n\
+         \x20   Main.Log = Main.Log & \"I;\"\n\
+         \x20   If Main.FailOnce Then\n\
+         \x20       Main.FailOnce = False\n\
+         \x20       Err.Raise 5\n\
+         \x20   End If\n\
+         \x20   n = 10\n\
+         End Sub\n\
+         Private Sub Class_Terminate()\n\
+         \x20   Main.Log = Main.Log & \"T;\"\n\
+         End Sub\n\
+         Public Sub Bump()\n\
+         \x20   n = n + 1\n\
+         End Sub\n\
+         Public Property Get Total() As Long\n\
+         \x20   Total = n\n\
+         End Property\n",
+    );
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Public Log As String\n\
+                 Public FailOnce As Boolean\n\
+                 Sub Main()\n\
+                 \x20   FailOnce = True\n\
+                 \x20   On Error Resume Next\n\
+                 \x20   Counter.Bump\n\
+                 \x20   Dim firstErr As Long\n\
+                 \x20   firstErr = Err.Number\n\
+                 \x20   Err.Clear\n\
+                 \x20   Dim afterFail As String\n\
+                 \x20   afterFail = Log\n\
+                 \x20   result = CStr(Counter.Total) & \"|\" & afterFail & \"|\" & Log & \"|\" & CStr(firstErr)\n\
+                 End Sub\n",
+            ),
+            counter,
+        ],
+        vec![],
+    );
+
+    assert_contains_string(
+        run_project_closure(Executor::Vm3, &[app]),
+        "10|I;T;|I;T;I;|5",
+    );
+}
+
+#[test]
+fn failed_predeclared_initialize_preserves_replaced_default_slot() {
+    let counter = predeclared_class_module(
+        "Counter",
+        "Private n As Long\n\
+         Private Sub Class_Initialize()\n\
+         \x20   Main.Log = Main.Log & \"I;\"\n\
+         \x20   If Main.FailOnce Then\n\
+         \x20       Main.FailOnce = False\n\
+         \x20       Main.ReplaceDefault\n\
+         \x20       Err.Raise 5\n\
+         \x20   End If\n\
+         \x20   n = 10\n\
+         End Sub\n\
+         Private Sub Class_Terminate()\n\
+         \x20   Main.Log = Main.Log & \"T;\"\n\
+         End Sub\n\
+         Public Property Get Total() As Long\n\
+         \x20   Total = n\n\
+         End Property\n",
+    );
+    let app = project(
+        "App",
+        vec![
+            proc_module(
+                "Main",
+                "Public result As Variant\n\
+                 Public Log As String\n\
+                 Public FailOnce As Boolean\n\
+                 Public Sub ReplaceDefault()\n\
+                 \x20   Set Counter = New Counter\n\
+                 End Sub\n\
+                 Sub Main()\n\
+                 \x20   FailOnce = True\n\
+                 \x20   On Error Resume Next\n\
+                 \x20   Counter.Total\n\
+                 \x20   Dim firstErr As Long\n\
+                 \x20   firstErr = Err.Number\n\
+                 \x20   Err.Clear\n\
+                 \x20   Dim afterFail As String\n\
+                 \x20   afterFail = Log\n\
+                 \x20   result = CStr(Counter.Total) & \"|\" & afterFail & \"|\" & Log & \"|\" & CStr(firstErr)\n\
+                 End Sub\n",
+            ),
+            counter,
+        ],
+        vec![],
+    );
+
+    assert_contains_string(
+        run_project_closure(Executor::Vm3, &[app]),
+        "10|I;I;T;|I;I;T;|5",
+    );
+}
+
+#[test]
 fn cross_project_set_predeclared_nothing_resets_owning_default_slot() {
     let host = || {
         predeclared_class_module(

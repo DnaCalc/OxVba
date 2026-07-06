@@ -2980,7 +2980,20 @@ impl<'h> Vm3<'h> {
             .predeclared_singletons
             .insert(class_idx, value.clone());
         if let Some(init) = initialize {
-            self.run_proc_with_me(self.cur, init, value.clone(), &[], false)?;
+            if let Err(err) = self.run_proc_with_me(self.cur, init, value.clone(), &[], false) {
+                let failed_identity = object_identity(&value);
+                let slot_still_points_to_failed_instance = self.exec.programs[self.cur]
+                    .predeclared_singletons
+                    .get(&class_idx)
+                    .map(|current| object_identity(current) == failed_identity)
+                    .unwrap_or(false);
+                if slot_still_points_to_failed_instance {
+                    self.exec.programs[self.cur]
+                        .predeclared_singletons
+                        .remove(&class_idx);
+                }
+                return Err(err);
+            }
         }
         Ok(value)
     }
