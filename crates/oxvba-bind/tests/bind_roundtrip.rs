@@ -1947,6 +1947,18 @@ fn property_let_assigned_value_is_byval_even_when_declared_byref() {
                Public Sub Main()\n    Dim target As Long\n    Item(target) = 3\nEnd Sub\n\n\
                Public Property Let Item(ByRef target As Long, ByRef newValue As Long)\n    target = newValue\n    mV = target\nEnd Property\n";
     let program = bind(src);
+    let setter = program
+        .procs
+        .iter()
+        .find(|proc| {
+            proc.name.eq_ignore_ascii_case("Item")
+                && proc.kind == oxvba_bundle::ProcedureKind::PropertyLet
+        })
+        .expect("Property Let procedure should be present");
+    assert_eq!(setter.params.len(), 2);
+    assert!(setter.params[0].by_ref);
+    assert!(!setter.params[1].by_ref);
+
     let calls = top_level_calls(&program);
     let (_, args) = calls
         .into_iter()
@@ -2016,6 +2028,20 @@ fn property_set_assigned_object_is_byval_after_byref_index_arg() {
         &NullTypeLibs,
     )
     .expect("bind");
+    let setter = program
+        .procs
+        .iter()
+        .find(|proc| {
+            proc.name.eq_ignore_ascii_case("Item")
+                && proc.kind == oxvba_bundle::ProcedureKind::PropertySet
+        })
+        .expect("Property Set procedure should be present");
+    assert_eq!(setter.params.len(), 3);
+    assert_eq!(setter.params[0].name, "Me");
+    assert!(!setter.params[0].by_ref);
+    assert!(setter.params[1].by_ref);
+    assert!(!setter.params[2].by_ref);
+
     let calls = top_level_calls(&program);
     let (_, args) = calls
         .into_iter()

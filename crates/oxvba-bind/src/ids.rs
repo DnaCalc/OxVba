@@ -621,7 +621,15 @@ fn build_frame(
                 return Err(BindError::ArrayArgumentMustBeByRef);
             }
             // A ParamArray is a fresh local array, never an alias — force ByVal.
-            let by_ref = !variadic
+            // Property Let/Set assigned-value parameters are also runtime ByVal:
+            // indexed params before the final value keep their declared direction.
+            let setter_value_param = matches!(
+                kind,
+                ProcedureKind::PropertyLet | ProcedureKind::PropertySet
+            ) && signature
+                .is_some_and(|s| param_index + 1 == s.params.len());
+            let by_ref = !setter_value_param
+                && !variadic
                 && sig_param
                     .map(|p| p.mode == PassingMode::ByRef)
                     .unwrap_or(true);
