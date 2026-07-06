@@ -50,7 +50,8 @@ use oxvba_bundle::coreir::{
     CoreProgram, CoreStmt, CoreUnOp, CoreValue, ErrField, ErrorOp, LabelId as CoreLabelId,
 };
 use oxvba_bundle::{
-    AssignmentIntent, AssignmentTargetKind, NumericCoerceTarget, NumericMode, ProjectMemberKind,
+    ArrayElementType, AssignmentIntent, AssignmentTargetKind, NumericCoerceTarget, NumericMode,
+    ProjectMemberKind, VarTypeRef,
 };
 
 use oxvba_com::{TypeLibInterfaceMetadata, TypeLibMemberInvokeKind, TypeLibMemberMetadata};
@@ -66,7 +67,7 @@ use crate::passes::normalize_assigns;
 use crate::program::{
     OxClass, OxClassAsNewField, OxClassMethod, OxFunc, OxGlobal, OxLocal, OxParamInfo, OxProgram,
 };
-use crate::ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy};
+use crate::ty::{ArrayShape, ClassId, IfaceId, ObjClass, OxTy, RecordLayoutId};
 use crate::value::{
     ArithOp, CmpOp, DeclarePtrWriteback, LogicalOp, OxArg, OxCallArg, OxCoerceTarget, OxConst,
     OxNativeCallee, OxOperand, OxPlace,
@@ -144,6 +145,7 @@ pub fn elaborate(program: &CoreProgram) -> Result<OxProgram> {
         funcs,
         globals,
         classes,
+        record_layouts: resolver.record_layouts.clone(),
         com_interfaces: com.interfaces,
         // Resolve the entry the same way `linearize`'s `select_entry` does, so vm3/JIT
         // run the same proc vm2 runs (and expose the same entry frame): the recorded
@@ -238,6 +240,8 @@ fn lower_as_new(binding: &CoreAsNew) -> OxAsNew {
 /// through the cross-bundle import path).
 struct ProgramResolver {
     classes: HashMap<String, ClassId>,
+    records: HashMap<String, RecordLayoutId>,
+    record_layouts: Vec<Vec<ArrayElementType>>,
 }
 
 impl ProgramResolver {
@@ -248,15 +252,119 @@ impl ProgramResolver {
             .enumerate()
             .map(|(i, c)| (c.name.to_ascii_lowercase(), ClassId(i)))
             .collect();
-        Self { classes }
+        let mut this = Self {
+            classes,
+            records: HashMap::new(),
+            record_layouts: Vec::new(),
+        };
+        for global in &program.globals {
+            this.harvest_record_layout_from_decl(&global.ty, global.array_element.as_ref());
+        }
+        for proc in &program.procs {
+            for local in &proc.locals {
+                this.harvest_record_layout_from_decl(&local.ty, local.array_element.as_ref());
+            }
+            this.harvest_record_layouts(&proc.body);
+        }
+        this
+    }
+
+    fn harvest_record_layouts(&mut self, stmts: &[CoreStmt]) {
+        for stmt in stmts {
+            self.harvest_record_layout(stmt);
+        }
+    }
+
+    fn harvest_record_layout(&mut self, stmt: &CoreStmt) {
+        match stmt {
+            CoreStmt::Assign {
+                value: CoreValue::NewRecord { fields },
+                target_type_name,
+                ..
+            } => {
+                self.intern_record_layout(target_type_name, fields.clone());
+            }
+            CoreStmt::If { arms, else_body } => {
+                for arm in arms {
+                    self.harvest_record_layouts(&arm.body);
+                }
+                self.harvest_record_layouts(else_body);
+            }
+            CoreStmt::DoLoop { body, .. }
+            | CoreStmt::ForRange { body, .. }
+            | CoreStmt::ForEach { body, .. }
+            | CoreStmt::With { body, .. } => self.harvest_record_layouts(body),
+            CoreStmt::Select {
+                cases, case_else, ..
+            } => {
+                for case in cases {
+                    self.harvest_record_layouts(&case.body);
+                }
+                self.harvest_record_layouts(case_else);
+            }
+            _ => {}
+        }
+    }
+
+    fn harvest_record_layout_from_decl(
+        &mut self,
+        ty: &VarTypeRef,
+        array_element: Option<&ArrayElementType>,
+    ) {
+        let Some(array_element) = array_element else {
+            return;
+        };
+        match ty {
+            VarTypeRef::Array(element) | VarTypeRef::FixedArray { element, .. } => {
+                self.harvest_record_layout_from_array_element_ty(element, array_element);
+            }
+            _ => {}
+        }
+    }
+
+    fn harvest_record_layout_from_array_element_ty(
+        &mut self,
+        ty: &VarTypeRef,
+        array_element: &ArrayElementType,
+    ) {
+        let ArrayElementType::Record(fields) = array_element else {
+            return;
+        };
+        if let Some(name) = record_decl_type_name(ty) {
+            self.intern_record_layout(name, fields.clone());
+        }
+    }
+
+    fn intern_record_layout(&mut self, name: &str, fields: Vec<ArrayElementType>) {
+        if name.is_empty() {
+            return;
+        }
+        let folded = name.to_ascii_lowercase();
+        if self.records.contains_key(&folded) {
+            return;
+        }
+        let id = RecordLayoutId(self.record_layouts.len());
+        self.record_layouts.push(fields);
+        self.records.insert(folded, id);
+    }
+}
+
+fn record_decl_type_name(ty: &VarTypeRef) -> Option<&str> {
+    match ty {
+        VarTypeRef::Udt(name) | VarTypeRef::Object(name) => Some(name.as_str()),
+        _ => None,
     }
 }
 
 impl NameResolver for ProgramResolver {
     fn resolve_type_name(&self, name: &str) -> ResolvedTypeName {
-        match self.classes.get(&name.to_ascii_lowercase()) {
+        let folded = name.to_ascii_lowercase();
+        match self.classes.get(&folded) {
             Some(&id) => ResolvedTypeName::Class(id),
-            None => ResolvedTypeName::Untyped,
+            None => match self.records.get(&folded) {
+                Some(&id) => ResolvedTypeName::Record(id),
+                None => ResolvedTypeName::Untyped,
+            },
         }
     }
 }

@@ -18,7 +18,7 @@ use oxvba_com::TypeLibMemberMetadata;
 use crate::com::{ComInterface, ComMethodRef};
 use crate::ids::{BlockId, FuncId, LocalId};
 use crate::inst::{OxAsNew, OxBlock};
-use crate::ty::{IfaceId, OxTy};
+use crate::ty::{IfaceId, OxTy, RecordLayoutId};
 
 /// Parameter-specific facts for a [`OxLocal`] that is a procedure parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +121,10 @@ pub struct OxProgram {
     pub globals: Vec<OxGlobal>,
     /// Project classes, indexed by [`crate::ty::ClassId`].
     pub classes: Vec<OxClass>,
+    /// UDT record layouts, indexed by [`RecordLayoutId`]. Each entry is the recursive
+    /// field layout used by the runtime `VbaRecord` carrier.
+    #[serde(default)]
+    pub record_layouts: Vec<Vec<ArrayElementType>>,
     /// Entry procedure (`None` ⇒ `Main` or the first proc).
     pub entry: Option<FuncId>,
     /// Hidden once-per-run global/static initializer.
@@ -165,5 +169,10 @@ impl OxProgram {
         self.com_interface(method.iface)?
             .com_members()?
             .get(method.member)
+    }
+
+    /// The recursive field layout for a UDT record type.
+    pub fn record_layout(&self, id: RecordLayoutId) -> Option<&[ArrayElementType]> {
+        self.record_layouts.get(id.0).map(Vec::as_slice)
     }
 }
