@@ -3,9 +3,9 @@
 //! This crate is intentionally free of Cranelift and interpreter-frame state. It hosts
 //! the VM-agnostic cells and helper decisions that both engines must share.
 
-use oxvba_bundle::{NativeImplId, NumericCoerceTarget, NumericMode};
+use oxvba_bundle::{NativeImplId, NumericCoerceTarget, NumericMode, StringCompareMode};
 use oxvba_com::ComSubscriptionToken;
-use oxvba_eval::arith::{self, ArithError};
+use oxvba_eval::arith::{self, ArithError, CmpOp as EvalCmpOp};
 use oxvba_eval::typed;
 use oxvba_hal::HostServices;
 use oxvba_lib::LibContext;
@@ -413,6 +413,7 @@ pub fn maybe_drain_with_bridge(exec: &mut ExecState<'_>) -> Result<(), Fault> {
 /// engine. Cross-engine runtime state lives here.
 pub struct ExecState<'h> {
     pub programs: Vec<LoadedProgram<'h>>,
+    pub default_error_source: String,
     pub err_engine: ErrEngine,
     pub events: EventFabric<'h>,
     pub lib: LibContext,
@@ -427,6 +428,7 @@ impl<'h> ExecState<'h> {
     pub fn new(host: &'h dyn HostServices) -> Self {
         Self {
             programs: Vec::new(),
+            default_error_source: "VBAProject".to_string(),
             err_engine: ErrEngine::default(),
             events: EventFabric::default(),
             lib: LibContext::default(),
@@ -452,6 +454,23 @@ pub const RT_ARITH_MUL: u32 = 3;
 pub const RT_ARITH_DIV: u32 = 4;
 pub const RT_ARITH_INT_DIV: u32 = 5;
 pub const RT_ARITH_MOD: u32 = 6;
+pub const RT_ARITH_POW: u32 = 7;
+
+pub const RT_LOGIC_AND: u32 = 1;
+pub const RT_LOGIC_OR: u32 = 2;
+pub const RT_LOGIC_XOR: u32 = 3;
+pub const RT_LOGIC_EQV: u32 = 4;
+pub const RT_LOGIC_IMP: u32 = 5;
+
+pub const RT_COMPARE_EQ: u32 = 1;
+pub const RT_COMPARE_NE: u32 = 2;
+pub const RT_COMPARE_LT: u32 = 3;
+pub const RT_COMPARE_LE: u32 = 4;
+pub const RT_COMPARE_GT: u32 = 5;
+pub const RT_COMPARE_GE: u32 = 6;
+
+pub const RT_STRING_COMPARE_BINARY: u32 = 0;
+pub const RT_STRING_COMPARE_TEXT: u32 = 1;
 
 pub const RT_NUMERIC_WIDENING: u32 = 0;
 pub const RT_NUMERIC_CHECKED_BYTE: u32 = 1;
@@ -462,14 +481,43 @@ pub const RT_NUMERIC_CHECKED_SINGLE: u32 = 5;
 pub const RT_NUMERIC_CHECKED_DOUBLE: u32 = 6;
 pub const RT_NUMERIC_CHECKED_CURRENCY: u32 = 7;
 pub const RT_NUMERIC_CHECKED_DATE: u32 = 8;
+pub const RT_NUMERIC_CHECKED_BOOLEAN: u32 = 9;
 
 pub const RT_FAULT_DISP_UNWIND: i32 = 0;
 pub const RT_FAULT_DISP_RESUME_NEXT: i32 = 1;
 pub const RT_FAULT_DISP_HANDLER: i32 = 2;
 
+pub const RT_ERROR_HANDLER_GOTO_0: u32 = 0;
+pub const RT_ERROR_HANDLER_RESUME_NEXT: u32 = 1;
+pub const RT_ERROR_HANDLER_GOTO_LABEL: u32 = 2;
+pub const RT_ERROR_HANDLER_GOTO_MINUS_1: u32 = 3;
+
+pub const RT_ERR_FIELD_NUMBER: u32 = 0;
+pub const RT_ERR_FIELD_DESCRIPTION: u32 = 1;
+pub const RT_ERR_FIELD_SOURCE: u32 = 2;
+pub const RT_ERR_FIELD_HELP_FILE: u32 = 3;
+pub const RT_ERR_FIELD_HELP_CONTEXT: u32 = 4;
+pub const RT_ERR_FIELD_LAST_DLL_ERROR: u32 = 5;
+
 pub const RT_RESUME_SAME: u32 = 0;
 pub const RT_RESUME_NEXT: u32 = 1;
 pub const RT_RESUME_LABEL: u32 = 2;
+
+const RT_ERROR_MODE_NONE: u32 = 0;
+const RT_ERROR_MODE_RESUME_NEXT: u32 = 1;
+const RT_ERROR_MODE_GOTO: u32 = 2;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RtSavedErrState {
+    pub error_mode_kind: u32,
+    pub error_mode_block: u32,
+    pub active_error_present: u32,
+    pub active_resume: u32,
+    pub active_resume_next: u32,
+    pub active_handler_kind: u32,
+    pub active_handler_block: u32,
+}
 
 /// Opaque raw pointer type used by C-ABI shims.
 pub enum RawExecState {}
@@ -495,7 +543,9 @@ unsafe fn state_from_raw<'a>(state: *mut RawExecState) -> Option<&'a mut ExecSta
 fn seat_fault(state: *mut RawExecState, fault: Fault) -> i32 {
     // SAFETY: the raw pointer is validated by `state_from_raw`.
     if let Some(state) = unsafe { state_from_raw(state) } {
-        state.err_engine.raise(fault, "VBAProject");
+        state
+            .err_engine
+            .raise(fault, state.default_error_source.clone());
     }
     ST_FAULT
 }
@@ -534,9 +584,105 @@ fn numeric_mode_from_raw(raw: u32) -> Result<NumericMode, Fault> {
         RT_NUMERIC_CHECKED_DOUBLE => NumericMode::Checked(NumericCoerceTarget::Double),
         RT_NUMERIC_CHECKED_CURRENCY => NumericMode::Checked(NumericCoerceTarget::Currency),
         RT_NUMERIC_CHECKED_DATE => NumericMode::Checked(NumericCoerceTarget::Date),
+        RT_NUMERIC_CHECKED_BOOLEAN => NumericMode::Checked(NumericCoerceTarget::Boolean),
         _ => return Err(Fault::new(5, format!("unknown numeric mode {raw}"))),
     };
     Ok(mode)
+}
+
+fn numeric_target_from_raw(raw: u32) -> Result<NumericCoerceTarget, Fault> {
+    let target = match raw {
+        RT_NUMERIC_CHECKED_BYTE => NumericCoerceTarget::Byte,
+        RT_NUMERIC_CHECKED_INTEGER => NumericCoerceTarget::Integer,
+        RT_NUMERIC_CHECKED_LONG => NumericCoerceTarget::Long,
+        RT_NUMERIC_CHECKED_LONGLONG => NumericCoerceTarget::LongLong,
+        RT_NUMERIC_CHECKED_SINGLE => NumericCoerceTarget::Single,
+        RT_NUMERIC_CHECKED_DOUBLE => NumericCoerceTarget::Double,
+        RT_NUMERIC_CHECKED_CURRENCY => NumericCoerceTarget::Currency,
+        RT_NUMERIC_CHECKED_DATE => NumericCoerceTarget::Date,
+        RT_NUMERIC_CHECKED_BOOLEAN => NumericCoerceTarget::Boolean,
+        _ => return Err(Fault::new(5, format!("unknown numeric target {raw}"))),
+    };
+    Ok(target)
+}
+
+fn compare_op_from_raw(raw: u32) -> Result<EvalCmpOp, Fault> {
+    let op = match raw {
+        RT_COMPARE_EQ => EvalCmpOp::Eq,
+        RT_COMPARE_NE => EvalCmpOp::Ne,
+        RT_COMPARE_LT => EvalCmpOp::Lt,
+        RT_COMPARE_LE => EvalCmpOp::Le,
+        RT_COMPARE_GT => EvalCmpOp::Gt,
+        RT_COMPARE_GE => EvalCmpOp::Ge,
+        _ => return Err(Fault::new(5, format!("unknown compare op {raw}"))),
+    };
+    Ok(op)
+}
+
+fn string_compare_mode_from_raw(raw: u32) -> Result<StringCompareMode, Fault> {
+    let mode = match raw {
+        RT_STRING_COMPARE_BINARY => StringCompareMode::Binary,
+        RT_STRING_COMPARE_TEXT => StringCompareMode::Text,
+        _ => return Err(Fault::new(5, format!("unknown string compare mode {raw}"))),
+    };
+    Ok(mode)
+}
+
+fn error_mode_to_raw(mode: ErrorMode) -> (u32, u32) {
+    match mode {
+        ErrorMode::None => (RT_ERROR_MODE_NONE, 0),
+        ErrorMode::ResumeNext => (RT_ERROR_MODE_RESUME_NEXT, 0),
+        ErrorMode::Goto(block) => (RT_ERROR_MODE_GOTO, block.0 as u32),
+    }
+}
+
+fn error_mode_from_raw(kind: u32, block: u32) -> Result<ErrorMode, Fault> {
+    match kind {
+        RT_ERROR_MODE_NONE => Ok(ErrorMode::None),
+        RT_ERROR_MODE_RESUME_NEXT => Ok(ErrorMode::ResumeNext),
+        RT_ERROR_MODE_GOTO => Ok(ErrorMode::Goto(BlockId(block as usize))),
+        _ => Err(Fault::new(5, format!("unknown error mode {kind}"))),
+    }
+}
+
+fn saved_err_to_raw(saved: SavedErrState) -> RtSavedErrState {
+    let (error_mode_kind, error_mode_block) = error_mode_to_raw(saved.error_mode);
+    let mut raw = RtSavedErrState {
+        error_mode_kind,
+        error_mode_block,
+        ..RtSavedErrState::default()
+    };
+    if let Some(active) = saved.active_error {
+        let (active_handler_kind, active_handler_block) = error_mode_to_raw(active.handler);
+        raw.active_error_present = 1;
+        raw.active_resume = active.resume.0 as u32;
+        raw.active_resume_next = active.resume_next.0 as u32;
+        raw.active_handler_kind = active_handler_kind;
+        raw.active_handler_block = active_handler_block;
+    }
+    raw
+}
+
+fn saved_err_from_raw(raw: RtSavedErrState) -> Result<SavedErrState, Fault> {
+    let error_mode = error_mode_from_raw(raw.error_mode_kind, raw.error_mode_block)?;
+    let active_error = match raw.active_error_present {
+        0 => None,
+        1 => Some(ResumePoint {
+            resume: BlockId(raw.active_resume as usize),
+            resume_next: BlockId(raw.active_resume_next as usize),
+            handler: error_mode_from_raw(raw.active_handler_kind, raw.active_handler_block)?,
+        }),
+        other => {
+            return Err(Fault::new(
+                5,
+                format!("unknown active error presence flag {other}"),
+            ));
+        }
+    };
+    Ok(SavedErrState {
+        error_mode,
+        active_error,
+    })
 }
 
 fn release_variant_slot(value: *mut Variant, expected: Option<VarType>) -> i32 {
@@ -586,6 +732,146 @@ pub extern "C" fn rt_mul_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: 
             Err(err) => seat_fault(state, Fault::from_arith(err)),
         }
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_div_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_binop(typed::CheckedIntBinOp::Div, i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_i32)
+        {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_rem_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_binop(typed::CheckedIntBinOp::Rem, i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_i32)
+        {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_add_i16(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_add(i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_i16)
+        {
+            Ok(value) => write_out(state, out, i32::from(value)),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_sub_i16(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_sub(i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_i16)
+        {
+            Ok(value) => write_out(state, out, i32::from(value)),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_mul_i16(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_mul(i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_i16)
+        {
+            Ok(value) => write_out(state, out, i32::from(value)),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_add_u8(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_add(i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_u8)
+        {
+            Ok(value) => write_out(state, out, i32::from(value)),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_sub_u8(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_sub(i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_u8)
+        {
+            Ok(value) => write_out(state, out, i32::from(value)),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_mul_u8(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+    with_status(|| {
+        match typed::checked_i64_mul(i64::from(lhs), i64::from(rhs))
+            .and_then(typed::narrow_i64_to_u8)
+        {
+            Ok(value) => write_out(state, out, i32::from(value)),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_add_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+    with_status(|| match typed::checked_i64_add(lhs, rhs) {
+        Ok(value) => write_out(state, out, value),
+        Err(err) => seat_fault(state, Fault::from_arith(err)),
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_sub_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+    with_status(|| match typed::checked_i64_sub(lhs, rhs) {
+        Ok(value) => write_out(state, out, value),
+        Err(err) => seat_fault(state, Fault::from_arith(err)),
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_mul_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+    with_status(|| match typed::checked_i64_mul(lhs, rhs) {
+        Ok(value) => write_out(state, out, value),
+        Err(err) => seat_fault(state, Fault::from_arith(err)),
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_div_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+    with_status(
+        || match typed::checked_i64_binop(typed::CheckedIntBinOp::Div, lhs, rhs) {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        },
+    )
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_rem_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+    with_status(
+        || match typed::checked_i64_binop(typed::CheckedIntBinOp::Rem, lhs, rhs) {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        },
+    )
 }
 
 #[unsafe(no_mangle)]
@@ -662,9 +948,190 @@ pub extern "C" fn rt_arith_v(
             RT_ARITH_DIV => arith::div(lhs, rhs),
             RT_ARITH_INT_DIV => arith::int_div(lhs, rhs, mode),
             RT_ARITH_MOD => arith::modulo(lhs, rhs, mode),
+            RT_ARITH_POW => arith::pow(lhs, rhs),
             _ => return seat_fault(state, Fault::new(5, format!("unknown arithmetic op {op}"))),
         };
         match result {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_neg_v(
+    state: *mut RawExecState,
+    mode: u32,
+    src: *const Variant,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let src = match read_in(state, src, "src") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let mode = match numeric_mode_from_raw(mode) {
+            Ok(mode) => mode,
+            Err(fault) => return seat_fault(state, fault),
+        };
+        match arith::neg(src, mode) {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_logical_v(
+    state: *mut RawExecState,
+    op: u32,
+    lhs: *const Variant,
+    rhs: *const Variant,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let lhs = match read_in(state, lhs, "lhs") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let rhs = match read_in(state, rhs, "rhs") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let result = match op {
+            RT_LOGIC_AND => arith::and(lhs, rhs),
+            RT_LOGIC_OR => arith::or(lhs, rhs),
+            RT_LOGIC_XOR => arith::xor(lhs, rhs),
+            RT_LOGIC_EQV => arith::eqv(lhs, rhs),
+            RT_LOGIC_IMP => arith::imp(lhs, rhs),
+            _ => return seat_fault(state, Fault::new(5, format!("unknown logical op {op}"))),
+        };
+        match result {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_not_v(
+    state: *mut RawExecState,
+    src: *const Variant,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let src = match read_in(state, src, "src") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        match arith::not(src) {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_truthy_v(state: *mut RawExecState, src: *const Variant, out: *mut i32) -> i32 {
+    with_status(|| {
+        let src = match read_in(state, src, "src") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        match arith::is_truthy(src) {
+            Ok(value) => write_out(state, out, i32::from(u8::from(value))),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_compare_v(
+    state: *mut RawExecState,
+    op: u32,
+    mode: u32,
+    lhs: *const Variant,
+    rhs: *const Variant,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let lhs = match read_in(state, lhs, "lhs") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let rhs = match read_in(state, rhs, "rhs") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let op = match compare_op_from_raw(op) {
+            Ok(op) => op,
+            Err(fault) => return seat_fault(state, fault),
+        };
+        let mode = match string_compare_mode_from_raw(mode) {
+            Ok(mode) => mode,
+            Err(fault) => return seat_fault(state, fault),
+        };
+        match arith::compare(lhs, rhs, mode, op) {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_coerce_numeric_v(
+    state: *mut RawExecState,
+    target: u32,
+    src: *const Variant,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let src = match read_in(state, src, "src") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let target = match numeric_target_from_raw(target) {
+            Ok(target) => target,
+            Err(fault) => return seat_fault(state, fault),
+        };
+        match arith::coerce_numeric(src, target) {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_coerce_string_v(
+    state: *mut RawExecState,
+    src: *const Variant,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let src = match read_in(state, src, "src") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        match arith::coerce_string(src) {
+            Ok(value) => write_out(state, out, value),
+            Err(err) => seat_fault(state, Fault::from_arith(err)),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_coerce_fixed_string_v(
+    state: *mut RawExecState,
+    len: u32,
+    src: *const Variant,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let src = match read_in(state, src, "src") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        match arith::coerce_fixed_string(src, len as usize) {
             Ok(value) => write_out(state, out, value),
             Err(err) => seat_fault(state, Fault::from_arith(err)),
         }
@@ -735,6 +1202,18 @@ pub extern "C" fn rt_lib_invoke(
     argc: usize,
     out: *mut Variant,
 ) -> i32 {
+    rt_lib_invoke_with_policy(state, native_id, args, argc, 0, out)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_lib_invoke_with_policy(
+    state: *mut RawExecState,
+    native_id: u32,
+    args: *const Variant,
+    argc: usize,
+    string_typed_alias: i32,
+    out: *mut Variant,
+) -> i32 {
     with_status(|| {
         let id = match NativeImplId::ALL.get(native_id as usize).copied() {
             Some(id) => id,
@@ -753,6 +1232,9 @@ pub extern "C" fn rt_lib_invoke(
         };
         // SAFETY: null with nonzero length was rejected; zero-length null is permitted.
         let argv = unsafe { slice::from_raw_parts(args, argc) };
+        if string_typed_alias != 0 && argv.iter().any(|arg| arg.vtype() == VarType::Null) {
+            return seat_fault(state, Fault::new(94, "invalid use of Null"));
+        }
         let result = oxvba_lib::invoke(id, argv, exec.host, &mut exec.lib);
         match result {
             Ok(value) => write_out(state, out, value),
@@ -821,6 +1303,77 @@ pub extern "C" fn rt_err_number(state: *mut RawExecState, out: *mut i32) -> i32 
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn rt_err_i32_field(state: *mut RawExecState, field: u32, out: *mut i32) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let value = match field {
+            RT_ERR_FIELD_NUMBER => exec.err_engine.err.number,
+            RT_ERR_FIELD_HELP_CONTEXT => exec.err_engine.err.help_context,
+            RT_ERR_FIELD_LAST_DLL_ERROR => exec.err_engine.last_dll_error,
+            _ => return seat_fault(state, Fault::new(5, "Err field is not numeric")),
+        };
+        write_out(state, out, value)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_err_string_field_utf8(
+    state: *mut RawExecState,
+    field: u32,
+    out_ptr: *mut *const u8,
+    out_len: *mut i32,
+) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let value = match field {
+            RT_ERR_FIELD_DESCRIPTION => &exec.err_engine.err.description,
+            RT_ERR_FIELD_SOURCE => &exec.err_engine.err.source,
+            RT_ERR_FIELD_HELP_FILE => &exec.err_engine.err.help_file,
+            _ => return seat_fault(state, Fault::new(5, "Err field is not string")),
+        };
+        let Ok(len) = i32::try_from(value.len()) else {
+            return seat_fault(state, Fault::new(5, "Err field string is too long"));
+        };
+        let status = write_out(state, out_ptr, value.as_ptr());
+        if status != ST_OK {
+            return status;
+        }
+        write_out(state, out_len, len)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_set_error_handler(
+    state: *mut RawExecState,
+    handler_kind: u32,
+    block: u32,
+) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let handler = match handler_kind {
+            RT_ERROR_HANDLER_GOTO_0 => ErrorHandler::Goto0,
+            RT_ERROR_HANDLER_RESUME_NEXT => ErrorHandler::ResumeNext,
+            RT_ERROR_HANDLER_GOTO_LABEL => ErrorHandler::GotoLabel(BlockId(block as usize)),
+            RT_ERROR_HANDLER_GOTO_MINUS_1 => ErrorHandler::GotoMinus1,
+            _ => {
+                return seat_fault(
+                    state,
+                    Fault::new(5, format!("unknown error handler kind {handler_kind}")),
+                );
+            }
+        };
+        exec.err_engine.set_error_handler(&handler);
+        ST_OK
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn rt_last_dll_error(state: *mut RawExecState, out: *mut i32) -> i32 {
     with_status(|| {
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
@@ -839,6 +1392,144 @@ pub extern "C" fn rt_set_last_dll_error(state: *mut RawExecState, value: i32) ->
         exec.err_engine.last_dll_error = value;
         ST_OK
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_err_enter_activation(
+    state: *mut RawExecState,
+    out_saved: *mut RtSavedErrState,
+) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let saved = saved_err_to_raw(exec.err_engine.enter_activation());
+        write_out(state, out_saved, saved)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_err_restore_activation(
+    state: *mut RawExecState,
+    saved: *const RtSavedErrState,
+) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let Ok(saved) = read_in(state, saved, "saved error state") else {
+            return ST_FAULT;
+        };
+        let saved = match saved_err_from_raw(*saved) {
+            Ok(saved) => saved,
+            Err(fault) => return seat_fault(state, fault),
+        };
+        exec.err_engine.restore(saved);
+        ST_OK
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_out_of_stack(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(28, default_error_message(28))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_out_of_memory(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(7, default_error_message(7))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_invalid_proc_ref(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(490, "invalid procedure reference")))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_type_mismatch(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(13, default_error_message(13))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_error_number(
+    state: *mut RawExecState,
+    number: i32,
+    inherit_fields: i32,
+    source_ptr: *const u8,
+    source_len: i32,
+) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let source_len = match usize::try_from(source_len) {
+            Ok(value) => value,
+            Err(_) => return seat_fault(state, Fault::new(5, "invalid Err.Raise source length")),
+        };
+        let default_source = if source_len == 0 {
+            "VBAProject"
+        } else {
+            if source_ptr.is_null() {
+                return seat_fault(state, Fault::new(5, "invalid Err.Raise source pointer"));
+            }
+            // SAFETY: the JIT passes a pointer/length pair from the live OxProgram unit name.
+            let bytes = unsafe { std::slice::from_raw_parts(source_ptr, source_len) };
+            match std::str::from_utf8(bytes) {
+                Ok(value) => value,
+                Err(_) => return seat_fault(state, Fault::new(5, "invalid Err.Raise source utf8")),
+            }
+        };
+        let inherit = inherit_fields != 0 && exec.err_engine.err.inherit_fields;
+        let (message, source, help_file, help_context) = if inherit {
+            (
+                exec.err_engine.err.description.clone(),
+                Some(exec.err_engine.err.source.clone()),
+                Some(exec.err_engine.err.help_file.clone()),
+                Some(exec.err_engine.err.help_context),
+            )
+        } else {
+            (
+                default_error_message(number),
+                Some(default_source.to_owned()),
+                None,
+                None,
+            )
+        };
+        seat_fault(
+            state,
+            Fault {
+                code: number,
+                message,
+                source,
+                help_file,
+                help_context,
+            },
+        )
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_runtime_error_number(state: *mut RawExecState, number: i32) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(number, default_error_message(number))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_expected_array(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(13, "expected an array")))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_array_has_no_bounds(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(9, "array has no bounds")))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_fixed_or_temporarily_locked_array(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(10, default_error_message(10))))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_raise_subscript_out_of_range(state: *mut RawExecState) -> i32 {
+    with_status(|| seat_fault(state, Fault::new(9, "subscript out of range")))
 }
 
 #[unsafe(no_mangle)]
@@ -1109,6 +1800,290 @@ mod tests {
     }
 
     #[test]
+    fn raise_error_number_respects_legacy_error_defaults_and_err_raise_inheritance() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let source = b"Main";
+
+        state.err_engine.err = ErrState {
+            number: 100,
+            description: "previous description".to_string(),
+            source: "PreviousSource".to_string(),
+            help_file: "previous.chm".to_string(),
+            help_context: 77,
+            inherit_fields: true,
+        };
+
+        let status = rt_raise_error_number(
+            exec_state_as_raw(&mut state),
+            5,
+            0,
+            source.as_ptr(),
+            source.len() as i32,
+        );
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 5);
+        assert_eq!(state.err_engine.err.description, default_error_message(5));
+        assert_eq!(state.err_engine.err.source, "Main");
+        assert_eq!(state.err_engine.err.help_file, default_error_help_file());
+        assert_eq!(
+            state.err_engine.err.help_context,
+            default_error_help_context(5)
+        );
+
+        state.err_engine.err = ErrState {
+            number: 100,
+            description: "previous description".to_string(),
+            source: "PreviousSource".to_string(),
+            help_file: "previous.chm".to_string(),
+            help_context: 77,
+            inherit_fields: true,
+        };
+
+        let status = rt_raise_error_number(
+            exec_state_as_raw(&mut state),
+            42,
+            1,
+            source.as_ptr(),
+            source.len() as i32,
+        );
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 42);
+        assert_eq!(state.err_engine.err.description, "previous description");
+        assert_eq!(state.err_engine.err.source, "PreviousSource");
+        assert_eq!(state.err_engine.err.help_file, "previous.chm");
+        assert_eq!(state.err_engine.err.help_context, 77);
+    }
+
+    #[test]
+    fn err_field_getters_project_current_and_cleared_state() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        state
+            .err_engine
+            .raise(Fault::new(9, default_error_message(9)), "VBAProject");
+
+        let mut number = 0;
+        let status = rt_err_i32_field(
+            exec_state_as_raw(&mut state),
+            RT_ERR_FIELD_NUMBER,
+            &mut number,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(number, 9);
+
+        let mut help_context = 0;
+        let status = rt_err_i32_field(
+            exec_state_as_raw(&mut state),
+            RT_ERR_FIELD_HELP_CONTEXT,
+            &mut help_context,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(help_context, default_error_help_context(9));
+
+        let mut ptr = std::ptr::null();
+        let mut len = 0;
+        let status = rt_err_string_field_utf8(
+            exec_state_as_raw(&mut state),
+            RT_ERR_FIELD_DESCRIPTION,
+            &mut ptr,
+            &mut len,
+        );
+        assert_eq!(status, ST_OK);
+        // SAFETY: the ABI returned a pointer/length to the live state's UTF-8 string.
+        let description =
+            unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len as usize)) };
+        assert_eq!(description, default_error_message(9));
+
+        let status = rt_err_clear(exec_state_as_raw(&mut state));
+        assert_eq!(status, ST_OK);
+
+        let status = rt_err_i32_field(
+            exec_state_as_raw(&mut state),
+            RT_ERR_FIELD_NUMBER,
+            &mut number,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(number, 0);
+
+        let status = rt_err_string_field_utf8(
+            exec_state_as_raw(&mut state),
+            RT_ERR_FIELD_DESCRIPTION,
+            &mut ptr,
+            &mut len,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(len, 0);
+        assert!(!ptr.is_null());
+    }
+
+    #[test]
+    fn checked_i32_div_rem_shims_write_output() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_div_i32(exec_state_as_raw(&mut state), 17, 5, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 3);
+
+        let status = rt_rem_i32(exec_state_as_raw(&mut state), 17, 5, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 2);
+    }
+
+    #[test]
+    fn checked_i32_div_rem_shims_seat_division_by_zero_fault() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_div_i32(exec_state_as_raw(&mut state), 17, 0, &mut out);
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 11);
+
+        state.err_engine.clear_err();
+        let status = rt_rem_i32(exec_state_as_raw(&mut state), 17, 0, &mut out);
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 11);
+    }
+
+    #[test]
+    fn checked_i16_shim_writes_output() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_add_i16(exec_state_as_raw(&mut state), 32_000, 12, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 32_012);
+    }
+
+    #[test]
+    fn checked_i16_shim_seats_overflow_fault() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_add_i16(
+            exec_state_as_raw(&mut state),
+            i32::from(i16::MAX),
+            1,
+            &mut out,
+        );
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 6);
+    }
+
+    #[test]
+    fn checked_u8_shim_writes_output() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_add_u8(exec_state_as_raw(&mut state), 12, 5, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 17);
+    }
+
+    #[test]
+    fn checked_u8_shim_seats_overflow_fault() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_add_u8(
+            exec_state_as_raw(&mut state),
+            i32::from(u8::MAX),
+            1,
+            &mut out,
+        );
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 6);
+    }
+
+    #[test]
+    fn checked_i64_shim_writes_output() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_add_i64(exec_state_as_raw(&mut state), 5_000_000_000, 12, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 5_000_000_012);
+    }
+
+    #[test]
+    fn checked_i64_shim_seats_overflow_fault() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_add_i64(exec_state_as_raw(&mut state), i64::MAX, 1, &mut out);
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 6);
+    }
+
+    #[test]
+    fn checked_i64_div_rem_shims_write_output() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let mut out = 0;
+        let status = rt_div_i64(exec_state_as_raw(&mut state), 5_000_000_017, 5, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 1_000_000_003);
+
+        let status = rt_rem_i64(exec_state_as_raw(&mut state), 5_000_000_017, 5, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 2);
+    }
+
+    #[test]
+    fn out_of_stack_shim_seats_vba_error_28() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let status = rt_raise_out_of_stack(exec_state_as_raw(&mut state));
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 28);
+        assert_eq!(state.err_engine.err.description, "Out of stack space");
+    }
+
+    #[test]
+    fn invalid_proc_ref_shim_seats_vba_error_490() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let status = rt_raise_invalid_proc_ref(exec_state_as_raw(&mut state));
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 490);
+        assert_eq!(
+            state.err_engine.err.description,
+            "invalid procedure reference"
+        );
+    }
+
+    #[test]
+    fn activation_shims_clear_and_restore_error_policy() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        state.err_engine.error_mode = ErrorMode::Goto(BlockId(7));
+        state.err_engine.active_error = Some(ResumePoint {
+            resume: BlockId(2),
+            resume_next: BlockId(3),
+            handler: ErrorMode::ResumeNext,
+        });
+
+        let mut saved = RtSavedErrState::default();
+        let status = rt_err_enter_activation(exec_state_as_raw(&mut state), &mut saved);
+        assert_eq!(status, ST_OK);
+        assert_eq!(state.err_engine.error_mode, ErrorMode::None);
+        assert_eq!(state.err_engine.active_error, None);
+
+        let status = rt_err_restore_activation(exec_state_as_raw(&mut state), &saved);
+        assert_eq!(status, ST_OK);
+        assert_eq!(state.err_engine.error_mode, ErrorMode::Goto(BlockId(7)));
+        assert_eq!(
+            state.err_engine.active_error,
+            Some(ResumePoint {
+                resume: BlockId(2),
+                resume_next: BlockId(3),
+                handler: ErrorMode::ResumeNext,
+            })
+        );
+    }
+
+    #[test]
     fn currency_shim_uses_scaled_i128_kernel() {
         let host = NullHostServices::new(HostPolicy::default());
         let mut state = ExecState::new(&host);
@@ -1135,6 +2110,143 @@ mod tests {
         );
         assert_eq!(status, ST_OK);
         assert_eq!(out.as_i32(), Some(42));
+    }
+
+    #[test]
+    fn variant_div_pow_shim_write_double_results() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let lhs = Variant::from_f64(9.0);
+        let rhs = Variant::from_f64(2.0);
+        let mut out = Variant::empty();
+        let status = rt_arith_v(
+            exec_state_as_raw(&mut state),
+            RT_ARITH_DIV,
+            RT_NUMERIC_WIDENING,
+            &lhs,
+            &rhs,
+            &mut out,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.as_f64(), Some(4.5));
+
+        let status = rt_arith_v(
+            exec_state_as_raw(&mut state),
+            RT_ARITH_POW,
+            RT_NUMERIC_WIDENING,
+            &lhs,
+            &rhs,
+            &mut out,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.as_f64(), Some(81.0));
+    }
+
+    #[test]
+    fn variant_neg_shim_writes_variant_result() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let src = Variant::from_f64(2.5);
+        let mut out = Variant::empty();
+        let status = rt_neg_v(
+            exec_state_as_raw(&mut state),
+            RT_NUMERIC_WIDENING,
+            &src,
+            &mut out,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.as_f64(), Some(-2.5));
+    }
+
+    #[test]
+    fn variant_logical_shim_uses_shared_null_logic() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let lhs = Variant::null();
+        let rhs = Variant::from_bool(false);
+        let mut out = Variant::empty();
+        let status = rt_logical_v(
+            exec_state_as_raw(&mut state),
+            RT_LOGIC_AND,
+            &lhs,
+            &rhs,
+            &mut out,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.as_bool(), Some(false));
+    }
+
+    #[test]
+    fn variant_not_shim_preserves_null() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let src = Variant::null();
+        let mut out = Variant::empty();
+        let status = rt_not_v(exec_state_as_raw(&mut state), &src, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.vtype(), VarType::Null);
+    }
+
+    #[test]
+    fn variant_truthy_shim_treats_null_as_false() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let src = Variant::null();
+        let mut out = -1;
+        let status = rt_truthy_v(exec_state_as_raw(&mut state), &src, &mut out);
+        assert_eq!(status, ST_OK);
+        assert_eq!(out, 0);
+    }
+
+    #[test]
+    fn variant_compare_shim_preserves_null() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let lhs = Variant::null();
+        let rhs = Variant::from_i32(1);
+        let mut out = Variant::empty();
+        let status = rt_compare_v(
+            exec_state_as_raw(&mut state),
+            RT_COMPARE_EQ,
+            RT_STRING_COMPARE_BINARY,
+            &lhs,
+            &rhs,
+            &mut out,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.vtype(), VarType::Null);
+    }
+
+    #[test]
+    fn variant_numeric_coerce_shim_writes_variant_result() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let src = Variant::from_f64(6.5);
+        let mut out = Variant::empty();
+        let status = rt_coerce_numeric_v(
+            exec_state_as_raw(&mut state),
+            RT_NUMERIC_CHECKED_DOUBLE,
+            &src,
+            &mut out,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.as_f64(), Some(6.5));
+    }
+
+    #[test]
+    fn variant_numeric_coerce_shim_writes_boolean_result() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        let src = Variant::from_i32(2);
+        let mut out = Variant::empty();
+        let status = rt_coerce_numeric_v(
+            exec_state_as_raw(&mut state),
+            RT_NUMERIC_CHECKED_BOOLEAN,
+            &src,
+            &mut out,
+        );
+        assert_eq!(status, ST_OK);
+        assert_eq!(out.as_bool(), Some(true));
     }
 
     #[test]
@@ -1227,6 +2339,38 @@ mod tests {
             ST_OK
         );
         assert_eq!(last, 1234);
+    }
+
+    #[test]
+    fn rt_resume_without_active_error_uses_state_default_source() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+        state.default_error_source = "Main".to_string();
+        state.err_engine.error_mode = ErrorMode::ResumeNext;
+
+        let mut resumed = 0;
+        let status = rt_resume(
+            exec_state_as_raw(&mut state),
+            RT_RESUME_NEXT,
+            0,
+            &mut resumed,
+        );
+
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 20);
+        assert_eq!(state.err_engine.err.source, "Main");
+    }
+
+    #[test]
+    fn type_mismatch_shim_seats_error_13() {
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut state = ExecState::new(&host);
+
+        let status = rt_raise_type_mismatch(exec_state_as_raw(&mut state));
+
+        assert_eq!(status, ST_FAULT);
+        assert_eq!(state.err_engine.err.number, 13);
+        assert_eq!(state.err_engine.err.description, "Type mismatch");
     }
 
     #[test]
