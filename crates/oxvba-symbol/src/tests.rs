@@ -24,7 +24,7 @@ use crate::provider::{Provider, ResolutionContext, TypeLibResolver, build_resolu
 use crate::providers::com::ComTypeLibProvider;
 use crate::providers::host::HostProvider;
 use crate::providers::vba_library::VbaLibraryProvider;
-use crate::signature::{BuiltinType, DefaultValue, VarTypeRef};
+use crate::signature::{BuiltinType, DefaultValue, PassingMode, VarTypeRef};
 
 struct NullTypeLibs;
 impl TypeLibResolver for NullTypeLibs {
@@ -1836,6 +1836,48 @@ fn property_writers_require_final_value_or_reference_parameter() {
             "SYM-E-MISSING-PROPERTY-WRITER-PARAMETER"
         );
     }
+}
+
+#[test]
+fn property_writer_final_parameter_is_published_byval() {
+    let src = "Property Let Item(ByRef index As Long, ByRef value As Long)\r\nEnd Property\r\n\
+               Property Set RefItem(ByRef index As Long, ByRef value As Object)\r\nEnd Property\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Mod1").expect("module scope");
+    let ctx = ResolutionContext::at(scope);
+
+    let item_binding = env.resolve(&ctx, "Item").expect("Item property resolves");
+    let item_symbol = env
+        .symbols
+        .symbol(item_binding.symbol.expect("Item symbol"))
+        .expect("Item symbol");
+    let SymbolImpl::Property(item_group) = &item_symbol.imp else {
+        panic!("expected Item property group");
+    };
+    let item_sig = env
+        .signatures
+        .get(item_group.let_.expect("Item Let signature"))
+        .expect("Item Let signature");
+    assert_eq!(item_sig.params[0].mode, PassingMode::ByRef);
+    assert_eq!(item_sig.params[1].mode, PassingMode::ByVal);
+
+    let ref_binding = env
+        .resolve(&ctx, "RefItem")
+        .expect("RefItem property resolves");
+    let ref_symbol = env
+        .symbols
+        .symbol(ref_binding.symbol.expect("RefItem symbol"))
+        .expect("RefItem symbol");
+    let SymbolImpl::Property(ref_group) = &ref_symbol.imp else {
+        panic!("expected RefItem property group");
+    };
+    let ref_sig = env
+        .signatures
+        .get(ref_group.set.expect("RefItem Set signature"))
+        .expect("RefItem Set signature");
+    assert_eq!(ref_sig.params[0].mode, PassingMode::ByRef);
+    assert_eq!(ref_sig.params[1].mode, PassingMode::ByVal);
 }
 
 #[test]

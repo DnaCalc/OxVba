@@ -1604,15 +1604,18 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `SYM-E-MISSING-PROPERTY-WRITER-PARAMETER`, and reject a present final parameter if it is
   explicitly marked `Optional` or `ParamArray`; `Property Set` now also rejects scalar/value final
   reference parameters with `SYM-E-INVALID-PROPERTY-SET-REFERENCE`, while preserving
-  default/explicit `Variant`, `Object`, and named class/object reference parameters. This follows
-  the same Microsoft Learn Function/Property Let rules and the Property Set statement's
-  object-reference contract
+  default/explicit `Variant`, `Object`, and named class/object reference parameters. The scanner
+  also publishes the final `Property Let`/`Set` writer slot as `ByVal` in signature metadata while
+  preserving declared/default `ByRef` modes for preceding indexed arguments. This follows the same
+  Microsoft Learn Function/Property Let rules and the Property Set statement's object-reference
+  contract
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-let-statement`,
   `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-set-statement`),
   and remains a declaration-shape diagnostic rather than broader call-site
   optional argument closure. Evidence: `scanner_rejects_required_parameters_after_optional`;
   `property_let_allows_required_value_after_optional_index_args`;
   `property_writers_require_final_value_or_reference_parameter`;
+  `property_writer_final_parameter_is_published_byval`;
   `property_let_value_parameter_cannot_be_optional`;
   `property_set_reference_parameter_cannot_be_optional`;
   `property_set_reference_parameter_must_be_object_compatible`;

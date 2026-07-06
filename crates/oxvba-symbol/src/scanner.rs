@@ -624,7 +624,9 @@ impl ScanCtx<'_> {
     fn build_signature(&self, node: SyntaxNode<'_>, call_shape: CallShape) -> Signature {
         let mut params = Vec::new();
         if let Some(param_list) = node.param_list() {
-            for param in param_list.params() {
+            let param_nodes = param_list.params();
+            let param_count = param_nodes.len();
+            for (index, param) in param_nodes.into_iter().enumerate() {
                 let name = parameter_name_token(param)
                     .map(|t| normalize_identifier_token(t.text).to_string())
                     .unwrap_or_default();
@@ -640,7 +642,7 @@ impl ScanCtx<'_> {
                 params.push(Param {
                     name,
                     ty,
-                    mode: parameter_passing_mode(param),
+                    mode: procedure_parameter_passing_mode(node, param, index, param_count),
                     optional,
                     param_array: parameter_has_modifier(param, SyntaxKind::KwParamArray),
                     default,
@@ -908,6 +910,25 @@ impl ScanCtx<'_> {
 
 fn property_set_reference_type_compatible(ty: &VarTypeRef) -> bool {
     matches!(ty, VarTypeRef::Variant | VarTypeRef::Object(_))
+}
+
+fn procedure_parameter_passing_mode(
+    proc_node: SyntaxNode<'_>,
+    param: SyntaxNode<'_>,
+    index: usize,
+    param_count: usize,
+) -> PassingMode {
+    if proc_node.kind() == SyntaxKind::PropertyDecl
+        && index + 1 == param_count
+        && matches!(
+            property_accessor(proc_node),
+            PropertyAccessor::Let | PropertyAccessor::Set
+        )
+    {
+        PassingMode::ByVal
+    } else {
+        parameter_passing_mode(param)
+    }
 }
 
 // ── CST helpers (ported) ───────────────────────────────────────────────────
