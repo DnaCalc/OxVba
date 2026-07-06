@@ -3187,6 +3187,25 @@ fn withevents_scalar_field_type_is_bind_error() {
 }
 
 #[test]
+fn withevents_as_new_field_is_bind_error() {
+    let manifest = manifest_modules(&[(
+        "Sink",
+        ModuleKind::Class,
+        "Private WithEvents src As New Source\n",
+    )]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("WithEvents As New field should fail binding")
+    );
+    assert!(
+        err.contains("InvalidWithEventsAutoInstantiation")
+            || err.contains("SYM-E-INVALID-WITHEVENTS-AUTO-INSTANTIATION"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn event_declaration_rejects_optional_and_paramarray_parameters() {
     for (source, expected) in [
         (

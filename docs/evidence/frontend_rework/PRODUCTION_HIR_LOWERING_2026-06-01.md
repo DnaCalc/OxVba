@@ -1652,13 +1652,18 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `property_set_udt_reference_parameter_is_bind_error`;
   `scanner_accepts_object_withevents_fields_in_class_modules`;
   `scanner_rejects_non_object_withevents_fields`;
+  `scanner_rejects_withevents_as_new_fields`;
   `withevents_scalar_field_type_is_bind_error`;
+  `withevents_as_new_field_is_bind_error`;
   `required_parameter_after_optional_is_bind_error`.
 - The latest declaration/type-surface pass also stops `WithEvents` fields with value,
-  explicit/implicit `Variant`, or array declarations before event-field metadata is published.
-  Named object/class/COM source types remain the accepted event-source contract; this
-  is a compile-time source-type guard, not a full proof that every accepted object type
-  has source events.
+  explicit/implicit `Variant`, array, or `As New` declarations before event-field metadata is
+  published. This matches the Microsoft Learn `Private` statement rule that `WithEvents` cannot
+  create arrays or use `New`
+  (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/private-statement`).
+  Named object/class/COM source types remain the accepted event-source contract; this is a
+  compile-time declaration guard, not a full proof that every accepted object type has source
+  events.
 - The i64 optional-default follow-up also found a front-end symbol-model miss where a later
   parameter following a string default could be absent from the HIR parameter list even though the
   signature parser saw it. Procedure symbol collection now reconciles missing parameter symbols
@@ -1769,6 +1774,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-symbol withevents -- --nocapture`
 - `cargo test -p oxvba-bind property_set_udt_reference_parameter_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind withevents_scalar_field_type_is_bind_error -- --nocapture`
+- `cargo test -p oxvba-bind withevents_as_new_field_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_does_not_inject_runtime_validation_for_rewritten_internal_class_object_locals --quiet`
 - `cargo test -p oxvba-compiler compile_project_infers_non_authoritative_single_candidate_indexed_default_member_let --quiet`

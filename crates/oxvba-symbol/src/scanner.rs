@@ -275,6 +275,15 @@ impl ScanCtx<'_> {
                     if module_level
                         && !is_const
                         && declarator.is_with_events()
+                        && declarator.is_new()
+                    {
+                        return Err(SymbolModelError::InvalidWithEventsAutoInstantiation {
+                            name: name.to_string(),
+                        });
+                    }
+                    if module_level
+                        && !is_const
+                        && declarator.is_with_events()
                         && !withevents_field_type_compatible(&declared_type)
                     {
                         return Err(SymbolModelError::InvalidWithEventsFieldType {
@@ -2315,6 +2324,22 @@ mod tests {
                 "SYM-E-INVALID-WITHEVENTS-FIELD-TYPE"
             );
         }
+    }
+
+    #[test]
+    fn scanner_rejects_withevents_as_new_fields() {
+        let err = scan_members_for_kind(ModuleKind::Class, "Private WithEvents src As New Clock\n")
+            .expect_err("WithEvents As New field should be rejected");
+        assert_eq!(
+            err,
+            SymbolModelError::InvalidWithEventsAutoInstantiation {
+                name: "src".to_string()
+            }
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-WITHEVENTS-AUTO-INSTANTIATION"
+        );
     }
 
     #[test]

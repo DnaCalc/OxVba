@@ -257,6 +257,8 @@ pub enum SymbolModelError {
     WithEventsNotValidInStandardModule { name: String },
     #[error("invalid WithEvents field type for `{name}`")]
     InvalidWithEventsFieldType { name: String },
+    #[error("WithEvents field `{name}` cannot use As New")]
+    InvalidWithEventsAutoInstantiation { name: String },
     #[error("ambiguous name detected: {name}")]
     AmbiguousName { name: String },
     #[error("unknown scope {0:?}")]
@@ -444,6 +446,12 @@ impl SymbolModelError {
                 format!("WithEvents field `{name}` must be declared as an object type"),
             )
             .with_help("Declare the WithEvents field with a class/object or COM event source type."),
+            SymbolModelError::InvalidWithEventsAutoInstantiation { name } => Diagnostic::error(
+                "SYM-E-INVALID-WITHEVENTS-AUTO-INSTANTIATION",
+                DiagnosticPhase::Symbol,
+                format!("WithEvents field `{name}` cannot be declared As New"),
+            )
+            .with_help("Declare the WithEvents field without `As New` and assign an event source explicitly."),
             SymbolModelError::AmbiguousName { name } => Diagnostic::error(
                 "SYM-E-AMBIGUOUS-NAME",
                 DiagnosticPhase::Symbol,
