@@ -243,6 +243,10 @@ compiled artifact while VM behavior remains the reference execution oracle.
    core.
 4. Windows COM support is active and tested; non-Windows COM remains explicitly
    unsupported.
+   The cross-platform portable projection is a host-provided COM-like object
+   surface: registered portable objects and their retained object-valued returns
+   can execute through `ObjectRef` projection handles without implying native
+   COM availability on Linux/macOS.
 5. Host/runtime event ingress exists in two planes:
    - project/runtime event routing in `oxvba-host`;
    - COM callback transport through HAL/adapter state, including payload-based

@@ -831,7 +831,11 @@ Required newly explicit delivery beads:
   A further expression-context slice
   (`docs/evidence/frontend_rework/COM_DEFAULT_MEMBER_EXPRESSION_CONTEXT_2026-07-02.md`) applies
   default-member value binding to typed imported and host-injected COM operands in ordinary binary
-  expressions, while keeping `Is` object-identity operands raw.
+  expressions, while keeping `Is` object-identity operands raw. A 2026-07-06 runtime projection
+  continuation (`docs/evidence/frontend_rework/COM_PORTABLE_HOST_RETURNED_OBJECT_CHAIN_2026-07-06.md`)
+  proves the host-injected `Application.Workbooks.Count` and `Application.Workbooks` chain through
+  a retained portable host-returned object, including default-member execution, without widening the
+  claim to native COM on Linux.
   Broader imported COM activation/member breadth remains open under `bd-aprs.8.8`.
 - FE-9.7 Broad matrix/corpus route audit: extend the route audit from selected fixtures to the
   accepted grammar matrix, compiler fixture corpus, host project corpus, language-service corpus,
@@ -1598,6 +1602,10 @@ Candidate bead units:
   eligible to close for its scoped lowering surface. Broader reference/COM activation/member
   breadth remains owned by FE-7.6.a / `bd-aprs.8.8`; the former aggregate FE-8.5 dependencies on
   `bd-aprs.9.9`, `bd-aprs.9.10`, and `bd-aprs.9.5` have since closed for their scoped surfaces.
+  A 2026-07-06 FE-7.6.a runtime projection continuation proves that the same host-injected typed
+  return chain now executes through a retained portable `Excel.Workbooks` projection object for
+  `Application.Workbooks.Count` and the `Application.Workbooks` default-member value context; this
+  is executable portable host evidence, not a native COM breadth closure.
   The V11 ByRef COM event writeback row
   remains in-progress rather than being closed through a fake fixture-only path: current event callbacks are
   queued as value snapshots and drained later, while real COM/VBA ByRef event writeback requires

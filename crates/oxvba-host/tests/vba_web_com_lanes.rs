@@ -10,7 +10,7 @@ use oxvba_com::{
     OptionalParamDefault, PortableComProjection, SourceTypeKind, TypeLibMemberInvokeKind,
     TypeLibMetadataBlob, TypeLibParamType, TypeLibResolveRequest, TypeLibResolvedIdentity,
     TypeLibWireType,
-    platform::portable::{PortableDispatch, PortableObjectFactory},
+    platform::portable::{PortableDispatch, PortableObjectFactory, PortableObjectResult},
 };
 use oxvba_hal::model::HostPolicy;
 use oxvba_hal::{adapters::builder::HostBuilder, model::native_host_profile};
@@ -81,10 +81,78 @@ fn app_member(
     }
 }
 
+fn property_get_member(
+    name: &str,
+    token: i32,
+    return_type: TypeLibParamType,
+    return_wire_type: TypeLibWireType,
+    is_default_member: bool,
+) -> oxvba_com::TypeLibMemberMetadata {
+    oxvba_com::TypeLibMemberMetadata {
+        name: name.to_string(),
+        token,
+        vtable_slot: None,
+        requires_argument: false,
+        invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+        parameter_names: Vec::new(),
+        parameter_optional: Vec::new(),
+        parameter_optional_defaults: Vec::new(),
+        is_default_member,
+        parameter_wire_types: Vec::new(),
+        parameter_iids: Vec::new(),
+        parameter_types: Vec::new(),
+        return_wire_type: Some(return_wire_type),
+        return_type: Some(return_type),
+        callconv_is_stdcall: false,
+        is_dual: true,
+        interface_iid: None,
+        source_typekind: Some(SourceTypeKind::Dispatch),
+        vtable_slot_bound: None,
+    }
+}
+
 struct ApplicationTypeLibs;
 
 impl TypeLibResolver for ApplicationTypeLibs {
-    fn resolve(&self, _request: &TypeLibResolveRequest) -> Option<TypeLibMetadataBlob> {
+    fn resolve(&self, request: &TypeLibResolveRequest) -> Option<TypeLibMetadataBlob> {
+        if request
+            .requested_coclass
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case("Workbooks"))
+        {
+            return Some(TypeLibMetadataBlob {
+                identity: TypeLibResolvedIdentity {
+                    reference_name: "Excel".into(),
+                    requested_coclass: Some("Workbooks".into()),
+                    importlib: "excel".into(),
+                    libid: None,
+                    major_version: 1,
+                    minor_version: 0,
+                    lcid: None,
+                    cache_key: "vba-web-portable-workbooks".into(),
+                },
+                activation_prog_id: None,
+                member_name_to_token: vec![("Item".into(), 0), ("Count".into(), 21)],
+                members: vec![
+                    property_get_member(
+                        "Item",
+                        0,
+                        TypeLibParamType::Long,
+                        TypeLibWireType::Automation(TypeLibParamType::Long),
+                        true,
+                    ),
+                    property_get_member(
+                        "Count",
+                        21,
+                        TypeLibParamType::Long,
+                        TypeLibWireType::Automation(TypeLibParamType::Long),
+                        false,
+                    ),
+                ],
+                events: Vec::new(),
+                coclass_names: vec!["Workbooks".into()],
+            });
+        }
         Some(TypeLibMetadataBlob {
             identity: TypeLibResolvedIdentity {
                 reference_name: "Excel".into(),
@@ -97,7 +165,11 @@ impl TypeLibResolver for ApplicationTypeLibs {
                 cache_key: "vba-web-portable-application".into(),
             },
             activation_prog_id: Some("Excel.Application".into()),
-            member_name_to_token: vec![("Run".into(), 10), ("OnTime".into(), 11)],
+            member_name_to_token: vec![
+                ("Run".into(), 10),
+                ("OnTime".into(), 11),
+                ("Workbooks".into(), 20),
+            ],
             members: vec![
                 app_member(
                     "Run",
@@ -119,6 +191,15 @@ impl TypeLibResolver for ApplicationTypeLibs {
                         TypeLibParamType::Variant,
                     ],
                     None,
+                ),
+                property_get_member(
+                    "Workbooks",
+                    20,
+                    TypeLibParamType::Object,
+                    TypeLibWireType::InterfacePointer {
+                        name: "Workbooks".into(),
+                    },
+                    false,
                 ),
             ],
             events: Vec::new(),
@@ -165,7 +246,57 @@ impl PortableDispatch for RecordingApplication {
     }
 
     fn member_names(&self) -> Vec<String> {
-        vec!["Run".into(), "OnTime".into()]
+        vec!["Run".into(), "OnTime".into(), "Workbooks".into()]
+    }
+
+    fn get_object(&self, member: &str) -> Option<Result<PortableObjectResult, String>> {
+        if member.eq_ignore_ascii_case("Workbooks") {
+            self.calls
+                .lock()
+                .map_err(|_| "call log poisoned".to_string())
+                .map(|mut calls| calls.push("Application.Workbooks:get-object".into()))
+                .ok();
+            return Some(Ok(PortableObjectResult::new(
+                "Excel.Workbooks",
+                Box::new(RecordingWorkbooks {
+                    calls: self.calls.clone(),
+                }),
+            )));
+        }
+        None
+    }
+}
+
+struct RecordingWorkbooks {
+    calls: Arc<Mutex<Vec<String>>>,
+}
+
+impl PortableDispatch for RecordingWorkbooks {
+    fn invoke(&self, member: &str, args: &[Variant]) -> Result<Variant, String> {
+        Err(format!(
+            "unexpected Workbooks invoke `{member}` with {} args",
+            args.len()
+        ))
+    }
+
+    fn get(&self, member: &str) -> Result<Variant, String> {
+        self.calls
+            .lock()
+            .map_err(|_| "call log poisoned".to_string())?
+            .push(format!("Workbooks.{member}:get"));
+        match member {
+            "Count" => Ok(Variant::from_i32(42)),
+            "Item" => Ok(Variant::from_i32(1)),
+            other => Err(format!("unexpected Workbooks property get `{other}`")),
+        }
+    }
+
+    fn put(&self, member: &str, _value: Variant) -> Result<(), String> {
+        Err(format!("unexpected Workbooks property put `{member}`"))
+    }
+
+    fn member_names(&self) -> Vec<String> {
+        vec!["Count".into(), "Item".into()]
     }
 }
 
@@ -324,6 +455,61 @@ fn engine_project_closure_executes_host_injected_application_through_portable_ho
     assert_eq!(
         calls.lock().expect("call log").as_slice(),
         ["Run:2".to_string(), "OnTime:2".to_string()]
+    );
+}
+
+#[test]
+fn engine_executes_host_returned_com_object_chain_through_portable_projection() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let projection = Arc::new(PortableComProjection::new());
+    projection.register_object(
+        "Excel.Application",
+        Arc::new(RecordingApplicationFactory {
+            calls: calls.clone(),
+        }),
+    );
+
+    let profile = HostProfileProvider::new()
+        .with_typelib_resolver(Arc::new(ApplicationTypeLibs))
+        .with_portable_com_projection(projection);
+    let engine = Engine::new(HostConfig::vm3()).with_host_profile_provider(profile);
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![ModuleUnit {
+            module_name: "Main".into(),
+            module_kind: ModuleKind::Procedural,
+            attributes: ModuleAttributes::named("Main"),
+            source: "Public verdict As Long\n\
+                     Sub Main()\n\
+                     Dim n As Long\n\
+                     n = Application.Workbooks.Count\n\
+                     n = n + Application.Workbooks\n\
+                     If n = 43 Then verdict = 1\n\
+                     End Sub\n"
+                .into(),
+        }],
+        references: vec![ProjectReference::HostInjected {
+            referenced_project_name: "Excel.Application".into(),
+        }],
+        reference_projects: Vec::new(),
+        conditional_constants: Default::default(),
+        conditional_compilation_target: Default::default(),
+    };
+
+    let values = engine
+        .execute_manifest_with_variant_snapshot(&manifest)
+        .expect("host-returned COM object chain should execute through portable projection");
+
+    assert_eq!(first_i32(&values), Some(1));
+    assert_eq!(
+        calls.lock().expect("call log").as_slice(),
+        [
+            "Application.Workbooks:get-object".to_string(),
+            "Workbooks.Count:get".to_string(),
+            "Application.Workbooks:get-object".to_string(),
+            "Workbooks.Item:get".to_string(),
+        ]
     );
 }
 

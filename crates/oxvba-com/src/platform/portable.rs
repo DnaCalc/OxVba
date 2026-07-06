@@ -14,6 +14,22 @@ pub trait PortableObjectFactory: Send + Sync {
     fn create(&self) -> Box<dyn PortableDispatch>;
 }
 
+/// A portable dispatch result that should be retained as another COM-like
+/// object by the host projection.
+pub struct PortableObjectResult {
+    pub prog_id: String,
+    pub object: Box<dyn PortableDispatch>,
+}
+
+impl PortableObjectResult {
+    pub fn new(prog_id: impl Into<String>, object: Box<dyn PortableDispatch>) -> Self {
+        Self {
+            prog_id: prog_id.into(),
+            object,
+        }
+    }
+}
+
 /// Late-bound dispatch interface for host-registered objects.
 ///
 /// This portable host API carries retained [`Variant`] values.
@@ -22,6 +38,18 @@ pub trait PortableDispatch: Send + Sync {
     fn get(&self, member: &str) -> Result<Variant, String>;
     fn put(&self, member: &str, value: Variant) -> Result<(), String>;
     fn member_names(&self) -> Vec<String>;
+
+    fn invoke_object(
+        &self,
+        _member: &str,
+        _args: &[Variant],
+    ) -> Option<Result<PortableObjectResult, String>> {
+        None
+    }
+
+    fn get_object(&self, _member: &str) -> Option<Result<PortableObjectResult, String>> {
+        None
+    }
 }
 
 /// Registry of host-provided COM-like objects, keyed by ProgID.

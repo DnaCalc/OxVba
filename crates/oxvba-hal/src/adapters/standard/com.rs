@@ -19,7 +19,8 @@ use oxvba_com::{
     ComObjectTransportKind, ComSubscriptionToken, DynamicCallKind, DynamicCallRequest,
     DynamicMemberSelector, build_typelib_metadata, known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
-    member_token_and_spec_from_typelib_metadata_name, platform::portable::PortableDispatch,
+    member_token_and_spec_from_typelib_metadata_name,
+    platform::portable::{PortableDispatch, PortableObjectResult},
     resolve_typelib_identity_for_prog_id_name,
 };
 use oxvba_runtime::{ObjectRef, VarType, Variant, variant_to_vba_string};
@@ -53,16 +54,35 @@ fn allocate_projection_object_ref(
     prog_id_name: &str,
     portable_object: Option<Box<dyn PortableDispatch>>,
 ) -> HalResult<ObjectRef> {
+    allocate_projection_object_ref_inner(host, prog_id_name, portable_object, true)
+}
+
+fn allocate_projection_object_instance_ref(
+    host: &StandardHostServices,
+    prog_id_name: &str,
+    portable_object: Option<Box<dyn PortableDispatch>>,
+) -> HalResult<ObjectRef> {
+    allocate_projection_object_ref_inner(host, prog_id_name, portable_object, false)
+}
+
+fn allocate_projection_object_ref_inner(
+    host: &StandardHostServices,
+    prog_id_name: &str,
+    portable_object: Option<Box<dyn PortableDispatch>>,
+    reuse_by_prog_id: bool,
+) -> HalResult<ObjectRef> {
     let capability = CapabilityId::ComActivationDispatch;
     let mut state = host.projection_lock(capability, "create_object")?;
-    if let Some(handle) = state.handles_by_prog_id.get(prog_id_name).copied() {
+    if reuse_by_prog_id && let Some(handle) = state.handles_by_prog_id.get(prog_id_name).copied() {
         return Ok(ObjectRef::from_compat_identity(handle));
     }
     state.next_handle = state.next_handle.saturating_add(1).max(1);
     let object = ObjectRef::from_compat_identity(state.next_handle);
-    state
-        .handles_by_prog_id
-        .insert(prog_id_name.to_string(), object.raw());
+    if reuse_by_prog_id {
+        state
+            .handles_by_prog_id
+            .insert(prog_id_name.to_string(), object.raw());
+    }
     state
         .prog_ids_by_handle
         .insert(object.raw(), prog_id_name.to_string());
@@ -81,7 +101,13 @@ fn release_projection_object_ref(
     let capability = CapabilityId::ComActivationDispatch;
     let mut state = host.projection_lock(capability, "release_object")?;
     if let Some(prog_id_name) = state.prog_ids_by_handle.remove(&object.raw()) {
-        state.handles_by_prog_id.remove(&prog_id_name);
+        if state
+            .handles_by_prog_id
+            .get(&prog_id_name)
+            .is_some_and(|handle| *handle == object.raw())
+        {
+            state.handles_by_prog_id.remove(&prog_id_name);
+        }
         state.portable_objects_by_handle.remove(&object.raw());
         return Ok(true);
     }
@@ -161,6 +187,17 @@ fn invoke_portable_dispatch(
         }
     };
     let args = portable_call_args(request);
+    let object_result = match request.call_kind_hint {
+        Some(DynamicCallKind::PropertyGet) if args.is_empty() => dispatch.get_object(member_name),
+        Some(DynamicCallKind::Method) | None => dispatch.invoke_object(member_name, &args),
+        _ => None,
+    };
+    if let Some(object_result) = object_result {
+        return match object_result {
+            Ok(object_result) => portable_object_result_variant(host, object_result).map(Some),
+            Err(message) => Err(portable_dispatch_failure(host, message)),
+        };
+    }
     let result = match request.call_kind_hint {
         Some(DynamicCallKind::PropertyGet) if args.is_empty() => dispatch.get(member_name),
         Some(DynamicCallKind::PropertyLet | DynamicCallKind::PropertySet) => {
@@ -169,14 +206,32 @@ fn invoke_portable_dispatch(
         }
         _ => dispatch.invoke(member_name, &args),
     };
-    result.map(Some).map_err(|message| {
-        HalError::adapter_fault(
-            host.profile,
-            capability,
-            "dispatch_invoke",
-            format!("COM-E-PORTABLE-DISPATCH-FAILED: {message}"),
-        )
-    })
+    result
+        .map(Some)
+        .map_err(|message| portable_dispatch_failure(host, message))
+}
+
+fn portable_dispatch_failure(host: &StandardHostServices, message: String) -> HalError {
+    HalError::adapter_fault(
+        host.profile,
+        CapabilityId::ComActivationDispatch,
+        "dispatch_invoke",
+        format!("COM-E-PORTABLE-DISPATCH-FAILED: {message}"),
+    )
+}
+
+fn portable_object_result_variant(
+    host: &StandardHostServices,
+    object_result: PortableObjectResult,
+) -> HalResult<Variant> {
+    let object = allocate_projection_object_instance_ref(
+        host,
+        object_result.prog_id.as_str(),
+        Some(object_result.object),
+    )?;
+    #[cfg(target_os = "windows")]
+    try_bind_projection_object_metadata(host, object.clone(), object_result.prog_id.as_str())?;
+    Ok(Variant::from_object_ref(object))
 }
 
 #[cfg(target_os = "windows")]
@@ -201,9 +256,6 @@ fn try_bind_projection_object_metadata(
 impl ComHal for StandardHostServices {
     fn create_object_variant(&self, prog_id: Variant) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "create_object"));
-        }
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "create_object"));
         }
@@ -229,6 +281,9 @@ impl ComHal for StandardHostServices {
             #[cfg(target_os = "windows")]
             try_bind_projection_object_metadata(self, object.clone(), prog_id_name)?;
             return Ok(Variant::from_object_ref(object));
+        }
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "create_object"));
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
@@ -640,14 +695,14 @@ impl ComHal for StandardHostServices {
 
     fn dispatch_invoke_dynamic_variant(&self, request: &DynamicCallRequest) -> HalResult<Variant> {
         let capability = CapabilityId::ComActivationDispatch;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "dispatch_invoke"));
-        }
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
         if let Some(value) = invoke_portable_dispatch(self, request)? {
             return Ok(value);
+        }
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "dispatch_invoke"));
         }
         #[cfg(target_os = "windows")]
         if self.native_com_enabled() {
@@ -744,15 +799,15 @@ impl ComHal for StandardHostServices {
         request: &DynamicCallRequest,
     ) -> HalResult<(Variant, Vec<Option<Variant>>)> {
         let capability = CapabilityId::ComActivationDispatch;
-        if !self.supports(capability) {
-            return Err(self.unsupported(capability, "dispatch_invoke"));
-        }
         if !self.policy.allow_com_activation {
             return Err(self.denied(capability, "dispatch_invoke"));
         }
         let has_byref_args = request.args.iter().any(|arg| arg.by_ref.is_some());
         if !has_byref_args {
             return Ok((self.dispatch_invoke_dynamic_variant(request)?, Vec::new()));
+        }
+        if !self.supports(capability) {
+            return Err(self.unsupported(capability, "dispatch_invoke"));
         }
 
         #[cfg(target_os = "windows")]
