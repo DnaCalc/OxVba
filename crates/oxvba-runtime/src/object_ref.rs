@@ -393,6 +393,11 @@ pub const RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR: RuntimeInterfaceDescriptor =
         dual_dispatch: false,
     };
 
+fn runtime_iunknown_interface_descriptor() -> &'static RuntimeInterfaceDescriptor {
+    static DESCRIPTOR: RuntimeInterfaceDescriptor = RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR;
+    &DESCRIPTOR
+}
+
 pub const COMPAT_OBJECT_CLASS_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescriptor {
     name: "OxVba.CompatObject",
     project_identity: None,
@@ -636,13 +641,14 @@ unsafe extern "C" fn compat_query_interface(
     // attached to `CompatObjectBase` boxes minted by `from_compat_object` (`#[repr(C)]` with
     // `unknown` as the first field), so `owner` is that live box; the caller's outstanding COM
     // reference keeps it alive across the call.
-    let supports_iid = unsafe {
-        (*owner)
-            .class_descriptor
-            .interfaces
-            .iter()
-            .any(|interface| interface.identity.guid == iid)
-    };
+    let supports_iid = iid == RUNTIME_GUID_IUNKNOWN
+        || unsafe {
+            (*owner)
+                .class_descriptor
+                .interfaces
+                .iter()
+                .any(|interface| interface.identity.guid == iid)
+        };
     if !supports_iid {
         return RUNTIME_E_NOINTERFACE;
     }
@@ -1149,7 +1155,11 @@ impl ObjectRef {
         &self,
         iid: RuntimeInterfaceId,
     ) -> Option<&'static RuntimeInterfaceDescriptor> {
-        self.try_class_descriptor()?
+        let class_descriptor = self.try_class_descriptor()?;
+        if iid == RuntimeInterfaceId::IUnknown {
+            return Some(runtime_iunknown_interface_descriptor());
+        }
+        class_descriptor
             .interfaces
             .iter()
             .find(|descriptor| descriptor.id == iid)
@@ -1159,7 +1169,11 @@ impl ObjectRef {
         &self,
         guid: RuntimeGuid,
     ) -> Option<&'static RuntimeInterfaceDescriptor> {
-        self.try_class_descriptor()?
+        let class_descriptor = self.try_class_descriptor()?;
+        if guid == RUNTIME_GUID_IUNKNOWN {
+            return Some(runtime_iunknown_interface_descriptor());
+        }
+        class_descriptor
             .interfaces
             .iter()
             .find(|descriptor| descriptor.identity.guid == guid)
@@ -2001,6 +2015,71 @@ mod tests {
         unsafe {
             ((*(*object.raw_iunknown()).vtbl).release)(dispatch_out);
             ((*(*object.raw_iunknown()).vtbl).release)(custom_out);
+        }
+        assert_eq!(object.strong_count_for_test(), 1);
+    }
+
+    #[test]
+    fn iunknown_identity_is_intrinsic_even_when_descriptor_omits_it() {
+        static VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(7),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+            is_enumerator_member: false,
+        };
+        static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "ITestDual",
+            members: &[VALUE_MEMBER],
+            dual_dispatch: true,
+        };
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "Project.Widget",
+            project_identity: None,
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
+            interfaces: &[DISPATCH_INTERFACE],
+        };
+
+        let object = ObjectRef::from_compat_identity_with_descriptor(23, &TEST_CLASS);
+        let iunknown = object
+            .query_interface_descriptor(RuntimeInterfaceId::IUnknown)
+            .expect("IUnknown must be intrinsic to every runtime object");
+        assert_eq!(iunknown.name, "IUnknown");
+        let projection = object
+            .query_interface_projection_by_guid(RUNTIME_GUID_IUNKNOWN)
+            .expect("IUnknown projection must not depend on class descriptor rows");
+        assert_eq!(projection.object_identity.compat_identity, 23);
+        assert_eq!(projection.interface_identity.guid, RUNTIME_GUID_IUNKNOWN);
+        assert!(
+            object
+                .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+                .is_some(),
+            "class-advertised interfaces still resolve normally"
+        );
+
+        let mut unknown_out = core::ptr::null_mut();
+        let hr = unsafe {
+            ((*(*object.raw_iunknown()).vtbl).query_interface)(
+                object.raw_iunknown().cast(),
+                RUNTIME_GUID_IUNKNOWN,
+                &mut unknown_out,
+            )
+        };
+        assert_eq!(hr, RUNTIME_S_OK);
+        assert_eq!(unknown_out, object.raw_iunknown().cast());
+        assert_eq!(object.strong_count_for_test(), 2);
+        unsafe {
+            ((*(*object.raw_iunknown()).vtbl).release)(unknown_out);
         }
         assert_eq!(object.strong_count_for_test(), 1);
     }

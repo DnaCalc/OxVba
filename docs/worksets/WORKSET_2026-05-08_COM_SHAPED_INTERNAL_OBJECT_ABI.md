@@ -135,6 +135,11 @@ First implementation slice:
 - `compat_object_exposes_descriptor_backed_iunknown_interface` proves that existing compat objects expose the internal IUnknown descriptor without falsely claiming dual dispatch support.
 - `descriptor_backed_object_can_advertise_dual_dispatch_shape` proves an object can advertise a dual-dispatch interface descriptor with default member metadata and vtable slot metadata.
 - `descriptor_backed_object_supports_raw_query_interface_projection` proves raw runtime `QueryInterface` succeeds for descriptor-advertised `IDispatch` and preserves AddRef/Release balance.
+- `iunknown_identity_is_intrinsic_even_when_descriptor_omits_it` hardens the runtime ABI so
+  OxVba-owned object boxes always expose stable `IUnknown` descriptor/projection and raw
+  `QueryInterface(IUnknown)` identity even if a malformed/incomplete class descriptor omits the
+  copied `IUnknown` interface row; the existing foreign-IUnknown wrapper test remains green and
+  proves native/foreign objects are not given OxVba runtime descriptors by this fallback.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
 - `runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup` proves unhinted member/default lookup caches unique arity-matched descriptor plans, covering explicit dynamic call traffic that does not carry a property/method hint.
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.
