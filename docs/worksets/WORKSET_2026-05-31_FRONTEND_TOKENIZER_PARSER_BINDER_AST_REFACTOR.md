@@ -1914,6 +1914,13 @@ Candidate bead units:
   no-argument call routing covers `Call <procedure>` statements as zero-argument calls through HIR.
   The `Array(...)` helper proof is not array storage/indexing/`ReDim` closure; that remains in
   FE-8.5.d.
+  Closure reconciliation: `bd-aprs.9.10` is no longer open on concrete declaration/type-surface
+  rows for property declarations, optional/default metadata carriers, `ParamArray` shape
+  diagnostics, richer `Declare` signatures, UDT layout/field/default/reset behavior,
+  fixed-length string metadata/coercion, object-module visibility, event/`WithEvents` declaration
+  legality, fixed-array `Option Base` metadata, and class-member visibility. The broader
+  optional/default expression-coercion breadth that remains outside the covered subsets is split to
+  `bd-aprs.9.10.3`, which blocks `bd-aprs.9.5`; it is not hidden inside this parent closure.
 
 Evidence gate: emit magic-string matches shrink to genuine library/runtime intrinsics, and
 lowering remains behavior-correct across compiler/host/conformance suites.

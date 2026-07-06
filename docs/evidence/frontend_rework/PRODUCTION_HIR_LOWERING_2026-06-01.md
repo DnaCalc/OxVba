@@ -1787,16 +1787,21 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   parameter following a string default could be absent from the HIR parameter list even though the
   signature parser saw it. Procedure symbol collection now reconciles missing parameter symbols
   against the signature parser instead of letting the default-route gate reject the source.
-- This deliberately does not claim arbitrary typed coercion of default expressions, locale-sensitive
-  Date literal breadth, or broader expression-default metadata expansion beyond the covered integer
-  plus string/Boolean constant-expression subset, bounded Boolean comparison subset, exact
-  same-string equality/inequality subset, bounded Date/Currency arithmetic numeric subset, and
-  exact i64 optional-default carrier subset, plus the covered `Single` f32 metadata carrier and
-  string-to-declared-scalar default coercions, nor exact Excel modal text for invalid default
-  diagnostics beyond the covered reject-vs-accept behavior. Collation-sensitive string comparisons,
-  locale/database-sensitive `Like`, `Is`, Variant-origin string/numeric comparison exceptions, and
-  coercions outside the covered mixed `String`/scalar effective-type subset remain FE-8.5.f
-  residuals.
+- 2026-07-06 closure reconciliation for `bd-aprs.9.10`: the declaration/type surface above is now
+  covered by HIR-backed metadata, scanner diagnostics, binder regressions, and package-VM omitted
+  default evidence for the scoped property, optional/default, `ParamArray`, `Declare`, UDT,
+  fixed-length string, object-module visibility, event, `WithEvents`, fixed-array `Option Base`,
+  and class-member visibility lanes. This deliberately does not claim arbitrary typed coercion of
+  default expressions, locale-sensitive Date literal breadth, or broader expression-default
+  metadata expansion beyond the covered integer plus string/Boolean constant-expression subset,
+  bounded Boolean comparison subset, exact same-string equality/inequality subset, bounded
+  Date/Currency arithmetic numeric subset, exact i64 optional-default carrier subset, covered
+  `Single` f32 metadata carrier, string-to-declared-scalar defaults, bounded `Like`, and mixed
+  `String`/scalar effective-type subset. Collation-sensitive string comparisons,
+  locale/database-sensitive `Like`, `Is`, Variant-origin string/numeric comparison exceptions,
+  coercions outside the covered mixed `String`/scalar subset, and broader optional call-entry
+  combinations are split to `bd-aprs.9.10.3`, which blocks the broad `bd-aprs.9.5` FE-8.5
+  production-lowering gate rather than remaining hidden in this parent.
 
 ## Checks
 
