@@ -1362,6 +1362,19 @@ fn indexed_property_missing_required_index_is_bind_error() {
 }
 
 #[test]
+fn property_accessor_index_name_mismatch_is_bind_error() {
+    let src = "Sub Main()\nEnd Sub\n\n\
+               Property Get Item(ByVal index As Long) As Object\nEnd Property\n\n\
+               Property Set Item(ByVal key As Long, ByVal value As Object)\nEnd Property\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("IncompatiblePropertyAccessor")
+            || err.contains("Property Set index parameter names must match Property Get"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn omitted_optional_argument_still_uses_default() {
     let src = "Sub Main()\n    Dim r As Long\n    r = AddOpt(5)\nEnd Sub\n\nFunction AddOpt(ByVal n As Long, Optional ByVal bonus As Long = 7) As Long\n    AddOpt = n + bonus\nEnd Function\n";
     assert_eq!(run_main_local0(src), Some(12.0));
@@ -2652,7 +2665,7 @@ fn project_default_member_set_roundtrip() {
 fn default_member_property_set_assigned_object_is_byval_after_byref_index_arg() {
     let main = "Sub Main()\n    Dim b As Box\n    Dim t As Thing\n    Dim target As Long\n    Set b = New Box\n    Set t = New Thing\n    Set b(target) = t\nEnd Sub\n";
     let box_cls = "Public Property Get Item(ByVal i As Long) As Thing\n    Set Item = Nothing\nEnd Property\nAttribute Item.VB_UserMemId = 0\n\n\
-                   Public Property Set Item(ByRef target As Long, ByRef value As Thing)\nEnd Property\nAttribute Item.VB_UserMemId = 0\n";
+                   Public Property Set Item(ByRef i As Long, ByRef value As Thing)\nEnd Property\nAttribute Item.VB_UserMemId = 0\n";
     let thing = "Public Sub Touch()\nEnd Sub\n";
     let program = bind_program(
         &multi_manifest(&[

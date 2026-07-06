@@ -1798,8 +1798,7 @@ Candidate bead units:
   metadata while preceding indexed arguments keep their declared/default modes;
   duplicate property accessors plus mismatched `Property Get`/`Let`, `Property Get`/`Set`, and
   `Property Let`/`Set` index/value/reference pairings reject through scanner-owned
-  property-accessor diagnostics, with Set-side index pairing currently enforcing count/type rather
-  than source parameter-name equality,
+  property-accessor diagnostics, including Set-side index parameter name and type equality,
   `Event` declarations now reject standard-module placement through
   `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` and reject `Optional`, default-valued, or `ParamArray`
   event arguments plus `As New` event argument types before event metadata is published, matching

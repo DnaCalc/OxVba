@@ -718,6 +718,13 @@ impl ScanCtx<'_> {
             );
         }
         for (get_param, set_param) in get_sig.params.iter().zip(set_sig.params.iter()) {
+            if fold_identifier(&get_param.name) != fold_identifier(&set_param.name) {
+                return incompatible_property_accessor(
+                    property,
+                    new_accessor,
+                    "Property Set index parameter names must match Property Get",
+                );
+            }
             if get_param.ty != set_param.ty {
                 return incompatible_property_accessor(
                     property,
@@ -765,6 +772,13 @@ impl ScanCtx<'_> {
             .take(let_index_len)
             .zip(set_sig.params.iter().take(set_index_len))
         {
+            if fold_identifier(&let_param.name) != fold_identifier(&set_param.name) {
+                return incompatible_property_accessor(
+                    property,
+                    new_accessor,
+                    "Property Let and Property Set index parameter names must match",
+                );
+            }
             if let_param.ty != set_param.ty {
                 return incompatible_property_accessor(
                     property,

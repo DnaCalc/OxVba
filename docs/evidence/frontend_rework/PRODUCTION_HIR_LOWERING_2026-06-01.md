@@ -1666,9 +1666,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   accessors now reject with `SYM-E-DUPLICATE-PROPERTY-ACCESSOR`, and paired `Property Get`/`Let`
   declarations reject with `SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR` when their index parameter
   names/types or final value-vs-return type do not match; `Property Get`/`Set` and `Property
-  Let`/`Set` index count/type mismatches use the same diagnostic while still allowing different
-  index parameter names and allowing the final `Property Set` reference to differ from the Get
-  return type if it is object-compatible. Required procedure/Declare parameters now reject
+  Let`/`Set` index count/name/type mismatches use the same diagnostic while still allowing the
+  final `Property Set` reference to differ from the Get return type if it is object-compatible.
+  Required procedure/Declare parameters now reject
   default values before signature metadata is published, and Event declarations now reject
   standard-module placement with `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` plus `Optional`,
   default-valued, `ParamArray`, or `As New` arguments through scanner-owned declaration diagnostics

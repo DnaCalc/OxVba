@@ -1030,7 +1030,7 @@ fn cross_project_default_member_property_set_assigned_object_is_byval_even_when_
             "Box",
             "Public Property Get Item(ByVal i As Long) As Thing\nSet Item = Nothing\nEnd Property\n\
              Attribute Item.VB_UserMemId = 0\n\
-             Public Property Set Item(ByRef target As Long, ByRef value As Thing)\nEnd Property\n\
+             Public Property Set Item(ByRef i As Long, ByRef value As Thing)\nEnd Property\n\
              Attribute Item.VB_UserMemId = 0\n",
             true,
         )

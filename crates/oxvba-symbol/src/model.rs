@@ -413,7 +413,7 @@ impl SymbolModelError {
                 DiagnosticPhase::Symbol,
                 format!("incompatible Property {accessor} accessor for `{property}`: {reason}"),
             )
-            .with_help("Match Property Let index names/types to Property Get, match Property Set index count/types to the paired accessor, and keep final writer parameters VBA-compatible."),
+            .with_help("Match property index counts, names, and types across paired accessors, and keep final writer parameters VBA-compatible."),
             SymbolModelError::InvalidPropertySetReferenceParameter {
                 procedure,
                 parameter,
