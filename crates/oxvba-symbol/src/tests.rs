@@ -1507,6 +1507,93 @@ fn property_get_let_pairing_rejects_mismatches() {
 }
 
 #[test]
+fn property_get_set_pairing_accepts_matching_index_accessors_in_any_order() {
+    for src in [
+        "Property Get Foo(ByVal index As Long) As Widget\r\nEnd Property\r\n\
+         Property Set Foo(ByRef target As Long, ByRef value As Object)\r\nEnd Property\r\n",
+        "Property Set Foo(ByRef target As Long, ByRef value As Object)\r\nEnd Property\r\n\
+         Property Get Foo(ByVal index As Long) As Widget\r\nEnd Property\r\n",
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+        let scope = env.module_scope("Mod1").expect("module scope");
+        let binding = env
+            .resolve(&ResolutionContext::at(scope), "Foo")
+            .expect("property resolves");
+        let symbol = env
+            .symbols
+            .symbol(binding.symbol.expect("symbol id"))
+            .expect("symbol");
+        let SymbolImpl::Property(group) = &symbol.imp else {
+            panic!("expected Property group");
+        };
+        assert!(group.get.is_some(), "Get accessor should publish");
+        assert!(group.set.is_some(), "Set accessor should publish");
+    }
+}
+
+#[test]
+fn property_get_set_pairing_rejects_index_mismatches() {
+    for (src, reason) in [
+        (
+            "Property Get Foo(ByVal index As Long) As Widget\r\nEnd Property\r\n\
+             Property Set Foo(ByRef value As Object)\r\nEnd Property\r\n",
+            "Property Set must have the Property Get index parameters plus one final reference parameter",
+        ),
+        (
+            "Property Get Foo(ByVal index As Long) As Widget\r\nEnd Property\r\n\
+             Property Set Foo(ByRef index As String, ByRef value As Object)\r\nEnd Property\r\n",
+            "Property Set index parameter types must match Property Get",
+        ),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("mismatched Property Get/Set pair should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::IncompatiblePropertyAccessor {
+                    property,
+                    accessor,
+                    reason: actual_reason,
+                } if property == "Foo" && *accessor == "Set" && *actual_reason == reason
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR"
+        );
+    }
+}
+
+#[test]
+fn property_let_set_pairing_rejects_index_mismatch_without_get() {
+    let src = "Property Let Foo(ByRef index As Long, ByRef value As Long)\r\nEnd Property\r\n\
+               Property Set Foo(ByRef index As String, ByRef value As Object)\r\nEnd Property\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("mismatched Property Let/Set pair should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::IncompatiblePropertyAccessor {
+                property,
+                accessor,
+                reason,
+            } if property == "Foo"
+                && *accessor == "Set"
+                && *reason == "Property Let and Property Set index parameter types must match"
+        ),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn exported_member_attribute_marks_project_default_member() {
     let src = "Property Get Value(ByVal i As Long) As Long\r\n    Value = i\r\nEnd Property\r\n\
                Attribute Value.VB_UserMemId = 0\r\n";

@@ -501,13 +501,26 @@ impl ScanCtx<'_> {
                 if let Some(let_sig) = group.let_ {
                     self.validate_property_get_let_pair(sig, let_sig, property, accessor)?;
                 }
+                if let Some(set_sig) = group.set {
+                    self.validate_property_get_set_pair(sig, set_sig, property, accessor)?;
+                }
             }
             PropertyAccessor::Let => {
                 if let Some(get_sig) = group.get {
                     self.validate_property_get_let_pair(get_sig, sig, property, accessor)?;
                 }
+                if let Some(set_sig) = group.set {
+                    self.validate_property_let_set_pair(sig, set_sig, property, accessor)?;
+                }
             }
-            PropertyAccessor::Set => {}
+            PropertyAccessor::Set => {
+                if let Some(get_sig) = group.get {
+                    self.validate_property_get_set_pair(get_sig, sig, property, accessor)?;
+                }
+                if let Some(let_sig) = group.let_ {
+                    self.validate_property_let_set_pair(let_sig, sig, property, accessor)?;
+                }
+            }
         }
         Ok(())
     }
@@ -576,6 +589,93 @@ impl ScanCtx<'_> {
                 new_accessor,
                 "Property Let value parameter type must match Property Get return type",
             );
+        }
+        Ok(())
+    }
+
+    fn validate_property_get_set_pair(
+        &self,
+        get_id: SignatureId,
+        set_id: SignatureId,
+        property: &str,
+        new_accessor: PropertyAccessor,
+    ) -> Result<(), SymbolModelError> {
+        let Some(get_sig) = self.signatures.get(get_id) else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Get signature metadata is missing",
+            );
+        };
+        let Some(set_sig) = self.signatures.get(set_id) else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Set signature metadata is missing",
+            );
+        };
+        if set_sig.params.len() != get_sig.params.len() + 1 {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Set must have the Property Get index parameters plus one final reference parameter",
+            );
+        }
+        for (get_param, set_param) in get_sig.params.iter().zip(set_sig.params.iter()) {
+            if get_param.ty != set_param.ty {
+                return incompatible_property_accessor(
+                    property,
+                    new_accessor,
+                    "Property Set index parameter types must match Property Get",
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_property_let_set_pair(
+        &self,
+        let_id: SignatureId,
+        set_id: SignatureId,
+        property: &str,
+        new_accessor: PropertyAccessor,
+    ) -> Result<(), SymbolModelError> {
+        let Some(let_sig) = self.signatures.get(let_id) else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Let signature metadata is missing",
+            );
+        };
+        let Some(set_sig) = self.signatures.get(set_id) else {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Set signature metadata is missing",
+            );
+        };
+        let let_index_len = let_sig.params.len().saturating_sub(1);
+        let set_index_len = set_sig.params.len().saturating_sub(1);
+        if let_index_len != set_index_len {
+            return incompatible_property_accessor(
+                property,
+                new_accessor,
+                "Property Let and Property Set index parameter counts must match",
+            );
+        }
+        for (let_param, set_param) in let_sig
+            .params
+            .iter()
+            .take(let_index_len)
+            .zip(set_sig.params.iter().take(set_index_len))
+        {
+            if let_param.ty != set_param.ty {
+                return incompatible_property_accessor(
+                    property,
+                    new_accessor,
+                    "Property Let and Property Set index parameter types must match",
+                );
+            }
         }
         Ok(())
     }

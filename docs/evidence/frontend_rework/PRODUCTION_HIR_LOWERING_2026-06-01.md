@@ -1609,15 +1609,23 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   preserving declared/default `ByRef` modes for preceding indexed arguments. Duplicate property
   accessors now reject with `SYM-E-DUPLICATE-PROPERTY-ACCESSOR`, and paired `Property Get`/`Let`
   declarations reject with `SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR` when their index parameter
-  names/types or final value-vs-return type do not match. This follows the same Microsoft Learn
-  Function/Property Let rules and the Property Set statement's object-reference contract
+  names/types or final value-vs-return type do not match; `Property Get`/`Set` and `Property
+  Let`/`Set` index count/type mismatches use the same diagnostic while still allowing different
+  index parameter names and allowing the final `Property Set` reference to differ from the Get
+  return type if it is object-compatible. This
+  follows the same Microsoft Learn Function/Property Let rules, the Property Set statement's
+  object-reference contract, and the inconsistent property definitions diagnostic
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-let-statement`,
-  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-set-statement`),
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/property-set-statement`,
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/definitions-of-property-procedures-for-the-same-property-are-inconsistent`),
   and remains a declaration-shape diagnostic rather than broader call-site
   optional argument closure. Evidence: `scanner_rejects_required_parameters_after_optional`;
   `duplicate_property_accessors_reject`;
   `property_get_let_pairing_accepts_matching_accessors_in_any_order`;
   `property_get_let_pairing_rejects_mismatches`;
+  `property_get_set_pairing_accepts_matching_index_accessors_in_any_order`;
+  `property_get_set_pairing_rejects_index_mismatches`;
+  `property_let_set_pairing_rejects_index_mismatch_without_get`;
   `property_let_allows_required_value_after_optional_index_args`;
   `property_writers_require_final_value_or_reference_parameter`;
   `property_writer_final_parameter_is_published_byval`;
