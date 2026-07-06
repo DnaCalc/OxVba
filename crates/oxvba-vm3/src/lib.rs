@@ -68,8 +68,9 @@ use oxvba_rt_abi::{
     variant_changed,
 };
 use oxvba_runtime::object_ref::{
-    ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RuntimeClassDescriptor,
-    RuntimeInterfaceDescriptor,
+    ObjectRef, RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR,
+    RuntimeClassDescriptor, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
+    RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
@@ -94,6 +95,69 @@ static VBA_COLLECTION_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescripto
     name: "Collection",
     interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
 };
+
+fn synthetic_dispatch_id(index: usize, default_member: bool) -> i32 {
+    if default_member {
+        0
+    } else {
+        i32::try_from(index)
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .unwrap_or(i32::MAX)
+    }
+}
+
+fn runtime_member_invoke_kind(kind: ProjectMemberKind) -> RuntimeMemberInvokeKind {
+    match kind {
+        ProjectMemberKind::Method => RuntimeMemberInvokeKind::Method,
+        ProjectMemberKind::PropertyGet => RuntimeMemberInvokeKind::PropertyGet,
+        ProjectMemberKind::PropertyLet => RuntimeMemberInvokeKind::PropertyLet,
+        ProjectMemberKind::PropertySet => RuntimeMemberInvokeKind::PropertySet,
+    }
+}
+
+fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescriptor> {
+    func.locals
+        .iter()
+        .take(func.param_count)
+        .skip(1)
+        .map(|local| {
+            let param = local.param.as_ref();
+            RuntimeParamDescriptor {
+                name: Box::leak(local.name.clone().into_boxed_str()),
+                value_type: runtime_value_type(&local.ty),
+                by_ref: param.map(|p| p.by_ref).unwrap_or(false),
+                optional: false,
+                param_array: param.map(|p| p.variadic).unwrap_or(false),
+            }
+        })
+        .collect()
+}
+
+fn runtime_return_type(func: &oxvba_oxir::OxFunc) -> Option<RuntimeValueType> {
+    func.return_local
+        .and_then(|local| func.locals.get(local.0))
+        .map(|local| runtime_value_type(&local.ty))
+}
+
+fn runtime_value_type(ty: &OxTy) -> RuntimeValueType {
+    match ty {
+        OxTy::Bool => RuntimeValueType::Boolean,
+        OxTy::Byte => RuntimeValueType::Byte,
+        OxTy::Integer => RuntimeValueType::Integer,
+        OxTy::Long => RuntimeValueType::Long,
+        OxTy::LongLong => RuntimeValueType::LongLong,
+        OxTy::Currency => RuntimeValueType::Currency,
+        OxTy::Single => RuntimeValueType::Single,
+        OxTy::Double => RuntimeValueType::Double,
+        OxTy::Date => RuntimeValueType::Date,
+        OxTy::Decimal => RuntimeValueType::Decimal,
+        OxTy::Str | OxTy::FixedStr(_) => RuntimeValueType::String,
+        OxTy::Object(_) => RuntimeValueType::Object,
+        OxTy::Record(_) => RuntimeValueType::Record,
+        OxTy::Variant | OxTy::Array(_, _) | OxTy::ProcRef => RuntimeValueType::Variant,
+    }
+}
 
 /// A failure to execute an OxIR program on vm3.
 #[derive(Debug, Clone)]
@@ -269,12 +333,7 @@ impl<'h> Vm3<'h> {
         let class_descriptors: Vec<&'static RuntimeClassDescriptor> = program
             .classes
             .iter()
-            .map(|class| {
-                let name: &'static str = Box::leak(class.name.clone().into_boxed_str());
-                let interfaces: &'static [RuntimeInterfaceDescriptor] =
-                    Box::leak(Box::new([RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR]));
-                &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
-            })
+            .map(|class| Self::build_runtime_class_descriptor(program, class))
             .collect();
         let mut event_routes: HashMap<(i32, i32), usize> = HashMap::new();
         for route in &program.event_routes {
@@ -293,6 +352,51 @@ impl<'h> Vm3<'h> {
             predeclared_singletons: HashMap::new(),
             event_routes,
         }
+    }
+
+    fn build_runtime_class_descriptor(
+        program: &OxProgram,
+        class: &oxvba_oxir::OxClass,
+    ) -> &'static RuntimeClassDescriptor {
+        let name: &'static str = Box::leak(class.name.clone().into_boxed_str());
+        let members: &'static [RuntimeMemberDescriptor] = Box::leak(
+            class
+                .methods
+                .iter()
+                .enumerate()
+                .map(|(index, method)| {
+                    let proc = program.funcs.get(method.proc.0);
+                    let params: &'static [RuntimeParamDescriptor] = Box::leak(
+                        proc.map(runtime_member_params)
+                            .unwrap_or_default()
+                            .into_boxed_slice(),
+                    );
+                    RuntimeMemberDescriptor {
+                        name: Box::leak(method.name.clone().into_boxed_str()),
+                        dispatch_id: method.dispid.unwrap_or_else(|| {
+                            synthetic_dispatch_id(index, method.is_default_member)
+                        }),
+                        vtable_slot: method.vtable_slot,
+                        invoke_kind: runtime_member_invoke_kind(method.kind),
+                        arity: params.len(),
+                        params,
+                        return_type: proc.and_then(runtime_return_type),
+                        is_default_member: method.is_default_member,
+                    }
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
+        let dispatch = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members,
+            dual_dispatch: true,
+        };
+        let interfaces: &'static [RuntimeInterfaceDescriptor] =
+            Box::leak(vec![RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, dispatch].into_boxed_slice());
+        &*Box::leak(Box::new(RuntimeClassDescriptor { name, interfaces }))
     }
 
     /// The index of the loaded program declaring unit `name` (its `unit_name`), for resolving a
@@ -4745,6 +4849,15 @@ mod tests {
         }
     }
 
+    fn byval_long_param(name: &str) -> CoreParam {
+        CoreParam {
+            name: name.into(),
+            ty: VarTypeRef::Builtin(BuiltinType::Long),
+            by_ref: false,
+            variadic: false,
+        }
+    }
+
     /// `CorePlace::Local(i)`.
     fn lc(i: usize) -> CorePlace {
         CorePlace::Local(CoreLocalId(i))
@@ -5163,6 +5276,140 @@ mod tests {
             vm.create_project_instance("Nope"),
             Err(Vm3Error::Fault(_))
         ));
+    }
+
+    #[test]
+    fn project_instance_runtime_descriptor_carries_dispatch_members() {
+        let get_value = proc(
+            "GetValue",
+            ProcedureKind::Function,
+            vec![long_param("me")],
+            vec![local("GetValue", VarTypeRef::Builtin(BuiltinType::Long))],
+            Some(CoreLocalId(1)),
+            vec![assign(lc(1), CoreValue::Const(CoreConst::I32(7)))],
+        );
+        let let_value = proc(
+            "LetValue",
+            ProcedureKind::PropertyLet,
+            vec![long_param("me"), byval_long_param("newValue")],
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let reset = proc(
+            "Reset",
+            ProcedureKind::Sub,
+            vec![long_param("me"), long_param("count")],
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let prog = CoreProgram {
+            long_ptr_width: Default::default(),
+            procs: vec![main, get_value, let_value, reset],
+            entry: Some(ProcId(0)),
+            unit_name: "T".into(),
+            classes: vec![CoreClass {
+                name: "Widget".into(),
+                predeclared: false,
+                initialize: None,
+                terminate: None,
+                fields: Vec::new(),
+                methods: vec![
+                    CoreClassMethod {
+                        name: "Value".into(),
+                        kind: ProjectMemberKind::PropertyGet,
+                        proc: ProcId(1),
+                        dispid: Some(0),
+                        vtable_slot: Some(7),
+                        is_default_member: true,
+                        is_enumerator_member: false,
+                    },
+                    CoreClassMethod {
+                        name: "Value".into(),
+                        kind: ProjectMemberKind::PropertyLet,
+                        proc: ProcId(2),
+                        dispid: Some(0),
+                        vtable_slot: Some(8),
+                        is_default_member: true,
+                        is_enumerator_member: false,
+                    },
+                    CoreClassMethod {
+                        name: "Reset".into(),
+                        kind: ProjectMemberKind::Method,
+                        proc: ProcId(3),
+                        dispid: None,
+                        vtable_slot: None,
+                        is_default_member: false,
+                        is_enumerator_member: false,
+                    },
+                ],
+                as_new_fields: Vec::new(),
+                implements: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate"),
+        ));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        let mut vm = Vm3::activate(oxp, host).expect("activate");
+        let widget = vm.create_project_instance("Widget").expect("create Widget");
+        let obj = widget.as_object_ref().expect("Widget object");
+
+        assert!(
+            obj.query_interface_descriptor(RuntimeInterfaceId::IUnknown)
+                .is_some()
+        );
+        let dispatch = obj
+            .query_interface_descriptor(RuntimeInterfaceId::IDispatch)
+            .expect("project instances should advertise IDispatch");
+        assert_eq!(dispatch.name, "IDispatch");
+        assert!(dispatch.dual_dispatch);
+        assert_eq!(dispatch.members.len(), 3);
+
+        let get = &dispatch.members[0];
+        assert_eq!(get.name, "Value");
+        assert_eq!(get.dispatch_id, 0);
+        assert_eq!(get.vtable_slot, Some(7));
+        assert_eq!(get.invoke_kind, RuntimeMemberInvokeKind::PropertyGet);
+        assert!(get.is_default_member);
+        assert_eq!(get.arity, 0);
+        assert_eq!(get.params, &[]);
+        assert_eq!(get.return_type, Some(RuntimeValueType::Long));
+
+        let put = &dispatch.members[1];
+        assert_eq!(put.name, "Value");
+        assert_eq!(put.dispatch_id, 0);
+        assert_eq!(put.vtable_slot, Some(8));
+        assert_eq!(put.invoke_kind, RuntimeMemberInvokeKind::PropertyLet);
+        assert!(put.is_default_member);
+        assert_eq!(put.arity, 1);
+        assert_eq!(put.params[0].name, "newValue");
+        assert_eq!(put.params[0].value_type, RuntimeValueType::Long);
+        assert!(!put.params[0].by_ref);
+        assert_eq!(put.return_type, None);
+
+        let method = &dispatch.members[2];
+        assert_eq!(method.name, "Reset");
+        assert_eq!(method.dispatch_id, 3);
+        assert_eq!(method.vtable_slot, None);
+        assert_eq!(method.invoke_kind, RuntimeMemberInvokeKind::Method);
+        assert!(!method.is_default_member);
+        assert_eq!(method.arity, 1);
+        assert_eq!(method.params[0].name, "count");
+        assert_eq!(method.params[0].value_type, RuntimeValueType::Long);
+        assert!(method.params[0].by_ref);
+        assert_eq!(method.return_type, None);
     }
 
     #[test]

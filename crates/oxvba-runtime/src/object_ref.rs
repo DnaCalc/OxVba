@@ -353,6 +353,7 @@ pub const COMPAT_OBJECT_CLASS_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassD
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RuntimeDispatchCacheKey {
+    pub interface_descriptor: usize,
     pub interface_id: RuntimeInterfaceId,
     pub normalized_member_name: String,
     pub invoke_kind: RuntimeMemberInvokeKind,
@@ -395,6 +396,7 @@ impl RuntimeDispatchPlanCache {
         arity: usize,
     ) -> Option<RuntimeDispatchPlan> {
         let key = RuntimeDispatchCacheKey {
+            interface_descriptor: runtime_interface_descriptor_key(interface),
             interface_id: interface.id,
             normalized_member_name: normalize_runtime_member_name(member_name),
             invoke_kind,
@@ -414,6 +416,7 @@ impl RuntimeDispatchPlanCache {
         arity: usize,
     ) -> Option<RuntimeDispatchPlan> {
         let key = RuntimeDispatchCacheKey {
+            interface_descriptor: runtime_interface_descriptor_key(interface),
             interface_id: interface.id,
             normalized_member_name: "<default>".to_string(),
             invoke_kind,
@@ -473,6 +476,7 @@ impl RuntimeDispatchPlanCache {
             return None;
         }
         let key = RuntimeDispatchCacheKey {
+            interface_descriptor: runtime_interface_descriptor_key(interface),
             interface_id: interface.id,
             normalized_member_name,
             invoke_kind: member.invoke_kind,
@@ -519,6 +523,10 @@ impl RuntimeDispatchPlanCache {
 
 fn normalize_runtime_member_name(member_name: &str) -> String {
     member_name.trim().to_ascii_lowercase()
+}
+
+fn runtime_interface_descriptor_key(interface: &RuntimeInterfaceDescriptor) -> usize {
+    interface as *const RuntimeInterfaceDescriptor as usize
 }
 
 #[repr(C)]
@@ -1563,6 +1571,68 @@ mod tests {
             .expect("cached default property get should resolve");
         assert_eq!(default_get, default_get_again);
         assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn runtime_dispatch_plan_cache_is_scoped_to_descriptor_identity() {
+        static FIRST_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 10,
+            vtable_slot: Some(3),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+        };
+        static SECOND_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 20,
+            vtable_slot: Some(9),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Variant),
+            is_default_member: true,
+        };
+        static FIRST_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IFirst",
+            members: &[FIRST_VALUE_MEMBER],
+            dual_dispatch: true,
+        };
+        static SECOND_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "ISecond",
+            members: &[SECOND_VALUE_MEMBER],
+            dual_dispatch: true,
+        };
+
+        let mut cache = RuntimeDispatchPlanCache::new();
+        let first = cache
+            .resolve_member(
+                &FIRST_INTERFACE,
+                "Value",
+                RuntimeMemberInvokeKind::PropertyGet,
+                0,
+            )
+            .expect("first interface member should resolve");
+        let second = cache
+            .resolve_member(
+                &SECOND_INTERFACE,
+                "Value",
+                RuntimeMemberInvokeKind::PropertyGet,
+                0,
+            )
+            .expect("second interface member should resolve independently");
+
+        assert_eq!(first.dispatch_id, 10);
+        assert_eq!(first.vtable_slot, Some(3));
+        assert_eq!(second.dispatch_id, 20);
+        assert_eq!(second.vtable_slot, Some(9));
+        assert_eq!(cache.len(), 2);
     }
 
     #[test]
