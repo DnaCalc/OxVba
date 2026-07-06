@@ -123,6 +123,21 @@ fn bind_projects_error(closure_leaf_first: &[SymbolProjectManifest]) -> String {
     )
 }
 
+fn core_arg_const(arg: &CoreArg) -> Option<&CoreConst> {
+    match arg {
+        CoreArg::ByVal(value) => core_value_const(value),
+        _ => None,
+    }
+}
+
+fn core_value_const(value: &CoreValue) -> Option<&CoreConst> {
+    match value {
+        CoreValue::Const(c) => Some(c),
+        CoreValue::Coerce { value, .. } => core_value_const(value),
+        _ => None,
+    }
+}
+
 // ── The Lib + App two-project fixture ────────────────────────────────────────
 
 /// A reusable `Lib` project: a hidden-module function + a `Const`/`Enum`, a
@@ -1001,6 +1016,86 @@ fn cross_project_default_member_property_set_assigned_object_is_byval_even_when_
     assert!(
         matches!(args.get(2), Some(CoreArg::ByVal(_))),
         "assigned default-member Property Set object should lower as trailing ByVal runtime value, got {args:?}"
+    );
+}
+
+#[test]
+fn cross_project_named_property_set_reorders_index_args_before_value() {
+    let box_cls = || {
+        class_module(
+            "Box",
+            "Public Property Get Item(ByVal first As Long, ByVal second As Long) As Thing\n\
+             Set Item = Nothing\nEnd Property\n\
+             Attribute Item.VB_UserMemId = 0\n\
+             Public Property Set Item(ByVal first As Long, ByVal second As Long, ByRef value As Thing)\n\
+             End Property\n\
+             Attribute Item.VB_UserMemId = 0\n",
+            true,
+        )
+    };
+    let thing = || class_module("Thing", "Public Sub Touch()\nEnd Sub\n", true);
+    let lib_modules = || vec![box_cls(), thing()];
+    let lib = project("Lib", lib_modules(), vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Sub Main()\n\
+             \x20   Dim b As Box\n\
+             \x20   Dim t As Thing\n\
+             \x20   Set b = New Lib.Box\n\
+             \x20   Set t = New Lib.Thing\n\
+             \x20   Set b.Item(second := 4, first := 3) = t\n\
+             \x20   Set b(second := 2, first := 1) = t\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", lib_modules())],
+    );
+    let programs = bind_projects(&[lib, app], &NullTypeLibs).expect("bind_projects");
+    let app_program = programs
+        .iter()
+        .find(|program| program.unit_name == "App")
+        .expect("App program");
+    let mut lowered_arg_sets = Vec::new();
+    for proc in &app_program.procs {
+        for stmt in &proc.body {
+            let CoreStmt::Eval(CoreValue::Call { callee, args }) = stmt else {
+                continue;
+            };
+            if matches!(
+                callee,
+                CoreCallee::LateDispatch {
+                    name,
+                    kind: Some(oxvba_bundle::ProjectMemberKind::PropertySet),
+                    default_member: false,
+                } if name == "Item"
+            ) && args.len() == 4
+            {
+                lowered_arg_sets.push(args.as_slice());
+            }
+        }
+    }
+    let has_ordered_property_set = |first: i16, second: i16| {
+        lowered_arg_sets.iter().any(|args| {
+            matches!(args.first(), Some(CoreArg::ByVal(_)))
+                && matches!(
+                    args.get(1).and_then(|arg| core_arg_const(arg)),
+                    Some(CoreConst::I16(n)) if *n == first
+                )
+                && matches!(
+                    args.get(2).and_then(|arg| core_arg_const(arg)),
+                    Some(CoreConst::I16(n)) if *n == second
+                )
+                && matches!(args.get(3), Some(CoreArg::ByVal(_)))
+        })
+    };
+    assert!(
+        has_ordered_property_set(3, 4),
+        "explicit indexed Property Set should reorder named index args before trailing ByVal object, got {lowered_arg_sets:?}"
+    );
+    assert!(
+        has_ordered_property_set(1, 2),
+        "default-member Property Set should reorder named index args before trailing ByVal object, got {lowered_arg_sets:?}"
     );
 }
 

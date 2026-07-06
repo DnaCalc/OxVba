@@ -1022,6 +1022,100 @@ impl<'a> ProcLower<'a> {
         Ok(args)
     }
 
+    /// Arguments for a cross-bundle coclass `Property Let`/`Set` assignment.
+    /// Unlike a generic late-dispatch member call, the referenced export surface
+    /// publishes the accessor signature. Bind named index arguments into that
+    /// descriptor order and reserve the trailing value parameter for the RHS.
+    fn bind_extern_property_put_index_args(
+        &mut self,
+        arglist: Option<SyntaxNode<'_>>,
+        param_types: &[TypeLibParamType],
+        param_names: &[String],
+        param_optional: &[bool],
+        param_optional_defaults: &[Option<CoreConst>],
+    ) -> Result<Vec<CoreArg>, BindError> {
+        let total_count = param_types.len().max(param_names.len());
+        let bindable_count = total_count.saturating_sub(1);
+        let items = match arglist {
+            Some(a) => a.arg_items(),
+            None => Vec::new(),
+        };
+        let mut slots: Vec<Option<CoreArg>> = (0..bindable_count).map(|_| None).collect();
+        let mut pos = 0usize;
+        let mut seen_named = false;
+        for item in items {
+            match item {
+                ArgItem::Positional(expr, passing) => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
+                    if pos >= bindable_count {
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+                    }
+                    slots[pos] = Some(self.bind_extern_one(expr, param_types.get(pos), passing)?);
+                    pos += 1;
+                }
+                ArgItem::Omitted => {
+                    if seen_named {
+                        return Err(BindError::Unsupported(
+                            "positional argument cannot follow named argument".into(),
+                        ));
+                    }
+                    if pos >= bindable_count {
+                        return Err(BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment);
+                    }
+                    slots[pos] = Some(CoreArg::Omitted);
+                    pos += 1;
+                }
+                ArgItem::Named { name, value } => {
+                    seen_named = true;
+                    let folded = fold_identifier(name.text);
+                    match param_names
+                        .iter()
+                        .position(|p| fold_identifier(p) == folded)
+                    {
+                        Some(i) if i < bindable_count => {
+                            if slots[i].is_some() {
+                                return Err(BindError::Unsupported(format!(
+                                    "duplicate argument for parameter {}",
+                                    param_names[i]
+                                )));
+                            }
+                            slots[i] = Some(self.bind_extern_one(
+                                value,
+                                param_types.get(i),
+                                CallSitePassing::Default,
+                            )?);
+                        }
+                        Some(_) => {
+                            return Err(
+                                BindError::WrongNumberOfArgumentsOrInvalidPropertyAssignment,
+                            );
+                        }
+                        None => return Err(self.unresolved(name.text, "named argument")),
+                    }
+                }
+            }
+        }
+        Ok(slots
+            .into_iter()
+            .enumerate()
+            .map(|(i, slot)| {
+                slot.unwrap_or_else(|| {
+                    self.omitted_extern_optional_arg(
+                        i,
+                        param_types,
+                        param_names,
+                        param_optional,
+                        param_optional_defaults,
+                    )
+                })
+            })
+            .collect())
+    }
+
     /// Arguments for a cross-bundle **free function** (`ExternProc`): the callee is
     /// positional, so named args are reordered into their declared slots by name
     /// and declared optional gaps receive the same default synthesis used for
@@ -1377,11 +1471,20 @@ impl<'a> ProcLower<'a> {
                     DispatchRoute::ExternMember {
                         member: m,
                         param_types,
+                        param_names,
+                        param_optional,
+                        param_optional_defaults,
                         ..
                     },
                 ..
             }) => {
-                let mut args = self.bind_extern_args(arglist, &param_types)?;
+                let mut args = self.bind_extern_property_put_index_args(
+                    arglist,
+                    &param_types,
+                    &param_names,
+                    &param_optional,
+                    &param_optional_defaults,
+                )?;
                 args.push(CoreArg::ByVal(rhs.clone()));
                 Ok(Some(vec![CoreStmt::Eval(
                     self.late_member_call(&m, kind, recv.value, args),
@@ -1460,10 +1563,19 @@ impl<'a> ProcLower<'a> {
                 if let DispatchRoute::ExternMember {
                     member,
                     param_types,
+                    param_names,
+                    param_optional,
+                    param_optional_defaults,
                     ..
                 } = writer.route
                 {
-                    let mut args = self.bind_extern_args(arglist, &param_types)?;
+                    let mut args = self.bind_extern_property_put_index_args(
+                        arglist,
+                        &param_types,
+                        &param_names,
+                        &param_optional,
+                        &param_optional_defaults,
+                    )?;
                     args.push(CoreArg::ByVal(rhs.clone()));
                     Ok(Some(vec![CoreStmt::Eval(
                         self.late_member_call(&member, kind, recv, args),
