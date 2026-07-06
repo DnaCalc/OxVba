@@ -1716,6 +1716,104 @@ fn fixed_string_lengths_must_be_in_vba_range() {
 }
 
 #[test]
+fn public_object_module_data_members_cannot_use_private_object_module_types() {
+    let mut exposed_attrs = ModuleAttributes::named("PublicWidget");
+    exposed_attrs.vb_exposed = true;
+    let public_widget = ModuleUnit {
+        module_name: "PublicWidget".into(),
+        module_kind: ModuleKind::Class,
+        attributes: exposed_attrs,
+        source: "Public Child As PrivateChild\r\n".into(),
+    };
+    let m = manifest(
+        "Proj",
+        vec![public_widget, class_module("PrivateChild", "")],
+    );
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("public data member typed as private object module should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::PrivateObjectModuleTypeNotValidInPublicObjectMember {
+                name,
+                type_name,
+            } if name == "Child" && type_name == "PrivateChild"
+        ),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-PRIVATE-OBJECT-MODULE-TYPE-NOT-VALID-IN-PUBLIC-MEMBER"
+    );
+
+    let source_exposed = ModuleUnit {
+        module_name: "SourceExposed".into(),
+        module_kind: ModuleKind::Class,
+        attributes: ModuleAttributes::named("SourceExposed"),
+        source: "Attribute VB_Exposed = True\r\nPublic Child As PrivateChild\r\n".into(),
+    };
+    let m = manifest(
+        "Proj",
+        vec![source_exposed, class_module("PrivateChild", "")],
+    );
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("source Attribute VB_Exposed should also make the class public"),
+        Err(err) => err,
+    };
+    assert!(matches!(
+        err,
+        SymbolModelError::PrivateObjectModuleTypeNotValidInPublicObjectMember { .. }
+    ));
+
+    let mut public_child_attrs = ModuleAttributes::named("PublicChild");
+    public_child_attrs.vb_exposed = true;
+    let public_child = ModuleUnit {
+        module_name: "PublicChild".into(),
+        module_kind: ModuleKind::Class,
+        attributes: public_child_attrs,
+        source: "".into(),
+    };
+    for modules in [
+        vec![
+            class_module("PrivateWidget", "Public Child As PrivateChild\r\n"),
+            class_module("PrivateChild", ""),
+        ],
+        vec![
+            {
+                let mut attrs = ModuleAttributes::named("PublicWidget");
+                attrs.vb_exposed = true;
+                ModuleUnit {
+                    module_name: "PublicWidget".into(),
+                    module_kind: ModuleKind::Class,
+                    attributes: attrs,
+                    source: "Private Child As PrivateChild\r\n".into(),
+                }
+            },
+            class_module("PrivateChild", ""),
+        ],
+        vec![
+            {
+                let mut attrs = ModuleAttributes::named("PublicWidget");
+                attrs.vb_exposed = true;
+                ModuleUnit {
+                    module_name: "PublicWidget".into(),
+                    module_kind: ModuleKind::Class,
+                    attributes: attrs,
+                    source: "Public Child As PublicChild\r\n".into(),
+                }
+            },
+            public_child,
+        ],
+    ] {
+        let m = manifest("Proj", modules);
+        build_resolution_environment(&m, &NullTypeLibs)
+            .expect("accepted object-module data member type should remain accepted");
+    }
+}
+
+#[test]
 fn property_get_let_pairing_accepts_matching_accessors_in_any_order() {
     for src in [
         "Property Get Foo(ByVal index As Long) As String\r\nEnd Property\r\n\

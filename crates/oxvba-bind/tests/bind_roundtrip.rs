@@ -1567,6 +1567,51 @@ fn invalid_fixed_string_length_is_bind_error() {
 }
 
 #[test]
+fn public_object_member_private_class_type_is_bind_error() {
+    let mut public_attrs = ModuleAttributes::named("PublicWidget");
+    public_attrs.vb_exposed = true;
+    let manifest = SymbolProjectManifest {
+        project_name: "Proj".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![
+            ModuleUnit {
+                module_name: "Main".into(),
+                module_kind: ModuleKind::Procedural,
+                attributes: ModuleAttributes::named("Main"),
+                source: "Sub Main()\nEnd Sub\n".into(),
+            },
+            ModuleUnit {
+                module_name: "PublicWidget".into(),
+                module_kind: ModuleKind::Class,
+                attributes: public_attrs,
+                source: "Public Child As PrivateChild\n".into(),
+            },
+            ModuleUnit {
+                module_name: "PrivateChild".into(),
+                module_kind: ModuleKind::Class,
+                attributes: ModuleAttributes::named("PrivateChild"),
+                source: "".into(),
+            },
+        ],
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("public member typed as private class should fail binding")
+    );
+    assert!(
+        err.contains("PrivateObjectModuleTypeNotValidInPublicObjectMember")
+            && err.contains("name: \"Child\"")
+            && err.contains("type_name: \"PrivateChild\""),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);

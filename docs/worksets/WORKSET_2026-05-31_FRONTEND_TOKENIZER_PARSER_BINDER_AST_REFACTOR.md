@@ -1772,7 +1772,13 @@ Candidate bead units:
   explicit-private class-module declares and public/implicit-public standard-module declares remain
   accepted; public object-module constants, fixed-length string fields, and array fields now reject
   with `SYM-E-PUBLIC-OBJECT-MODULE-DATA-NOT-VALID` while private storage and ordinary public scalar
-  fields remain accepted; literal fixed-length `String * N` declarations now reject zero, negative,
+  fields remain accepted; exposed/public object modules now also reject public data members typed as
+  private object modules with
+  `SYM-E-PRIVATE-OBJECT-MODULE-TYPE-NOT-VALID-IN-PUBLIC-MEMBER` while private containers, private
+  members, and public object-module target types remain accepted, matching the Microsoft Learn
+  diagnostic for public members of public object modules
+  (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/fixed-length-strings-not-allowed-as-the-type-of-a-public-member-of-an-object-mod`);
+  literal fixed-length `String * N` declarations now reject zero, negative,
   and over-65,526 lengths with `SYM-E-INVALID-FIXED-STRING-LENGTH` before variable or UDT metadata
   is published, matching the Microsoft Learn fixed-length string diagnostic
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/invalid-length-for-fixed-length-string`);

@@ -184,6 +184,7 @@ pub struct ModuleCst {
     /// `true` for the active project; `false` for a referenced project.
     pub is_active: bool,
     pub module_kind: ModuleKind,
+    pub is_exposed: bool,
 }
 
 /// A borrowed view of a retained module CST (the `parse.syntax()` red root).
@@ -193,6 +194,7 @@ pub struct ModuleCstRef<'a> {
     pub syntax: SyntaxNode<'a>,
     pub is_active: bool,
     pub module_kind: ModuleKind,
+    pub is_exposed: bool,
 }
 
 pub struct ResolutionEnvironment {
@@ -408,6 +410,7 @@ impl ResolutionEnvironment {
             syntax: m.parse.syntax(),
             is_active: m.is_active,
             module_kind: m.module_kind,
+            is_exposed: m.is_exposed,
         })
     }
 
@@ -861,6 +864,111 @@ fn validate_optional_udt_parameter_types(
     Ok(())
 }
 
+fn validate_public_object_module_data_member_types(
+    modules: &[ModuleCst],
+) -> Result<(), SymbolModelError> {
+    let object_modules = object_module_type_visibility(modules);
+    for module in modules {
+        if module.module_kind == ModuleKind::Procedural || !module.is_exposed {
+            continue;
+        }
+        validate_public_object_module_data_member_types_in(
+            module,
+            module.parse.syntax(),
+            &object_modules,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_public_object_module_data_member_types_in(
+    module: &ModuleCst,
+    node: SyntaxNode<'_>,
+    object_modules: &HashMap<String, ObjectModuleTypeInfo>,
+) -> Result<(), SymbolModelError> {
+    match node.kind() {
+        SyntaxKind::SubDecl
+        | SyntaxKind::FunctionDecl
+        | SyntaxKind::PropertyDecl
+        | SyntaxKind::EventDecl
+        | SyntaxKind::DeclareStmt
+        | SyntaxKind::TypeBlock
+        | SyntaxKind::EnumBlock => return Ok(()),
+        SyntaxKind::DimStmt
+            if scanner::decl_visibility(node, Visibility::Private) == Visibility::Public =>
+        {
+            for declarator in node.declarators() {
+                validate_public_object_module_data_member_type(module, declarator, object_modules)?;
+            }
+        }
+        _ => {}
+    }
+    for child in node.child_nodes() {
+        validate_public_object_module_data_member_types_in(module, child, object_modules)?;
+    }
+    Ok(())
+}
+
+fn validate_public_object_module_data_member_type(
+    module: &ModuleCst,
+    declarator: SyntaxNode<'_>,
+    object_modules: &HashMap<String, ObjectModuleTypeInfo>,
+) -> Result<(), SymbolModelError> {
+    let Some(type_ref) = declarator.declared_type() else {
+        return Ok(());
+    };
+    let type_name = type_ref_name(type_ref);
+    if type_name.is_empty()
+        || !type_ref_is_private_object_module(module, &type_name, object_modules)
+    {
+        return Ok(());
+    }
+    let name = declarator
+        .declarator_name()
+        .map(|token| normalize_source_name(token.text))
+        .unwrap_or_else(|| "member".to_string());
+    Err(SymbolModelError::PrivateObjectModuleTypeNotValidInPublicObjectMember { name, type_name })
+}
+
+#[derive(Clone, Copy)]
+struct ObjectModuleTypeInfo {
+    is_private: bool,
+}
+
+fn object_module_type_visibility(modules: &[ModuleCst]) -> HashMap<String, ObjectModuleTypeInfo> {
+    let mut out = HashMap::new();
+    for module in modules {
+        if module.module_kind == ModuleKind::Procedural {
+            continue;
+        }
+        out.insert(
+            format!(
+                "{}.{}",
+                fold_identifier(&module.project_name),
+                fold_identifier(&module.module_name)
+            ),
+            ObjectModuleTypeInfo {
+                is_private: !module.is_exposed,
+            },
+        );
+    }
+    out
+}
+
+fn type_ref_is_private_object_module(
+    module: &ModuleCst,
+    name: &str,
+    object_modules: &HashMap<String, ObjectModuleTypeInfo>,
+) -> bool {
+    let folded = fold_identifier(name);
+    let key = if name.contains('.') {
+        folded
+    } else {
+        format!("{}.{}", fold_identifier(&module.project_name), folded)
+    };
+    object_modules.get(&key).is_some_and(|info| info.is_private)
+}
+
 fn validate_optional_udt_parameter_types_in(
     module: &ModuleCst,
     node: SyntaxNode<'_>,
@@ -1115,6 +1223,10 @@ pub fn build_resolution_environment(
             &scan,
             parse.syntax(),
         );
+        let is_exposed = scan
+            .source_attributes
+            .vb_exposed
+            .unwrap_or(module.attributes.vb_exposed);
         module_csts.push(ModuleCst {
             project_name: manifest.project_name.clone(),
             module_name: scan.module_name.clone(),
@@ -1122,6 +1234,7 @@ pub fn build_resolution_environment(
             parse,
             is_active: true,
             module_kind: module.module_kind,
+            is_exposed,
         });
         active_scans.push(scan);
     }
@@ -1168,6 +1281,10 @@ pub fn build_resolution_environment(
                 &scan,
                 parse.syntax(),
             );
+            let is_exposed = scan
+                .source_attributes
+                .vb_exposed
+                .unwrap_or(module.attributes.vb_exposed);
             module_csts.push(ModuleCst {
                 project_name: referenced.project_name.clone(),
                 module_name: scan.module_name.clone(),
@@ -1175,6 +1292,7 @@ pub fn build_resolution_environment(
                 parse,
                 is_active: false,
                 module_kind: module.module_kind,
+                is_exposed,
             });
             scans.push(scan);
         }
@@ -1237,6 +1355,7 @@ pub fn build_resolution_environment(
     validate_type_refs(&module_csts, &ambiguous_type_names)?;
     validate_property_set_reference_types(&module_csts, &type_index.udt_fields)?;
     validate_optional_udt_parameter_types(&module_csts, &type_index.udt_fields)?;
+    validate_public_object_module_data_member_types(&module_csts)?;
     let used_type_names = collect_type_ref_names(&module_csts);
 
     // Each referenced project's public surface — a referencing call binds through
