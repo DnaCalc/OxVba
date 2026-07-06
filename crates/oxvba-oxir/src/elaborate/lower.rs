@@ -202,6 +202,7 @@ fn lower_class(c: &CoreClass) -> OxClass {
                 kind: m.kind,
                 proc: FuncId(m.proc.0),
                 dispid: m.dispid,
+                vtable_slot: m.vtable_slot,
                 is_default_member: m.is_default_member,
                 is_enumerator_member: m.is_enumerator_member,
             })
@@ -3224,6 +3225,7 @@ mod tests {
                     kind: ProjectMemberKind::PropertyGet,
                     proc: CoreProcId(0),
                     dispid: None,
+                    vtable_slot: None,
                     is_default_member: false,
                     is_enumerator_member: false,
                 }],

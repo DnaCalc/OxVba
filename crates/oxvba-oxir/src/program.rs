@@ -88,6 +88,10 @@ pub struct OxClassMethod {
     /// class member is part of that surface.
     #[serde(default)]
     pub dispid: Option<i32>,
+    /// Dual-interface vtable slot assigned by the project export surface, when
+    /// this class member is part of that surface.
+    #[serde(default)]
+    pub vtable_slot: Option<u16>,
     pub is_default_member: bool,
     #[serde(default)]
     pub is_enumerator_member: bool,

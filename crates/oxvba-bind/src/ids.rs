@@ -269,7 +269,7 @@ impl IdAllocator {
                 predeclared_class_of.insert(fold_identifier(&display), class_id);
             }
             let folded = fold_identifier(&display);
-            let surface_dispids = class_member_dispids(env, &display);
+            let surface_facts = class_member_surface_facts(env, &display);
             let default_member = env
                 .resolve_default_member(&VarTypeRef::Object(display.clone()))
                 .and_then(|binding| {
@@ -295,13 +295,13 @@ impl IdAllocator {
                     "class_terminate" => terminate = Some(info.proc_id),
                     _ => {
                         let kind = member_kind_of(info.kind);
+                        let facts = surface_facts.get(&(fold_identifier(&info.name), kind));
                         methods.push(CoreClassMethod {
                             name: info.name.clone(),
                             kind,
                             proc: info.proc_id,
-                            dispid: surface_dispids
-                                .get(&(fold_identifier(&info.name), kind))
-                                .copied(),
+                            dispid: facts.map(|facts| facts.dispid),
+                            vtable_slot: facts.and_then(|facts| facts.vtable_slot),
                             is_default_member: default_member.as_ref().is_some_and(|(name, _)| {
                                 fold_identifier(name) == fold_identifier(&info.name)
                             }),
@@ -694,10 +694,16 @@ fn property_accessor_kind(decl: SyntaxNode<'_>) -> ProjectMemberKind {
     ProjectMemberKind::PropertyGet
 }
 
-fn class_member_dispids(
+#[derive(Clone, Copy)]
+struct ClassMemberSurfaceFacts {
+    dispid: i32,
+    vtable_slot: Option<u16>,
+}
+
+fn class_member_surface_facts(
     env: &ResolutionEnvironment,
     class_name: &str,
-) -> HashMap<(String, ProjectMemberKind), i32> {
+) -> HashMap<(String, ProjectMemberKind), ClassMemberSurfaceFacts> {
     let Some(active) = env.export_surfaces().first() else {
         return HashMap::new();
     };
@@ -714,7 +720,10 @@ fn class_member_dispids(
         .map(|member| {
             (
                 (fold_identifier(&member.name), member.member_kind),
-                member.dispid,
+                ClassMemberSurfaceFacts {
+                    dispid: member.dispid,
+                    vtable_slot: member.vtable_slot,
+                },
             )
         })
         .collect()

@@ -2100,7 +2100,7 @@ fn project_newenum_attribute_requires_exact_minus_four_memid() {
 }
 
 #[test]
-fn exposed_class_methods_carry_surface_dispids() {
+fn exposed_class_methods_carry_surface_dispatch_metadata() {
     let main = "Sub Main()\nEnd Sub\n";
     let widget = "Public Property Get Value() As Long\nEnd Property\n\
                   Attribute Value.VB_UserMemId = 0\n\
@@ -2125,8 +2125,9 @@ fn exposed_class_methods_carry_surface_dispids() {
             method.name == "Value"
                 && method.kind == oxvba_bundle::ProjectMemberKind::PropertyGet
                 && method.dispid == Some(0)
+                && method.vtable_slot == Some(7)
         }),
-        "default Property Get should carry DISPID 0: {:?}",
+        "default Property Get should carry DISPID 0 and vtable slot 7: {:?}",
         class.methods
     );
     assert!(
@@ -2134,24 +2135,23 @@ fn exposed_class_methods_carry_surface_dispids() {
             method.name == "Value"
                 && method.kind == oxvba_bundle::ProjectMemberKind::PropertyLet
                 && method.dispid == Some(0)
+                && method.vtable_slot == Some(8)
         }),
-        "default Property Let should share DISPID 0: {:?}",
+        "default Property Let should share DISPID 0 and carry vtable slot 8: {:?}",
         class.methods
     );
     assert!(
-        class
-            .methods
-            .iter()
-            .any(|method| method.name == "NewEnum" && method.dispid == Some(-4)),
-        "_NewEnum should carry DISPID -4: {:?}",
+        class.methods.iter().any(|method| {
+            method.name == "NewEnum" && method.dispid == Some(-4) && method.vtable_slot == Some(9)
+        }),
+        "_NewEnum should carry DISPID -4 and vtable slot 9: {:?}",
         class.methods
     );
     assert!(
-        class
-            .methods
-            .iter()
-            .any(|method| method.name == "Echo" && method.dispid == Some(1)),
-        "ordinary class methods should carry the next synthesized DISPID: {:?}",
+        class.methods.iter().any(|method| {
+            method.name == "Echo" && method.dispid == Some(1) && method.vtable_slot == Some(10)
+        }),
+        "ordinary class methods should carry the next synthesized DISPID and vtable slot: {:?}",
         class.methods
     );
 }

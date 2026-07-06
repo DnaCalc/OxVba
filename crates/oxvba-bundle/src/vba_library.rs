@@ -113,6 +113,7 @@ fn build() -> Bundle {
             kind: spec.member_kind,
             proc,
             dispid: builtin_collection_dispid(spec.name),
+            vtable_slot: None,
             is_default_member: spec.name.eq_ignore_ascii_case("Item"),
             is_enumerator_member: spec.name.eq_ignore_ascii_case("_NewEnum"),
         });

@@ -186,6 +186,9 @@ pub struct CoreClassMethod {
     /// COM/VBA dispatch id assigned by the project export surface, when this
     /// class member is part of that surface.
     pub dispid: Option<i32>,
+    /// Dual-interface vtable slot assigned by the project export surface, when
+    /// this class member is part of that surface.
+    pub vtable_slot: Option<u16>,
     pub is_default_member: bool,
     pub is_enumerator_member: bool,
 }

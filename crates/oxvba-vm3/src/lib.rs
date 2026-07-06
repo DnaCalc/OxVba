@@ -5126,6 +5126,7 @@ mod tests {
                     kind: ProjectMemberKind::Method,
                     proc: ProcId(1),
                     dispid: None,
+                    vtable_slot: None,
                     is_default_member: false,
                     is_enumerator_member: false,
                 }],
