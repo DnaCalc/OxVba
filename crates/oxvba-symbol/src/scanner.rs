@@ -682,6 +682,23 @@ impl ScanCtx<'_> {
         if let Some(accessor) = property_put_accessor
             && let Some(value_param) = params.last()
         {
+            if parameter_has_modifier(*value_param, SyntaxKind::KwParamArray) {
+                let parameter = parameter_name_token(*value_param)
+                    .map(|t| normalize_identifier_token(t.text).to_string())
+                    .unwrap_or_else(|| format!("arg{}", params.len()));
+                let reason = match accessor {
+                    PropertyAccessor::Let => "Property Let value parameter cannot be ParamArray",
+                    PropertyAccessor::Set => {
+                        "Property Set reference parameter cannot be ParamArray"
+                    }
+                    PropertyAccessor::Get => unreachable!(),
+                };
+                return Err(SymbolModelError::InvalidParamArrayDeclaration {
+                    procedure: procedure.to_string(),
+                    parameter,
+                    reason,
+                });
+            }
             if parameter_has_modifier(*value_param, SyntaxKind::KwOptional) {
                 let parameter = parameter_name_token(*value_param)
                     .map(|t| normalize_identifier_token(t.text).to_string())

@@ -1857,6 +1857,39 @@ fn property_set_reference_parameter_cannot_be_optional() {
 }
 
 #[test]
+fn property_writer_final_parameter_cannot_be_paramarray() {
+    for (src, reason) in [
+        (
+            "Property Let Item(ParamArray value() As Variant)\r\nEnd Property\r\n",
+            "Property Let value parameter cannot be ParamArray",
+        ),
+        (
+            "Property Set Item(ParamArray value() As Variant)\r\nEnd Property\r\n",
+            "Property Set reference parameter cannot be ParamArray",
+        ),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("property writer final ParamArray should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidParamArrayDeclaration {
+                    procedure,
+                    parameter,
+                    reason: actual_reason,
+                } if procedure == "Item"
+                    && parameter == "value"
+                    && *actual_reason == reason
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn scanner_accepts_implicit_variant_paramarray_array() {
     let src = "DefStr X-Z\r\nSub S(ParamArray xs())\r\nEnd Sub\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

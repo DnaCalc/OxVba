@@ -300,16 +300,21 @@ impl SymbolModelError {
                 procedure,
                 parameter,
                 reason,
-            } => Diagnostic::error(
-                "SYM-E-INVALID-PARAMARRAY-DECLARATION",
-                DiagnosticPhase::Symbol,
-                format!(
-                    "invalid ParamArray declaration for `{procedure}` parameter `{parameter}`: {reason}"
-                ),
-            )
-            .with_help(
-                "Declare ParamArray as the final parameter without Optional, ByVal, or ByRef.",
-            ),
+            } => {
+                let help = if reason.starts_with("Property ") {
+                    "Use a non-Optional, non-ParamArray final value/reference parameter for Property Let/Set."
+                } else {
+                    "Declare ParamArray as the final parameter without Optional, ByVal, or ByRef."
+                };
+                Diagnostic::error(
+                    "SYM-E-INVALID-PARAMARRAY-DECLARATION",
+                    DiagnosticPhase::Symbol,
+                    format!(
+                        "invalid ParamArray declaration for `{procedure}` parameter `{parameter}`: {reason}"
+                    ),
+                )
+                .with_help(help)
+            }
             SymbolModelError::InvalidOptionalParameterDeclaration {
                 procedure,
                 parameter,
