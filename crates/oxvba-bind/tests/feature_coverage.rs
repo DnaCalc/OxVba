@@ -1947,6 +1947,19 @@ fn named_indexed_property_let_executes_through_package_vm() {
 }
 
 #[test]
+fn property_set_udt_reference_parameter_is_bind_error() {
+    let err = run_result(
+        "Public Type Payload\n    Value As Long\nEnd Type\nProperty Set Item(ByVal value As Payload)\nEnd Property\nSub Main()\nEnd Sub",
+    )
+    .expect_err("Property Set final reference parameter cannot be a UDT");
+    assert!(
+        err.contains("InvalidPropertySetReferenceParameter")
+            || err.contains("invalid Property Set reference parameter"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn string_functions_left_mid_ucase() {
     let snap = run(
         "Sub Main()\nDim a As String\nDim b As String\na = Left$(\"hello\", 3)\nb = UCase$(Mid$(\"hello\", 2, 2))\nEnd Sub",

@@ -841,6 +841,91 @@ fn validate_type_refs(
     Ok(())
 }
 
+fn validate_property_set_reference_types(
+    modules: &[ModuleCst],
+    udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
+) -> Result<(), SymbolModelError> {
+    for module in modules {
+        validate_property_set_reference_types_in(module, module.parse.syntax(), udt_fields)?;
+    }
+    Ok(())
+}
+
+fn validate_property_set_reference_types_in(
+    module: &ModuleCst,
+    node: SyntaxNode<'_>,
+    udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
+) -> Result<(), SymbolModelError> {
+    if node.kind() == SyntaxKind::PropertyDecl && property_decl_is_set(node) {
+        validate_property_set_reference_type(module, node, udt_fields)?;
+    }
+    for child in node.child_nodes() {
+        validate_property_set_reference_types_in(module, child, udt_fields)?;
+    }
+    Ok(())
+}
+
+fn validate_property_set_reference_type(
+    module: &ModuleCst,
+    node: SyntaxNode<'_>,
+    udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
+) -> Result<(), SymbolModelError> {
+    let Some(param_list) = node.param_list() else {
+        return Ok(());
+    };
+    let params = param_list.params();
+    let Some(reference_param) = params.last() else {
+        return Ok(());
+    };
+    let Some(type_ref) = reference_param
+        .child_nodes()
+        .into_iter()
+        .find(|child| child.kind() == SyntaxKind::TypeRef)
+    else {
+        return Ok(());
+    };
+    let name = type_ref_name(type_ref);
+    if name.is_empty() || !property_set_reference_type_is_udt(module, &name, udt_fields) {
+        return Ok(());
+    }
+    let procedure = node
+        .proc_name_token()
+        .map(|token| normalize_source_name(token.text))
+        .unwrap_or_else(|| "Property".to_string());
+    let parameter = scanner::parameter_name_token(*reference_param)
+        .map(|token| normalize_source_name(token.text))
+        .unwrap_or_else(|| format!("arg{}", params.len()));
+    Err(SymbolModelError::InvalidPropertySetReferenceParameter {
+        procedure,
+        parameter,
+    })
+}
+
+fn property_decl_is_set(node: SyntaxNode<'_>) -> bool {
+    node.child_tokens()
+        .iter()
+        .any(|token| token.kind == SyntaxKind::KwSet)
+}
+
+fn property_set_reference_type_is_udt(
+    module: &ModuleCst,
+    name: &str,
+    udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
+) -> bool {
+    let folded = fold_identifier(name);
+    if name.contains('.') {
+        return udt_fields.contains_key(&folded);
+    }
+    let project = fold_identifier(&module.project_name);
+    let module_name = fold_identifier(&module.module_name);
+    udt_fields.contains_key(&format!("{project}.{module_name}.{folded}"))
+        || udt_fields.contains_key(&folded)
+}
+
+fn normalize_source_name(name: &str) -> String {
+    name.trim_matches(|c| c == '[' || c == ']').to_string()
+}
+
 fn collect_type_ref_names(modules: &[ModuleCst]) -> HashSet<String> {
     let mut names = HashSet::new();
     for module in modules {
@@ -1075,6 +1160,7 @@ pub fn build_resolution_environment(
     drop(roots);
     let ambiguous_type_names = type_index.ambiguous_type_names();
     validate_type_refs(&module_csts, &ambiguous_type_names)?;
+    validate_property_set_reference_types(&module_csts, &type_index.udt_fields)?;
     let used_type_names = collect_type_ref_names(&module_csts);
 
     // Each referenced project's public surface — a referencing call binds through

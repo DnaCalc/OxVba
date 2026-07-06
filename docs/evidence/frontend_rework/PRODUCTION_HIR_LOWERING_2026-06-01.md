@@ -1612,8 +1612,10 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   after optional index arguments, reject missing writer slots with
   `SYM-E-MISSING-PROPERTY-WRITER-PARAMETER`, and reject a present final parameter if it is
   explicitly marked `Optional` or `ParamArray`; `Property Set` now also rejects scalar/value final
-  reference parameters with `SYM-E-INVALID-PROPERTY-SET-REFERENCE`, while preserving
-  default/explicit `Variant`, `Object`, and named class/object reference parameters. The scanner
+  reference parameters with `SYM-E-INVALID-PROPERTY-SET-REFERENCE`, and a provider-level resolved
+  type-index pass rejects known UDT final reference parameters with the same diagnostic after all
+  modules are scanned, while preserving default/explicit `Variant`, `Object`, and named
+  class/object reference parameters. The scanner
   also publishes the final `Property Let`/`Set` writer slot as `ByVal` in signature metadata while
   preserving declared/default `ByRef` modes for preceding indexed arguments. Duplicate property
   accessors now reject with `SYM-E-DUPLICATE-PROPERTY-ACCESSOR`, and paired `Property Get`/`Let`
@@ -1644,8 +1646,10 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `property_let_value_parameter_cannot_be_optional`;
   `property_set_reference_parameter_cannot_be_optional`;
   `property_set_reference_parameter_must_be_object_compatible`;
+  `property_set_reference_parameter_rejects_udt_types`;
   `property_set_accepts_variant_object_and_class_reference_parameters`;
   `property_writer_final_parameter_cannot_be_paramarray`;
+  `property_set_udt_reference_parameter_is_bind_error`;
   `required_parameter_after_optional_is_bind_error`.
 - The i64 optional-default follow-up also found a front-end symbol-model miss where a later
   parameter following a string default could be absent from the HIR parameter list even though the
@@ -1753,6 +1757,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_named_indexed_property_let_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage named_indexed_property_let_executes_through_package_vm --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_named_indexed_property_set_through_hir --quiet`
+- `cargo test -p oxvba-symbol property_set_reference_parameter_rejects_udt_types -- --nocapture`
+- `cargo test -p oxvba-bind property_set_udt_reference_parameter_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`
 - `cargo test -p oxvba-compiler compile_project_does_not_inject_runtime_validation_for_rewritten_internal_class_object_locals --quiet`
 - `cargo test -p oxvba-compiler compile_project_infers_non_authoritative_single_candidate_indexed_default_member_let --quiet`

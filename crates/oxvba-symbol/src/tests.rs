@@ -2244,6 +2244,63 @@ fn property_set_reference_parameter_must_be_object_compatible() {
 }
 
 #[test]
+fn property_set_reference_parameter_rejects_udt_types() {
+    let cases = [
+        manifest(
+            "Proj",
+            vec![module(
+                "Mod1",
+                "Public Type Payload\r\n    Value As Long\r\nEnd Type\r\n\
+                 Property Set Item(ByVal value As Payload)\r\nEnd Property\r\n",
+            )],
+        ),
+        manifest(
+            "Proj",
+            vec![
+                module(
+                    "Types",
+                    "Public Type Payload\r\n    Value As Long\r\nEnd Type\r\n",
+                ),
+                module(
+                    "Mod1",
+                    "Property Set Item(ByVal value As Types.Payload)\r\nEnd Property\r\n",
+                ),
+            ],
+        ),
+        manifest(
+            "Proj",
+            vec![
+                module(
+                    "Types",
+                    "Public Type Payload\r\n    Value As Long\r\nEnd Type\r\n",
+                ),
+                module(
+                    "Mod1",
+                    "Property Set Item(ByVal value As Payload)\r\nEnd Property\r\n",
+                ),
+            ],
+        ),
+    ];
+
+    for m in cases {
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("Property Set UDT reference parameter should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidPropertySetReferenceParameter {
+                    procedure,
+                    parameter,
+                } if procedure == "Item" && parameter == "value"
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn property_set_accepts_variant_object_and_class_reference_parameters() {
     let src = "Property Set DefaultItem(value)\r\nEnd Property\r\n\
                Property Set VariantItem(value As Variant)\r\nEnd Property\r\n\
