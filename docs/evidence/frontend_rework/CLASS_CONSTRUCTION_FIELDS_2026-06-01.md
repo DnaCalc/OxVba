@@ -58,6 +58,11 @@ front-end symbol index:
   locals remain `Nothing`, null object `Set` assignment matches VM3, `Set Object = 1` raises 424,
   `Object = Nothing` raises 91, scalar `Variant Is Variant` raises 424, and construction/member
   dispatch shapes still decline explicitly rather than using a VM fallback.
+- Runtime class/interface descriptors now expose a reusable `validate_com_export_shape` guard for
+  Linux-side export readiness checks. It rejects malformed arity/parameter metadata, default and
+  enumerator DISPID drift, vtable slots inside the IUnknown/IDispatch prefix, property accessor
+  shape drift, and duplicate interface GUIDs before a future COM publication path consumes the
+  descriptor.
 - 2026-07-06 package/runtime metadata continuation: OxIR class descriptor verification now enforces
   that class lifecycle hooks and method/property descriptor targets start with the hidden `Me`
   receiver parameter. VM runtime member descriptor extraction and project-member argument name
@@ -107,6 +112,10 @@ Production-route proof:
   `jit_let_object_from_nothing_raises_object_variable_not_set_without_vm_fallback`, and
   `jit_is_operator_variant_scalars_raise_object_required_without_vm_fallback` prove JIT-supported
   object assignment and `Is` error paths match VM3 without using the fallback path.
+- `runtime_class_descriptor_validates_com_export_member_shape`,
+  `runtime_class_descriptor_rejects_bad_com_export_member_shape`, and
+  `runtime_class_descriptor_rejects_duplicate_export_interface_guids` prove COM-facing descriptor
+  metadata can be structurally checked on Linux without live COM interop.
 - `cargo test -p oxvba-compiler predeclared --quiet` covers the existing predeclared/default-root
   matrix after adding the frontend route gate.
 - Existing host/runtime tests prove the bd-1ufc field/lifetime behavior remains executable:
@@ -172,6 +181,7 @@ Compatibility quarantine / residual classification:
 - `cargo test -p oxvba-host pure_oxvba_class --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_fields_are_per_instance_storage --quiet`
 - `cargo test -p oxvba-host pure_oxvba_class_terminate_cascades_through_object_field --quiet`
+- `cargo test -p oxvba-runtime object_ref -- --nocapture`
 - `cargo test -p oxvba-oxir class_ -- --nocapture`
 - `cargo test -p oxvba-oxir -- --format terse`
 - `cargo test -p oxvba-vm3 runtime_member_params_skips_only_explicit_hidden_me_receiver -- --nocapture`

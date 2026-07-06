@@ -185,6 +185,12 @@ First implementation slice:
   a scalar raises 424, `Let` object assignment from `Nothing` raises 91, scalar `Variant Is
   Variant` raises 424, and construction/member/descriptor-dependent object shapes still decline
   with precise unsupported diagnostics.
+- `RuntimeInterfaceDescriptor::validate_com_export_shape` and
+  `RuntimeClassDescriptor::validate_com_export_shape` provide a Linux-testable export-readiness
+  guard for descriptor consistency: member arity must match parameter descriptors, default and
+  enumerator DISPIDs stay `0`/`-4`, dual-dispatch vtable slots cannot point inside the
+  IUnknown/IDispatch prefix, property accessors have getter/setter-shaped returns and values, and
+  a class cannot publish duplicate interface GUIDs.
 - `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed/default property get, property let, property set, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values, including natural `widget(5)` default-member syntax.
 - `pure_oxvba_interface_receiver_executes_through_project_descriptor_shape` covers the required pure OxVba interface receiver path (`Dim iface As IWidget`, `Set iface = widget`, `iface.Value(5)`) and validates dispatch to the implementing `IWidget_Value` member.
 

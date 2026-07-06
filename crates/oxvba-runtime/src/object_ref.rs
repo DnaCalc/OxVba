@@ -2,7 +2,7 @@ use core::ffi::c_void;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 
 use crate::Variant;
@@ -382,6 +382,134 @@ pub struct RuntimeClassDescriptor {
     pub as_new_fields: &'static [RuntimeClassAsNewFieldDescriptor],
     pub implements: &'static [&'static str],
     pub interfaces: &'static [RuntimeInterfaceDescriptor],
+}
+
+/// Structural issue that makes a runtime descriptor unsafe or ambiguous for future COM export.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeDescriptorIssue {
+    InterfaceIdentityMismatch {
+        interface: &'static str,
+        descriptor_id: RuntimeInterfaceId,
+        identity_id: RuntimeInterfaceId,
+    },
+    DuplicateInterfaceGuid {
+        class: &'static str,
+        interface: &'static str,
+        guid: RuntimeGuid,
+    },
+    BadMemberArity {
+        interface: &'static str,
+        member: &'static str,
+        arity: usize,
+        params: usize,
+    },
+    BadDefaultMemberDispatchId {
+        interface: &'static str,
+        member: &'static str,
+        dispatch_id: i32,
+    },
+    BadEnumeratorDispatchId {
+        interface: &'static str,
+        member: &'static str,
+        dispatch_id: i32,
+    },
+    BadDualDispatchVtableSlot {
+        interface: &'static str,
+        member: &'static str,
+        vtable_slot: u16,
+    },
+    BadPropertyGetReturn {
+        interface: &'static str,
+        member: &'static str,
+    },
+    BadPropertySetterShape {
+        interface: &'static str,
+        member: &'static str,
+    },
+}
+
+impl RuntimeInterfaceDescriptor {
+    /// Validate only the COM-publication shape of this descriptor. Internal dispatch-cache test
+    /// descriptors may use narrower synthetic slots and should not call this export gate.
+    pub fn validate_com_export_shape(&self) -> Result<(), RuntimeDescriptorIssue> {
+        if self.id != self.identity.id {
+            return Err(RuntimeDescriptorIssue::InterfaceIdentityMismatch {
+                interface: self.name,
+                descriptor_id: self.id,
+                identity_id: self.identity.id,
+            });
+        }
+        for member in self.members {
+            if member.arity != member.params.len() {
+                return Err(RuntimeDescriptorIssue::BadMemberArity {
+                    interface: self.name,
+                    member: member.name,
+                    arity: member.arity,
+                    params: member.params.len(),
+                });
+            }
+            if member.is_default_member && member.dispatch_id != 0 {
+                return Err(RuntimeDescriptorIssue::BadDefaultMemberDispatchId {
+                    interface: self.name,
+                    member: member.name,
+                    dispatch_id: member.dispatch_id,
+                });
+            }
+            if member.is_enumerator_member && member.dispatch_id != -4 {
+                return Err(RuntimeDescriptorIssue::BadEnumeratorDispatchId {
+                    interface: self.name,
+                    member: member.name,
+                    dispatch_id: member.dispatch_id,
+                });
+            }
+            if self.dual_dispatch
+                && let Some(vtable_slot) = member.vtable_slot
+                && vtable_slot < 7
+            {
+                return Err(RuntimeDescriptorIssue::BadDualDispatchVtableSlot {
+                    interface: self.name,
+                    member: member.name,
+                    vtable_slot,
+                });
+            }
+            match member.invoke_kind {
+                RuntimeMemberInvokeKind::PropertyGet if member.return_type.is_none() => {
+                    return Err(RuntimeDescriptorIssue::BadPropertyGetReturn {
+                        interface: self.name,
+                        member: member.name,
+                    });
+                }
+                RuntimeMemberInvokeKind::PropertyLet | RuntimeMemberInvokeKind::PropertySet
+                    if member.return_type.is_some() || member.params.is_empty() =>
+                {
+                    return Err(RuntimeDescriptorIssue::BadPropertySetterShape {
+                        interface: self.name,
+                        member: member.name,
+                    });
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+impl RuntimeClassDescriptor {
+    /// Validate Linux-testable descriptor facts that future COM export code must be able to trust.
+    pub fn validate_com_export_shape(&self) -> Result<(), RuntimeDescriptorIssue> {
+        let mut seen_guids = BTreeSet::new();
+        for interface in self.interfaces {
+            if !seen_guids.insert(interface.identity.guid) {
+                return Err(RuntimeDescriptorIssue::DuplicateInterfaceGuid {
+                    class: self.name,
+                    interface: interface.name,
+                    guid: interface.identity.guid,
+                });
+            }
+            interface.validate_com_export_shape()?;
+        }
+        Ok(())
+    }
 }
 
 pub const RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR: RuntimeInterfaceDescriptor =
@@ -1322,8 +1450,8 @@ mod tests {
         RUNTIME_GUID_IUNKNOWN, RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
         RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK, RawRuntimeIUnknown,
         RawRuntimeIUnknownVtbl, RuntimeApartmentModel, RuntimeClassDescriptor,
-        RuntimeDispatchPlanCache, RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
-        RuntimeInterfaceIdentity, RuntimeInterfaceKind, RuntimeLifetimePolicy,
+        RuntimeDescriptorIssue, RuntimeDispatchPlanCache, RuntimeGuid, RuntimeInterfaceDescriptor,
+        RuntimeInterfaceId, RuntimeInterfaceIdentity, RuntimeInterfaceKind, RuntimeLifetimePolicy,
         RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
     };
 
@@ -1630,6 +1758,265 @@ mod tests {
         assert_eq!(dispatch.members[0].name, "Value");
         assert_eq!(dispatch.members[0].vtable_slot, Some(7));
         assert!(dispatch.members[0].is_default_member);
+    }
+
+    #[test]
+    fn runtime_class_descriptor_validates_com_export_member_shape() {
+        static GET_VALUE: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(7),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Long),
+            is_default_member: true,
+            is_enumerator_member: false,
+        };
+        static LET_VALUE: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 0,
+            vtable_slot: Some(8),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyLet,
+            arity: 1,
+            params: &[RuntimeParamDescriptor {
+                name: "value",
+                value_type: RuntimeValueType::Long,
+                by_ref: false,
+                optional: false,
+                param_array: false,
+            }],
+            return_type: None,
+            is_default_member: true,
+            is_enumerator_member: false,
+        };
+        static NEW_ENUM: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "_NewEnum",
+            dispatch_id: -4,
+            vtable_slot: Some(9),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Object),
+            is_default_member: false,
+            is_enumerator_member: true,
+        };
+        static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[GET_VALUE, LET_VALUE, NEW_ENUM],
+            dual_dispatch: true,
+        };
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "Project.Widget",
+            project_identity: None,
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
+            interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, DISPATCH_INTERFACE],
+        };
+
+        assert_eq!(TEST_CLASS.validate_com_export_shape(), Ok(()));
+    }
+
+    #[test]
+    fn runtime_class_descriptor_rejects_bad_com_export_member_shape() {
+        static BAD_DEFAULT: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Value",
+            dispatch_id: 12,
+            vtable_slot: Some(7),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Long),
+            is_default_member: true,
+            is_enumerator_member: false,
+        };
+        static BAD_SLOT: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "FastValue",
+            dispatch_id: 2,
+            vtable_slot: Some(6),
+            invoke_kind: RuntimeMemberInvokeKind::Method,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Long),
+            is_default_member: false,
+            is_enumerator_member: false,
+        };
+        static BAD_SETTER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Child",
+            dispatch_id: 3,
+            vtable_slot: Some(9),
+            invoke_kind: RuntimeMemberInvokeKind::PropertySet,
+            arity: 0,
+            params: &[],
+            return_type: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        };
+        static BAD_ENUM: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "_NewEnum",
+            dispatch_id: 99,
+            vtable_slot: Some(10),
+            invoke_kind: RuntimeMemberInvokeKind::PropertyGet,
+            arity: 0,
+            params: &[],
+            return_type: Some(RuntimeValueType::Object),
+            is_default_member: false,
+            is_enumerator_member: true,
+        };
+        static BAD_ARITY: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
+            name: "Echo",
+            dispatch_id: 4,
+            vtable_slot: Some(11),
+            invoke_kind: RuntimeMemberInvokeKind::Method,
+            arity: 2,
+            params: &[RuntimeParamDescriptor {
+                name: "value",
+                value_type: RuntimeValueType::Long,
+                by_ref: false,
+                optional: false,
+                param_array: false,
+            }],
+            return_type: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        };
+        static BAD_DEFAULT_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[BAD_DEFAULT],
+            dual_dispatch: true,
+        };
+        static BAD_SLOT_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[BAD_SLOT],
+            dual_dispatch: true,
+        };
+        static BAD_SETTER_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[BAD_SETTER],
+            dual_dispatch: true,
+        };
+        static BAD_ENUM_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[BAD_ENUM],
+            dual_dispatch: true,
+        };
+        static BAD_ARITY_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[BAD_ARITY],
+            dual_dispatch: true,
+        };
+        static BAD_IDENTITY_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: super::RUNTIME_IUNKNOWN_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[],
+            dual_dispatch: true,
+        };
+
+        for (interface, expected) in [
+            (
+                &BAD_IDENTITY_INTERFACE,
+                RuntimeDescriptorIssue::InterfaceIdentityMismatch {
+                    interface: "IDispatch",
+                    descriptor_id: RuntimeInterfaceId::IDispatch,
+                    identity_id: RuntimeInterfaceId::IUnknown,
+                },
+            ),
+            (
+                &BAD_DEFAULT_INTERFACE,
+                RuntimeDescriptorIssue::BadDefaultMemberDispatchId {
+                    interface: "IDispatch",
+                    member: "Value",
+                    dispatch_id: 12,
+                },
+            ),
+            (
+                &BAD_SLOT_INTERFACE,
+                RuntimeDescriptorIssue::BadDualDispatchVtableSlot {
+                    interface: "IDispatch",
+                    member: "FastValue",
+                    vtable_slot: 6,
+                },
+            ),
+            (
+                &BAD_SETTER_INTERFACE,
+                RuntimeDescriptorIssue::BadPropertySetterShape {
+                    interface: "IDispatch",
+                    member: "Child",
+                },
+            ),
+            (
+                &BAD_ENUM_INTERFACE,
+                RuntimeDescriptorIssue::BadEnumeratorDispatchId {
+                    interface: "IDispatch",
+                    member: "_NewEnum",
+                    dispatch_id: 99,
+                },
+            ),
+            (
+                &BAD_ARITY_INTERFACE,
+                RuntimeDescriptorIssue::BadMemberArity {
+                    interface: "IDispatch",
+                    member: "Echo",
+                    arity: 2,
+                    params: 1,
+                },
+            ),
+        ] {
+            assert_eq!(interface.validate_com_export_shape(), Err(expected));
+        }
+    }
+
+    #[test]
+    fn runtime_class_descriptor_rejects_duplicate_export_interface_guids() {
+        static FIRST_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "IDispatch",
+            members: &[],
+            dual_dispatch: true,
+        };
+        static SECOND_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
+            id: RuntimeInterfaceId::IDispatch,
+            identity: RUNTIME_IDISPATCH_INTERFACE_IDENTITY,
+            name: "DuplicateDispatch",
+            members: &[],
+            dual_dispatch: true,
+        };
+        static TEST_CLASS: RuntimeClassDescriptor = RuntimeClassDescriptor {
+            name: "Project.Widget",
+            project_identity: None,
+            predeclared: false,
+            lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+            fields: &[],
+            as_new_fields: &[],
+            implements: &[],
+            interfaces: &[FIRST_INTERFACE, SECOND_INTERFACE],
+        };
+
+        assert_eq!(
+            TEST_CLASS.validate_com_export_shape(),
+            Err(RuntimeDescriptorIssue::DuplicateInterfaceGuid {
+                class: "Project.Widget",
+                interface: "DuplicateDispatch",
+                guid: RUNTIME_GUID_IDISPATCH,
+            })
+        );
     }
 
     #[test]

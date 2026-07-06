@@ -43,11 +43,11 @@ pub use object_ref::{
     RUNTIME_IUNKNOWN_INTERFACE_IDENTITY, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl,
     RuntimeApartmentModel, RuntimeClassActivationDescriptor, RuntimeClassAsNewFieldDescriptor,
     RuntimeClassDescriptor, RuntimeClassFieldDescriptor, RuntimeClassLifecycleDescriptor,
-    RuntimeDispatchCacheKey, RuntimeDispatchPlan, RuntimeDispatchPlanCache, RuntimeGuid,
-    RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeInterfaceIdentity, RuntimeInterfaceKind,
-    RuntimeInterfaceProjection, RuntimeLifetimePolicy, RuntimeMemberDescriptor,
-    RuntimeMemberInvokeKind, RuntimeObjectIdentity, RuntimeParamDescriptor,
-    RuntimeProjectClassIdentity, RuntimeValueType,
+    RuntimeDescriptorIssue, RuntimeDispatchCacheKey, RuntimeDispatchPlan, RuntimeDispatchPlanCache,
+    RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeInterfaceIdentity,
+    RuntimeInterfaceKind, RuntimeInterfaceProjection, RuntimeLifetimePolicy,
+    RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeObjectIdentity,
+    RuntimeParamDescriptor, RuntimeProjectClassIdentity, RuntimeValueType,
 };
 pub use object_ref::{
     finish_pending_termination, has_pending_terminations, reset_pending_terminations,
