@@ -947,18 +947,42 @@ impl ObjectRef {
     }
 
     pub fn class_descriptor(&self) -> &'static RuntimeClassDescriptor {
+        debug_assert!(
+            self.is_compat_object(),
+            "class_descriptor is only valid for runtime compat objects"
+        );
+        self.try_class_descriptor()
+            .expect("class_descriptor is only valid for runtime compat objects")
+    }
+
+    pub fn try_class_descriptor(&self) -> Option<&'static RuntimeClassDescriptor> {
+        if !self.is_compat_object() {
+            return None;
+        }
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         // SAFETY: documented contract (`is_compat_object`): only valid on compat objects, so
         // `owner` is the live `CompatObjectBase` kept alive by this `ObjectRef`'s retained
         // reference; the descriptor read out of it is `&'static`.
-        unsafe { (*owner).class_descriptor }
+        Some(unsafe { (*owner).class_descriptor })
     }
 
     pub fn object_identity(&self) -> RuntimeObjectIdentity {
+        debug_assert!(
+            self.is_compat_object(),
+            "object_identity is only valid for runtime compat objects"
+        );
+        self.try_object_identity()
+            .expect("object_identity is only valid for runtime compat objects")
+    }
+
+    pub fn try_object_identity(&self) -> Option<RuntimeObjectIdentity> {
+        if !self.is_compat_object() {
+            return None;
+        }
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         // SAFETY: documented contract as for `class_descriptor`: only called on compat objects,
         // so `owner` is the live `CompatObjectBase` kept alive by this `ObjectRef`'s reference.
-        unsafe { (*owner).identity }
+        Some(unsafe { (*owner).identity })
     }
 
     pub fn project_field_get(&self, token: i32) -> Option<Variant> {
@@ -1064,7 +1088,7 @@ impl ObjectRef {
         &self,
         iid: RuntimeInterfaceId,
     ) -> Option<&'static RuntimeInterfaceDescriptor> {
-        self.class_descriptor()
+        self.try_class_descriptor()?
             .interfaces
             .iter()
             .find(|descriptor| descriptor.id == iid)
@@ -1074,7 +1098,7 @@ impl ObjectRef {
         &self,
         guid: RuntimeGuid,
     ) -> Option<&'static RuntimeInterfaceDescriptor> {
-        self.class_descriptor()
+        self.try_class_descriptor()?
             .interfaces
             .iter()
             .find(|descriptor| descriptor.identity.guid == guid)
@@ -1086,7 +1110,7 @@ impl ObjectRef {
     ) -> Option<RuntimeInterfaceProjection> {
         let descriptor = self.query_interface_descriptor(iid)?;
         Some(RuntimeInterfaceProjection {
-            object_identity: self.object_identity(),
+            object_identity: self.try_object_identity()?,
             interface_identity: descriptor.identity,
             interface_descriptor: descriptor,
         })
@@ -1098,7 +1122,7 @@ impl ObjectRef {
     ) -> Option<RuntimeInterfaceProjection> {
         let descriptor = self.query_interface_descriptor_by_guid(guid)?;
         Some(RuntimeInterfaceProjection {
-            object_identity: self.object_identity(),
+            object_identity: self.try_object_identity()?,
             interface_identity: descriptor.identity,
             interface_descriptor: descriptor,
         })
@@ -1211,13 +1235,16 @@ impl Hash for ObjectRef {
 // Test-support code exercising the documented production vtable paths above.
 #[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
+    use core::ffi::c_void;
+    use core::sync::atomic::{AtomicU32, Ordering};
+
     use super::{
         ObjectRef, RUNTIME_E_NOINTERFACE, RUNTIME_GUID_IDISPATCH, RUNTIME_GUID_IUNKNOWN,
         RUNTIME_IDISPATCH_INTERFACE_IDENTITY, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR, RUNTIME_S_OK,
-        RuntimeApartmentModel, RuntimeClassDescriptor, RuntimeDispatchPlanCache, RuntimeGuid,
-        RuntimeInterfaceDescriptor, RuntimeInterfaceId, RuntimeInterfaceIdentity,
-        RuntimeInterfaceKind, RuntimeLifetimePolicy, RuntimeMemberDescriptor,
-        RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
+        RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeApartmentModel, RuntimeClassDescriptor,
+        RuntimeDispatchPlanCache, RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
+        RuntimeInterfaceIdentity, RuntimeInterfaceKind, RuntimeLifetimePolicy,
+        RuntimeMemberDescriptor, RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
     };
 
     #[test]
@@ -1797,5 +1824,90 @@ mod tests {
         assert_eq!(hr, RUNTIME_E_NOINTERFACE);
         assert!(out.is_null());
         assert_eq!(object.strong_count_for_test(), 1);
+    }
+
+    #[repr(C)]
+    struct FakeForeignObject {
+        unknown: RawRuntimeIUnknown,
+        ref_count: AtomicU32,
+    }
+
+    static FAKE_FOREIGN_VTBL: RawRuntimeIUnknownVtbl = RawRuntimeIUnknownVtbl {
+        query_interface: fake_foreign_query_interface,
+        add_ref: fake_foreign_add_ref,
+        release: fake_foreign_release,
+    };
+
+    unsafe extern "C" fn fake_foreign_query_interface(
+        _this: *mut c_void,
+        _iid: RuntimeGuid,
+        ppv: *mut *mut c_void,
+    ) -> i32 {
+        if !ppv.is_null() {
+            unsafe {
+                *ppv = core::ptr::null_mut();
+            }
+        }
+        RUNTIME_E_NOINTERFACE
+    }
+
+    unsafe extern "C" fn fake_foreign_add_ref(this: *mut c_void) -> u32 {
+        let object = this.cast::<FakeForeignObject>();
+        unsafe { (*object).ref_count.fetch_add(1, Ordering::AcqRel) + 1 }
+    }
+
+    unsafe extern "C" fn fake_foreign_release(this: *mut c_void) -> u32 {
+        let object = this.cast::<FakeForeignObject>();
+        let previous = unsafe { (*object).ref_count.fetch_sub(1, Ordering::AcqRel) };
+        let remaining = previous.saturating_sub(1);
+        if remaining == 0 {
+            unsafe {
+                drop(Box::from_raw(object));
+            }
+        }
+        remaining
+    }
+
+    fn fake_foreign_object() -> ObjectRef {
+        let boxed = Box::new(FakeForeignObject {
+            unknown: RawRuntimeIUnknown {
+                vtbl: &FAKE_FOREIGN_VTBL,
+            },
+            ref_count: AtomicU32::new(1),
+        });
+        let raw = Box::into_raw(boxed);
+        unsafe {
+            ObjectRef::from_raw_iunknown_owned(&mut (*raw).unknown as *mut RawRuntimeIUnknown)
+                .expect("fake foreign object pointer is non-null")
+        }
+    }
+
+    #[test]
+    fn foreign_iunknown_has_no_runtime_descriptor_projection() {
+        let object = fake_foreign_object();
+        assert!(!object.is_compat_object());
+        assert!(object.try_class_descriptor().is_none());
+        assert!(object.try_object_identity().is_none());
+        assert!(
+            object
+                .query_interface_descriptor(RuntimeInterfaceId::IUnknown)
+                .is_none()
+        );
+        assert!(
+            object
+                .query_interface_descriptor_by_guid(RUNTIME_GUID_IUNKNOWN)
+                .is_none()
+        );
+        assert!(
+            object
+                .query_interface_projection(RuntimeInterfaceId::IUnknown)
+                .is_none()
+        );
+        assert!(
+            object
+                .query_interface_projection_by_guid(RUNTIME_GUID_IUNKNOWN)
+                .is_none()
+        );
+        assert_eq!(object.to_string(), "<foreign>");
     }
 }
