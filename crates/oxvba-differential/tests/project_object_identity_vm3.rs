@@ -58,3 +58,41 @@ fn project_class_is_compares_object_identity_for_non_null_instances() {
         "True|False|False|False",
     );
 }
+
+#[test]
+fn project_class_typeof_uses_runtime_descriptor_for_object_variables() {
+    let main = "Public result As Variant\n\
+                Sub Main()\n\
+                \x20   Dim o As Object\n\
+                \x20   Set o = New Widget\n\
+                \x20   Dim isWidget As Boolean\n\
+                \x20   Dim isGadget As Boolean\n\
+                \x20   Dim isNothingWidget As Boolean\n\
+                \x20   isWidget = TypeOf o Is Widget\n\
+                \x20   isGadget = TypeOf o Is Gadget\n\
+                \x20   Set o = Nothing\n\
+                \x20   isNothingWidget = TypeOf o Is Widget\n\
+                \x20   result = CStr(isWidget) & \"|\" & CStr(isGadget) & \"|\" & CStr(isNothingWidget)\n\
+                End Sub\n";
+    let widget = "Private n As Long\n\
+                  Private Sub Class_Initialize()\n\
+                  \x20   n = 1\n\
+                  End Sub\n";
+    let gadget = "Private n As Long\n\
+                  Private Sub Class_Initialize()\n\
+                  \x20   n = 2\n\
+                  End Sub\n";
+
+    assert_contains_string(
+        run_modules(
+            Executor::Vm3,
+            &[
+                ("Main", Procedural, main),
+                ("Widget", Class, widget),
+                ("Gadget", Class, gadget),
+            ],
+            "VBAProject",
+        ),
+        "True|False|False",
+    );
+}
