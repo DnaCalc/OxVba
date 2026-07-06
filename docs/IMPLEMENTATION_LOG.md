@@ -2236,3 +2236,21 @@
   - `br lint bd-h4oh.10.21 --json`
   - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
   - `cargo test -p oxvba-jit -- --format terse`
+
+# 2026-07-07 - JIT active-project predeclared singletons
+
+- Added shared runtime ABI helpers for project `VB_PredeclaredId` singleton get/set so JIT uses the
+  same `LoadedProgram.predeclared_singletons` state model as VM3.
+- Lowered active-project `Predeclared` and `PredeclaredSet` in the JIT through slot helpers while
+  keeping `PredeclaredExtern` and `PredeclaredExternSet` on deterministic unsupported diagnostics
+  for the cross-project bead.
+- Matched VM3 for default-instance persistence, statement-form method dispatch on the default
+  instance, `Set ClassName = Nothing` reset, `Set ClassName = New ClassName` replacement, held old
+  references surviving reset, and initializer failure clearing the singleton for retry.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `br lint bd-h4oh.10.22 --json`
+  - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
+  - `cargo test -p oxvba-jit -- --format terse`
+  - `cargo test -p oxvba-rt-abi -- --format terse`

@@ -1685,6 +1685,144 @@ pub extern "C" fn rt_project_new_object(
     })
 }
 
+fn variant_is_nothing(value: &Variant) -> bool {
+    match value.vtype() {
+        VarType::Object => {
+            value
+                .as_object_ref()
+                .map(|object| object.raw())
+                .unwrap_or(0)
+                == 0
+        }
+        VarType::Empty | VarType::Null => true,
+        _ => value.as_i16() == Some(0) || value.as_i32() == Some(0),
+    }
+}
+
+fn object_identity(value: &Variant) -> i32 {
+    value
+        .as_object_ref()
+        .map(|object| object.raw())
+        .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_project_predeclared_instance(
+    state: *mut RawExecState,
+    program_index: usize,
+    class_index: usize,
+    out: *mut Variant,
+) -> i32 {
+    with_status(|| {
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        if let Some(existing) = exec
+            .programs
+            .get(program_index)
+            .and_then(|loaded| loaded.predeclared_singletons.get(&class_index))
+        {
+            return write_out(state, out, existing.clone());
+        }
+        let Some(loaded) = exec.programs.get(program_index) else {
+            return seat_fault(
+                state,
+                Fault::new(5, format!("unknown program {program_index}")),
+            );
+        };
+        let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
+            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+        };
+        let Some(class) = loaded.program.classes.get(class_index) else {
+            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+        };
+        let initialize = class.initialize;
+        let has_terminate = class.terminate.is_some();
+        let instance_id = exec.next_instance_id;
+        exec.next_instance_id += 1;
+        let object = ObjectRef::from_project_instance(
+            instance_id,
+            class_index as i32,
+            program_index as i32,
+            has_terminate,
+            descriptor,
+        );
+        let value = Variant::from_object_ref(object.clone());
+        let Some(loaded) = exec.programs.get_mut(program_index) else {
+            return seat_fault(
+                state,
+                Fault::new(5, format!("unknown program {program_index}")),
+            );
+        };
+        loaded
+            .predeclared_singletons
+            .insert(class_index, value.clone());
+        if let Some(init) = initialize {
+            let Some(bridge) = exec.proc_invoker else {
+                return seat_fault(
+                    state,
+                    Fault::new(
+                        5,
+                        "rt_project_predeclared_instance requires an installed ProcInvoker for Class_Initialize",
+                    ),
+                );
+            };
+            let status = unsafe { (bridge.invoke)(bridge.ctx, program_index, init.0, &value, 0) };
+            if status != ST_OK {
+                let failed_identity = object_identity(&value);
+                let Some(loaded) = exec.programs.get_mut(program_index) else {
+                    return status;
+                };
+                let slot_still_points_to_failed_instance = loaded
+                    .predeclared_singletons
+                    .get(&class_index)
+                    .map(|current| object_identity(current) == failed_identity)
+                    .unwrap_or(false);
+                if slot_still_points_to_failed_instance {
+                    loaded.predeclared_singletons.remove(&class_index);
+                }
+                return status;
+            }
+        }
+        write_out(state, out, value)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rt_project_set_predeclared_instance(
+    state: *mut RawExecState,
+    program_index: usize,
+    class_index: usize,
+    value: *const Variant,
+) -> i32 {
+    with_status(|| {
+        let value = match read_in(state, value, "predeclared value") {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        let Some(loaded) = exec.programs.get_mut(program_index) else {
+            return seat_fault(
+                state,
+                Fault::new(5, format!("unknown program {program_index}")),
+            );
+        };
+        if class_index >= loaded.program.classes.len() {
+            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+        }
+        if variant_is_nothing(value) {
+            loaded.predeclared_singletons.remove(&class_index);
+        } else {
+            loaded
+                .predeclared_singletons
+                .insert(class_index, value.clone());
+        }
+        ST_OK
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn rt_err_clear(state: *mut RawExecState) -> i32 {
     with_status(|| {

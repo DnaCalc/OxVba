@@ -47,12 +47,13 @@ use oxvba_rt_abi::{
     rt_div_i32, rt_div_i64, rt_err_clear, rt_err_enter_activation, rt_err_i32_field,
     rt_err_restore_activation, rt_err_string_field_utf8, rt_lib_invoke_with_policy, rt_logical_v,
     rt_maybe_drain, rt_mul_i16, rt_mul_i32, rt_mul_i64, rt_mul_u8, rt_neg_v, rt_not_v,
-    rt_project_new_object, rt_raise_array_has_no_bounds, rt_raise_error_number,
-    rt_raise_expected_array, rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref,
-    rt_raise_out_of_memory, rt_raise_out_of_stack, rt_raise_runtime_error_number,
-    rt_raise_subscript_out_of_range, rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume,
-    rt_route_fault, rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8,
-    rt_truthy_v, runtime_class_descriptors_for_program, variant_changed,
+    rt_project_new_object, rt_project_predeclared_instance, rt_project_set_predeclared_instance,
+    rt_raise_array_has_no_bounds, rt_raise_error_number, rt_raise_expected_array,
+    rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref, rt_raise_out_of_memory,
+    rt_raise_out_of_stack, rt_raise_runtime_error_number, rt_raise_subscript_out_of_range,
+    rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume, rt_route_fault,
+    rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8, rt_truthy_v,
+    runtime_class_descriptors_for_program, variant_changed,
 };
 use oxvba_runtime::{
     Decimal96, VarType, Variant, VbaRecord,
@@ -606,6 +607,8 @@ struct Imports {
     store_variant: ClifFuncId,
     as_new_project_class_slot: ClifFuncId,
     new_object_slot: ClifFuncId,
+    predeclared_slot: ClifFuncId,
+    predeclared_set: ClifFuncId,
     field_get_slot: ClifFuncId,
     field_set_slot: ClifFuncId,
     project_member_get_slot: ClifFuncId,
@@ -977,6 +980,12 @@ impl<'a> LowerFunc<'a> {
             }
             OxInst::NewObject { dst, class } => {
                 self.emit_new_object_to_slot(builder, module, *dst, class.0)
+            }
+            OxInst::Predeclared { dst, class } => {
+                self.emit_predeclared_to_slot(builder, module, *dst, class.0)
+            }
+            OxInst::PredeclaredSet { class, value } => {
+                self.emit_predeclared_set(builder, module, class.0, value)
             }
             OxInst::FieldGet { dst, object, field } => {
                 self.emit_field_get_to_slot(builder, module, *dst, object, *field)
@@ -3004,6 +3013,52 @@ impl<'a> LowerFunc<'a> {
         let call = builder
             .ins()
             .call(callee, &[self.state, self.run, program, class, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_predeclared_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        class_index: usize,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let class_index = i32::try_from(class_index)
+            .map_err(|_| JitError::unsupported("JIT Predeclared class index is too large"))?;
+        let (area, index) = place_addr(dst);
+        let program = builder.ins().iconst(types::I32, 0);
+        let class = builder.ins().iconst(types::I32, i64::from(class_index));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.predeclared_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, program, class, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_predeclared_set(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        class_index: usize,
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        let class_index = i32::try_from(class_index)
+            .map_err(|_| JitError::unsupported("JIT PredeclaredSet class index is too large"))?;
+        let operand = self.lower_variant_operand(builder, value)?;
+        let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &[operand])?;
+        let program = builder.ins().iconst(types::I32, 0);
+        let class = builder.ins().iconst(types::I32, i64::from(class_index));
+        let callee = self.import(builder, module, self.imports.predeclared_set);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, program, class, operand_ptr]);
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
@@ -7793,6 +7848,14 @@ fn register_symbols(builder: &mut JITBuilder) {
         rt_jit_new_object_to_slot as *const u8,
     );
     builder.symbol(
+        "rt_jit_predeclared_to_slot",
+        rt_jit_predeclared_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_predeclared_set",
+        rt_jit_predeclared_set as *const u8,
+    );
+    builder.symbol(
         "rt_jit_project_field_get_to_slot",
         rt_jit_project_field_get_to_slot as *const u8,
     );
@@ -8185,6 +8248,37 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
             "rt_jit_new_object_to_slot",
             Linkage::Import,
             &new_object_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut predeclared_slot_sig = module.make_signature();
+    predeclared_slot_sig.params.push(AbiParam::new(ptr_ty));
+    predeclared_slot_sig.params.push(AbiParam::new(ptr_ty));
+    predeclared_slot_sig.params.push(AbiParam::new(types::I32));
+    predeclared_slot_sig.params.push(AbiParam::new(types::I32));
+    predeclared_slot_sig.params.push(AbiParam::new(types::I32));
+    predeclared_slot_sig.params.push(AbiParam::new(types::I32));
+    predeclared_slot_sig.returns.push(AbiParam::new(types::I32));
+    let predeclared_slot = module
+        .declare_function(
+            "rt_jit_predeclared_to_slot",
+            Linkage::Import,
+            &predeclared_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut predeclared_set_sig = module.make_signature();
+    predeclared_set_sig.params.push(AbiParam::new(ptr_ty));
+    predeclared_set_sig.params.push(AbiParam::new(ptr_ty));
+    predeclared_set_sig.params.push(AbiParam::new(types::I32));
+    predeclared_set_sig.params.push(AbiParam::new(types::I32));
+    predeclared_set_sig.params.push(AbiParam::new(ptr_ty));
+    predeclared_set_sig.returns.push(AbiParam::new(types::I32));
+    let predeclared_set = module
+        .declare_function(
+            "rt_jit_predeclared_set",
+            Linkage::Import,
+            &predeclared_set_sig,
         )
         .map_err(module_err)?;
 
@@ -9241,6 +9335,8 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         store_variant,
         as_new_project_class_slot,
         new_object_slot,
+        predeclared_slot,
+        predeclared_set,
         field_get_slot,
         field_set_slot,
         project_member_get_slot,
@@ -9645,14 +9741,8 @@ fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str
         OxInst::NewExtern { .. } => Some(
             "JIT cross-project object/class instruction NewExtern is unsupported: referenced-project construction requires linked runtime descriptors",
         ),
-        OxInst::Predeclared { .. } => Some(
-            "JIT project object/class instruction Predeclared is unsupported: predeclared singleton construction and reset remain VM3-only",
-        ),
         OxInst::PredeclaredExtern { .. } => Some(
             "JIT cross-project object/class instruction PredeclaredExtern is unsupported: referenced-project singleton construction remains VM3-only",
-        ),
-        OxInst::PredeclaredSet { .. } => Some(
-            "JIT project object/class instruction PredeclaredSet is unsupported: predeclared singleton reference ownership remains VM3-only",
         ),
         OxInst::PredeclaredExternSet { .. } => Some(
             "JIT cross-project object/class instruction PredeclaredExternSet is unsupported: referenced-project singleton ownership remains VM3-only",
@@ -11629,6 +11719,77 @@ unsafe extern "C" fn rt_jit_new_object_to_slot(
         };
         *slot = value;
         ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_predeclared_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    program_index: i32,
+    class_index: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || program_index < 0
+            || class_index < 0
+            || dst_area < 0
+            || dst_index < 0
+        {
+            return ST_FAULT;
+        }
+        let mut value = Variant::empty();
+        let status = rt_project_predeclared_instance(
+            state,
+            program_index as usize,
+            class_index as usize,
+            &mut value,
+        );
+        if status != ST_OK {
+            return status;
+        }
+        // SAFETY: null was rejected and the compiled caller gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_predeclared_set(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    program_index: i32,
+    class_index: i32,
+    operand: *const JitVariantOperandDesc,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || operand.is_null()
+            || program_index < 0
+            || class_index < 0
+        {
+            return ST_FAULT;
+        }
+        // SAFETY: the compiled caller provides one live descriptor.
+        let operand = unsafe { *operand };
+        // SAFETY: null was rejected and the source is cloned before the ABI call.
+        let run = unsafe { &mut *run };
+        let value = match variant_operand_value_with_as_new(run, state, operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        rt_project_set_predeclared_instance(
+            state,
+            program_index as usize,
+            class_index as usize,
+            &value,
+        )
     })
 }
 
@@ -18233,28 +18394,12 @@ mod tests {
                 "NewExtern",
             ),
             (
-                "Predeclared",
-                OxInst::Predeclared {
-                    dst: OxPlace::Local(LocalId(0)),
-                    class: ClassId(0),
-                },
-                "Predeclared",
-            ),
-            (
                 "PredeclaredExtern",
                 OxInst::PredeclaredExtern {
                     dst: OxPlace::Local(LocalId(0)),
                     import: ImportId(0),
                 },
                 "PredeclaredExtern",
-            ),
-            (
-                "PredeclaredSet",
-                OxInst::PredeclaredSet {
-                    class: ClassId(0),
-                    value: other(),
-                },
-                "PredeclaredSet",
             ),
             (
                 "PredeclaredExternSet",

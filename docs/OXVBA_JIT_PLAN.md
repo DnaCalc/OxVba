@@ -1026,6 +1026,14 @@ lazy, and re-instantiates after post-access `Set ... = Nothing` for both locals 
 Imported/cross-project `As New`, predeclared singletons, events, and `Class_Terminate` remain split
 to later beads.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.22` completed the active-project
+`VB_PredeclaredId` singleton JIT slice. The JIT now lowers active-project `Predeclared` and
+`PredeclaredSet` through shared runtime ABI singleton get/set helpers, matching VM3 for default
+instance persistence, statement-form method dispatch, `Set ClassName = Nothing`, replacement via
+`Set ClassName = New ClassName`, held old references after reset, and initializer-failure retry.
+Cross-project predeclared singletons remain split to `bd-h4oh.10.24`; COM/export default instances
+remain outside this JIT class slice.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1034,7 +1042,8 @@ Class/JIT follow-up bead order:
    arguments, optional parameters, and `ParamArray`. Complete 2026-07-07.
 4. `bd-h4oh.10.20` - default members and object-valued property compatibility. Complete 2026-07-07.
 5. `bd-h4oh.10.21` - lazy active-project `As New` locals and fields. Complete 2026-07-07.
-6. `bd-h4oh.10.22` - active-project `VB_PredeclaredId` singleton construction and reset.
+6. `bd-h4oh.10.22` - active-project `VB_PredeclaredId` singleton construction and reset. Complete
+   2026-07-07.
 7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains.
 8. `bd-h4oh.10.24` - referenced-project class descriptors and construction.
 9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT.

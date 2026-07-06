@@ -61,26 +61,28 @@ fn assert_completed_with_i32(label: &str, outcome: RunOutcome, expected: i32) {
     );
 }
 
-fn assert_jit_declines(outcome: RunOutcome, instruction: &str, expected_detail: &str) {
-    let unsupported = outcome
-        .unsupported
-        .as_deref()
-        .unwrap_or_else(|| panic!("JIT should decline {instruction} explicitly: {outcome:?}"));
+fn assert_completed_prefix_i32(label: &str, outcome: RunOutcome, expected: &[i32]) {
     assert!(
-        unsupported.contains(instruction) && unsupported.contains(expected_detail),
-        "unexpected JIT unsupported diagnostic for {instruction}: {unsupported}"
-    );
-    assert!(
-        matches!(outcome.result.as_ref(), Ok(values) if values.is_empty()),
-        "JIT decline must not return a VM3 result: {outcome:?}"
+        outcome.unsupported.is_none(),
+        "{label} should execute the project-object oracle case: {outcome:?}"
     );
     assert!(
         outcome
             .handle_balance
             .is_some_and(oxvba_runtime::HandleBalance::is_zero),
-        "jit decline handle imbalance: {:?}",
+        "{label} handle imbalance: {:?}",
         outcome.handle_balance
     );
+    let values = outcome
+        .result
+        .unwrap_or_else(|err| panic!("{label} should complete: {err}"));
+    for (index, expected) in expected.iter().enumerate() {
+        assert_eq!(
+            values.get(index),
+            Some(&canon(&Variant::from_i32(*expected))),
+            "{label} snapshot mismatch at index {index}: {values:?}"
+        );
+    }
 }
 
 #[test]
@@ -654,21 +656,121 @@ fn jit_project_typename_live_object_matches_vm3_without_fallback() {
 }
 
 #[test]
-fn jit_predeclared_default_instance_declines_without_vm_fallback() {
+fn jit_predeclared_default_instance_matches_vm3_without_fallback() {
     let app = project(vec![
         proc_module(
             "Main",
-            "Public r As Long\nSub Main()\n  r = Counter.Total\nEnd Sub\n",
+            "Public r As Variant\nPublic initCount As Long\nSub Main()\n  r = Counter.Id\n  r = Counter.Id\nEnd Sub\n",
         ),
         predeclared_class_module(
             "Counter",
-            "Private n As Long\nPrivate Sub Class_Initialize()\n  n = 10\nEnd Sub\nPublic Property Get Total() As Long\n  Total = n\nEnd Property\n",
+            "Private n As Long\nPrivate Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\n  n = Main.initCount\nEnd Sub\nPublic Property Get Id() As Long\n  Id = n\nEnd Property\n",
         ),
     ]);
 
     let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
-    assert_completed_with_i32("VM3", vm3, 10);
+    assert_completed_prefix_i32("VM3", vm3, &[1, 1]);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
-    assert_jit_declines(jit, "Predeclared", "VM3-only");
+    assert_completed_prefix_i32("JIT", jit, &[1, 1]);
+}
+
+#[test]
+fn jit_predeclared_statement_method_uses_default_instance_without_fallback() {
+    let app = project(vec![
+        proc_module(
+            "Main",
+            "Public r As Variant\nPublic initCount As Long\nPublic called As Long\nSub Main()\n  Counter.Bump\n  Counter.Bump\n  r = Counter.Id\nEnd Sub\n",
+        ),
+        predeclared_class_module(
+            "Counter",
+            "Private n As Long\nPrivate Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\n  n = Main.initCount\nEnd Sub\nPublic Sub Bump()\n  Main.called = Main.called + 10\nEnd Sub\nPublic Property Get Id() As Long\n  Id = n\nEnd Property\n",
+        ),
+    ]);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    assert_completed_prefix_i32("VM3", vm3, &[1, 1, 20]);
+
+    let jit = run_project_closure(Executor::Jit, &[app]);
+    assert_completed_prefix_i32("JIT", jit, &[1, 1, 20]);
+}
+
+#[test]
+fn jit_predeclared_set_nothing_resets_default_instance_without_fallback() {
+    let app = project(vec![
+        proc_module(
+            "Main",
+            "Public r As Variant\nPublic initCount As Long\nSub Main()\n  Dim beforeId As Variant\n  beforeId = Counter.Id\n  Set Counter = Nothing\n  r = Counter.Id\nEnd Sub\n",
+        ),
+        predeclared_class_module(
+            "Counter",
+            "Private n As Long\nPrivate Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\n  n = Main.initCount\nEnd Sub\nPublic Property Get Id() As Long\n  Id = n\nEnd Property\n",
+        ),
+    ]);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    assert_completed_prefix_i32("VM3", vm3, &[2, 2]);
+
+    let jit = run_project_closure(Executor::Jit, &[app]);
+    assert_completed_prefix_i32("JIT", jit, &[2, 2]);
+}
+
+#[test]
+fn jit_predeclared_set_new_replaces_default_without_fallback() {
+    let app = project(vec![
+        proc_module(
+            "Main",
+            "Public r As Variant\nPublic initCount As Long\nSub Main()\n  Dim beforeId As Variant\n  beforeId = Counter.Id\n  Set Counter = New Counter\n  r = Counter.Id\nEnd Sub\n",
+        ),
+        predeclared_class_module(
+            "Counter",
+            "Private n As Long\nPrivate Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\n  n = Main.initCount\nEnd Sub\nPublic Property Get Id() As Long\n  Id = n\nEnd Property\n",
+        ),
+    ]);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    assert_completed_prefix_i32("VM3", vm3, &[2, 2]);
+
+    let jit = run_project_closure(Executor::Jit, &[app]);
+    assert_completed_prefix_i32("JIT", jit, &[2, 2]);
+}
+
+#[test]
+fn jit_predeclared_held_reference_survives_reset_without_fallback() {
+    let app = project(vec![
+        proc_module(
+            "Main",
+            "Public r As Variant\nPublic afterReset As Variant\nPublic initCount As Long\nSub Main()\n  Dim oldDefault As Counter\n  Set oldDefault = Counter\n  Set Counter = Nothing\n  r = oldDefault.Id\n  afterReset = Counter.Id\nEnd Sub\n",
+        ),
+        predeclared_class_module(
+            "Counter",
+            "Private n As Long\nPrivate Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\n  n = Main.initCount\nEnd Sub\nPublic Property Get Id() As Long\n  Id = n\nEnd Property\n",
+        ),
+    ]);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    assert_completed_prefix_i32("VM3", vm3, &[1, 2, 2]);
+
+    let jit = run_project_closure(Executor::Jit, &[app]);
+    assert_completed_prefix_i32("JIT", jit, &[1, 2, 2]);
+}
+
+#[test]
+fn jit_predeclared_failed_initialize_clears_slot_for_retry_without_fallback() {
+    let app = project(vec![
+        proc_module(
+            "Main",
+            "Public r As Variant\nPublic initCount As Long\nPublic firstErr As Long\nPublic failOnce As Boolean\nSub Main()\n  failOnce = True\n  On Error Resume Next\n  Dim firstId As Variant\n  firstId = Counter.Id\n  firstErr = Err.Number\n  Err.Clear\n  r = Counter.Id\nEnd Sub\n",
+        ),
+        predeclared_class_module(
+            "Counter",
+            "Private n As Long\nPrivate Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\n  If Main.failOnce Then\n    Main.failOnce = False\n    Err.Raise 5\n  End If\n  n = Main.initCount\nEnd Sub\nPublic Property Get Id() As Long\n  Id = n\nEnd Property\n",
+        ),
+    ]);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    assert_completed_prefix_i32("VM3", vm3, &[2, 2, 5]);
+
+    let jit = run_project_closure(Executor::Jit, &[app]);
+    assert_completed_prefix_i32("JIT", jit, &[2, 2, 5]);
 }
