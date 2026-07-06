@@ -150,6 +150,11 @@ First implementation slice:
   property procedure kinds, and ordinary `Method` rows may target either `Sub` or `Function`.
   This keeps runtime/COM-facing invoke-kind metadata consistent with executable procedure
   descriptors rather than relying on source reconstruction.
+- `verify_program` now preserves the package contract for class property setter descriptors:
+  `PropertyLet` and `PropertySet` rows must expose an assigned-value parameter as the final
+  source-visible parameter after hidden `Me`, and that value parameter must be stored as runtime
+  ByVal. This mirrors the binder's lowering rule for VBA setter values without broadening the
+  current claim to full `PropertySet` object-type compatibility.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
 - `runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup` proves unhinted member/default lookup caches unique arity-matched descriptor plans, covering explicit dynamic call traffic that does not carry a property/method hint.
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.

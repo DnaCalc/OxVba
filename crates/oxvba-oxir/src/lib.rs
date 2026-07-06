@@ -343,6 +343,42 @@ mod tests {
         }
     }
 
+    fn class_property_setter_func(name: &str, kind: ProcedureKind, value_by_ref: bool) -> OxFunc {
+        OxFunc {
+            name: name.to_string(),
+            kind,
+            locals: vec![
+                OxLocal {
+                    name: "Me".to_string(),
+                    ty: OxTy::Variant,
+                    array_element: None,
+                    param: Some(OxParamInfo {
+                        optional: false,
+                        by_ref: false,
+                        variadic: false,
+                    }),
+                    escaped: false,
+                },
+                OxLocal {
+                    name: "value".to_string(),
+                    ty: OxTy::Variant,
+                    array_element: None,
+                    param: Some(OxParamInfo {
+                        optional: false,
+                        by_ref: value_by_ref,
+                        variadic: false,
+                    }),
+                    escaped: false,
+                },
+            ],
+            temps: Vec::new(),
+            param_count: 2,
+            return_local: None,
+            blocks: vec![OxBlock::new(BlockId(0), OxTerminator::Return)],
+            entry: BlockId(0),
+        }
+    }
+
     #[test]
     fn class_field_as_new_metadata_verifies() {
         let p = sample_class_field_program();
@@ -570,6 +606,94 @@ mod tests {
                 }
             )),
             "expected BadClassMethodProcKind, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_accepts_class_property_setter_byval_value_param() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_property_setter_func(
+            "Value",
+            ProcedureKind::PropertyLet,
+            false,
+        ));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Value".to_string(),
+            kind: ProjectMemberKind::PropertyLet,
+            proc: FuncId(0),
+            dispid: None,
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        });
+        assert_eq!(verify_program(&p), Ok(()));
+    }
+
+    #[test]
+    fn verifier_catches_class_property_setter_without_value_param() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func_with_kind(
+            "Value",
+            ProcedureKind::PropertyLet,
+        ));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Value".to_string(),
+            kind: ProjectMemberKind::PropertyLet,
+            proc: FuncId(0),
+            dispid: None,
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        });
+        let errs = verify_program(&p).expect_err("setter descriptor needs value parameter");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassPropertySetterValueParam {
+                    class_index: 0,
+                    method_index: 0,
+                    proc: 0,
+                    member_kind: ProjectMemberKind::PropertyLet,
+                    visible_params: 0,
+                    param_count: 1,
+                    locals: 1,
+                }
+            )),
+            "expected BadClassPropertySetterValueParam, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_class_property_setter_byref_value_param() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_property_setter_func(
+            "Child",
+            ProcedureKind::PropertySet,
+            true,
+        ));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Child".to_string(),
+            kind: ProjectMemberKind::PropertySet,
+            proc: FuncId(0),
+            dispid: None,
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        });
+        let errs = verify_program(&p).expect_err("setter value parameter must be ByVal");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassPropertySetterValueByRef {
+                    class_index: 0,
+                    method_index: 0,
+                    proc: 0,
+                    member_kind: ProjectMemberKind::PropertySet,
+                    param_index: 1,
+                    name,
+                } if name == "value"
+            )),
+            "expected BadClassPropertySetterValueByRef, got {errs:?}"
         );
     }
 

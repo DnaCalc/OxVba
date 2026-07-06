@@ -205,6 +205,27 @@ pub enum VerifyError {
         member_kind: ProjectMemberKind,
         proc_kind: ProcedureKind,
     },
+    /// A class `Property Let`/`Property Set` descriptor target does not expose the
+    /// assigned-value parameter as the final source-visible parameter after hidden `Me`.
+    BadClassPropertySetterValueParam {
+        class_index: usize,
+        method_index: usize,
+        proc: usize,
+        member_kind: ProjectMemberKind,
+        visible_params: usize,
+        param_count: usize,
+        locals: usize,
+    },
+    /// A class `Property Let`/`Property Set` descriptor target carries the assigned
+    /// value parameter as ByRef instead of VBA's runtime-ByVal setter value.
+    BadClassPropertySetterValueByRef {
+        class_index: usize,
+        method_index: usize,
+        proc: usize,
+        member_kind: ProjectMemberKind,
+        param_index: usize,
+        name: String,
+    },
     /// A class method dispatch table contains a duplicate case-insensitive name/kind key.
     DuplicateClassMethod {
         class_index: usize,
@@ -490,6 +511,29 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} method {method_index} proc {proc} has kind {proc_kind:?}, incompatible with member kind {member_kind:?}"
             ),
+            VerifyError::BadClassPropertySetterValueParam {
+                class_index,
+                method_index,
+                proc,
+                member_kind,
+                visible_params,
+                param_count,
+                locals,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} proc {proc} member {member_kind:?} must expose a final source-visible setter value parameter after hidden Me (visible_params={visible_params}, param_count={param_count}, locals={locals})"
+            ),
+            VerifyError::BadClassPropertySetterValueByRef {
+                class_index,
+                method_index,
+                proc,
+                member_kind,
+                param_index,
+                name,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} proc {proc} member {member_kind:?} setter value parameter {param_index} ({name:?}) must be runtime ByVal"
+            ),
             VerifyError::DuplicateClassMethod {
                 class_index,
                 method_index,
@@ -651,6 +695,18 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                     member_kind: method.kind,
                     proc_kind: program.funcs[method.proc.0].kind,
                 });
+            } else if matches!(
+                method.kind,
+                ProjectMemberKind::PropertyLet | ProjectMemberKind::PropertySet
+            ) {
+                verify_class_property_setter_value_param(
+                    class_index,
+                    method_index,
+                    method.proc.0,
+                    method.kind,
+                    &program.funcs[method.proc.0],
+                    errors,
+                );
             }
             if !method_keys.insert((method.name.to_ascii_lowercase(), method.kind)) {
                 errors.push(VerifyError::DuplicateClassMethod {
@@ -697,6 +753,75 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                 _ => {}
             }
         }
+    }
+}
+
+fn verify_class_property_setter_value_param(
+    class_index: usize,
+    method_index: usize,
+    proc: usize,
+    member_kind: ProjectMemberKind,
+    func: &OxFunc,
+    errors: &mut Vec<VerifyError>,
+) {
+    let visible_params = func.param_count.saturating_sub(1);
+    let Some(value_index) = func.param_count.checked_sub(1) else {
+        errors.push(VerifyError::BadClassPropertySetterValueParam {
+            class_index,
+            method_index,
+            proc,
+            member_kind,
+            visible_params,
+            param_count: func.param_count,
+            locals: func.locals.len(),
+        });
+        return;
+    };
+    if value_index == 0 {
+        errors.push(VerifyError::BadClassPropertySetterValueParam {
+            class_index,
+            method_index,
+            proc,
+            member_kind,
+            visible_params,
+            param_count: func.param_count,
+            locals: func.locals.len(),
+        });
+        return;
+    }
+    let Some(value_local) = func.locals.get(value_index) else {
+        errors.push(VerifyError::BadClassPropertySetterValueParam {
+            class_index,
+            method_index,
+            proc,
+            member_kind,
+            visible_params,
+            param_count: func.param_count,
+            locals: func.locals.len(),
+        });
+        return;
+    };
+    let Some(value_param) = &value_local.param else {
+        errors.push(VerifyError::BadClassPropertySetterValueParam {
+            class_index,
+            method_index,
+            proc,
+            member_kind,
+            visible_params,
+            param_count: func.param_count,
+            locals: func.locals.len(),
+        });
+        return;
+    };
+    if value_param.by_ref {
+        errors.push(VerifyError::BadClassPropertySetterValueByRef {
+            class_index,
+            method_index,
+            proc,
+            member_kind,
+            param_index: value_index,
+            name: value_local.name.clone(),
+        });
     }
 }
 

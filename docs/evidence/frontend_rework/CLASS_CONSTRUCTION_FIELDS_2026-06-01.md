@@ -54,6 +54,10 @@ front-end symbol index:
   procedures, property descriptor rows must target the matching `PropertyGet`/`PropertyLet`/
   `PropertySet` procedure kind, and ordinary method rows remain valid for either `Sub` or
   `Function`.
+- The package contract now also rejects malformed class property setter descriptors whose
+  `PropertyLet`/`PropertySet` target lacks a final source-visible value parameter after hidden
+  `Me`, or stores that value parameter as ByRef. This preserves the binder's runtime-ByVal setter
+  value lowering in OxIR metadata without claiming full `PropertySet` object-type compatibility.
 
 Production-route proof:
 
@@ -88,6 +92,10 @@ Production-route proof:
 - `verifier_catches_class_lifecycle_proc_kind_mismatch` and
   `verifier_catches_class_member_proc_kind_mismatch` prove class descriptors cannot claim a
   lifecycle/member/property shape that disagrees with the target procedure descriptor.
+- `verifier_accepts_class_property_setter_byval_value_param`,
+  `verifier_catches_class_property_setter_without_value_param`, and
+  `verifier_catches_class_property_setter_byref_value_param` prove class `PropertyLet`/
+  `PropertySet` descriptors preserve VBA's trailing setter value parameter as runtime ByVal.
 
 Compatibility quarantine / residual classification:
 
@@ -145,3 +153,8 @@ Compatibility quarantine / residual classification:
   exposed a stale hand-built OxIR test that pointed a class property descriptor at `Main`.
   The fixture now uses a real receiver-bearing `Property Get` proc, keeping the test aligned with
   the class/member ABI instead of weakening the verifier.
+- The setter verifier slice was checked against the existing binder lowering rule in
+  `build_frame`: only the final `PropertyLet`/`PropertySet` value parameter is forced to runtime
+  ByVal, while indexed parameters before it retain their declared direction. The verifier mirrors
+  that exact package fact and intentionally does not add a broader `PropertySet` type rule in this
+  slice.
