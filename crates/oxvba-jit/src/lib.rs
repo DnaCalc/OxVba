@@ -808,6 +808,9 @@ impl<'a> LowerFunc<'a> {
         module: &mut JITModule,
         inst: &OxInst,
     ) -> Result<(), JitError> {
+        if let Some(message) = unsupported_project_object_inst_message(inst) {
+            return Err(JitError::unsupported(message));
+        }
         match inst {
             OxInst::StmtBoundary { .. } | OxInst::SetLineNumber { .. } => Ok(()),
             OxInst::DrainTerminations => Ok(()),
@@ -8912,6 +8915,81 @@ fn validate_scalar_call_arg_against_param(
     }
 }
 
+fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str> {
+    match inst {
+        OxInst::AsNew { .. } => Some(
+            "JIT project object/class instruction AsNew is unsupported: lazy activation requires descriptor-backed construction and lifecycle hooks",
+        ),
+        OxInst::TypeOfIs { .. } => Some(
+            "JIT project object/class instruction TypeOfIs is unsupported: project class/interface matching requires runtime descriptors",
+        ),
+        OxInst::CallByName { .. } => Some(
+            "JIT object dispatch instruction CallByName is unsupported: dynamic member invocation remains VM3-only",
+        ),
+        OxInst::ComCallEarly { .. } => Some(
+            "JIT COM object dispatch instruction ComCallEarly is unsupported: typed COM invocation remains VM3-only",
+        ),
+        OxInst::ComCallLate { .. } => Some(
+            "JIT COM object dispatch instruction ComCallLate is unsupported: late-bound COM invocation remains VM3-only",
+        ),
+        OxInst::NewObject { .. } => Some(
+            "JIT project object/class instruction NewObject is unsupported: descriptor-backed allocation, Class_Initialize, and termination ownership remain VM3-only",
+        ),
+        OxInst::NewExtern { .. } => Some(
+            "JIT cross-project object/class instruction NewExtern is unsupported: referenced-project construction requires linked runtime descriptors",
+        ),
+        OxInst::Predeclared { .. } => Some(
+            "JIT project object/class instruction Predeclared is unsupported: predeclared singleton construction and reset remain VM3-only",
+        ),
+        OxInst::PredeclaredExtern { .. } => Some(
+            "JIT cross-project object/class instruction PredeclaredExtern is unsupported: referenced-project singleton construction remains VM3-only",
+        ),
+        OxInst::PredeclaredSet { .. } => Some(
+            "JIT project object/class instruction PredeclaredSet is unsupported: predeclared singleton reference ownership remains VM3-only",
+        ),
+        OxInst::PredeclaredExternSet { .. } => Some(
+            "JIT cross-project object/class instruction PredeclaredExternSet is unsupported: referenced-project singleton ownership remains VM3-only",
+        ),
+        OxInst::FieldGet { .. } => Some(
+            "JIT project object/class instruction FieldGet is unsupported: instance field reads require descriptor-backed object state",
+        ),
+        OxInst::FieldSet { .. } => Some(
+            "JIT project object/class instruction FieldSet is unsupported: instance field writes require descriptor-backed object state and reference ownership",
+        ),
+        OxInst::FieldArrayGet { .. } => Some(
+            "JIT project object/class instruction FieldArrayGet is unsupported: in-place array field reads require descriptor-backed object state",
+        ),
+        OxInst::FieldArraySet { .. } => Some(
+            "JIT project object/class instruction FieldArraySet is unsupported: in-place array field writes require descriptor-backed object state",
+        ),
+        OxInst::WithEventsGet { .. } => Some(
+            "JIT project object/class instruction WithEventsGet is unsupported: event subscription graph state remains VM3-only",
+        ),
+        OxInst::WithEventsSet { .. } => Some(
+            "JIT project object/class instruction WithEventsSet is unsupported: event subscription mutation remains VM3-only",
+        ),
+        OxInst::WithEventsClearOwner { .. } => Some(
+            "JIT project object/class instruction WithEventsClearOwner is unsupported: event owner teardown remains VM3-only",
+        ),
+        OxInst::WithEventsFirstOwner { .. } => Some(
+            "JIT project object/class instruction WithEventsFirstOwner is unsupported: event owner iteration remains VM3-only",
+        ),
+        OxInst::WithEventsNextOwner { .. } => Some(
+            "JIT project object/class instruction WithEventsNextOwner is unsupported: event owner iteration remains VM3-only",
+        ),
+        OxInst::RaiseEvent { .. } => Some(
+            "JIT project object/class instruction RaiseEvent is unsupported: event dispatch and handler fault routing remain VM3-only",
+        ),
+        OxInst::AddRef { .. } => Some(
+            "JIT project object/class instruction AddRef is unsupported: explicit object reference ownership remains VM3-only",
+        ),
+        OxInst::Release { .. } => Some(
+            "JIT project object/class instruction Release is unsupported: explicit object release and termination scheduling remain VM3-only",
+        ),
+        _ => None,
+    }
+}
+
 fn place_ty<'a>(
     program: &'a OxProgram,
     func: &'a OxFunc,
@@ -13052,9 +13130,10 @@ mod tests {
     };
     use oxvba_hal::HostPolicy;
     use oxvba_hal::adapters::null::NullHostServices;
+    use oxvba_oxir::inst::OxAsNew;
     use oxvba_oxir::{
-        GlobalId, ImportId, LocalId, ObjClass, OxBlock, OxGlobal, OxInst, OxLocal, OxParamInfo,
-        RecordLayoutId, TempId, verify_program,
+        ClassId, GlobalId, ImportId, LocalId, ObjClass, OxBlock, OxClass, OxClassField, OxGlobal,
+        OxInst, OxLocal, OxParamInfo, RecordLayoutId, TempId, verify_program,
     };
 
     fn straight_line_program() -> OxProgram {
@@ -16271,6 +16350,110 @@ mod tests {
         }
     }
 
+    fn class_import() -> BundleImport {
+        BundleImport {
+            unit: "VBA".to_string(),
+            token: ExportToken::Class {
+                name: "ExternalWidget".to_string(),
+            },
+        }
+    }
+
+    fn unsupported_project_object_instruction_program(inst: OxInst) -> OxProgram {
+        let imports = if matches!(
+            inst,
+            OxInst::NewExtern { .. }
+                | OxInst::PredeclaredExtern { .. }
+                | OxInst::PredeclaredExternSet { .. }
+        ) {
+            vec![class_import()]
+        } else {
+            Vec::new()
+        };
+        let object_local = if matches!(inst, OxInst::AsNew { .. }) {
+            escaped_local("obj", OxTy::Object(ObjClass::Class(ClassId(0))), None)
+        } else {
+            local("obj", OxTy::Object(ObjClass::Class(ClassId(0))), None)
+        };
+        let main = OxFunc {
+            name: "Main".to_string(),
+            kind: ProcedureKind::Sub,
+            locals: vec![
+                object_local,
+                local("other", OxTy::Object(ObjClass::Untyped), None),
+                local("flag", OxTy::Bool, None),
+                local("value", OxTy::Variant, None),
+            ],
+            temps: Vec::new(),
+            param_count: 0,
+            return_local: None,
+            blocks: vec![
+                OxBlock {
+                    id: BlockId(0),
+                    instrs: vec![inst],
+                    fault_target: Some(BlockId(1)),
+                    terminator: OxTerminator::Return,
+                },
+                fault_block(1, 0, 2),
+                return_block(2),
+            ],
+            entry: BlockId(0),
+        };
+        OxProgram {
+            funcs: vec![main],
+            classes: vec![OxClass {
+                name: "Widget".to_string(),
+                predeclared: true,
+                initialize: None,
+                terminate: None,
+                fields: vec![
+                    OxClassField {
+                        name: "Value".to_string(),
+                        token: 1,
+                        ty: OxTy::Long,
+                        array_element: None,
+                    },
+                    OxClassField {
+                        name: "Items".to_string(),
+                        token: 2,
+                        ty: OxTy::Array(Box::new(OxTy::Variant), ArrayShape::Dynamic),
+                        array_element: Some(ArrayElementType::Variant),
+                    },
+                ],
+                methods: Vec::new(),
+                as_new_fields: Vec::new(),
+                implements: vec!["IWidget".to_string()],
+            }],
+            imports,
+            entry: Some(FuncId(0)),
+            unit_name: "VBAProject".to_string(),
+            ..OxProgram::empty()
+        }
+    }
+
+    fn assert_jit_declines_project_object_instruction(
+        label: &str,
+        inst: OxInst,
+        expected_instruction: &str,
+    ) {
+        let program = unsupported_project_object_instruction_program(inst);
+        assert_eq!(verify_program(&program), Ok(()), "{label}");
+        let engine = JitEngine;
+        let err = match engine.compile_image(&[&program]) {
+            Ok(_) => panic!("{label} unexpectedly compiled"),
+            Err(err) => err,
+        };
+        let message = err
+            .unsupported_message()
+            .unwrap_or_else(|| panic!("{label} should be an unsupported JIT boundary: {err:?}"));
+        assert!(
+            message.contains(expected_instruction)
+                && message.contains("unsupported")
+                && !message.contains("instruction not lowered"),
+            "{label}: {message}"
+        );
+    }
+
     #[test]
     fn jit_defaults_supported_carrier_slots() {
         let record = OxTy::Record(RecordLayoutId(0));
@@ -16342,6 +16525,184 @@ mod tests {
             outcome.values[7].array_element_vartype(),
             Some(VT_RECORD_VALUE)
         );
+    }
+
+    #[test]
+    fn jit_declines_project_object_instructions_with_specific_diagnostics() {
+        let object = || OxOperand::local(LocalId(0));
+        let other = || OxOperand::local(LocalId(1));
+        let flag = OxPlace::Local(LocalId(2));
+        let value = OxPlace::Local(LocalId(3));
+        let cases = vec![
+            (
+                "AsNew",
+                OxInst::AsNew {
+                    place: OxPlace::Local(LocalId(0)),
+                    binding: OxAsNew::ProjectClass { class: ClassId(0) },
+                },
+                "AsNew",
+            ),
+            (
+                "TypeOfIs",
+                OxInst::TypeOfIs {
+                    dst: flag,
+                    object: object(),
+                    type_name: "IWidget".to_string(),
+                },
+                "TypeOfIs",
+            ),
+            (
+                "NewObject",
+                OxInst::NewObject {
+                    dst: OxPlace::Local(LocalId(0)),
+                    class: ClassId(0),
+                },
+                "NewObject",
+            ),
+            (
+                "NewExtern",
+                OxInst::NewExtern {
+                    dst: OxPlace::Local(LocalId(0)),
+                    import: ImportId(0),
+                },
+                "NewExtern",
+            ),
+            (
+                "Predeclared",
+                OxInst::Predeclared {
+                    dst: OxPlace::Local(LocalId(0)),
+                    class: ClassId(0),
+                },
+                "Predeclared",
+            ),
+            (
+                "PredeclaredExtern",
+                OxInst::PredeclaredExtern {
+                    dst: OxPlace::Local(LocalId(0)),
+                    import: ImportId(0),
+                },
+                "PredeclaredExtern",
+            ),
+            (
+                "PredeclaredSet",
+                OxInst::PredeclaredSet {
+                    class: ClassId(0),
+                    value: other(),
+                },
+                "PredeclaredSet",
+            ),
+            (
+                "PredeclaredExternSet",
+                OxInst::PredeclaredExternSet {
+                    import: ImportId(0),
+                    value: other(),
+                },
+                "PredeclaredExternSet",
+            ),
+            (
+                "FieldGet",
+                OxInst::FieldGet {
+                    dst: value,
+                    object: object(),
+                    field: 1,
+                },
+                "FieldGet",
+            ),
+            (
+                "FieldSet",
+                OxInst::FieldSet {
+                    object: object(),
+                    field: 1,
+                    value: OxOperand::Const(OxConst::I32(42)),
+                },
+                "FieldSet",
+            ),
+            (
+                "FieldArrayGet",
+                OxInst::FieldArrayGet {
+                    dst: value,
+                    object: object(),
+                    field: 2,
+                    indices: vec![OxOperand::Const(OxConst::I32(0))],
+                },
+                "FieldArrayGet",
+            ),
+            (
+                "FieldArraySet",
+                OxInst::FieldArraySet {
+                    object: object(),
+                    field: 2,
+                    indices: vec![OxOperand::Const(OxConst::I32(0))],
+                    value: OxOperand::Const(OxConst::I32(42)),
+                },
+                "FieldArraySet",
+            ),
+            (
+                "WithEventsGet",
+                OxInst::WithEventsGet {
+                    dst: OxPlace::Local(LocalId(1)),
+                    owner: object(),
+                    binding: 10,
+                },
+                "WithEventsGet",
+            ),
+            (
+                "WithEventsSet",
+                OxInst::WithEventsSet {
+                    dst: OxPlace::Local(LocalId(1)),
+                    owner: object(),
+                    binding: 10,
+                    value: other(),
+                },
+                "WithEventsSet",
+            ),
+            (
+                "WithEventsClearOwner",
+                OxInst::WithEventsClearOwner {
+                    dst: OxPlace::Local(LocalId(1)),
+                    owner: object(),
+                },
+                "WithEventsClearOwner",
+            ),
+            (
+                "WithEventsFirstOwner",
+                OxInst::WithEventsFirstOwner {
+                    dst: OxPlace::Local(LocalId(1)),
+                    source: object(),
+                    binding: 10,
+                },
+                "WithEventsFirstOwner",
+            ),
+            (
+                "WithEventsNextOwner",
+                OxInst::WithEventsNextOwner {
+                    dst: OxPlace::Local(LocalId(1)),
+                },
+                "WithEventsNextOwner",
+            ),
+            (
+                "RaiseEvent",
+                OxInst::RaiseEvent {
+                    source: object(),
+                    event: 99,
+                    args: Vec::new(),
+                },
+                "RaiseEvent",
+            ),
+            ("AddRef", OxInst::AddRef { object: object() }, "AddRef"),
+            (
+                "Release",
+                OxInst::Release {
+                    object: object(),
+                    may_terminate: true,
+                },
+                "Release",
+            ),
+        ];
+
+        for (label, inst, expected_instruction) in cases {
+            assert_jit_declines_project_object_instruction(label, inst, expected_instruction);
+        }
     }
 
     #[test]
