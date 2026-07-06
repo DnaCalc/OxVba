@@ -1818,6 +1818,8 @@ Candidate bead units:
   optional `String` defaults that concatenate source-prior string/scalar constants through `&`,
   optional `Boolean` defaults over bounded string `Like`, including charlists/ranges/literal
   `]` charlists,
+  active-project optional defaults that fold public referenced-project constants through the final
+  export-surface-backed constant pass,
   type hooks, direct optional-entry bytecode, and package-VM omitted-argument binding,
   bounded `Property Get`/`Property Let` declaration metadata and getter self-assignment return-slot
   binding, same-module zero-argument `Property Get` reads and simple same-module `Property Let`/
@@ -1932,6 +1934,8 @@ Candidate bead units:
   constant-expression subset, deterministic Date literal defaults, and typed declared defaults
   (`""`, `False`, integer zero, Currency zero, and Date serial zero),
   exact i64 optional defaults outside the covered source-prior integer evaluator subset,
+  exported referenced-project procedure defaults whose own defaults are non-literal constant
+  expressions,
   and broader optional call-entry combinations. The
   legacy baseline remains available through an explicit comparison
   helper, and fallback is preserved only for unsupported residual constructs. Follow-up FE-9

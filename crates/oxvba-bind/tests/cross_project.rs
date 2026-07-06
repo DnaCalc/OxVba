@@ -455,6 +455,27 @@ fn cross_bundle_variant_optional_default_preserves_integer_carrier() {
 }
 
 #[test]
+fn active_optional_default_folds_referenced_project_const() {
+    let lib_mod = || proc_module("LibMod", "Public Const DefaultMode As Long = 4\n");
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Public Function LocalMode(Optional ByVal mode As Long = DefaultMode) As Long\n\
+             LocalMode = mode\n\
+             End Function\n\
+             Sub Main()\n\
+             r = LocalMode()\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(4));
+}
+
+#[test]
 fn cross_bundle_free_function_applies_named_optional_defaults_between_supplied_args() {
     let lib_mod = || {
         proc_module(

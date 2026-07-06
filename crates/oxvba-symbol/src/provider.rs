@@ -1461,9 +1461,15 @@ pub fn build_resolution_environment(
         active_target,
         &external_const_projects,
     )?;
-    // Optional-parameter defaults fold against the closure's const values.
-    let optional_defaults =
-        crate::const_eval::fold_optional_defaults(&symbols, &roots, &const_values, active_target)?;
+    // Optional-parameter defaults fold against the closure's const values plus the
+    // referenced-project constants visible through the active project's export surfaces.
+    let optional_defaults = crate::const_eval::fold_optional_defaults(
+        &symbols,
+        &roots,
+        &const_values,
+        &external_const_projects,
+        active_target,
+    )?;
     drop(roots);
     let ambiguous_type_names = type_index.ambiguous_type_names();
     validate_type_refs(&module_csts, &ambiguous_type_names)?;

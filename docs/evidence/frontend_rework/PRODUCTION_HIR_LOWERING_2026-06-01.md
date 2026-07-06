@@ -1594,6 +1594,12 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   and binds covered `LongLong`/`LongPtr` source-prior integer constant defaults through resolver,
   HIR/default metadata, direct optional-entry bytecode, and VM omitted-argument execution for
   `LongLong`. This is an exact carrier fix, not a full platform `LongPtr` semantics claim.
+- A 2026-07-06 cross-project default continuation lets active-project optional parameter defaults
+  read public constants exported by referenced projects during the final folded-default pass. The
+  bounded proof covers an active-project procedure `Optional ByVal mode As Long = DefaultMode`
+  where `DefaultMode` is a public referenced-project `Const`, and omitted calls bind the folded
+  `Long` value. Exported referenced-project procedure defaults that themselves use non-literal
+  constant expressions remain a separate surface-default publication residual.
 - Follow-up ParamArray declaration validation now rejects invalid clean-stack signatures before
   publishing partial metadata. The scanner reports `SYM-E-INVALID-PARAMARRAY-DECLARATION` for
   `ParamArray` combined with `Optional`, explicit `ByVal`, explicit `ByRef`, or a non-final

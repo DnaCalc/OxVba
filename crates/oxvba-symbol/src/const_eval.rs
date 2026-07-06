@@ -192,6 +192,7 @@ pub fn fold_optional_defaults(
     symbols: &SymbolTable,
     module_roots: &[(ScopeId, SyntaxNode<'_>)],
     values: &HashMap<SymbolId, CoreConst>,
+    external_projects: &[ExternalConstProject],
     target: ConditionalCompilationTarget,
 ) -> Result<HashMap<(SymbolId, usize), CoreConst>, SymbolModelError> {
     let module_modes: HashMap<ScopeId, StringCompareMode> = module_roots
@@ -206,6 +207,7 @@ pub fn fold_optional_defaults(
             *module_scope,
             *root,
             values,
+            external_projects,
             mode,
             target,
             &mut out,
@@ -219,6 +221,7 @@ fn collect_proc_defaults(
     module_scope: ScopeId,
     node: SyntaxNode<'_>,
     values: &HashMap<SymbolId, CoreConst>,
+    external_projects: &[ExternalConstProject],
     mode: StringCompareMode,
     target: ConditionalCompilationTarget,
     out: &mut HashMap<(SymbolId, usize), CoreConst>,
@@ -237,7 +240,14 @@ fn collect_proc_defaults(
                 let parameter = parameter_name_token(*param)
                     .map(|t| t.text.to_string())
                     .unwrap_or_else(|| format!("arg{}", i + 1));
-                let default = match eval_const_expr(symbols, module_scope, def, values, &[], mode) {
+                let default = match eval_const_expr(
+                    symbols,
+                    module_scope,
+                    def,
+                    values,
+                    external_projects,
+                    mode,
+                ) {
                     ConstEval::Value(c) => {
                         coerce_param_default_value(symbols, proc_scope, *param, c, target)
                             .ok_or_else(|| SymbolModelError::InvalidOptionalDefault {
@@ -257,7 +267,16 @@ fn collect_proc_defaults(
         }
     }
     for child in node.child_nodes() {
-        collect_proc_defaults(symbols, module_scope, child, values, mode, target, out)?;
+        collect_proc_defaults(
+            symbols,
+            module_scope,
+            child,
+            values,
+            external_projects,
+            mode,
+            target,
+            out,
+        )?;
     }
     Ok(())
 }

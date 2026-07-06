@@ -2362,6 +2362,39 @@ fn win32_longptr_optional_default_above_long_rejects() {
 }
 
 #[test]
+fn optional_defaults_fold_referenced_project_consts() {
+    use crate::manifest::{ProjectReference, ReferencedProjectManifest};
+
+    let lib = ReferencedProjectManifest {
+        project_name: "Lib".into(),
+        project_kind: ProjectKind::Library,
+        modules: vec![module("LibMod", "Public Const DefaultMode As Long = 4\n")],
+    };
+    let m = SymbolProjectManifest {
+        project_name: "App".into(),
+        project_kind: ProjectKind::Source,
+        modules: vec![module(
+            "Main",
+            "Public Sub UseMode(Optional ByVal mode As Long = DefaultMode)\nEnd Sub\n",
+        )],
+        references: vec![ProjectReference::Project {
+            referenced_project_name: "Lib".into(),
+        }],
+        reference_projects: vec![lib],
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    };
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let scope = env.module_scope("Main").expect("module scope");
+    let binding = env
+        .resolve(&ResolutionContext::at(scope), "UseMode")
+        .expect("proc resolves");
+    let proc = binding.symbol.expect("proc symbol");
+
+    assert_eq!(env.optional_default(proc, 0), Some(&CoreConst::I32(4)));
+}
+
+#[test]
 fn invalid_optional_defaults_reject_instead_of_falling_back() {
     for (src, parameter) in [
         (
