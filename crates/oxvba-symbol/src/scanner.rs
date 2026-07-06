@@ -2231,13 +2231,14 @@ pub fn collect_udt_fields(
 ) -> std::collections::HashMap<String, Vec<(String, VarTypeRef)>> {
     let mut out = std::collections::HashMap::new();
     for root in module_roots {
-        collect_udt_fields_in(*root, &mut out);
+        collect_udt_fields_in(*root, module_option_base(*root), &mut out);
     }
     out
 }
 
 fn collect_udt_fields_in(
     node: SyntaxNode<'_>,
+    option_base: i32,
     out: &mut std::collections::HashMap<String, Vec<(String, VarTypeRef)>>,
 ) {
     if node.kind() == SyntaxKind::TypeBlock
@@ -2254,21 +2255,19 @@ fn collect_udt_fields_in(
                 // refinement: an array field (`Words() As OcrWord`) must type as
                 // `Array(OcrWord)`, not the scalar element type, so member access
                 // through an index step (`o.Words(i).Text`) resolves the element UDT.
-                let ty = declared_udt_field_type(f);
+                let ty = declared_udt_field_type(f, option_base);
                 Some((field, ty))
             })
             .collect();
         out.insert(name, fields);
     }
     for child in node.child_nodes() {
-        collect_udt_fields_in(child, out);
+        collect_udt_fields_in(child, option_base, out);
     }
 }
 
-fn declared_udt_field_type(field: SyntaxNode<'_>) -> VarTypeRef {
-    // Existing record-layout evidence treats single-bound inline UDT fixed arrays
-    // as zero-based even when the containing module has `Option Base 1`.
-    declared_var_type_with_default(field, &DefaultTypeTable::default(), false, 0)
+fn declared_udt_field_type(field: SyntaxNode<'_>, option_base: i32) -> VarTypeRef {
+    declared_var_type_with_default(field, &DefaultTypeTable::default(), false, option_base)
 }
 
 fn fixed_array_bounds_from_bounds(

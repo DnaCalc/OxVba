@@ -3002,6 +3002,48 @@ fn scanner_applies_option_base_to_single_bound_fixed_array_declarations() {
 }
 
 #[test]
+fn scanner_applies_option_base_to_single_bound_udt_fixed_array_fields() {
+    let src = "Option Base 1\r\n\
+               Private Type State\r\n\
+                   Implicit(3) As Long\r\n\
+                   Explicit(0 To 2) As String\r\n\
+               End Type\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let fields = env.udt_field_list("State").expect("State UDT fields");
+    let type_of = |name: &str| {
+        fields
+            .iter()
+            .find_map(|(field, ty)| (field == name).then_some(ty.clone()))
+            .unwrap_or_else(|| panic!("{name} field missing"))
+    };
+
+    let VarTypeRef::FixedArray {
+        element: implicit_element,
+        bounds: implicit_bounds,
+    } = type_of("implicit")
+    else {
+        panic!("Implicit should publish a fixed-array field type");
+    };
+    assert_eq!(*implicit_element, VarTypeRef::Builtin(BuiltinType::Long));
+    assert_eq!(implicit_bounds.len(), 1);
+    assert_eq!(implicit_bounds[0].lower, 1);
+    assert_eq!(implicit_bounds[0].len, 3);
+
+    let VarTypeRef::FixedArray {
+        element: explicit_element,
+        bounds: explicit_bounds,
+    } = type_of("explicit")
+    else {
+        panic!("Explicit should publish a fixed-array field type");
+    };
+    assert_eq!(*explicit_element, VarTypeRef::Builtin(BuiltinType::String));
+    assert_eq!(explicit_bounds.len(), 1);
+    assert_eq!(explicit_bounds[0].lower, 0);
+    assert_eq!(explicit_bounds[0].len, 3);
+}
+
+#[test]
 fn scanner_applies_deftype_to_variables_params_and_returns() {
     let src = "DefLng A-Z\r\n\
                Public fieldValue\r\n\

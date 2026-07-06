@@ -1783,12 +1783,12 @@ Candidate bead units:
   is published, matching the Microsoft Learn fixed-length string diagnostic
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/invalid-length-for-fixed-length-string`);
   single-bound fixed-array declarators now publish `VarTypeRef::FixedArray` lower-bound metadata
-  from the module's `Option Base`, while explicit `lower To upper` bounds keep their written lower
-  bound and inline UDT field collection retains the existing zero-based record-layout contract,
-  matching the Microsoft Learn `Option Base` / `Public` statement lower-bound rule for ordinary
-  array declarations
+  from the module's `Option Base`, including inline UDT fields, while explicit `lower To upper`
+  bounds keep their written lower bound, matching the Microsoft Learn `Option Base`, `Public`, and
+  `Type` statement lower-bound rule for ordinary array declarations and UDT field subscripts
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/option-base-statement`,
-  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/public-statement`);
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/public-statement`,
+  `https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/type-statement`);
   final `Property Let`/`Set` writer slots also publish `ByVal` signature
   metadata while preceding indexed arguments keep their declared/default modes;
   duplicate property accessors plus mismatched `Property Get`/`Let`, `Property Get`/`Set`, and

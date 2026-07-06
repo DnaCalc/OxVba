@@ -26,10 +26,10 @@ pub enum BuiltinType {
     String,
 }
 
-/// One declared dimension of a fixed-size array. Ordinary single-bound array
-/// declarations inherit their module's `Option Base` in scanner metadata; inline
-/// UDT fixed-array fields keep the zero-based record-layout contract. Explicit
-/// `lower To upper` bounds preserve their written lower bound.
+/// One declared dimension of a fixed-size array. Single-bound array
+/// declarations, including inline UDT fields, inherit their module's
+/// `Option Base` in scanner metadata. Explicit `lower To upper` bounds preserve
+/// their written lower bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct FixedArrayBound {
     pub lower: i32,
