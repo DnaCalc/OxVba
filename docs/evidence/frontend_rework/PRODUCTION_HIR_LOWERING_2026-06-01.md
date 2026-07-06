@@ -1623,8 +1623,9 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `SYM-E-INVALID-AS-NEW-DECLARATION`, keeping auto-instantiating `As New` scoped to variable
   declarators rather than silently publishing normalized signature metadata. UDT `Type` fields now
   reject `As New` with the same diagnostic before field-table metadata normalizes the type. The
-  scanner
-  also publishes the final `Property Let`/`Set` writer slot as `ByVal` in signature metadata while
+  scanner also rejects duplicate UDT field names with `SYM-E-DUPLICATE-TYPE-FIELD` before a
+  duplicate folded field can publish ambiguous record metadata, and publishes the final
+  `Property Let`/`Set` writer slot as `ByVal` in signature metadata while
   preserving declared/default `ByRef` modes for preceding indexed arguments. Duplicate property
   accessors now reject with `SYM-E-DUPLICATE-PROPERTY-ACCESSOR`, and paired `Property Get`/`Let`
   declarations reject with `SYM-E-INCOMPATIBLE-PROPERTY-ACCESSOR` when their index parameter
@@ -1664,6 +1665,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `optional_parameter_rejects_udt_types`;
   `signature_declarations_reject_as_new_types`;
   `type_block_fields_reject_as_new_types`;
+  `type_block_fields_reject_duplicate_names`;
   `property_set_accepts_variant_object_and_class_reference_parameters`;
   `property_writer_final_parameter_cannot_be_paramarray`;
   `property_set_udt_reference_parameter_is_bind_error`;
@@ -1680,6 +1682,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `optional_udt_parameter_is_bind_error`;
   `signature_as_new_is_bind_error`;
   `type_block_field_as_new_is_bind_error`;
+  `type_block_duplicate_field_is_bind_error`;
   `event_declaration_rejects_invalid_parameters`;
   `event_declaration_as_new_parameter_is_bind_error`;
   `required_parameter_after_optional_is_bind_error`.
@@ -1802,6 +1805,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-symbol optional_parameter_rejects_udt_types -- --nocapture`
 - `cargo test -p oxvba-symbol signature_declarations_reject_as_new_types -- --nocapture`
 - `cargo test -p oxvba-symbol type_block_fields_reject_as_new_types -- --nocapture`
+- `cargo test -p oxvba-symbol type_block_fields_reject_duplicate_names -- --nocapture`
 - `cargo test -p oxvba-symbol withevents -- --nocapture`
 - `cargo test -p oxvba-symbol required_parameter_defaults -- --nocapture`
 - `cargo test -p oxvba-symbol invalid_event_parameter_modifiers -- --nocapture`
@@ -1810,6 +1814,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-bind optional_udt_parameter_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind signature_as_new_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind type_block_field_as_new_is_bind_error -- --nocapture`
+- `cargo test -p oxvba-bind type_block_duplicate_field_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind required_parameter_default_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind event_declaration_rejects_invalid_parameters -- --nocapture`
 - `cargo test -p oxvba-bind event_declaration_as_new_parameter_is_bind_error -- --nocapture`

@@ -1764,8 +1764,10 @@ Candidate bead units:
   Declare signatures now reject `As New` on parameters and return types with
   `SYM-E-INVALID-AS-NEW-DECLARATION` before normalized signature metadata is published, and UDT
   `Type` fields now reject `As New` with the same diagnostic before field-table metadata
-  normalizes the type; final `Property Let`/`Set` writer slots also publish `ByVal` signature
-  metadata while preceding indexed arguments keep their declared/default modes;
+  normalizes the type; duplicate UDT field names now reject with `SYM-E-DUPLICATE-TYPE-FIELD`
+  before ambiguous folded record metadata is published; final `Property Let`/`Set` writer slots
+  also publish `ByVal` signature metadata while preceding indexed arguments keep their
+  declared/default modes;
   duplicate property accessors plus mismatched `Property Get`/`Let`, `Property Get`/`Set`, and
   `Property Let`/`Set` index/value/reference pairings reject through scanner-owned
   property-accessor diagnostics, with Set-side index pairing currently enforcing count/type rather

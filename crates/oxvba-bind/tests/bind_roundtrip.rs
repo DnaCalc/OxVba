@@ -1456,6 +1456,19 @@ fn type_block_field_as_new_is_bind_error() {
 }
 
 #[test]
+fn type_block_duplicate_field_is_bind_error() {
+    let src = "Private Type Payload\n    Item As Long\n    item As String\nEnd Type\n\
+               Sub Main()\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("DuplicateTypeField")
+            && err.contains("type_name: \"Payload\"")
+            && err.contains("field: \"item\""),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);

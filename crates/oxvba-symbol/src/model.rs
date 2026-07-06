@@ -242,6 +242,8 @@ pub enum SymbolModelError {
     },
     #[error("As New is not valid for {context} `{name}`")]
     InvalidAsNewDeclaration { name: String, context: &'static str },
+    #[error("duplicate field `{field}` in Type `{type_name}`")]
+    DuplicateTypeField { type_name: String, field: String },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -417,6 +419,12 @@ impl SymbolModelError {
                 format!("`As New` is not valid for {context} `{name}`"),
             )
             .with_help("Use `As New` only on variable declarations; use `As <type>` in signatures and instantiate with `New` in executable code."),
+            SymbolModelError::DuplicateTypeField { type_name, field } => Diagnostic::error(
+                "SYM-E-DUPLICATE-TYPE-FIELD",
+                DiagnosticPhase::Symbol,
+                format!("duplicate field `{field}` in Type `{type_name}`"),
+            )
+            .with_help("Declare each field name at most once within a user-defined Type."),
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,

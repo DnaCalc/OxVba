@@ -1537,6 +1537,28 @@ fn type_block_fields_reject_as_new_types() {
 }
 
 #[test]
+fn type_block_fields_reject_duplicate_names() {
+    let src = "Private Type Payload\r\n    Item As Long\r\n    item As String\r\nEnd Type\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("duplicate Type field should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::DuplicateTypeField { type_name, field }
+                if type_name == "Payload" && field == "item"
+        ),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-DUPLICATE-TYPE-FIELD"
+    );
+}
+
+#[test]
 fn property_get_let_pairing_accepts_matching_accessors_in_any_order() {
     for src in [
         "Property Get Foo(ByVal index As Long) As String\r\nEnd Property\r\n\

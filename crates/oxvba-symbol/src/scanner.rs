@@ -363,7 +363,20 @@ impl ScanCtx<'_> {
         &self,
         type_node: SyntaxNode<'_>,
     ) -> Result<(), SymbolModelError> {
+        let type_name = first_identifier_token(type_node)
+            .map(|token| normalize_identifier_token(token.text).to_string())
+            .unwrap_or_else(|| "Type".to_string());
+        let mut fields = BTreeSet::new();
         for field in type_node.type_fields() {
+            if let Some(token) = field.declarator_name() {
+                let name = normalize_identifier_token(token.text).to_string();
+                if !fields.insert(fold_identifier(&name)) {
+                    return Err(SymbolModelError::DuplicateTypeField {
+                        type_name,
+                        field: name,
+                    });
+                }
+            }
             let Some(type_ref) = field.declared_type() else {
                 continue;
             };
