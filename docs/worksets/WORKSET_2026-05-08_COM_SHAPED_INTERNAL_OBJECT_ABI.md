@@ -180,6 +180,11 @@ First implementation slice:
   `paramarray_instance_class_method_packs_tail_after_hidden_me_receiver` prove receiver-qualified
   project class method calls bind named arguments and `ParamArray` tails against the
   source-visible parameter list after the hidden `Me` receiver.
+- JIT/VM3 differential coverage now proves the supported object-carrier subset remains explicit
+  rather than fallback-backed: typed object slots can stay `Nothing`, `Set` object assignment from
+  a scalar raises 424, `Let` object assignment from `Nothing` raises 91, scalar `Variant Is
+  Variant` raises 424, and construction/member/descriptor-dependent object shapes still decline
+  with precise unsupported diagnostics.
 - `pure_oxvba_variant_receiver_uses_descriptor_cache_for_default_indexed_and_properties` proves compiled pure OxVba indexed/default property get, property let, property set, and property get routes expose unique unhinted descriptor-cache plans and still execute to the expected values, including natural `widget(5)` default-member syntax.
 - `pure_oxvba_interface_receiver_executes_through_project_descriptor_shape` covers the required pure OxVba interface receiver path (`Dim iface As IWidget`, `Set iface = widget`, `iface.Value(5)`) and validates dispatch to the implementing `IWidget_Value` member.
 

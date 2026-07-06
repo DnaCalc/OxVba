@@ -160,6 +160,60 @@ fn jit_project_typed_null_set_assignment_matches_vm3_without_construction() {
 }
 
 #[test]
+fn jit_set_object_from_scalar_raises_object_required_without_vm_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  On Error Resume Next\n  Dim o As Object\n  Set o = 1\n  r = Err.Number\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 424);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 424);
+}
+
+#[test]
+fn jit_let_object_from_nothing_raises_object_variable_not_set_without_vm_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  On Error Resume Next\n  Dim o As Object\n  o = Nothing\n  r = Err.Number\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 91);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 91);
+}
+
+#[test]
+fn jit_is_operator_variant_scalars_raise_object_required_without_vm_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  On Error Resume Next\n  Dim a As Variant\n  Dim b As Variant\n  Dim c As Boolean\n  a = 1\n  b = 2\n  c = (a Is b)\n  r = Err.Number\nEnd Sub\n",
+        ),
+        ("Widget", Class, "' project class marker\n"),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 424);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 424);
+}
+
+#[test]
 fn jit_project_member_dispatch_on_unset_object_declines_without_vm_fallback() {
     let modules = [
         (
