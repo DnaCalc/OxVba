@@ -441,3 +441,18 @@ The 2026-06-01 continuation added:
   `rg -n "property_.*pmr|pmr_project|rewrite_.*property|rewrite_.*default" crates -g "*.rs"`
   found no live rewrite carrier, `cargo test --workspace --quiet` passed, and
   `cargo fmt --all --check` passed.
+- FE-8.5.c closure reconciliation on 2026-07-06 added the remaining cross-project writeback
+  lowering rows for default-member `Property Let` assigned values, default-member `Property Set`
+  assigned objects, and named indexed `Property Set` argument ordering. The named-indexed fix adds
+  descriptor-ordered extern property-put argument binding for referenced coclass `Property Let`/
+  `Property Set` writeback, while preserving generic coclass late member calls on the name-preserving
+  `bind_extern_args` path. Regression coverage proves both explicit
+  `Set b.Item(second := 4, first := 3) = t` and default-member
+  `Set b(second := 2, first := 1) = t` lower to the concrete `Item` `PropertySet` call with
+  receiver `ByVal`, index values in accessor order, and the assigned object as the trailing
+  `CoreArg::ByVal`. Checks: focused cross-project property/default-member filters,
+  `cargo test -p oxvba-bind --test cross_project -- --nocapture`,
+  `cargo test -p oxvba-bind -- --nocapture`, `cargo fmt --all --check`, and `git diff --check`.
+  The scoped property/default-member/writeback lowering surface now has production-owned binder/
+  Core IR evidence; broader reference/COM activation/member breadth remains owned by
+  FE-7.6.a / `bd-aprs.8.8` and the higher-level COM/host worksets.

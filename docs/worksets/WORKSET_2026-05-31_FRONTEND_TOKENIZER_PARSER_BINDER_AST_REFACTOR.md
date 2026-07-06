@@ -1571,8 +1571,18 @@ Candidate bead units:
   the bounded M13 TestEventServer ParamArray method row: the generated typelib's
   `FUNCDESC::cParamsOpt = -1` marker is preserved as COM metadata, early-bound binding boxes the
   positional tail into a zero-based SAFEARRAY(VARIANT), and metadata-known late-bound dispatch
-  packages the tail before `IDispatch::Invoke`. The V11 ByRef COM event writeback row remains
-  in-progress rather than being closed through a fake fixture-only path: current event callbacks are
+  packages the tail before `IDispatch::Invoke`. FE-8.5.c closure reconciliation on 2026-07-06
+  closes the cross-project lowering residual for default-member `Property Let` assigned values,
+  default-member `Property Set` assigned objects, and named indexed `Property Set` argument order.
+  Referenced coclass property-put writeback now uses descriptor-ordered extern index arguments for
+  both explicit `b.Item(...)` and default-member `b(...)` source forms before appending the RHS
+  object as the trailing `ByVal` value. With the historical rewrite carriers absent from `crates/`
+  and the active-project, referenced-project, imported-COM, host-injected, and late-bound
+  property/default-member rows covered by production binder/Core IR evidence, `bd-aprs.9.12` is
+  eligible to close for its scoped lowering surface. Broader reference/COM activation/member
+  breadth remains owned by FE-7.6.a / `bd-aprs.8.8`, while the aggregate FE-8.5 lowering gate still
+  depends on `bd-aprs.9.9`, `bd-aprs.9.10`, and `bd-aprs.9.5`. The V11 ByRef COM event writeback row
+  remains in-progress rather than being closed through a fake fixture-only path: current event callbacks are
   queued as value snapshots and drained later, while real COM/VBA ByRef event writeback requires
   synchronous handler execution and `VT_BYREF` mutation before native `IDispatch::Invoke` returns.
 - FE-8.5.d Arrays, indexing, and `ReDim` parity: finish local procedure array, indexing, and
