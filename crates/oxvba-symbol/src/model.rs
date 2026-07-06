@@ -359,6 +359,8 @@ impl SymbolModelError {
             )
             .with_help(if reason.starts_with("Event arguments") {
                 "Declare Event arguments as required ByVal/ByRef parameters without Optional/defaults."
+            } else if reason.contains("user-defined") {
+                "Use a required user-defined type parameter, or change the Optional parameter to Variant/Object-compatible data."
             } else if reason.contains("default") {
                 "Use default values only on Optional parameters."
             } else {

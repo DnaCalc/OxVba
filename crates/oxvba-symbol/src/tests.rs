@@ -2307,6 +2307,70 @@ fn property_set_reference_parameter_rejects_udt_types() {
 }
 
 #[test]
+fn optional_parameter_rejects_udt_types() {
+    let cases = [
+        manifest(
+            "Proj",
+            vec![module(
+                "Mod1",
+                "Public Type Payload\r\n    Value As Long\r\nEnd Type\r\n\
+                 Sub Use(Optional ByVal value As Payload)\r\nEnd Sub\r\n",
+            )],
+        ),
+        manifest(
+            "Proj",
+            vec![
+                module(
+                    "Types",
+                    "Public Type Payload\r\n    Value As Long\r\nEnd Type\r\n",
+                ),
+                module(
+                    "Mod1",
+                    "Sub Use(Optional ByVal value As Types.Payload)\r\nEnd Sub\r\n",
+                ),
+            ],
+        ),
+        manifest(
+            "Proj",
+            vec![
+                module(
+                    "Types",
+                    "Public Type Payload\r\n    Value As Long\r\nEnd Type\r\n",
+                ),
+                module(
+                    "Mod1",
+                    "Sub Use(Optional ByVal value As Payload)\r\nEnd Sub\r\n",
+                ),
+            ],
+        ),
+    ];
+
+    for m in cases {
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("Optional UDT parameter should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidOptionalParameterDeclaration {
+                    procedure,
+                    parameter,
+                    reason,
+                } if procedure == "Use"
+                    && parameter == "value"
+                    && *reason == "Optional parameters cannot be user-defined types"
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-OPTIONAL-PARAMETER-DECLARATION"
+        );
+    }
+}
+
+#[test]
 fn property_set_accepts_variant_object_and_class_reference_parameters() {
     let src = "Property Set DefaultItem(value)\r\nEnd Property\r\n\
                Property Set VariantItem(value As Variant)\r\nEnd Property\r\n\

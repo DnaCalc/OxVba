@@ -851,6 +851,81 @@ fn validate_property_set_reference_types(
     Ok(())
 }
 
+fn validate_optional_udt_parameter_types(
+    modules: &[ModuleCst],
+    udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
+) -> Result<(), SymbolModelError> {
+    for module in modules {
+        validate_optional_udt_parameter_types_in(module, module.parse.syntax(), udt_fields)?;
+    }
+    Ok(())
+}
+
+fn validate_optional_udt_parameter_types_in(
+    module: &ModuleCst,
+    node: SyntaxNode<'_>,
+    udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
+) -> Result<(), SymbolModelError> {
+    if is_signature_declaration(node.kind()) {
+        validate_optional_udt_parameters(module, node, udt_fields)?;
+    }
+    for child in node.child_nodes() {
+        validate_optional_udt_parameter_types_in(module, child, udt_fields)?;
+    }
+    Ok(())
+}
+
+fn validate_optional_udt_parameters(
+    module: &ModuleCst,
+    node: SyntaxNode<'_>,
+    udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
+) -> Result<(), SymbolModelError> {
+    let Some(param_list) = node.param_list() else {
+        return Ok(());
+    };
+    let params = param_list.params();
+    for (index, param) in params.iter().enumerate() {
+        if !scanner::parameter_has_modifier(*param, SyntaxKind::KwOptional) {
+            continue;
+        }
+        let Some(type_ref) = param
+            .child_nodes()
+            .into_iter()
+            .find(|child| child.kind() == SyntaxKind::TypeRef)
+        else {
+            continue;
+        };
+        let name = type_ref_name(type_ref);
+        if name.is_empty() || !type_ref_is_udt(module, &name, udt_fields) {
+            continue;
+        }
+        let procedure = node
+            .proc_name_token()
+            .map(|token| normalize_source_name(token.text))
+            .unwrap_or_else(|| "Procedure".to_string());
+        let parameter = scanner::parameter_name_token(*param)
+            .map(|token| normalize_source_name(token.text))
+            .unwrap_or_else(|| format!("arg{}", index + 1));
+        return Err(SymbolModelError::InvalidOptionalParameterDeclaration {
+            procedure,
+            parameter,
+            reason: "Optional parameters cannot be user-defined types",
+        });
+    }
+    Ok(())
+}
+
+fn is_signature_declaration(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::SubDecl
+            | SyntaxKind::FunctionDecl
+            | SyntaxKind::PropertyDecl
+            | SyntaxKind::DeclareStmt
+            | SyntaxKind::EventDecl
+    )
+}
+
 fn validate_property_set_reference_types_in(
     module: &ModuleCst,
     node: SyntaxNode<'_>,
@@ -885,7 +960,7 @@ fn validate_property_set_reference_type(
         return Ok(());
     };
     let name = type_ref_name(type_ref);
-    if name.is_empty() || !property_set_reference_type_is_udt(module, &name, udt_fields) {
+    if name.is_empty() || !type_ref_is_udt(module, &name, udt_fields) {
         return Ok(());
     }
     let procedure = node
@@ -907,7 +982,7 @@ fn property_decl_is_set(node: SyntaxNode<'_>) -> bool {
         .any(|token| token.kind == SyntaxKind::KwSet)
 }
 
-fn property_set_reference_type_is_udt(
+fn type_ref_is_udt(
     module: &ModuleCst,
     name: &str,
     udt_fields: &HashMap<String, Vec<(String, VarTypeRef)>>,
@@ -1161,6 +1236,7 @@ pub fn build_resolution_environment(
     let ambiguous_type_names = type_index.ambiguous_type_names();
     validate_type_refs(&module_csts, &ambiguous_type_names)?;
     validate_property_set_reference_types(&module_csts, &type_index.udt_fields)?;
+    validate_optional_udt_parameter_types(&module_csts, &type_index.udt_fields)?;
     let used_type_names = collect_type_ref_names(&module_csts);
 
     // Each referenced project's public surface — a referencing call binds through

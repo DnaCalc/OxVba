@@ -1875,7 +1875,7 @@ pub(crate) fn parameter_name_token(node: SyntaxNode<'_>) -> Option<SyntaxToken<'
     None
 }
 
-fn parameter_has_modifier(node: SyntaxNode<'_>, keyword: SyntaxKind) -> bool {
+pub(crate) fn parameter_has_modifier(node: SyntaxNode<'_>, keyword: SyntaxKind) -> bool {
     node.child_tokens()
         .iter()
         .any(|token| token.kind == keyword)

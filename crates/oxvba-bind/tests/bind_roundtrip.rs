@@ -1390,6 +1390,32 @@ fn required_parameter_default_is_bind_error() {
 }
 
 #[test]
+fn optional_udt_parameter_is_bind_error() {
+    let manifest = manifest_modules(&[
+        (
+            "Types",
+            ModuleKind::Procedural,
+            "Public Type Payload\n    Value As Long\nEnd Type\n",
+        ),
+        (
+            "Mod1",
+            ModuleKind::Procedural,
+            "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal value As Payload)\nEnd Sub\n",
+        ),
+    ]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("Optional UDT parameter should fail binding")
+    );
+    assert!(
+        err.contains("InvalidOptionalParameterDeclaration")
+            && err.contains("Optional parameters cannot be user-defined types"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);
