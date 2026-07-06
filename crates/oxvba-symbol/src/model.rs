@@ -255,6 +255,8 @@ pub enum SymbolModelError {
     ImplementsNotValidInStandardModule { name: String },
     #[error("WithEvents is only valid in object modules: `{name}`")]
     WithEventsNotValidInStandardModule { name: String },
+    #[error("WithEvents is only valid at module level: `{name}`")]
+    WithEventsNotValidInLocalScope { name: String },
     #[error("invalid WithEvents field type for `{name}`")]
     InvalidWithEventsFieldType { name: String },
     #[error("WithEvents field `{name}` cannot use As New")]
@@ -440,6 +442,12 @@ impl SymbolModelError {
                 format!("WithEvents is only valid in object modules: {name}"),
             )
             .with_help("Move the WithEvents member to a class/object module."),
+            SymbolModelError::WithEventsNotValidInLocalScope { name } => Diagnostic::error(
+                "SYM-E-WITHEVENTS-ONLY-VALID-AT-MODULE-LEVEL",
+                DiagnosticPhase::Symbol,
+                format!("WithEvents is only valid at module level: {name}"),
+            )
+            .with_help("Move the WithEvents declaration to the declarations section of a class/object module."),
             SymbolModelError::InvalidWithEventsFieldType { name } => Diagnostic::error(
                 "SYM-E-INVALID-WITHEVENTS-FIELD-TYPE",
                 DiagnosticPhase::Symbol,

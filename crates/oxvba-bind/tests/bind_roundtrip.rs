@@ -3206,6 +3206,25 @@ fn withevents_as_new_field_is_bind_error() {
 }
 
 #[test]
+fn withevents_local_declaration_is_bind_error() {
+    let manifest = manifest_modules(&[(
+        "Sink",
+        ModuleKind::Class,
+        "Public Sub Hook()\n    Dim WithEvents src As Source\nEnd Sub\n",
+    )]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("local WithEvents declaration should fail binding")
+    );
+    assert!(
+        err.contains("WithEventsNotValidInLocalScope")
+            || err.contains("SYM-E-WITHEVENTS-ONLY-VALID-AT-MODULE-LEVEL"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn event_declaration_rejects_optional_and_paramarray_parameters() {
     for (source, expected) in [
         (

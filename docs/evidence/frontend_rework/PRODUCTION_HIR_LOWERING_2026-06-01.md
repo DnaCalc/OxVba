@@ -1650,16 +1650,18 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
   `property_set_accepts_variant_object_and_class_reference_parameters`;
   `property_writer_final_parameter_cannot_be_paramarray`;
   `property_set_udt_reference_parameter_is_bind_error`;
+  `scanner_rejects_withevents_in_local_scope`;
   `scanner_accepts_object_withevents_fields_in_class_modules`;
   `scanner_rejects_non_object_withevents_fields`;
   `scanner_rejects_withevents_as_new_fields`;
+  `withevents_local_declaration_is_bind_error`;
   `withevents_scalar_field_type_is_bind_error`;
   `withevents_as_new_field_is_bind_error`;
   `required_parameter_after_optional_is_bind_error`.
-- The latest declaration/type-surface pass also stops `WithEvents` fields with value,
-  explicit/implicit `Variant`, array, or `As New` declarations before event-field metadata is
-  published. This matches the Microsoft Learn `Private` statement rule that `WithEvents` cannot
-  create arrays or use `New`
+- The latest declaration/type-surface pass also stops local-scope `WithEvents` declarations and
+  fields with value, explicit/implicit `Variant`, array, or `As New` declarations before
+  event-field metadata is published. This matches the Microsoft Learn `Private` statement rule
+  that `WithEvents` is valid only in class modules and cannot create arrays or use `New`
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/private-statement`).
   Named object/class/COM source types remain the accepted event-source contract; this is a
   compile-time declaration guard, not a full proof that every accepted object type has source
@@ -1773,6 +1775,7 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-symbol property_set_reference_parameter_rejects_udt_types -- --nocapture`
 - `cargo test -p oxvba-symbol withevents -- --nocapture`
 - `cargo test -p oxvba-bind property_set_udt_reference_parameter_is_bind_error -- --nocapture`
+- `cargo test -p oxvba-bind withevents_local_declaration_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind withevents_scalar_field_type_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-bind withevents_as_new_field_is_bind_error -- --nocapture`
 - `cargo test -p oxvba-compiler compile_project_uses_hir_capable_boundary_for_completed_constructs --quiet`

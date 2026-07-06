@@ -263,6 +263,11 @@ impl ScanCtx<'_> {
                     let name = normalize_identifier_token(token.text);
                     let declared_type =
                         declared_var_type_with_default(declarator, &self.default_types, !is_const);
+                    if !module_level && !is_const && declarator.is_with_events() {
+                        return Err(SymbolModelError::WithEventsNotValidInLocalScope {
+                            name: name.to_string(),
+                        });
+                    }
                     if module_level
                         && !is_const
                         && declarator.is_with_events()
@@ -2283,6 +2288,25 @@ mod tests {
         assert_eq!(
             err.to_diagnostic().code.as_str(),
             "SYM-E-WITHEVENTS-ONLY-VALID-IN-OBJECT-MODULE"
+        );
+    }
+
+    #[test]
+    fn scanner_rejects_withevents_in_local_scope() {
+        let err = scan_members_for_kind(
+            ModuleKind::Class,
+            "Public Sub Hook()\n    Dim WithEvents src As Clock\nEnd Sub\n",
+        )
+        .expect_err("local WithEvents should be rejected");
+        assert_eq!(
+            err,
+            SymbolModelError::WithEventsNotValidInLocalScope {
+                name: "src".to_string()
+            }
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-WITHEVENTS-ONLY-VALID-AT-MODULE-LEVEL"
         );
     }
 
