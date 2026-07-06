@@ -289,6 +289,78 @@ mod tests {
         );
     }
 
+    // ── Project class metadata ──────────────────────────────────────────────
+
+    fn sample_class_field_program() -> OxProgram {
+        OxProgram {
+            classes: vec![OxClass {
+                name: "Widget".to_string(),
+                predeclared: false,
+                initialize: None,
+                terminate: None,
+                fields: vec![OxClassField {
+                    name: "child".to_string(),
+                    token: 0,
+                    ty: OxTy::Object(ObjClass::Class(ClassId(0))),
+                    array_element: None,
+                }],
+                methods: Vec::new(),
+                as_new_fields: vec![crate::program::OxClassAsNewField {
+                    field: 0,
+                    binding: crate::inst::OxAsNew::ProjectClass { class: ClassId(0) },
+                }],
+                implements: Vec::new(),
+            }],
+            unit_name: "ClassSample".to_string(),
+            ..OxProgram::empty()
+        }
+    }
+
+    #[test]
+    fn class_field_as_new_metadata_verifies() {
+        let p = sample_class_field_program();
+        assert_eq!(verify_program(&p), Ok(()));
+    }
+
+    #[test]
+    fn verifier_catches_duplicate_class_field_token() {
+        let mut p = sample_class_field_program();
+        p.classes[0].fields.push(OxClassField {
+            name: "alias".to_string(),
+            token: 0,
+            ty: OxTy::Variant,
+            array_element: None,
+        });
+        let errs = verify_program(&p).expect_err("duplicate class field token must be rejected");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::DuplicateClassFieldToken {
+                    class_index: 0,
+                    field: 0
+                }
+            )),
+            "expected DuplicateClassFieldToken, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_as_new_field_missing_from_class_table() {
+        let mut p = sample_class_field_program();
+        p.classes[0].as_new_fields[0].field = 99;
+        let errs = verify_program(&p).expect_err("stale As New field token must be rejected");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassFieldAsNewFieldRef {
+                    class_index: 0,
+                    field: 99
+                }
+            )),
+            "expected BadClassFieldAsNewFieldRef, got {errs:?}"
+        );
+    }
+
     // ── Typed COM model ──────────────────────────────────────────────────────
 
     use oxvba_com::{

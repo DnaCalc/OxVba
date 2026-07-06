@@ -7,6 +7,8 @@
 //! [`crate::com::ComMethodRef`] resolves (interface in range, a COM — not project —
 //! interface, member in range).
 
+use std::collections::HashSet;
+
 use crate::analysis::escape_facts;
 use crate::com::{ComInterface, ComMethodRef};
 use crate::inst::{ErrorHandler, OxAsNew, OxInst, terminator_operands, terminator_successors};
@@ -151,6 +153,10 @@ pub enum VerifyError {
         class: usize,
         classes: usize,
     },
+    /// A class declares the same instance field token more than once.
+    DuplicateClassFieldToken { class_index: usize, field: i32 },
+    /// A class field `As New` binding names a field token absent from the class field table.
+    BadClassFieldAsNewFieldRef { class_index: usize, field: i32 },
     /// An `On Error GoTo <label>` names a block that does not exist.
     BadLabelTarget {
         func: usize,
@@ -364,6 +370,14 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} field {field}: As New class {class} out of range ({classes} classes)"
             ),
+            VerifyError::DuplicateClassFieldToken { class_index, field } => write!(
+                f,
+                "class {class_index}: duplicate field token {field} in class field table"
+            ),
+            VerifyError::BadClassFieldAsNewFieldRef { class_index, field } => write!(
+                f,
+                "class {class_index} field {field}: As New field token is absent from the class field table"
+            ),
             VerifyError::BadLabelTarget {
                 func,
                 block,
@@ -428,7 +442,22 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
     let imports = program.imports.len();
     let classes = program.classes.len();
     for (class_index, class) in program.classes.iter().enumerate() {
+        let mut fields = HashSet::new();
+        for field in &class.fields {
+            if !fields.insert(field.token) {
+                errors.push(VerifyError::DuplicateClassFieldToken {
+                    class_index,
+                    field: field.token,
+                });
+            }
+        }
         for field in &class.as_new_fields {
+            if !fields.contains(&field.field) {
+                errors.push(VerifyError::BadClassFieldAsNewFieldRef {
+                    class_index,
+                    field: field.field,
+                });
+            }
             match &field.binding {
                 OxAsNew::ExternClass { import } if import.0 >= imports => {
                     errors.push(VerifyError::BadClassFieldAsNewImportRef {
