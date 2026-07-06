@@ -3,14 +3,18 @@
 
 use std::collections::{HashMap, HashSet};
 
-use oxvba_bundle::coreir::{CoreLocal, CoreStmt};
+use oxvba_bundle::ProcedureKind;
+use oxvba_bundle::coreir::{CoreClass, CoreLocal, CoreParam, CoreProc, CoreStmt};
 use oxvba_symbol::manifest::ModuleKind;
-use oxvba_symbol::model::{SymbolImpl, SymbolKind, fold_identifier};
+use oxvba_symbol::model::{ScopeKind, SymbolImpl, SymbolKind, fold_identifier};
 use oxvba_symbol::signature::VarTypeRef;
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::error::BindError;
-use crate::ids::{ProcInfo, module_compare_mode, module_option_base};
+use crate::ids::{
+    ProcInfo, module_compare_mode, module_default_type_rules, module_option_base,
+    module_option_explicit,
+};
 use crate::{Lower, LowerContext, ProcLower};
 
 impl<'a> Lower<'a> {
@@ -119,6 +123,74 @@ impl<'a> Lower<'a> {
             locals: pl.locals,
         })
     }
+
+    pub(crate) fn attach_synthetic_class_initializers(
+        &'a self,
+        classes: &mut [CoreClass],
+        procs: &mut Vec<CoreProc>,
+    ) -> Result<(), BindError> {
+        for module in self.env.modules() {
+            let Some(display) = crate::ids::class_name_for(self.manifest, module.module_name)
+            else {
+                continue;
+            };
+            let Some(&class_id) = self.ids.class_of.get(&fold_identifier(&display)) else {
+                continue;
+            };
+            let class = classes
+                .get_mut(class_id.0)
+                .ok_or_else(|| BindError::Malformed(format!("unknown class `{display}`")))?;
+            if class.initialize.is_some() {
+                continue;
+            }
+            let Some(proc) =
+                self.synthetic_class_initialize_proc(module.module_scope, module.syntax, &display)?
+            else {
+                continue;
+            };
+            let proc_id = oxvba_bundle::coreir::ProcId(procs.len());
+            procs.push(proc);
+            class.initialize = Some(proc_id);
+        }
+        Ok(())
+    }
+
+    fn synthetic_class_initialize_proc(
+        &'a self,
+        module_scope: oxvba_symbol::model::ScopeId,
+        module_syntax: SyntaxNode<'a>,
+        class_name: &str,
+    ) -> Result<Option<CoreProc>, BindError> {
+        let params = vec![CoreParam {
+            name: "Me".to_string(),
+            ty: VarTypeRef::Variant,
+            optional: false,
+            by_ref: false,
+            variadic: false,
+        }];
+        let mut pl = self.lower_with(
+            LowerContext::synthetic_class_initialize(
+                module_scope,
+                module_syntax,
+                class_name,
+                params.len(),
+            ),
+            Vec::new(),
+        );
+        let body = pl.class_field_record_inits()?;
+        if body.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(CoreProc {
+            name: "Class_Initialize".to_string(),
+            kind: ProcedureKind::Sub,
+            params,
+            locals: pl.locals,
+            return_local: None,
+            label_lines: Vec::new(),
+            body,
+        }))
+    }
 }
 
 pub(crate) struct BoundProcBody {
@@ -146,15 +218,7 @@ impl<'a> ProcLower<'a> {
             return Ok(Vec::new());
         }
         // The class field symbols live in the module scope (the proc scope's parent).
-        let Some(module_scope) = self
-            .g
-            .env
-            .symbols
-            .scopes()
-            .iter()
-            .find(|s| s.id == self.info.proc_scope)
-            .and_then(|s| s.parent)
-        else {
+        let Some(module_scope) = self.class_member_module_scope() else {
             return Ok(Vec::new());
         };
         // Collect (folded field name, declared type) for each module-level Field, so
@@ -188,6 +252,45 @@ impl<'a> ProcLower<'a> {
             out.extend(self.udt_record_init(&name)?);
         }
         Ok(out)
+    }
+
+    fn class_member_module_scope(&self) -> Option<oxvba_symbol::model::ScopeId> {
+        let scope = self
+            .g
+            .env
+            .symbols
+            .scopes()
+            .iter()
+            .find(|s| s.id == self.info.proc_scope)?;
+        match scope.kind {
+            ScopeKind::Procedure => scope.parent,
+            ScopeKind::Module => Some(scope.id),
+            _ => None,
+        }
+    }
+}
+
+impl LowerContext {
+    fn synthetic_class_initialize(
+        module_scope: oxvba_symbol::model::ScopeId,
+        module_syntax: SyntaxNode<'_>,
+        class_name: &str,
+        param_count: usize,
+    ) -> Self {
+        Self {
+            name: "Class_Initialize".to_string(),
+            proc_scope: module_scope,
+            local_of: HashMap::new(),
+            param_count,
+            return_local: None,
+            return_type: VarTypeRef::Variant,
+            class_name: Some(class_name.to_string()),
+            me_local: Some(oxvba_bundle::coreir::LocalId(0)),
+            compare_mode: module_compare_mode(module_syntax),
+            option_base: module_option_base(module_syntax),
+            option_explicit: module_option_explicit(module_syntax),
+            default_types: module_default_type_rules(module_syntax),
+        }
     }
 }
 

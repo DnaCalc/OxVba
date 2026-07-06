@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 
 use oxvba_bind::bind_program;
 use oxvba_bundle::DeclareParamType;
-use oxvba_bundle::coreir::{CoreArg, CoreCallee, CoreConst, CoreProgram, CoreStmt, CoreValue};
+use oxvba_bundle::coreir::{
+    CoreArg, CoreCallee, CoreConst, CorePlace, CoreProgram, CoreStmt, CoreValue,
+};
 use oxvba_bundle::native::NativeImplId;
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
@@ -3230,16 +3232,7 @@ fn class_with_udt_field_and_no_class_initialize_binds() {
     );
 }
 
-// KNOWN GAP: a class scalar-UDT field whose class has NO `Class_Initialize` is
-// never default-record-initialized (the per-instance record-init is emitted
-// into the `Class_Initialize` prologue; with no such proc there is nowhere to
-// emit it). Writing a sub-field then faults type 13 ("record expected"). The
-// general fix is to SYNTHESIZE a `Class_Initialize` (a new ProcId wired as the
-// class's initialize) when a class with UDT fields has none — a class-build-seam
-// change deferred here. ChibiEx HAS a `Class_Initialize`, so this gap does not
-// affect the acceptance test.
 #[test]
-#[ignore = "no-Class_Initialize UDT-field record-init: synthesize-prologue path deferred"]
 fn class_udt_field_without_class_initialize_round_trips() {
     let main = "Sub Main()\n    Dim r As Long\n    Dim b As Box\n    Set b = New Box\n\
                 \x20   b.SetX 7\n    r = b.GetX\nEnd Sub\n";
@@ -3253,6 +3246,41 @@ fn class_udt_field_without_class_initialize_round_trips() {
             ("Box", ModuleKind::Class, class),
         ]),
         Some(7.0)
+    );
+}
+
+#[test]
+fn class_udt_field_without_class_initialize_synthesizes_initializer_descriptor() {
+    let main = "Sub Main()\nEnd Sub\n";
+    let class = "Private Type Point\n  X As Long\nEnd Type\n\
+                 Private p As Point\n\n\
+                 Public Sub SetX(ByVal v As Long)\n    p.X = v\nEnd Sub\n";
+    let program = bind_program(
+        &multi_manifest(&[
+            ("Main", ModuleKind::Procedural, main),
+            ("Box", ModuleKind::Class, class),
+        ]),
+        &NullTypeLibs,
+    )
+    .expect("bind_program");
+    let class = &program.classes[0];
+    let initialize = class
+        .initialize
+        .expect("UDT class field should synthesize Class_Initialize");
+    let proc = &program.procs[initialize.0];
+    assert_eq!(proc.name, "Class_Initialize");
+    assert_eq!(proc.params.len(), 1);
+    assert_eq!(proc.params[0].name, "Me");
+    assert!(
+        proc.body.iter().any(|stmt| matches!(
+            stmt,
+            CoreStmt::Assign {
+                place: CorePlace::Field { field: 0, .. },
+                value: CoreValue::NewRecord { .. },
+                ..
+            }
+        )),
+        "synthetic Class_Initialize should default-record-initialize field `p`"
     );
 }
 

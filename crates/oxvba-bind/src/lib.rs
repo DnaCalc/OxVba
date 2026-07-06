@@ -172,6 +172,9 @@ fn bind_one(
     };
 
     let mut classes = ids.classes.clone();
+    // Hidden class initializers are wired only through class metadata; exports,
+    // event routes, and source-proc maps continue to come from `ids`.
+    lower.attach_synthetic_class_initializers(&mut classes, &mut procs)?;
     lower.attach_class_as_new_fields(&mut classes)?;
 
     // The active project's published surface → this bundle's exports (the contract
