@@ -145,6 +145,11 @@ First implementation slice:
   local named `Me`. VM runtime member descriptor extraction and project-member argument name
   mapping skip only that explicit receiver, so a malformed hand-built class proc cannot silently
   lose its first source-visible parameter if it reaches descriptor construction directly.
+- `verify_program` also rejects class metadata kind drift: lifecycle hooks must target `Sub`
+  procedures, `PropertyGet`/`PropertyLet`/`PropertySet` descriptor rows must target matching
+  property procedure kinds, and ordinary `Method` rows may target either `Sub` or `Function`.
+  This keeps runtime/COM-facing invoke-kind metadata consistent with executable procedure
+  descriptors rather than relying on source reconstruction.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
 - `runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup` proves unhinted member/default lookup caches unique arity-matched descriptor plans, covering explicit dynamic call traffic that does not carry a property/method hint.
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.

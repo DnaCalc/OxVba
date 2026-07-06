@@ -16,7 +16,7 @@ use crate::passes::{assign_repr_preserving, operand_ty, place_ty};
 use crate::program::{OxFunc, OxProgram};
 use crate::ty::OxTy;
 use crate::value::{OxArg, OxCallArg, OxNativeCallee, OxOperand, OxPlace};
-use oxvba_bundle::ProjectMemberKind;
+use oxvba_bundle::{ProcedureKind, ProjectMemberKind};
 
 /// A single structural defect found by [`verify_program`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,6 +174,13 @@ pub enum VerifyError {
         param_count: usize,
         first_local: Option<String>,
     },
+    /// A class lifecycle hook points at a non-`Sub` procedure.
+    BadClassLifecycleProcKind {
+        class_index: usize,
+        hook: &'static str,
+        proc: usize,
+        kind: ProcedureKind,
+    },
     /// A class method descriptor names a function outside the program function table.
     BadClassMethodProcRef {
         class_index: usize,
@@ -189,6 +196,14 @@ pub enum VerifyError {
         proc: usize,
         param_count: usize,
         first_local: Option<String>,
+    },
+    /// A class method descriptor's accessor kind disagrees with the target procedure kind.
+    BadClassMethodProcKind {
+        class_index: usize,
+        method_index: usize,
+        proc: usize,
+        member_kind: ProjectMemberKind,
+        proc_kind: ProcedureKind,
     },
     /// A class method dispatch table contains a duplicate case-insensitive name/kind key.
     DuplicateClassMethod {
@@ -437,6 +452,15 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} {hook} proc {proc} must start with hidden Me receiver parameter (param_count={param_count}, first_local={first_local:?})"
             ),
+            VerifyError::BadClassLifecycleProcKind {
+                class_index,
+                hook,
+                proc,
+                kind,
+            } => write!(
+                f,
+                "class {class_index} {hook} proc {proc} has kind {kind:?}, expected Sub"
+            ),
             VerifyError::BadClassMethodProcRef {
                 class_index,
                 method_index,
@@ -455,6 +479,16 @@ impl std::fmt::Display for VerifyError {
             } => write!(
                 f,
                 "class {class_index} method {method_index} proc {proc} must start with hidden Me receiver parameter (param_count={param_count}, first_local={first_local:?})"
+            ),
+            VerifyError::BadClassMethodProcKind {
+                class_index,
+                method_index,
+                proc,
+                member_kind,
+                proc_kind,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} proc {proc} has kind {proc_kind:?}, incompatible with member kind {member_kind:?}"
             ),
             VerifyError::DuplicateClassMethod {
                 class_index,
@@ -549,6 +583,13 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                         .first()
                         .map(|local| local.name.clone()),
                 });
+            } else if program.funcs[proc.0].kind != ProcedureKind::Sub {
+                errors.push(VerifyError::BadClassLifecycleProcKind {
+                    class_index,
+                    hook: "Class_Initialize",
+                    proc: proc.0,
+                    kind: program.funcs[proc.0].kind,
+                });
             }
         }
         if let Some(proc) = class.terminate {
@@ -569,6 +610,13 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                         .locals
                         .first()
                         .map(|local| local.name.clone()),
+                });
+            } else if program.funcs[proc.0].kind != ProcedureKind::Sub {
+                errors.push(VerifyError::BadClassLifecycleProcKind {
+                    class_index,
+                    hook: "Class_Terminate",
+                    proc: proc.0,
+                    kind: program.funcs[proc.0].kind,
                 });
             }
         }
@@ -591,6 +639,17 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                         .locals
                         .first()
                         .map(|local| local.name.clone()),
+                });
+            } else if !class_member_kind_matches_proc_kind(
+                method.kind,
+                program.funcs[method.proc.0].kind,
+            ) {
+                errors.push(VerifyError::BadClassMethodProcKind {
+                    class_index,
+                    method_index,
+                    proc: method.proc.0,
+                    member_kind: method.kind,
+                    proc_kind: program.funcs[method.proc.0].kind,
                 });
             }
             if !method_keys.insert((method.name.to_ascii_lowercase(), method.kind)) {
@@ -648,6 +707,20 @@ fn func_has_hidden_me_receiver(func: &OxFunc) -> bool {
     func.locals
         .first()
         .is_some_and(|local| local.param.is_some() && local.name.eq_ignore_ascii_case("Me"))
+}
+
+fn class_member_kind_matches_proc_kind(
+    member_kind: ProjectMemberKind,
+    proc_kind: ProcedureKind,
+) -> bool {
+    match member_kind {
+        ProjectMemberKind::Method => {
+            matches!(proc_kind, ProcedureKind::Sub | ProcedureKind::Function)
+        }
+        ProjectMemberKind::PropertyGet => proc_kind == ProcedureKind::PropertyGet,
+        ProjectMemberKind::PropertyLet => proc_kind == ProcedureKind::PropertyLet,
+        ProjectMemberKind::PropertySet => proc_kind == ProcedureKind::PropertySet,
+    }
 }
 
 /// Check a `ComCallEarly`'s [`ComMethodRef`] resolves: the interface index is in

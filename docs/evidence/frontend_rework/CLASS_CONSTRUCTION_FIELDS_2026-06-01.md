@@ -50,6 +50,10 @@ front-end symbol index:
   receiver parameter. VM runtime member descriptor extraction and project-member argument name
   mapping skip only that explicit receiver, preserving source-visible parameter metadata if
   malformed hand-built OxIR bypasses verification.
+- The same continuation now rejects class metadata kind drift: lifecycle hooks must target `Sub`
+  procedures, property descriptor rows must target the matching `PropertyGet`/`PropertyLet`/
+  `PropertySet` procedure kind, and ordinary method rows remain valid for either `Sub` or
+  `Function`.
 
 Production-route proof:
 
@@ -81,6 +85,9 @@ Production-route proof:
 - `project_member_named_args_skip_only_explicit_hidden_me_receiver` proves the VM project-member
   named-argument mapper resolves names against source-visible parameters after the explicit
   receiver, not against a blind positional skip.
+- `verifier_catches_class_lifecycle_proc_kind_mismatch` and
+  `verifier_catches_class_member_proc_kind_mismatch` prove class descriptors cannot claim a
+  lifecycle/member/property shape that disagrees with the target procedure descriptor.
 
 Compatibility quarantine / residual classification:
 

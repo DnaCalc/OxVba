@@ -5750,7 +5750,7 @@ mod tests {
     fn project_instance_runtime_descriptor_carries_dispatch_members() {
         let get_value = proc(
             "GetValue",
-            ProcedureKind::Function,
+            ProcedureKind::PropertyGet,
             vec![long_param("me")],
             vec![local("GetValue", VarTypeRef::Builtin(BuiltinType::Long))],
             Some(CoreLocalId(1)),
@@ -6007,7 +6007,7 @@ mod tests {
     fn project_instance_runtime_descriptor_carries_implemented_interfaces() {
         let iface_get_size = proc(
             "Size",
-            ProcedureKind::Function,
+            ProcedureKind::PropertyGet,
             vec![long_param("me")],
             vec![local("Size", VarTypeRef::Builtin(BuiltinType::Long))],
             Some(CoreLocalId(1)),
@@ -6023,7 +6023,7 @@ mod tests {
         );
         let impl_get_size = proc(
             "IShape_Size",
-            ProcedureKind::Function,
+            ProcedureKind::PropertyGet,
             vec![long_param("me")],
             vec![local("IShape_Size", VarTypeRef::Builtin(BuiltinType::Long))],
             Some(CoreLocalId(1)),

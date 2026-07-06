@@ -317,9 +317,13 @@ mod tests {
     }
 
     fn class_receiver_func(name: &str) -> OxFunc {
+        class_receiver_func_with_kind(name, ProcedureKind::Sub)
+    }
+
+    fn class_receiver_func_with_kind(name: &str, kind: ProcedureKind) -> OxFunc {
         OxFunc {
             name: name.to_string(),
-            kind: ProcedureKind::Sub,
+            kind,
             locals: vec![OxLocal {
                 name: "Me".to_string(),
                 ty: OxTy::Variant,
@@ -461,6 +465,29 @@ mod tests {
     }
 
     #[test]
+    fn verifier_catches_class_lifecycle_proc_kind_mismatch() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func_with_kind(
+            "Class_Initialize",
+            ProcedureKind::Function,
+        ));
+        p.classes[0].initialize = Some(FuncId(0));
+        let errs = verify_program(&p).expect_err("class lifecycle proc must be Sub");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassLifecycleProcKind {
+                    class_index: 0,
+                    hook: "Class_Initialize",
+                    proc: 0,
+                    kind: ProcedureKind::Function,
+                }
+            )),
+            "expected BadClassLifecycleProcKind, got {errs:?}"
+        );
+    }
+
+    #[test]
     fn verifier_catches_bad_class_method_proc_ref() {
         let mut p = sample_class_field_program();
         p.classes[0].methods.push(OxClassMethod {
@@ -514,6 +541,35 @@ mod tests {
                 } if name == "n"
             )),
             "expected BadClassMethodReceiver, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_class_member_proc_kind_mismatch() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func("Value"));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Value".to_string(),
+            kind: ProjectMemberKind::PropertyGet,
+            proc: FuncId(0),
+            dispid: None,
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        });
+        let errs = verify_program(&p).expect_err("property descriptor needs property proc");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassMethodProcKind {
+                    class_index: 0,
+                    method_index: 0,
+                    proc: 0,
+                    member_kind: ProjectMemberKind::PropertyGet,
+                    proc_kind: ProcedureKind::Sub,
+                }
+            )),
+            "expected BadClassMethodProcKind, got {errs:?}"
         );
     }
 
