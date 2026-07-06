@@ -1761,6 +1761,28 @@ fn event_declaration_rejects_invalid_parameters() {
 }
 
 #[test]
+fn event_declaration_rejects_as_new_parameters() {
+    let src = "Public Event Changed(ByVal value As New Source)\r\n";
+    let m = manifest("Proj", vec![class_module("Source", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("Event As New parameter declaration should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::InvalidAsNewDeclaration { name, context }
+                if name == "value" && *context == "Event argument"
+        ),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-INVALID-AS-NEW-DECLARATION"
+    );
+}
+
+#[test]
 fn optional_parameter_default_is_parsed() {
     let src = "Sub S(Optional ByVal n As Long = 5)\r\nEnd Sub\r\n";
     let m = manifest("Proj", vec![module("Mod1", src)]);

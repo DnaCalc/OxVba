@@ -1771,8 +1771,8 @@ Candidate bead units:
   than source parameter-name equality,
   `Event` declarations now reject standard-module placement through
   `SYM-E-EVENT-ONLY-VALID-IN-OBJECT-MODULE` and reject `Optional`, default-valued, or `ParamArray`
-  event arguments before event metadata is published, matching the Microsoft Learn Event statement
-  rule
+  event arguments plus `As New` event argument types before event metadata is published, matching
+  the Microsoft Learn Event statement rule
   (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/event-statement`),
   `WithEvents` declarations now reject local scope and `Const` forms plus scalar,
   explicit/implicit `Variant`, array, and `As New` source declarations through scanner-owned

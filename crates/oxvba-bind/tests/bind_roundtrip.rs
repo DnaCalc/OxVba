@@ -3337,6 +3337,26 @@ fn event_declaration_rejects_invalid_parameters() {
 }
 
 #[test]
+fn event_declaration_as_new_parameter_is_bind_error() {
+    let manifest = manifest_modules(&[(
+        "Source",
+        ModuleKind::Class,
+        "Public Event Tick(ByVal value As New Source)\n",
+    )]);
+    let err = format!(
+        "{:?}",
+        bind_program(&manifest, &NullTypeLibs)
+            .expect_err("Event As New parameter should fail binding")
+    );
+    assert!(
+        err.contains("InvalidAsNewDeclaration")
+            && err.contains("name: \"value\"")
+            && err.contains("context: \"Event argument\""),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn raise_event_rejects_invalid_argument_syntax() {
     for (source, expected) in [
         (

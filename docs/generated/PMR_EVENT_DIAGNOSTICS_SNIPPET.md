@@ -6,6 +6,7 @@ Canonical source: `docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`.
 | Diagnostic ID | Phase | Status | Description |
 |---|---|---|---|
 | `PMR-E-EVENT-ARGUMENT-DEFAULT` | compile-time | implemented | Event declarations cannot use argument default values |
+| `PMR-E-EVENT-AS-NEW-ARGUMENT` | compile-time | implemented | Event declarations cannot use As New argument types |
 | `PMR-E-EVENT-MODULE-KIND` | compile-time | implemented | Event declarations are valid only in object modules |
 | `PMR-E-EVENT-OPTIONAL-ARGUMENT` | compile-time | implemented | Event declarations cannot use Optional arguments |
 | `PMR-E-EVENT-PARAMARRAY-ARGUMENT` | compile-time | implemented | Event declarations cannot use ParamArray arguments |

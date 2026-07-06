@@ -969,6 +969,12 @@ impl ScanCtx<'_> {
                     reason: "Event arguments cannot be ParamArray",
                 });
             }
+            if param.declared_type().is_some_and(type_ref_has_new) {
+                return Err(SymbolModelError::InvalidAsNewDeclaration {
+                    name: parameter,
+                    context: "Event argument",
+                });
+            }
         }
         Ok(())
     }
