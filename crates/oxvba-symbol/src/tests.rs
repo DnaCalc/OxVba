@@ -2395,6 +2395,37 @@ fn optional_defaults_fold_referenced_project_consts() {
 }
 
 #[test]
+fn export_surface_publishes_folded_method_optional_defaults() {
+    let m = manifest(
+        "Lib",
+        vec![module(
+            "LibMod",
+            "Public Const DefaultMode As Long = 4\n\
+             Public Function ModeValue(Optional ByVal mode As Long = DefaultMode + 1) As Long\n\
+             ModeValue = mode\n\
+             End Function\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).expect("env");
+    let surface = env.export_surfaces().first().expect("active surface");
+    let module = surface
+        .types
+        .iter()
+        .find(|ty| ty.name.eq_ignore_ascii_case("LibMod"))
+        .expect("module surface");
+    let method = module
+        .members
+        .iter()
+        .find(|member| member.name.eq_ignore_ascii_case("ModeValue"))
+        .expect("method surface");
+
+    assert_eq!(
+        method.parameter_optional_defaults,
+        vec![Some(CoreConst::I32(5))]
+    );
+}
+
+#[test]
 fn invalid_optional_defaults_reject_instead_of_falling_back() {
     for (src, parameter) in [
         (

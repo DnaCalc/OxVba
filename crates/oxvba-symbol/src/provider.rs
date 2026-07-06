@@ -1436,6 +1436,7 @@ pub fn build_resolution_environment(
                 &symbols,
                 &signatures,
                 &preliminary_const_values,
+                None,
             )
         })
         .collect();
@@ -1493,6 +1494,7 @@ pub fn build_resolution_environment(
                 &symbols,
                 &signatures,
                 &const_values,
+                Some(&optional_defaults),
             )
         })
         .collect();
@@ -1506,6 +1508,7 @@ pub fn build_resolution_environment(
         &symbols,
         &signatures,
         &const_values,
+        Some(&optional_defaults),
     );
     let mut surfaces = vec![active_surface];
     surfaces.extend(referenced_surfaces.iter().cloned());

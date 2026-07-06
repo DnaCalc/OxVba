@@ -154,6 +154,7 @@ pub fn synthesize_export_surface(
     symbols: &SymbolTable,
     signatures: &SignatureTable,
     const_values: &HashMap<SymbolId, CoreConst>,
+    optional_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
 ) -> ProjectExportSurface {
     let mut types = Vec::new();
     let mut consts = Vec::new();
@@ -245,6 +246,7 @@ pub fn synthesize_export_surface(
                         &mut next_vtable,
                         symbols,
                         signatures,
+                        optional_defaults,
                     ));
                 }
                 SymbolKind::Property => {
@@ -256,6 +258,7 @@ pub fn synthesize_export_surface(
                         &mut next_vtable,
                         symbols,
                         signatures,
+                        optional_defaults,
                         &mut members,
                     );
                 }
@@ -364,9 +367,12 @@ fn method_member(
     next_vtable: &mut u16,
     symbols: &SymbolTable,
     signatures: &SignatureTable,
+    optional_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
 ) -> SurfaceMember {
     let sig = member_signature(symbols, signatures, member.symbol);
-    let (names, types, optional, defaults, variadic) = sig.map(param_lists).unwrap_or_default();
+    let (names, types, optional, defaults, variadic) = sig
+        .map(|sig| param_lists(sig, Some(member.symbol), optional_defaults))
+        .unwrap_or_default();
     let return_type = sig
         .and_then(|s| s.return_type.as_ref())
         .map(|t| param_type(t, false));
@@ -395,6 +401,7 @@ fn property_members(
     next_vtable: &mut u16,
     symbols: &SymbolTable,
     signatures: &SignatureTable,
+    optional_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
     out: &mut Vec<SurfaceMember>,
 ) {
     let name = member_name(symbols, member);
@@ -422,7 +429,11 @@ fn property_members(
     for (sig_id, invoke_kind, member_kind) in accessors {
         let Some(sig_id) = sig_id else { continue };
         let sig = signatures.get(sig_id);
-        let (names, types, optional, defaults, variadic) = sig.map(param_lists).unwrap_or_default();
+        // Property groups do not publish distinct accessor procedure symbols here yet,
+        // so folded defaults can only override method/function defaults for now.
+        let (names, types, optional, defaults, variadic) = sig
+            .map(|sig| param_lists(sig, None, optional_defaults))
+            .unwrap_or_default();
         let return_type = sig
             .and_then(|s| s.return_type.as_ref())
             .map(|t| param_type(t, false));
@@ -527,6 +538,8 @@ fn event_arity(symbols: &SymbolTable, signatures: &SignatureTable, sym: SymbolId
 #[allow(clippy::type_complexity)]
 fn param_lists(
     sig: &Signature,
+    proc_symbol: Option<SymbolId>,
+    folded_defaults: Option<&HashMap<(SymbolId, usize), CoreConst>>,
 ) -> (
     Vec<String>,
     Vec<TypeLibParamType>,
@@ -539,11 +552,16 @@ fn param_lists(
     let mut optional = Vec::with_capacity(sig.params.len());
     let mut defaults = Vec::with_capacity(sig.params.len());
     let mut variadic = false;
-    for p in &sig.params {
+    for (index, p) in sig.params.iter().enumerate() {
         names.push(p.name.clone());
         types.push(param_type(&p.ty, p.mode == PassingMode::ByRef));
         optional.push(p.optional);
-        defaults.push(p.default.as_ref().and_then(default_value_to_core_const));
+        let folded = proc_symbol.and_then(|proc| {
+            folded_defaults
+                .and_then(|defaults| defaults.get(&(proc, index)))
+                .cloned()
+        });
+        defaults.push(folded.or_else(|| p.default.as_ref().and_then(default_value_to_core_const)));
         variadic |= p.param_array;
     }
     (names, types, optional, defaults, variadic)
@@ -714,7 +732,15 @@ mod tests {
             &[],
         )
         .unwrap();
-        synthesize_export_surface("P", &modules, &scans, &symbols, &signatures, &const_values)
+        synthesize_export_surface(
+            "P",
+            &modules,
+            &scans,
+            &symbols,
+            &signatures,
+            &const_values,
+            None,
+        )
     }
 
     fn find_type<'a>(s: &'a ProjectExportSurface, name: &str) -> Option<&'a SurfaceType> {

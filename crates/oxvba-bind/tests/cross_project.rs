@@ -476,6 +476,32 @@ fn active_optional_default_folds_referenced_project_const() {
 }
 
 #[test]
+fn cross_bundle_method_publishes_const_expression_optional_default() {
+    let lib_mod = || {
+        proc_module(
+            "LibMod",
+            "Public Const DefaultMode As Long = 4\n\
+             Public Function ModeValue(Optional ByVal mode As Long = DefaultMode + 1) As Long\n\
+             ModeValue = mode\n\
+             End Function\n",
+        )
+    };
+    let lib = project("Lib", vec![lib_mod()], vec![]);
+    let app = project(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\n\
+             Sub Main()\n\
+             r = ModeValue()\n\
+             End Sub\n",
+        )],
+        vec![referenced("Lib", vec![lib_mod()])],
+    );
+    assert_eq!(link_run_global0_i32(&[lib, app]), Some(5));
+}
+
+#[test]
 fn cross_bundle_free_function_applies_named_optional_defaults_between_supplied_args() {
     let lib_mod = || {
         proc_module(
