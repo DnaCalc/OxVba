@@ -75,6 +75,70 @@ fn ordinary_new_initialize_failure_terminates_partial_instance_and_allows_retry(
 }
 
 #[test]
+fn local_object_terminates_at_procedure_exit_without_explicit_nothing() {
+    let main = "Public result As Variant\n\
+                Public Log As String\n\
+                Sub Main()\n\
+                \x20   MakeWidget\n\
+                \x20   result = Log\n\
+                End Sub\n\
+                Sub MakeWidget()\n\
+                \x20   Dim w As Widget\n\
+                \x20   Set w = New Widget\n\
+                End Sub\n";
+    let widget = "Private Sub Class_Initialize()\n\
+                  \x20   Main.Log = Main.Log & \"I;\"\n\
+                  End Sub\n\
+                  Private Sub Class_Terminate()\n\
+                  \x20   Main.Log = Main.Log & \"T;\"\n\
+                  \x20   Err.Raise 77\n\
+                  End Sub\n";
+
+    assert_contains_string(
+        run_modules(
+            Executor::Vm3,
+            &[("Main", Procedural, main), ("Widget", Class, widget)],
+            "VBAProject",
+        ),
+        "I;T;",
+    );
+}
+
+#[test]
+fn local_object_terminates_during_fault_unwind_before_caller_resume_next() {
+    let main = "Public result As Variant\n\
+                Public Log As String\n\
+                Sub Main()\n\
+                \x20   On Error Resume Next\n\
+                \x20   FailWithWidget\n\
+                \x20   Dim seenErr As Long\n\
+                \x20   seenErr = Err.Number\n\
+                \x20   result = Log & \"|\" & CStr(seenErr)\n\
+                End Sub\n\
+                Sub FailWithWidget()\n\
+                \x20   Dim w As Widget\n\
+                \x20   Set w = New Widget\n\
+                \x20   Err.Raise 5\n\
+                End Sub\n";
+    let widget = "Private Sub Class_Initialize()\n\
+                  \x20   Main.Log = Main.Log & \"I;\"\n\
+                  End Sub\n\
+                  Private Sub Class_Terminate()\n\
+                  \x20   Main.Log = Main.Log & \"T;\"\n\
+                  \x20   Err.Raise 77\n\
+                  End Sub\n";
+
+    assert_contains_string(
+        run_modules(
+            Executor::Vm3,
+            &[("Main", Procedural, main), ("Widget", Class, widget)],
+            "VBAProject",
+        ),
+        "I;T;|5",
+    );
+}
+
+#[test]
 fn class_terminate_can_resurrect_me_without_double_terminating() {
     let main = "Public result As Variant\n\
                 Public Log As String\n\
