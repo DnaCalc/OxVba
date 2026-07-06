@@ -698,6 +698,275 @@ mod tests {
     }
 
     #[test]
+    fn verifier_accepts_default_property_pair_and_enumerator_metadata() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func_with_kind(
+            "Value",
+            ProcedureKind::PropertyGet,
+        ));
+        p.funcs.push(class_property_setter_func(
+            "Value",
+            ProcedureKind::PropertyLet,
+            false,
+        ));
+        p.funcs.push(class_receiver_func_with_kind(
+            "NewEnum",
+            ProcedureKind::PropertyGet,
+        ));
+        p.classes[0].methods.extend([
+            OxClassMethod {
+                name: "Value".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(0),
+                dispid: Some(0),
+                vtable_slot: Some(7),
+                is_default_member: true,
+                is_enumerator_member: false,
+            },
+            OxClassMethod {
+                name: "Value".to_string(),
+                kind: ProjectMemberKind::PropertyLet,
+                proc: FuncId(1),
+                dispid: Some(0),
+                vtable_slot: Some(8),
+                is_default_member: true,
+                is_enumerator_member: false,
+            },
+            OxClassMethod {
+                name: "NewEnum".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(2),
+                dispid: Some(-4),
+                vtable_slot: Some(9),
+                is_default_member: false,
+                is_enumerator_member: true,
+            },
+        ]);
+        assert_eq!(verify_program(&p), Ok(()));
+    }
+
+    #[test]
+    fn verifier_catches_ambiguous_class_default_member_names() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func_with_kind(
+            "Value",
+            ProcedureKind::PropertyGet,
+        ));
+        p.funcs.push(class_receiver_func_with_kind(
+            "Caption",
+            ProcedureKind::PropertyGet,
+        ));
+        p.classes[0].methods.extend([
+            OxClassMethod {
+                name: "Value".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(0),
+                dispid: Some(0),
+                vtable_slot: None,
+                is_default_member: true,
+                is_enumerator_member: false,
+            },
+            OxClassMethod {
+                name: "Caption".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(1),
+                dispid: Some(0),
+                vtable_slot: None,
+                is_default_member: true,
+                is_enumerator_member: false,
+            },
+        ]);
+        let errs = verify_program(&p).expect_err("only one logical default member");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::AmbiguousClassDefaultMember {
+                    class_index: 0,
+                    method_index: 1,
+                    first_name,
+                    name,
+                } if first_name == "Value" && name == "Caption"
+            )),
+            "expected AmbiguousClassDefaultMember, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_default_member_nonzero_dispid() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func_with_kind(
+            "Value",
+            ProcedureKind::PropertyGet,
+        ));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Value".to_string(),
+            kind: ProjectMemberKind::PropertyGet,
+            proc: FuncId(0),
+            dispid: Some(42),
+            vtable_slot: None,
+            is_default_member: true,
+            is_enumerator_member: false,
+        });
+        let errs = verify_program(&p).expect_err("default member dispid must be zero");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassDefaultMemberDispid {
+                    class_index: 0,
+                    method_index: 0,
+                    name,
+                    kind: ProjectMemberKind::PropertyGet,
+                    dispid: 42,
+                } if name == "Value"
+            )),
+            "expected BadClassDefaultMemberDispid, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_duplicate_class_enumerator_members() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func_with_kind(
+            "NewEnum",
+            ProcedureKind::PropertyGet,
+        ));
+        p.funcs.push(class_receiver_func_with_kind(
+            "OtherEnum",
+            ProcedureKind::PropertyGet,
+        ));
+        p.classes[0].methods.extend([
+            OxClassMethod {
+                name: "NewEnum".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(0),
+                dispid: Some(-4),
+                vtable_slot: None,
+                is_default_member: false,
+                is_enumerator_member: true,
+            },
+            OxClassMethod {
+                name: "OtherEnum".to_string(),
+                kind: ProjectMemberKind::PropertyGet,
+                proc: FuncId(1),
+                dispid: Some(-4),
+                vtable_slot: None,
+                is_default_member: false,
+                is_enumerator_member: true,
+            },
+        ]);
+        let errs = verify_program(&p).expect_err("only one enumerator member");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::DuplicateClassEnumeratorMember {
+                    class_index: 0,
+                    method_index: 1,
+                    first_method_index: 0,
+                    name,
+                } if name == "OtherEnum"
+            )),
+            "expected DuplicateClassEnumeratorMember, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_class_enumerator_setter_kind() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_property_setter_func(
+            "NewEnum",
+            ProcedureKind::PropertyLet,
+            false,
+        ));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "NewEnum".to_string(),
+            kind: ProjectMemberKind::PropertyLet,
+            proc: FuncId(0),
+            dispid: Some(-4),
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: true,
+        });
+        let errs = verify_program(&p).expect_err("enumerator cannot be a setter");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassEnumeratorMemberKind {
+                    class_index: 0,
+                    method_index: 0,
+                    name,
+                    kind: ProjectMemberKind::PropertyLet,
+                } if name == "NewEnum"
+            )),
+            "expected BadClassEnumeratorMemberKind, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_class_enumerator_wrong_dispid() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func_with_kind(
+            "NewEnum",
+            ProcedureKind::PropertyGet,
+        ));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "NewEnum".to_string(),
+            kind: ProjectMemberKind::PropertyGet,
+            proc: FuncId(0),
+            dispid: Some(7),
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: true,
+        });
+        let errs = verify_program(&p).expect_err("enumerator dispid must be -4");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassEnumeratorDispid {
+                    class_index: 0,
+                    method_index: 0,
+                    name,
+                    kind: ProjectMemberKind::PropertyGet,
+                    dispid: 7,
+                } if name == "NewEnum"
+            )),
+            "expected BadClassEnumeratorDispid, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_class_enumerator_visible_params() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_property_setter_func(
+            "NewEnum",
+            ProcedureKind::PropertyGet,
+            false,
+        ));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "NewEnum".to_string(),
+            kind: ProjectMemberKind::PropertyGet,
+            proc: FuncId(0),
+            dispid: Some(-4),
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: true,
+        });
+        let errs = verify_program(&p).expect_err("enumerator target must be zero-arg");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassEnumeratorVisibleParams {
+                    class_index: 0,
+                    method_index: 0,
+                    proc: 0,
+                    visible_params: 1,
+                    param_count: 2,
+                }
+            )),
+            "expected BadClassEnumeratorVisibleParams, got {errs:?}"
+        );
+    }
+
+    #[test]
     fn verifier_catches_duplicate_class_method_dispatch_key() {
         let mut p = sample_class_field_program();
         let mut proc_program = sample_program();

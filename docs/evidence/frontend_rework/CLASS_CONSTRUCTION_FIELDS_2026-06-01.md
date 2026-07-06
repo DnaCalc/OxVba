@@ -58,6 +58,10 @@ front-end symbol index:
   `PropertyLet`/`PropertySet` target lacks a final source-visible value parameter after hidden
   `Me`, or stores that value parameter as ByRef. This preserves the binder's runtime-ByVal setter
   value lowering in OxIR metadata without claiming full `PropertySet` object-type compatibility.
+- Default-member and `_NewEnum` class metadata now receive the same package-level consistency
+  check: default rows may span Property Get/Let/Set for one logical member but not multiple names,
+  explicit default DISPIDs must be `0`, enumerator rows must be unique, get/method-shaped,
+  zero-visible-arg entries, and explicit enumerator DISPIDs must be `-4`.
 
 Production-route proof:
 
@@ -96,6 +100,15 @@ Production-route proof:
   `verifier_catches_class_property_setter_without_value_param`, and
   `verifier_catches_class_property_setter_byref_value_param` prove class `PropertyLet`/
   `PropertySet` descriptors preserve VBA's trailing setter value parameter as runtime ByVal.
+- `verifier_accepts_default_property_pair_and_enumerator_metadata`,
+  `verifier_catches_ambiguous_class_default_member_names`,
+  `verifier_catches_default_member_nonzero_dispid`,
+  `verifier_catches_duplicate_class_enumerator_members`,
+  `verifier_catches_class_enumerator_setter_kind`,
+  `verifier_catches_class_enumerator_wrong_dispid`, and
+  `verifier_catches_class_enumerator_visible_params` prove hand-built OxIR cannot publish
+  contradictory default-member or `_NewEnum` descriptor flags that the VM and COM-facing
+  descriptor layer would otherwise consume directly.
 
 Compatibility quarantine / residual classification:
 
@@ -158,3 +171,7 @@ Compatibility quarantine / residual classification:
   ByVal, while indexed parameters before it retain their declared direction. The verifier mirrors
   that exact package fact and intentionally does not add a broader `PropertySet` type rule in this
   slice.
+- The default/enumerator verifier slice intentionally checks only contradictions visible in the
+  package metadata. It does not infer Office-only export policy, require live COM interop, or close
+  broader default-member runtime parity; those remain governed by the property/default-member and
+  COM-export lanes.

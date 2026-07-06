@@ -226,6 +226,53 @@ pub enum VerifyError {
         param_index: usize,
         name: String,
     },
+    /// A class marks multiple differently named dispatch members as default.
+    AmbiguousClassDefaultMember {
+        class_index: usize,
+        method_index: usize,
+        first_name: String,
+        name: String,
+    },
+    /// A class default-member row carries an explicit non-zero DISPID.
+    BadClassDefaultMemberDispid {
+        class_index: usize,
+        method_index: usize,
+        name: String,
+        kind: ProjectMemberKind,
+        dispid: i32,
+    },
+    /// A class marks more than one dispatch row as `_NewEnum`.
+    DuplicateClassEnumeratorMember {
+        class_index: usize,
+        method_index: usize,
+        first_method_index: usize,
+        name: String,
+    },
+    /// A class marks a setter as `_NewEnum`; project enumerators must be callable
+    /// with get/method semantics because the runtime invokes them with no assigned value.
+    BadClassEnumeratorMemberKind {
+        class_index: usize,
+        method_index: usize,
+        name: String,
+        kind: ProjectMemberKind,
+    },
+    /// A `_NewEnum` row carries an explicit DISPID other than -4.
+    BadClassEnumeratorDispid {
+        class_index: usize,
+        method_index: usize,
+        name: String,
+        kind: ProjectMemberKind,
+        dispid: i32,
+    },
+    /// A `_NewEnum` target has source-visible parameters, but VM enumeration invokes
+    /// project enumerators with only the hidden `Me` receiver.
+    BadClassEnumeratorVisibleParams {
+        class_index: usize,
+        method_index: usize,
+        proc: usize,
+        visible_params: usize,
+        param_count: usize,
+    },
     /// A class method dispatch table contains a duplicate case-insensitive name/kind key.
     DuplicateClassMethod {
         class_index: usize,
@@ -534,6 +581,63 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} method {method_index} proc {proc} member {member_kind:?} setter value parameter {param_index} ({name:?}) must be runtime ByVal"
             ),
+            VerifyError::AmbiguousClassDefaultMember {
+                class_index,
+                method_index,
+                first_name,
+                name,
+            } => write!(
+                f,
+                "class {class_index} method {method_index}: default member {name:?} conflicts with existing default member {first_name:?}"
+            ),
+            VerifyError::BadClassDefaultMemberDispid {
+                class_index,
+                method_index,
+                name,
+                kind,
+                dispid,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} {name:?}/{kind:?}: default member explicit DISPID must be 0, got {dispid}"
+            ),
+            VerifyError::DuplicateClassEnumeratorMember {
+                class_index,
+                method_index,
+                first_method_index,
+                name,
+            } => write!(
+                f,
+                "class {class_index} method {method_index}: duplicate _NewEnum member {name:?} conflicts with method {first_method_index}"
+            ),
+            VerifyError::BadClassEnumeratorMemberKind {
+                class_index,
+                method_index,
+                name,
+                kind,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} {name:?}: _NewEnum member kind must be PropertyGet or Method, got {kind:?}"
+            ),
+            VerifyError::BadClassEnumeratorDispid {
+                class_index,
+                method_index,
+                name,
+                kind,
+                dispid,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} {name:?}/{kind:?}: _NewEnum explicit DISPID must be -4, got {dispid}"
+            ),
+            VerifyError::BadClassEnumeratorVisibleParams {
+                class_index,
+                method_index,
+                proc,
+                visible_params,
+                param_count,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} proc {proc}: _NewEnum target must not expose source-visible parameters (visible_params={visible_params}, param_count={param_count})"
+            ),
             VerifyError::DuplicateClassMethod {
                 class_index,
                 method_index,
@@ -665,6 +769,8 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
             }
         }
         let mut method_keys = HashSet::new();
+        let mut default_member_name: Option<(String, String)> = None;
+        let mut enumerator_member_index: Option<usize> = None;
         for (method_index, method) in class.methods.iter().enumerate() {
             if method.proc.0 >= funcs {
                 errors.push(VerifyError::BadClassMethodProcRef {
@@ -705,6 +811,25 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                     method.proc.0,
                     method.kind,
                     &program.funcs[method.proc.0],
+                    errors,
+                );
+            }
+            if method.is_default_member {
+                verify_class_default_member_metadata(
+                    class_index,
+                    method_index,
+                    method,
+                    &mut default_member_name,
+                    errors,
+                );
+            }
+            if method.is_enumerator_member {
+                verify_class_enumerator_member_metadata(
+                    class_index,
+                    method_index,
+                    method,
+                    program.funcs.get(method.proc.0),
+                    &mut enumerator_member_index,
                     errors,
                 );
             }
@@ -753,6 +878,97 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                 _ => {}
             }
         }
+    }
+}
+
+fn verify_class_default_member_metadata(
+    class_index: usize,
+    method_index: usize,
+    method: &crate::program::OxClassMethod,
+    default_member_name: &mut Option<(String, String)>,
+    errors: &mut Vec<VerifyError>,
+) {
+    if let Some(dispid) = method.dispid
+        && dispid != 0
+    {
+        errors.push(VerifyError::BadClassDefaultMemberDispid {
+            class_index,
+            method_index,
+            name: method.name.clone(),
+            kind: method.kind,
+            dispid,
+        });
+    }
+    let folded = method.name.to_ascii_lowercase();
+    match default_member_name {
+        Some((first_folded, first_name)) if *first_folded != folded => {
+            errors.push(VerifyError::AmbiguousClassDefaultMember {
+                class_index,
+                method_index,
+                first_name: first_name.clone(),
+                name: method.name.clone(),
+            });
+        }
+        Some(_) => {}
+        None => *default_member_name = Some((folded, method.name.clone())),
+    }
+}
+
+fn verify_class_enumerator_member_metadata(
+    class_index: usize,
+    method_index: usize,
+    method: &crate::program::OxClassMethod,
+    func: Option<&OxFunc>,
+    enumerator_member_index: &mut Option<usize>,
+    errors: &mut Vec<VerifyError>,
+) {
+    if let Some(first_method_index) = *enumerator_member_index {
+        errors.push(VerifyError::DuplicateClassEnumeratorMember {
+            class_index,
+            method_index,
+            first_method_index,
+            name: method.name.clone(),
+        });
+    } else {
+        *enumerator_member_index = Some(method_index);
+    }
+    if !matches!(
+        method.kind,
+        ProjectMemberKind::PropertyGet | ProjectMemberKind::Method
+    ) {
+        errors.push(VerifyError::BadClassEnumeratorMemberKind {
+            class_index,
+            method_index,
+            name: method.name.clone(),
+            kind: method.kind,
+        });
+    }
+    if let Some(dispid) = method.dispid
+        && dispid != -4
+    {
+        errors.push(VerifyError::BadClassEnumeratorDispid {
+            class_index,
+            method_index,
+            name: method.name.clone(),
+            kind: method.kind,
+            dispid,
+        });
+    }
+    let Some(func) = func else {
+        return;
+    };
+    if !func_has_hidden_me_receiver(func) {
+        return;
+    }
+    let visible_params = func.param_count.saturating_sub(1);
+    if visible_params != 0 {
+        errors.push(VerifyError::BadClassEnumeratorVisibleParams {
+            class_index,
+            method_index,
+            proc: method.proc.0,
+            visible_params,
+            param_count: func.param_count,
+        });
     }
 }
 

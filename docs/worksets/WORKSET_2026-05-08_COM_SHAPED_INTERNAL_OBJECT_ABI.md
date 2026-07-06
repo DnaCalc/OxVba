@@ -155,6 +155,12 @@ First implementation slice:
   source-visible parameter after hidden `Me`, and that value parameter must be stored as runtime
   ByVal. This mirrors the binder's lowering rule for VBA setter values without broadening the
   current claim to full `PropertySet` object-type compatibility.
+- `verify_program` now also rejects contradictory class default/enumerator metadata before VM3 or
+  COM-facing descriptor construction: a class may not mark differently named members as default,
+  explicit default-member DISPIDs must be `0`, `_NewEnum` rows must use get/method semantics with
+  no source-visible parameters, explicit `_NewEnum` DISPIDs must be `-4`, and a class may not
+  publish multiple enumerator rows. Property Get/Let/Set rows for the same logical default
+  property remain valid.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
 - `runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup` proves unhinted member/default lookup caches unique arity-matched descriptor plans, covering explicit dynamic call traffic that does not carry a property/method hint.
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.
