@@ -129,11 +129,20 @@ fn leak_runtime_str(value: &str) -> &'static str {
     Box::leak(value.to_string().into_boxed_str())
 }
 
+fn hidden_me_receiver_param_count(func: &oxvba_oxir::OxFunc) -> usize {
+    usize::from(
+        func.param_count > 0
+            && func.locals.first().is_some_and(|local| {
+                local.param.is_some() && local.name.eq_ignore_ascii_case("Me")
+            }),
+    )
+}
+
 fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescriptor> {
     func.locals
         .iter()
         .take(func.param_count)
-        .skip(1)
+        .skip(hidden_me_receiver_param_count(func))
         .map(|local| {
             let param = local.param.as_ref();
             RuntimeParamDescriptor {
@@ -3435,7 +3444,7 @@ impl<'h> Vm3<'h> {
             .locals
             .iter()
             .take(callee.param_count)
-            .skip(1)
+            .skip(hidden_me_receiver_param_count(callee))
             .map(|local| local.name.to_ascii_lowercase())
             .collect();
         let mut ordered: Vec<Option<OxArg>> = Vec::new();
@@ -5199,6 +5208,122 @@ mod tests {
             by_ref: true,
             variadic: false,
         }
+    }
+
+    fn ox_param_local(name: &str) -> OxLocal {
+        OxLocal {
+            name: name.into(),
+            ty: OxTy::Long,
+            array_element: None,
+            param: Some(OxParamInfo {
+                optional: false,
+                by_ref: false,
+                variadic: false,
+            }),
+            escaped: false,
+        }
+    }
+
+    fn ox_func_with_params(name: &str, locals: Vec<OxLocal>, param_count: usize) -> OxFunc {
+        OxFunc {
+            name: name.into(),
+            kind: ProcedureKind::Sub,
+            locals,
+            temps: Vec::new(),
+            param_count,
+            return_local: None,
+            blocks: Vec::new(),
+            entry: BlockId(0),
+        }
+    }
+
+    #[test]
+    fn runtime_member_params_skips_only_explicit_hidden_me_receiver() {
+        let with_me = ox_func_with_params(
+            "Touch",
+            vec![ox_param_local("Me"), ox_param_local("value")],
+            2,
+        );
+        let params = runtime_member_params(&with_me);
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].name, "value");
+
+        let without_me = ox_func_with_params("Touch", vec![ox_param_local("value")], 1);
+        let params = runtime_member_params(&without_me);
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].name, "value");
+
+        let mut non_param_me = ox_param_local("Me");
+        non_param_me.param = None;
+        let params = runtime_member_params(&ox_func_with_params("Touch", vec![non_param_me], 1));
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].name, "Me");
+    }
+
+    #[test]
+    fn project_member_named_args_skip_only_explicit_hidden_me_receiver() {
+        let twice = proc(
+            "Twice",
+            ProcedureKind::Function,
+            vec![long_param("me"), long_param("x")],
+            vec![local("Twice", VarTypeRef::Builtin(BuiltinType::Long))],
+            Some(CoreLocalId(2)),
+            Vec::new(),
+        );
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+        let prog = CoreProgram {
+            long_ptr_width: Default::default(),
+            procs: vec![main, twice],
+            entry: Some(ProcId(0)),
+            unit_name: "T".into(),
+            classes: vec![CoreClass {
+                name: "Widget".into(),
+                predeclared: false,
+                initialize: None,
+                terminate: None,
+                fields: Vec::new(),
+                methods: vec![CoreClassMethod {
+                    name: "Twice".into(),
+                    kind: ProjectMemberKind::Method,
+                    proc: ProcId(1),
+                    dispid: None,
+                    vtable_slot: None,
+                    is_default_member: false,
+                    is_enumerator_member: false,
+                }],
+                as_new_fields: Vec::new(),
+                implements: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let oxp: &'static OxProgram = Box::leak(Box::new(
+            oxvba_oxir::elaborate::elaborate(&prog).expect("elaborate"),
+        ));
+        let host: &'static NullHostServices =
+            Box::leak(Box::new(NullHostServices::new(HostPolicy::default())));
+        let vm = Vm3::activate(oxp, host).expect("activate");
+        let args = vm
+            .project_call_args(
+                0,
+                FuncId(1),
+                &[OxCallArg::Named {
+                    name: "x".into(),
+                    value: OxOperand::Const(OxConst::I32(21)),
+                }],
+            )
+            .expect("named arg should map to visible parameter after Me");
+        assert_eq!(args.len(), 1);
+        assert!(matches!(
+            &args[0],
+            OxArg::ByVal(OxOperand::Const(OxConst::I32(21)))
+        ));
     }
 
     /// `CorePlace::Local(i)`.

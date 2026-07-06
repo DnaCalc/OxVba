@@ -316,6 +316,29 @@ mod tests {
         }
     }
 
+    fn class_receiver_func(name: &str) -> OxFunc {
+        OxFunc {
+            name: name.to_string(),
+            kind: ProcedureKind::Sub,
+            locals: vec![OxLocal {
+                name: "Me".to_string(),
+                ty: OxTy::Variant,
+                array_element: None,
+                param: Some(OxParamInfo {
+                    optional: false,
+                    by_ref: false,
+                    variadic: false,
+                }),
+                escaped: false,
+            }],
+            temps: Vec::new(),
+            param_count: 1,
+            return_local: None,
+            blocks: vec![OxBlock::new(BlockId(0), OxTerminator::Return)],
+            entry: BlockId(0),
+        }
+    }
+
     #[test]
     fn class_field_as_new_metadata_verifies() {
         let p = sample_class_field_program();
@@ -400,6 +423,44 @@ mod tests {
     }
 
     #[test]
+    fn verifier_accepts_class_method_with_hidden_me_receiver() {
+        let mut p = sample_class_field_program();
+        p.funcs.push(class_receiver_func("Touch"));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Touch".to_string(),
+            kind: ProjectMemberKind::Method,
+            proc: FuncId(0),
+            dispid: None,
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        });
+        assert_eq!(verify_program(&p), Ok(()));
+    }
+
+    #[test]
+    fn verifier_catches_class_lifecycle_without_hidden_me_receiver() {
+        let mut p = sample_class_field_program();
+        let mut proc_program = sample_program();
+        p.funcs.push(proc_program.funcs.remove(0));
+        p.classes[0].initialize = Some(FuncId(0));
+        let errs = verify_program(&p).expect_err("class lifecycle proc missing Me");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassLifecycleReceiver {
+                    class_index: 0,
+                    hook: "Class_Initialize",
+                    proc: 0,
+                    param_count: 0,
+                    first_local: Some(name),
+                } if name == "n"
+            )),
+            "expected BadClassLifecycleReceiver, got {errs:?}"
+        );
+    }
+
+    #[test]
     fn verifier_catches_bad_class_method_proc_ref() {
         let mut p = sample_class_field_program();
         p.classes[0].methods.push(OxClassMethod {
@@ -423,6 +484,36 @@ mod tests {
                 }
             )),
             "expected BadClassMethodProcRef, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_class_method_without_hidden_me_receiver() {
+        let mut p = sample_class_field_program();
+        let mut proc_program = sample_program();
+        p.funcs.push(proc_program.funcs.remove(0));
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Touch".to_string(),
+            kind: ProjectMemberKind::Method,
+            proc: FuncId(0),
+            dispid: None,
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        });
+        let errs = verify_program(&p).expect_err("class method proc missing Me");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassMethodReceiver {
+                    class_index: 0,
+                    method_index: 0,
+                    proc: 0,
+                    param_count: 0,
+                    first_local: Some(name),
+                } if name == "n"
+            )),
+            "expected BadClassMethodReceiver, got {errs:?}"
         );
     }
 

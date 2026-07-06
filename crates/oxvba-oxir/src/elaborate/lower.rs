@@ -3331,7 +3331,24 @@ mod tests {
         ];
         let prog = CoreProgram {
             long_ptr_width: Default::default(),
-            procs: vec![sub("Main", locals, body)],
+            procs: vec![
+                sub("Main", locals, body),
+                CoreProc {
+                    name: "Value".into(),
+                    kind: ProcedureKind::PropertyGet,
+                    params: vec![CoreParam {
+                        name: "Me".into(),
+                        ty: VarTypeRef::Variant,
+                        optional: false,
+                        by_ref: false,
+                        variadic: false,
+                    }],
+                    locals: vec![variant_local("Value")],
+                    return_local: Some(CoreLocalId(1)),
+                    label_lines: Vec::new(),
+                    body: Vec::new(),
+                },
+            ],
             classes: vec![CoreClass {
                 name: "Widget".into(),
                 predeclared: false,
@@ -3341,7 +3358,7 @@ mod tests {
                 methods: vec![CoreClassMethod {
                     name: "Value".into(),
                     kind: ProjectMemberKind::PropertyGet,
-                    proc: CoreProcId(0),
+                    proc: CoreProcId(1),
                     dispid: None,
                     vtable_slot: None,
                     is_default_member: false,

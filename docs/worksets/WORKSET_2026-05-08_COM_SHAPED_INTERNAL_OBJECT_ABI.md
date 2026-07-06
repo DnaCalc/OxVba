@@ -140,6 +140,11 @@ First implementation slice:
   `QueryInterface(IUnknown)` identity even if a malformed/incomplete class descriptor omits the
   copied `IUnknown` interface row; the existing foreign-IUnknown wrapper test remains green and
   proves native/foreign objects are not given OxVba runtime descriptors by this fallback.
+- `verify_program` now treats the hidden `Me` receiver as part of the executable class/member ABI:
+  class lifecycle hooks and class method descriptor targets must start with an explicit parameter
+  local named `Me`. VM runtime member descriptor extraction and project-member argument name
+  mapping skip only that explicit receiver, so a malformed hand-built class proc cannot silently
+  lose its first source-visible parameter if it reaches descriptor construction directly.
 - `runtime_dispatch_plan_cache_normalizes_and_reuses_member_lookup` proves normalized case-insensitive member lookup caching, descriptor-backed default member lookup caching, and distinct call-kind/arity plans.
 - `runtime_dispatch_plan_cache_caches_unhinted_unique_member_lookup` proves unhinted member/default lookup caches unique arity-matched descriptor plans, covering explicit dynamic call traffic that does not carry a property/method hint.
 - `runtime_dispatch_plan_cache_rejects_unhinted_ambiguous_member_lookup` and `runtime_dispatch_plan_cache_rejects_ambiguous_default_member` prove ambiguous unhinted/default metadata is not cached as a single plan.

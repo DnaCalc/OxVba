@@ -165,12 +165,30 @@ pub enum VerifyError {
         proc: usize,
         funcs: usize,
     },
+    /// A class lifecycle hook procedure does not start with the hidden `Me` receiver
+    /// parameter required by the class/member ABI.
+    BadClassLifecycleReceiver {
+        class_index: usize,
+        hook: &'static str,
+        proc: usize,
+        param_count: usize,
+        first_local: Option<String>,
+    },
     /// A class method descriptor names a function outside the program function table.
     BadClassMethodProcRef {
         class_index: usize,
         method_index: usize,
         proc: usize,
         funcs: usize,
+    },
+    /// A class method procedure does not start with the hidden `Me` receiver
+    /// parameter required by the class/member ABI.
+    BadClassMethodReceiver {
+        class_index: usize,
+        method_index: usize,
+        proc: usize,
+        param_count: usize,
+        first_local: Option<String>,
     },
     /// A class method dispatch table contains a duplicate case-insensitive name/kind key.
     DuplicateClassMethod {
@@ -409,6 +427,16 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} {hook} proc {proc} out of range ({funcs} funcs)"
             ),
+            VerifyError::BadClassLifecycleReceiver {
+                class_index,
+                hook,
+                proc,
+                param_count,
+                first_local,
+            } => write!(
+                f,
+                "class {class_index} {hook} proc {proc} must start with hidden Me receiver parameter (param_count={param_count}, first_local={first_local:?})"
+            ),
             VerifyError::BadClassMethodProcRef {
                 class_index,
                 method_index,
@@ -417,6 +445,16 @@ impl std::fmt::Display for VerifyError {
             } => write!(
                 f,
                 "class {class_index} method {method_index} proc {proc} out of range ({funcs} funcs)"
+            ),
+            VerifyError::BadClassMethodReceiver {
+                class_index,
+                method_index,
+                proc,
+                param_count,
+                first_local,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} proc {proc} must start with hidden Me receiver parameter (param_count={param_count}, first_local={first_local:?})"
             ),
             VerifyError::DuplicateClassMethod {
                 class_index,
@@ -492,25 +530,47 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
     let classes = program.classes.len();
     let funcs = program.funcs.len();
     for (class_index, class) in program.classes.iter().enumerate() {
-        if let Some(proc) = class.initialize
-            && proc.0 >= funcs
-        {
-            errors.push(VerifyError::BadClassLifecycleProcRef {
-                class_index,
-                hook: "Class_Initialize",
-                proc: proc.0,
-                funcs,
-            });
+        if let Some(proc) = class.initialize {
+            if proc.0 >= funcs {
+                errors.push(VerifyError::BadClassLifecycleProcRef {
+                    class_index,
+                    hook: "Class_Initialize",
+                    proc: proc.0,
+                    funcs,
+                });
+            } else if !func_has_hidden_me_receiver(&program.funcs[proc.0]) {
+                errors.push(VerifyError::BadClassLifecycleReceiver {
+                    class_index,
+                    hook: "Class_Initialize",
+                    proc: proc.0,
+                    param_count: program.funcs[proc.0].param_count,
+                    first_local: program.funcs[proc.0]
+                        .locals
+                        .first()
+                        .map(|local| local.name.clone()),
+                });
+            }
         }
-        if let Some(proc) = class.terminate
-            && proc.0 >= funcs
-        {
-            errors.push(VerifyError::BadClassLifecycleProcRef {
-                class_index,
-                hook: "Class_Terminate",
-                proc: proc.0,
-                funcs,
-            });
+        if let Some(proc) = class.terminate {
+            if proc.0 >= funcs {
+                errors.push(VerifyError::BadClassLifecycleProcRef {
+                    class_index,
+                    hook: "Class_Terminate",
+                    proc: proc.0,
+                    funcs,
+                });
+            } else if !func_has_hidden_me_receiver(&program.funcs[proc.0]) {
+                errors.push(VerifyError::BadClassLifecycleReceiver {
+                    class_index,
+                    hook: "Class_Terminate",
+                    proc: proc.0,
+                    param_count: program.funcs[proc.0].param_count,
+                    first_local: program.funcs[proc.0]
+                        .locals
+                        .first()
+                        .map(|local| local.name.clone()),
+                });
+            }
         }
         let mut method_keys = HashSet::new();
         for (method_index, method) in class.methods.iter().enumerate() {
@@ -520,6 +580,17 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
                     method_index,
                     proc: method.proc.0,
                     funcs,
+                });
+            } else if !func_has_hidden_me_receiver(&program.funcs[method.proc.0]) {
+                errors.push(VerifyError::BadClassMethodReceiver {
+                    class_index,
+                    method_index,
+                    proc: method.proc.0,
+                    param_count: program.funcs[method.proc.0].param_count,
+                    first_local: program.funcs[method.proc.0]
+                        .locals
+                        .first()
+                        .map(|local| local.name.clone()),
                 });
             }
             if !method_keys.insert((method.name.to_ascii_lowercase(), method.kind)) {
@@ -568,6 +639,15 @@ fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
             }
         }
     }
+}
+
+fn func_has_hidden_me_receiver(func: &OxFunc) -> bool {
+    if func.param_count == 0 {
+        return false;
+    }
+    func.locals
+        .first()
+        .is_some_and(|local| local.param.is_some() && local.name.eq_ignore_ascii_case("Me"))
 }
 
 /// Check a `ComCallEarly`'s [`ComMethodRef`] resolves: the interface index is in
