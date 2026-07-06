@@ -157,6 +157,20 @@ pub enum VerifyError {
     DuplicateClassFieldToken { class_index: usize, field: i32 },
     /// A class field `As New` binding names a field token absent from the class field table.
     BadClassFieldAsNewFieldRef { class_index: usize, field: i32 },
+    /// A class lifecycle hook names a function outside the program function table.
+    BadClassLifecycleProcRef {
+        class_index: usize,
+        hook: &'static str,
+        proc: usize,
+        funcs: usize,
+    },
+    /// A class method descriptor names a function outside the program function table.
+    BadClassMethodProcRef {
+        class_index: usize,
+        method_index: usize,
+        proc: usize,
+        funcs: usize,
+    },
     /// An `On Error GoTo <label>` names a block that does not exist.
     BadLabelTarget {
         func: usize,
@@ -378,6 +392,24 @@ impl std::fmt::Display for VerifyError {
                 f,
                 "class {class_index} field {field}: As New field token is absent from the class field table"
             ),
+            VerifyError::BadClassLifecycleProcRef {
+                class_index,
+                hook,
+                proc,
+                funcs,
+            } => write!(
+                f,
+                "class {class_index} {hook} proc {proc} out of range ({funcs} funcs)"
+            ),
+            VerifyError::BadClassMethodProcRef {
+                class_index,
+                method_index,
+                proc,
+                funcs,
+            } => write!(
+                f,
+                "class {class_index} method {method_index} proc {proc} out of range ({funcs} funcs)"
+            ),
             VerifyError::BadLabelTarget {
                 func,
                 block,
@@ -441,7 +473,38 @@ pub fn verify_program(program: &OxProgram) -> Result<(), Vec<VerifyError>> {
 fn verify_classes(program: &OxProgram, errors: &mut Vec<VerifyError>) {
     let imports = program.imports.len();
     let classes = program.classes.len();
+    let funcs = program.funcs.len();
     for (class_index, class) in program.classes.iter().enumerate() {
+        if let Some(proc) = class.initialize
+            && proc.0 >= funcs
+        {
+            errors.push(VerifyError::BadClassLifecycleProcRef {
+                class_index,
+                hook: "Class_Initialize",
+                proc: proc.0,
+                funcs,
+            });
+        }
+        if let Some(proc) = class.terminate
+            && proc.0 >= funcs
+        {
+            errors.push(VerifyError::BadClassLifecycleProcRef {
+                class_index,
+                hook: "Class_Terminate",
+                proc: proc.0,
+                funcs,
+            });
+        }
+        for (method_index, method) in class.methods.iter().enumerate() {
+            if method.proc.0 >= funcs {
+                errors.push(VerifyError::BadClassMethodProcRef {
+                    class_index,
+                    method_index,
+                    proc: method.proc.0,
+                    funcs,
+                });
+            }
+        }
         let mut fields = HashSet::new();
         for field in &class.fields {
             if !fields.insert(field.token) {

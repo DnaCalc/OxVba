@@ -361,6 +361,71 @@ mod tests {
         );
     }
 
+    #[test]
+    fn verifier_catches_bad_class_initialize_proc_ref() {
+        let mut p = sample_class_field_program();
+        p.classes[0].initialize = Some(FuncId(99));
+        let errs = verify_program(&p).expect_err("dangling Class_Initialize proc");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassLifecycleProcRef {
+                    class_index: 0,
+                    hook: "Class_Initialize",
+                    proc: 99,
+                    funcs: 0
+                }
+            )),
+            "expected BadClassLifecycleProcRef for initialize, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_bad_class_terminate_proc_ref() {
+        let mut p = sample_class_field_program();
+        p.classes[0].terminate = Some(FuncId(99));
+        let errs = verify_program(&p).expect_err("dangling Class_Terminate proc");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassLifecycleProcRef {
+                    class_index: 0,
+                    hook: "Class_Terminate",
+                    proc: 99,
+                    funcs: 0
+                }
+            )),
+            "expected BadClassLifecycleProcRef for terminate, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_bad_class_method_proc_ref() {
+        let mut p = sample_class_field_program();
+        p.classes[0].methods.push(OxClassMethod {
+            name: "Touch".to_string(),
+            kind: ProjectMemberKind::Method,
+            proc: FuncId(99),
+            dispid: None,
+            vtable_slot: None,
+            is_default_member: false,
+            is_enumerator_member: false,
+        });
+        let errs = verify_program(&p).expect_err("dangling class method proc");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadClassMethodProcRef {
+                    class_index: 0,
+                    method_index: 0,
+                    proc: 99,
+                    funcs: 0
+                }
+            )),
+            "expected BadClassMethodProcRef, got {errs:?}"
+        );
+    }
+
     // ── Typed COM model ──────────────────────────────────────────────────────
 
     use oxvba_com::{
