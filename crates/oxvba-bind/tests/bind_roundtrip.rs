@@ -1538,6 +1538,35 @@ fn class_module_public_data_members_are_bind_errors() {
 }
 
 #[test]
+fn invalid_fixed_string_length_is_bind_error() {
+    for (src, expected_name, expected_length) in [
+        (
+            "Sub Main()\n    Dim Name As String * 0\nEnd Sub\n",
+            "Name",
+            "0",
+        ),
+        (
+            "Sub Main()\n    Dim Name As String * 65527\nEnd Sub\n",
+            "Name",
+            "65527",
+        ),
+        (
+            "Private Type Payload\n    Text As String * -1\nEnd Type\nSub Main()\nEnd Sub\n",
+            "Text",
+            "-1",
+        ),
+    ] {
+        let err = bind_error(src);
+        assert!(
+            err.contains("InvalidFixedStringLength")
+                && err.contains(&format!("name: \"{expected_name}\""))
+                && err.contains(&format!("length: \"{expected_length}\"")),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);

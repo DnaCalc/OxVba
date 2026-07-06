@@ -1672,6 +1672,50 @@ fn public_object_module_data_members_are_rejected() {
 }
 
 #[test]
+fn fixed_string_lengths_must_be_in_vba_range() {
+    for (src, name, length) in [
+        ("Dim Name As String * 0\r\n", "Name", "0"),
+        ("Dim Name As String * 65527\r\n", "Name", "65527"),
+        ("Dim Name As String * -1\r\n", "Name", "-1"),
+        (
+            "Private Type Payload\r\n    Text As String * 0\r\nEnd Type\r\n",
+            "Text",
+            "0",
+        ),
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        let err = match build_resolution_environment(&m, &NullTypeLibs) {
+            Ok(_) => panic!("invalid fixed-length string length should reject"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                SymbolModelError::InvalidFixedStringLength {
+                    name: actual_name,
+                    length: actual_length,
+                } if actual_name == name && actual_length == length
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_diagnostic().code.as_str(),
+            "SYM-E-INVALID-FIXED-STRING-LENGTH"
+        );
+    }
+
+    for src in [
+        "Dim Name As String * 1\r\n",
+        "Dim Name As String * 65526\r\n",
+        "Private Type Payload\r\n    Text As String * 65526\r\nEnd Type\r\n",
+    ] {
+        let m = manifest("Proj", vec![module("Mod1", src)]);
+        build_resolution_environment(&m, &NullTypeLibs)
+            .expect("fixed-length string length within VBA range should remain accepted");
+    }
+}
+
+#[test]
 fn property_get_let_pairing_accepts_matching_accessors_in_any_order() {
     for src in [
         "Property Get Foo(ByVal index As Long) As String\r\nEnd Property\r\n\

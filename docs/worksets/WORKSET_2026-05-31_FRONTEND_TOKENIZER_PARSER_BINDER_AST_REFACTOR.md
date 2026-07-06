@@ -1772,7 +1772,11 @@ Candidate bead units:
   explicit-private class-module declares and public/implicit-public standard-module declares remain
   accepted; public object-module constants, fixed-length string fields, and array fields now reject
   with `SYM-E-PUBLIC-OBJECT-MODULE-DATA-NOT-VALID` while private storage and ordinary public scalar
-  fields remain accepted; final `Property Let`/`Set` writer slots also publish `ByVal` signature
+  fields remain accepted; literal fixed-length `String * N` declarations now reject zero, negative,
+  and over-65,526 lengths with `SYM-E-INVALID-FIXED-STRING-LENGTH` before variable or UDT metadata
+  is published, matching the Microsoft Learn fixed-length string diagnostic
+  (`https://learn.microsoft.com/en-us/office/vba/language/reference/user-interface-help/invalid-length-for-fixed-length-string`);
+  final `Property Let`/`Set` writer slots also publish `ByVal` signature
   metadata while preceding indexed arguments keep their declared/default modes;
   duplicate property accessors plus mismatched `Property Get`/`Let`, `Property Get`/`Set`, and
   `Property Let`/`Set` index/value/reference pairings reject through scanner-owned

@@ -21,6 +21,8 @@ use crate::signature::{
     BuiltinType, CallShape, DefaultValue, Param, PassingMode, Signature, SignatureTable, VarTypeRef,
 };
 
+const MAX_FIXED_STRING_LEN: u32 = 65_526;
+
 /// One module's declared surface, for the project index.
 #[derive(Debug, Clone)]
 pub struct ModuleScan {
@@ -264,6 +266,7 @@ impl ScanCtx<'_> {
                         continue;
                     };
                     let name = normalize_identifier_token(token.text);
+                    validate_fixed_string_length(declarator, name)?;
                     let declared_type =
                         declared_var_type_with_default(declarator, &self.default_types, !is_const);
                     if module_level
@@ -387,6 +390,7 @@ impl ScanCtx<'_> {
         for field in type_node.type_fields() {
             if let Some(token) = field.declarator_name() {
                 let name = normalize_identifier_token(token.text).to_string();
+                validate_fixed_string_length(field, &name)?;
                 if !fields.insert(fold_identifier(&name)) {
                     return Err(SymbolModelError::DuplicateTypeField {
                         type_name,
@@ -2126,8 +2130,71 @@ fn fixed_string_refine(base: VarTypeRef, node: SyntaxNode<'_>) -> VarTypeRef {
 }
 
 fn parse_fixed_string_len(node: SyntaxNode<'_>) -> Option<u32> {
+    let len = fixed_string_len_literal(node)?;
+    (1..=MAX_FIXED_STRING_LEN).contains(&len).then_some(len)
+}
+
+fn validate_fixed_string_length(
+    declarator: SyntaxNode<'_>,
+    name: &str,
+) -> Result<(), SymbolModelError> {
+    if !matches!(
+        declarator.declared_type().map(type_ref_node),
+        Some(VarTypeRef::Builtin(BuiltinType::String))
+    ) {
+        return Ok(());
+    }
+    let Some(length) = declarator.fixed_string_length() else {
+        return Ok(());
+    };
+    let Some(len) = fixed_string_len_literal(length) else {
+        return Ok(());
+    };
+    if (1..=MAX_FIXED_STRING_LEN).contains(&len) {
+        return Ok(());
+    }
+    Err(SymbolModelError::InvalidFixedStringLength {
+        name: name.to_string(),
+        length: length.text(),
+    })
+}
+
+fn fixed_string_len_literal(node: SyntaxNode<'_>) -> Option<u32> {
+    if node.kind() == SyntaxKind::UnaryExpr {
+        let op = node.unary_op_token()?;
+        let operand = node.unary_operand()?;
+        return match op.kind {
+            SyntaxKind::Plus => fixed_string_len_literal(operand),
+            SyntaxKind::Minus => Some(0),
+            _ => None,
+        };
+    }
     let tok = node.first_significant_token()?;
-    (tok.kind == SyntaxKind::IntLiteral).then(|| tok.text.trim().parse::<u32>().ok())?
+    if tok.kind != SyntaxKind::IntLiteral {
+        return None;
+    }
+    match CoreConst::from_int_literal(tok.text) {
+        None => Some(MAX_FIXED_STRING_LEN.saturating_add(1)),
+        Some(value) => fixed_string_len_from_core_const(value),
+    }
+}
+
+fn fixed_string_len_from_core_const(value: CoreConst) -> Option<u32> {
+    match value {
+        CoreConst::I16(value) => u32::try_from(value).ok(),
+        CoreConst::I32(value) => u32::try_from(value).ok(),
+        CoreConst::I64(value) => u32::try_from(value).ok(),
+        CoreConst::F64(bits) => {
+            let value = f64::from_bits(bits);
+            if value.is_finite() && value.fract() == 0.0 && value >= 0.0 && value <= u32::MAX as f64
+            {
+                Some(value as u32)
+            } else {
+                Some(MAX_FIXED_STRING_LEN.saturating_add(1))
+            }
+        }
+        _ => None,
+    }
 }
 
 /// Map a `TypeRef` node to a resolved type reference.

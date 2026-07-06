@@ -250,6 +250,8 @@ pub enum SymbolModelError {
     PublicDeclareNotValidInObjectModule { name: String },
     #[error("public {member} `{name}` is not valid in object modules")]
     PublicObjectModuleDataMemberNotValid { name: String, member: &'static str },
+    #[error("invalid fixed-length string length for `{name}`: {length}")]
+    InvalidFixedStringLength { name: String, length: String },
     #[error("invalid optional default for `{procedure}` parameter `{parameter}`")]
     InvalidOptionalDefault {
         procedure: String,
@@ -451,6 +453,12 @@ impl SymbolModelError {
                 )
                 .with_help("Use Private storage or expose the value through Property procedures.")
             }
+            SymbolModelError::InvalidFixedStringLength { name, length } => Diagnostic::error(
+                "SYM-E-INVALID-FIXED-STRING-LENGTH",
+                DiagnosticPhase::Symbol,
+                format!("invalid fixed-length string length `{length}` for `{name}`"),
+            )
+            .with_help("Fixed-length String declarations must use a length from 1 through 65,526."),
             SymbolModelError::InvalidOptionalDefault {
                 procedure,
                 parameter,
