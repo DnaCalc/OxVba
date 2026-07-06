@@ -1443,6 +1443,19 @@ fn signature_as_new_is_bind_error() {
 }
 
 #[test]
+fn type_block_field_as_new_is_bind_error() {
+    let src = "Private Type Payload\n    Item As New Widget\nEnd Type\n\
+               Sub Main()\nEnd Sub\n";
+    let err = bind_error(src);
+    assert!(
+        err.contains("InvalidAsNewDeclaration")
+            && err.contains("name: \"Item\"")
+            && err.contains("context: \"Type field\""),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn required_parameter_after_optional_is_bind_error() {
     let src = "Sub Main()\nEnd Sub\n\nSub Fill(Optional ByVal first As Long, ByVal second As Long)\nEnd Sub\n";
     let err = bind_error(src);

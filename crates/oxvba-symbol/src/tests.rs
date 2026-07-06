@@ -1515,6 +1515,28 @@ fn signature_declarations_reject_as_new_types() {
 }
 
 #[test]
+fn type_block_fields_reject_as_new_types() {
+    let src = "Private Type Payload\r\n    Item As New Widget\r\nEnd Type\r\n";
+    let m = manifest("Proj", vec![module("Mod1", src)]);
+    let err = match build_resolution_environment(&m, &NullTypeLibs) {
+        Ok(_) => panic!("Type field As New should reject"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            &err,
+            SymbolModelError::InvalidAsNewDeclaration { name, context }
+                if name == "Item" && *context == "Type field"
+        ),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_diagnostic().code.as_str(),
+        "SYM-E-INVALID-AS-NEW-DECLARATION"
+    );
+}
+
+#[test]
 fn property_get_let_pairing_accepts_matching_accessors_in_any_order() {
     for src in [
         "Property Get Foo(ByVal index As Long) As String\r\nEnd Property\r\n\

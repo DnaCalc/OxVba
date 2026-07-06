@@ -209,6 +209,9 @@ impl ScanCtx<'_> {
             SyntaxKind::TypeBlock | SyntaxKind::EnumBlock => {
                 // `Type`/`Enum` default to Public; the members of an enum inherit the
                 // enum's visibility.
+                if node.kind() == SyntaxKind::TypeBlock {
+                    self.validate_type_block_declaration(node)?;
+                }
                 let vis = decl_visibility(node, Visibility::Public);
                 if let Some(token) = first_identifier_token(node) {
                     let name = normalize_identifier_token(token.text);
@@ -352,6 +355,29 @@ impl ScanCtx<'_> {
         }
         for child in node.child_nodes() {
             self.walk(scope, child, module_level)?;
+        }
+        Ok(())
+    }
+
+    fn validate_type_block_declaration(
+        &self,
+        type_node: SyntaxNode<'_>,
+    ) -> Result<(), SymbolModelError> {
+        for field in type_node.type_fields() {
+            let Some(type_ref) = field.declared_type() else {
+                continue;
+            };
+            if !type_ref_has_new(type_ref) {
+                continue;
+            }
+            let name = field
+                .declarator_name()
+                .map(|token| normalize_identifier_token(token.text).to_string())
+                .unwrap_or_else(|| "field".to_string());
+            return Err(SymbolModelError::InvalidAsNewDeclaration {
+                name,
+                context: "Type field",
+            });
         }
         Ok(())
     }
