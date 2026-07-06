@@ -1293,6 +1293,10 @@ constant expressions:
   now substitutes as `LoadConstBool true`; `Const CFlag As Boolean = Enabled Xor True`,
   `Enabled Eqv False`, and `Enabled Imp False` substitute as `LoadConstBool false` through direct
   HIR, default-route, route-audit, and VM execution paths.
+- Follow-up exact-integer comparison work keeps both-operand integer relational constants on the
+  integer lane instead of converting through `f64`. Adjacent `LongLong` values above the IEEE-754
+  exact integer range, such as `9007199254740993^` and `9007199254740992^`, now fold correctly for
+  `=`, `<>`, `<`, `<=`, `>`, and `>=` through symbol metadata and clean execution.
 - Module compare mode now reaches that Boolean constant string-comparison evaluator for the covered
   subset. `Option Compare Text` makes `Const CFlag As Boolean = "a" = "A"` fold to
   `LoadConstBool true`; `Option Compare Database` now reports
@@ -1708,6 +1712,8 @@ The latest FE-8.5.f slice narrows the optional-parameter default residual within
 - `cargo test -p oxvba-compiler hir_production_lowering_folds_typed_boolean_eqv_imp_const_expressions --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_eqv_imp_const_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_eqv_imp_const_expressions_execute --quiet`
+- `cargo test -p oxvba-symbol longlong_const_comparisons_preserve_integer_precision -- --nocapture`
+- `cargo test -p oxvba-bind scalar_longlong_const_comparison_preserves_integer_precision -- --nocapture`
 - `cargo test -p oxvba-compiler resolve_optional_boolean_like_default --quiet`
 - `cargo test -p oxvba-compiler compile_with_runtime_metadata_default_routes_typed_boolean_like_const_through_hir --quiet`
 - `cargo test -p oxvba-vm --test vm_feature_coverage scalar_boolean_like_const_expression_executes --quiet`

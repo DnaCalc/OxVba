@@ -828,6 +828,21 @@ fn scalar_typed_const_exact_carriers_preserve_variant_values() {
 }
 
 #[test]
+fn scalar_longlong_const_comparison_preserves_integer_precision() {
+    let snap = run(
+        "Const BigA As LongLong = 9007199254740993^\nConst BigB As LongLong = 9007199254740992^\nConst Different As Boolean = BigA <> BigB\nConst Ordered As Boolean = BigA > BigB And BigB < BigA\nConst Same As Boolean = BigA = BigB\nSub Main()\nDim differentValue As Boolean\nDim orderedValue As Boolean\nDim sameValue As Boolean\ndifferentValue = Different\norderedValue = Ordered\nsameValue = Same\nEnd Sub",
+    );
+    assert_eq!(
+        snap,
+        vec![
+            Variant::from_bool(true),
+            Variant::from_bool(true),
+            Variant::from_bool(false),
+        ]
+    );
+}
+
+#[test]
 fn scalar_string_typed_const_values_coerce_to_declared_carriers() {
     let snap = run(
         "Const CLong As Long = \"7\"\nConst CBool As Boolean = \"False\"\nConst CSingle As Single = \"1.5\"\nConst CDouble As Double = \"2.5\"\nConst CAmount As Currency = \"1.25\"\nConst CStamp As Date = \"2026-02-28\"\nSub Main()\nDim l As Long\nDim b As Boolean\nDim s As Single\nDim d As Double\nDim amount As Currency\nDim stamp As Date\nl = CLong\nb = CBool\ns = CSingle\nd = CDouble\namount = CAmount\nstamp = CStamp\nEnd Sub",

@@ -711,6 +711,32 @@ fn string_typed_const_values_coerce_to_declared_scalar_carriers() {
 }
 
 #[test]
+fn longlong_const_comparisons_preserve_integer_precision() {
+    let m = manifest(
+        "Proj",
+        vec![module(
+            "Mod1",
+            "Public Const BigA As LongLong = 9007199254740993^\n\
+             Public Const BigB As LongLong = 9007199254740992^\n\
+             Public Const Different As Boolean = BigA <> BigB\n\
+             Public Const Ordered As Boolean = BigA > BigB And BigB < BigA\n\
+             Public Const Inclusive As Boolean = BigA >= BigB And BigB <= BigA\n\
+             Public Const Same As Boolean = BigA = BigB\n",
+        )],
+    );
+    let env = build_resolution_environment(&m, &NullTypeLibs).unwrap();
+    let scope = env.module_scope("Mod1").unwrap();
+    let val = |name: &str| -> Option<CoreConst> {
+        let b = env.resolve(&ResolutionContext::at(scope), name)?;
+        env.const_value(b.symbol?).cloned()
+    };
+    assert_eq!(val("Different"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("Ordered"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("Inclusive"), Some(CoreConst::Bool(true)));
+    assert_eq!(val("Same"), Some(CoreConst::Bool(false)));
+}
+
+#[test]
 fn longptr_const_values_follow_target_width() {
     let src = "Public Const CMax As LongPtr = 2147483647\n\
                Public Const CTextMax As LongPtr = \"2147483647\"\n";
