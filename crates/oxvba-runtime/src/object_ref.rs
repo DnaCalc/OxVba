@@ -1218,11 +1218,15 @@ impl ObjectRef {
         Some(Self(raw))
     }
 
-    pub fn strong_count_for_test(&self) -> u32 {
+    pub fn strong_count(&self) -> u32 {
         let owner = compat_owner_from_unknown(self.0.as_ptr());
         // SAFETY: documented compat-object contract as for `class_descriptor`; the box is alive
         // because this `ObjectRef` holds a retained reference, and `ref_count` is atomic.
         unsafe { (*owner).ref_count.load(Ordering::Acquire) }
+    }
+
+    pub fn strong_count_for_test(&self) -> u32 {
+        self.strong_count()
     }
 }
 

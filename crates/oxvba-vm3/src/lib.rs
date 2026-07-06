@@ -698,7 +698,10 @@ impl<'h> Vm3<'h> {
                 vm.frames.push(frame);
                 let r = vm.run_loop(0);
                 // The initializer writes module globals; its own frame is discarded.
-                vm.frames.pop();
+                if let Some(frame) = vm.frames.pop() {
+                    vm.clear_withevents_owners_in_frame_before_drop(&frame);
+                    drop(frame);
+                }
                 vm.prune_param_array_aliases_from_depth(vm.frames.len());
                 r?;
             }
@@ -985,7 +988,7 @@ impl<'h> Vm3<'h> {
                 // return to the caller, no finalization. Unwind to the base frame (which
                 // stays on the stack to back the snapshot) and end the run.
                 OxTerminator::Halt => {
-                    self.frames.truncate(base + 1);
+                    self.truncate_frames_with_withevents_cleanup(base + 1);
                     self.prune_param_array_aliases_from_depth(self.frames.len());
                     // Re-derive `cur` to the surviving (base/entry) frame's program: `End` may
                     // fire inside a cross-program callee, and the post-run snapshot reader
@@ -1150,6 +1153,8 @@ impl<'h> Vm3<'h> {
         }
         let callee = self.frames.pop().expect("frame to unwind");
         self.restore_err_from_frame(&callee);
+        self.clear_withevents_owners_in_frame_before_drop(&callee);
+        drop(callee);
         self.prune_param_array_aliases_from_depth(self.frames.len());
         // The caller's `CallProc` faulted: route to *its* block's fault pad.
         self.route_fault(fault)
@@ -1167,6 +1172,7 @@ impl<'h> Vm3<'h> {
         }
         // Proc epilogue: drop the callee frame (releasing the objects its locals held) and then
         // run any parked `Class_Terminate`s — vm2's epilogue drain timing.
+        self.clear_withevents_owners_in_frame_before_drop(&callee);
         drop(callee);
         self.prune_param_array_aliases_from_depth(self.frames.len());
         self.maybe_drain();
@@ -1956,7 +1962,7 @@ impl<'h> Vm3<'h> {
                 self.exec
                     .events
                     .withevents
-                    .retain(|key, _| withevents_owner(*key).raw() != owner_raw);
+                    .retain(|key, _| withevents_owner_raw(*key) != owner_raw);
                 self.store(dst, Variant::from_i32(0))?;
             }
             OxInst::WithEventsFirstOwner {
@@ -3106,7 +3112,7 @@ impl<'h> Vm3<'h> {
         if let Some(saved_err) = saved_err {
             self.exec.err_engine.restore(saved_err);
         }
-        self.frames.truncate(base);
+        self.truncate_frames_with_withevents_cleanup(base);
         self.prune_param_array_aliases_from_depth(self.frames.len());
         self.cur = saved_cur;
         // Truncating released the lifecycle frame's object locals (and any an uncaught fault
@@ -3180,7 +3186,7 @@ impl<'h> Vm3<'h> {
         if let Some(saved_err) = saved_err {
             self.exec.err_engine.restore(saved_err);
         }
-        self.frames.truncate(base);
+        self.truncate_frames_with_withevents_cleanup(base);
         self.prune_param_array_aliases_from_depth(self.frames.len());
         self.cur = saved_cur;
         self.maybe_drain();
@@ -3223,7 +3229,7 @@ impl<'h> Vm3<'h> {
                 self.exec
                     .events
                     .withevents
-                    .retain(|key, _| withevents_owner(*key).raw() != work.instance_id);
+                    .retain(|key, _| withevents_owner_raw(*key) != work.instance_id);
             }
         }
         self.exec.draining = false;
@@ -3292,7 +3298,7 @@ impl<'h> Vm3<'h> {
             .com_subscriptions_by_key
             .keys()
             .copied()
-            .filter(|key| withevents_owner(*key).raw() == owner_raw)
+            .filter(|key| withevents_owner_raw(*key) == owner_raw)
             .collect();
         for key in keys {
             self.unsubscribe_com_key(key);
@@ -4438,7 +4444,7 @@ impl<'h> Vm3<'h> {
         if let Some(saved_err) = saved_err {
             self.exec.err_engine.restore(saved_err);
         }
-        self.frames.truncate(base);
+        self.truncate_frames_with_withevents_cleanup(base);
         self.prune_param_array_aliases_from_depth(self.frames.len());
         self.cur = saved_cur;
         self.maybe_drain();
@@ -4540,30 +4546,103 @@ impl<'h> Vm3<'h> {
     /// Write a resolved location (same dense/sparse contract as [`Self::read_loc`]).
     fn write_loc(&mut self, loc: Loc, v: Variant) -> Result<(), Vm3Error> {
         self.param_array_aliases.remove(&loc);
-        match loc {
+        let old = match loc {
             Loc::Global(p, g) => {
-                *self.exec.programs[p].globals.get_mut(g).ok_or_else(|| {
+                let slot = self.exec.programs[p].globals.get_mut(g).ok_or_else(|| {
                     Vm3Error::Malformed(format!("global [{p}][{g}] out of range"))
-                })? = v;
+                })?;
+                std::mem::replace(slot, v)
             }
             Loc::Local(fi, li) => {
-                *self
+                let slot = self
                     .frames
                     .get_mut(fi)
                     .and_then(|f| f.locals.get_mut(li))
                     .ok_or_else(|| {
                         Vm3Error::Malformed(format!("local [{fi}][{li}] out of range"))
-                    })? = v;
+                    })?;
+                std::mem::replace(slot, v)
             }
             Loc::Temp(fi, ti) => {
                 if let Some(f) = self.frames.get_mut(fi) {
-                    f.temps.insert(ti, v);
+                    f.temps.insert(ti, v).unwrap_or_else(Variant::empty)
                 } else {
                     return Err(Vm3Error::Malformed(format!("temp frame {fi} out of range")));
                 }
             }
-        }
+        };
+        self.clear_withevents_owners_before_releasing_values(std::iter::once(&old));
+        drop(old);
         Ok(())
+    }
+
+    fn clear_withevents_owners_in_frame_before_drop(&mut self, frame: &Frame) {
+        self.clear_withevents_owners_before_releasing_values(
+            frame.locals.iter().chain(frame.temps.values()),
+        );
+    }
+
+    fn truncate_frames_with_withevents_cleanup(&mut self, len: usize) {
+        while self.frames.len() > len {
+            let frame = self.frames.pop().expect("frame length checked before pop");
+            self.clear_withevents_owners_in_frame_before_drop(&frame);
+            drop(frame);
+        }
+    }
+
+    fn clear_withevents_owners_before_releasing_values<'a>(
+        &mut self,
+        values: impl IntoIterator<Item = &'a Variant>,
+    ) {
+        let mut candidates: HashMap<i32, (ObjectRef, u32)> = HashMap::new();
+        for value in values {
+            let Some(owner) = value.as_object_ref() else {
+                continue;
+            };
+            if !owner.is_project_instance() {
+                continue;
+            }
+            let owner_raw = owner.raw();
+            match candidates.entry(owner_raw) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert((owner, 1));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry.get_mut().1 += 1;
+                }
+            }
+        }
+
+        for (owner_raw, (owner, releasing_refs)) in candidates {
+            let event_binding_refs = self
+                .exec
+                .events
+                .withevents
+                .keys()
+                .filter(|key| withevents_owner_raw(**key) == owner_raw)
+                .count() as u32;
+            if event_binding_refs == 0 {
+                continue;
+            }
+            let com_sink_refs = self
+                .exec
+                .events
+                .com_subscriptions
+                .values()
+                .filter(|sink| object_identity(&sink.owner) == owner_raw)
+                .count() as u32;
+            let retained_event_refs = event_binding_refs + com_sink_refs;
+            // `owner` is one temporary AddRef taken while inspecting the values. If every
+            // remaining non-temporary reference is either in `values` or in the event fabric,
+            // break the event-owner cycle before dropping `values` so the object can terminate.
+            if owner.strong_count() == retained_event_refs + releasing_refs + 1 {
+                self.unsubscribe_com_owner(owner_raw);
+                self.exec
+                    .events
+                    .withevents
+                    .retain(|key, _| withevents_owner_raw(*key) != owner_raw);
+            }
+        }
     }
 
     /// Borrow a resolved location's `Variant` in place (no clone) — the constant-time
@@ -4826,9 +4905,9 @@ fn object_identity_for_is(value: &Variant) -> Result<i32, Vm3Error> {
 fn withevents_key(owner: &ObjectRef, binding: i64) -> i64 {
     (i64::from(owner.raw()) << 32) | (binding & 0xFFFF_FFFF)
 }
-/// The sink owner recovered from a `withevents` key.
-fn withevents_owner(key: i64) -> ObjectRef {
-    ObjectRef::from_compat_identity((key >> 32) as i32)
+/// The sink owner identity recovered from a `withevents` key.
+fn withevents_owner_raw(key: i64) -> i32 {
+    (key >> 32) as i32
 }
 /// The binding token recovered from a `withevents` key.
 fn withevents_binding(key: i64) -> i64 {

@@ -18,6 +18,13 @@ fn assert_result(modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)], e
         "vm3 declined RaiseEvent fan-out case as unsupported: {:?}",
         outcome.unsupported
     );
+    assert!(
+        outcome
+            .handle_balance
+            .is_some_and(|balance| balance.is_zero()),
+        "vm3 RaiseEvent fan-out case leaked runtime handles: {:?}",
+        outcome.handle_balance
+    );
     let values = outcome
         .result
         .unwrap_or_else(|err| panic!("vm3 RaiseEvent fan-out case failed: {err}"));
@@ -93,6 +100,23 @@ End Sub
 Private Sub src_Poked(ByRef n As Long)
     Trace = Trace & CStr(n) & ";"
     n = n * 10 + 7
+End Sub
+"#;
+
+const TERMINATING_SINK: &str = r#"
+Private WithEvents src As Source
+
+Public Sub Wire(ByVal value As Source)
+    Set src = value
+End Sub
+
+Private Sub Class_Terminate()
+    Main.Trace = Main.Trace & "T;"
+End Sub
+
+Private Sub src_Poked(ByRef n As Long)
+    Main.Trace = Main.Trace & "H" & CStr(n) & ";"
+    n = n * 10 + 3
 End Sub
 "#;
 
@@ -294,5 +318,74 @@ End Sub
             ("SourceSwitchSink", Class, SOURCE_SWITCH_SINK),
         ],
         "1;|1|17",
+    );
+}
+
+#[test]
+fn terminated_withevents_owner_no_longer_receives_project_events() {
+    assert_result(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public Trace As String
+Public result As String
+Sub Main()
+    Dim s As Source
+    Dim k As TerminatingSink
+    Dim firstFinal As Long
+    Dim secondFinal As Long
+    Set s = New Source
+    Set k = New TerminatingSink
+    k.Wire s
+    firstFinal = s.FireWith(1)
+    Set k = Nothing
+    secondFinal = s.FireWith(2)
+    result = Trace & "|" & CStr(firstFinal) & "|" & CStr(secondFinal)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("TerminatingSink", Class, TERMINATING_SINK),
+        ],
+        "H1;T;|13|2",
+    );
+}
+
+#[test]
+fn scoped_withevents_owner_terminates_and_unsubscribes_before_caller_continues() {
+    assert_result(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public Trace As String
+Public result As String
+
+Sub WireAndDrop(ByVal s As Source)
+    Dim k As TerminatingSink
+    Dim firstFinal As Long
+    Set k = New TerminatingSink
+    k.Wire s
+    firstFinal = s.FireWith(1)
+    Trace = Trace & "F" & CStr(firstFinal) & ";"
+End Sub
+
+Sub Main()
+    Dim s As Source
+    Dim secondFinal As Long
+    Set s = New Source
+    WireAndDrop s
+    secondFinal = s.FireWith(2)
+    result = Trace & "|" & CStr(secondFinal)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("TerminatingSink", Class, TERMINATING_SINK),
+        ],
+        "H1;F13;T;|2",
     );
 }
