@@ -472,6 +472,7 @@ impl<'h> Vm3<'h> {
                         params,
                         return_type: proc.and_then(runtime_return_type),
                         is_default_member: method.is_default_member,
+                        is_enumerator_member: method.is_enumerator_member,
                     }
                 })
                 .collect::<Vec<_>>()
@@ -5403,6 +5404,14 @@ mod tests {
             None,
             Vec::new(),
         );
+        let new_enum = proc(
+            "NewEnum",
+            ProcedureKind::PropertyGet,
+            vec![long_param("me")],
+            vec![local("NewEnum", VarTypeRef::Object("Object".into()))],
+            Some(CoreLocalId(1)),
+            Vec::new(),
+        );
         let initialize = proc(
             "Class_Initialize",
             ProcedureKind::Sub,
@@ -5429,7 +5438,9 @@ mod tests {
         );
         let prog = CoreProgram {
             long_ptr_width: Default::default(),
-            procs: vec![main, get_value, let_value, reset, initialize, terminate],
+            procs: vec![
+                main, get_value, let_value, reset, initialize, terminate, new_enum,
+            ],
             entry: Some(ProcId(0)),
             unit_name: "T".into(),
             classes: vec![CoreClass {
@@ -5484,6 +5495,15 @@ mod tests {
                         vtable_slot: None,
                         is_default_member: false,
                         is_enumerator_member: false,
+                    },
+                    CoreClassMethod {
+                        name: "NewEnum".into(),
+                        kind: ProjectMemberKind::PropertyGet,
+                        proc: ProcId(6),
+                        dispid: Some(-4),
+                        vtable_slot: Some(12),
+                        is_default_member: false,
+                        is_enumerator_member: true,
                     },
                 ],
                 as_new_fields: vec![CoreClassAsNewField {
@@ -5552,7 +5572,7 @@ mod tests {
             .expect("project instances should advertise IDispatch");
         assert_eq!(dispatch.name, "IDispatch");
         assert!(dispatch.dual_dispatch);
-        assert_eq!(dispatch.members.len(), 3);
+        assert_eq!(dispatch.members.len(), 4);
 
         let get = &dispatch.members[0];
         assert_eq!(get.name, "Value");
@@ -5560,6 +5580,7 @@ mod tests {
         assert_eq!(get.vtable_slot, Some(7));
         assert_eq!(get.invoke_kind, RuntimeMemberInvokeKind::PropertyGet);
         assert!(get.is_default_member);
+        assert!(!get.is_enumerator_member);
         assert_eq!(get.arity, 0);
         assert_eq!(get.params, &[]);
         assert_eq!(get.return_type, Some(RuntimeValueType::Long));
@@ -5570,6 +5591,7 @@ mod tests {
         assert_eq!(put.vtable_slot, Some(8));
         assert_eq!(put.invoke_kind, RuntimeMemberInvokeKind::PropertyLet);
         assert!(put.is_default_member);
+        assert!(!put.is_enumerator_member);
         assert_eq!(put.arity, 1);
         assert_eq!(put.params[0].name, "newValue");
         assert_eq!(put.params[0].value_type, RuntimeValueType::Long);
@@ -5582,11 +5604,22 @@ mod tests {
         assert_eq!(method.vtable_slot, None);
         assert_eq!(method.invoke_kind, RuntimeMemberInvokeKind::Method);
         assert!(!method.is_default_member);
+        assert!(!method.is_enumerator_member);
         assert_eq!(method.arity, 1);
         assert_eq!(method.params[0].name, "count");
         assert_eq!(method.params[0].value_type, RuntimeValueType::Long);
         assert!(method.params[0].by_ref);
         assert_eq!(method.return_type, None);
+
+        let new_enum = &dispatch.members[3];
+        assert_eq!(new_enum.name, "NewEnum");
+        assert_eq!(new_enum.dispatch_id, -4);
+        assert_eq!(new_enum.vtable_slot, Some(12));
+        assert_eq!(new_enum.invoke_kind, RuntimeMemberInvokeKind::PropertyGet);
+        assert!(!new_enum.is_default_member);
+        assert!(new_enum.is_enumerator_member);
+        assert_eq!(new_enum.arity, 0);
+        assert_eq!(new_enum.return_type, Some(RuntimeValueType::Object));
 
         drop(obj);
         drop(widget);

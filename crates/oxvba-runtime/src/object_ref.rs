@@ -321,6 +321,7 @@ pub struct RuntimeMemberDescriptor {
     pub params: &'static [RuntimeParamDescriptor],
     pub return_type: Option<RuntimeValueType>,
     pub is_default_member: bool,
+    pub is_enumerator_member: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1531,6 +1532,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
@@ -1572,6 +1574,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static SET_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
             name: "Value",
@@ -1588,6 +1591,7 @@ mod tests {
             }],
             return_type: None,
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
@@ -1654,6 +1658,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static SECOND_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
             name: "Value",
@@ -1664,6 +1669,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static FIRST_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
@@ -1716,6 +1722,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static PUT_VALUE_MEMBER: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
             name: "Value",
@@ -1732,6 +1739,7 @@ mod tests {
             }],
             return_type: None,
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
@@ -1773,6 +1781,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static METHOD_VALUE: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
             name: "Value",
@@ -1783,6 +1792,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: false,
+            is_enumerator_member: false,
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
@@ -1821,6 +1831,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static SECOND: RuntimeMemberDescriptor = RuntimeMemberDescriptor {
             name: "Item",
@@ -1831,6 +1842,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,
@@ -1875,6 +1887,7 @@ mod tests {
             params: &[],
             return_type: Some(RuntimeValueType::Variant),
             is_default_member: true,
+            is_enumerator_member: false,
         };
         static DISPATCH_INTERFACE: RuntimeInterfaceDescriptor = RuntimeInterfaceDescriptor {
             id: RuntimeInterfaceId::IDispatch,

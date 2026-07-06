@@ -6,6 +6,7 @@ use oxvba_runtime::{
 };
 
 const VT_RECORD_WIRE_VALUE: u16 = 36;
+const DISPID_NEWENUM: i32 = -4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeLibResolveRequest {
@@ -708,6 +709,7 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
                     .return_type
                     .map(|return_type| runtime_value_type_from_typelib_param(return_type).0),
                 is_default_member: member.is_default_member,
+                is_enumerator_member: member.token == DISPID_NEWENUM,
             }
         })
         .collect::<Vec<_>>();
@@ -1113,7 +1115,7 @@ mod tests {
         let metadata = TypeLibMetadataBlob {
             identity: identity(),
             activation_prog_id: Some("OxVba.TestDispatch".to_string()),
-            member_name_to_token: vec![("Value".to_string(), 0)],
+            member_name_to_token: vec![("Value".to_string(), 0), ("NewEnum".to_string(), -4)],
             members: vec![
                 TypeLibMemberMetadata {
                     name: "Value".to_string(),
@@ -1157,6 +1159,27 @@ mod tests {
                     source_typekind: Some(SourceTypeKind::Interface),
                     vtable_slot_bound: Some(64),
                 },
+                TypeLibMemberMetadata {
+                    name: "NewEnum".to_string(),
+                    token: -4,
+                    vtable_slot: Some(9),
+                    requires_argument: false,
+                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
+                    parameter_names: Vec::new(),
+                    parameter_optional: Vec::new(),
+                    parameter_optional_defaults: Vec::new(),
+                    is_default_member: false,
+                    parameter_types: Vec::new(),
+                    parameter_wire_types: Vec::new(),
+                    parameter_iids: Vec::new(),
+                    return_type: Some(TypeLibParamType::Object),
+                    return_wire_type: None,
+                    callconv_is_stdcall: true,
+                    is_dual: true,
+                    interface_iid: None,
+                    source_typekind: Some(SourceTypeKind::Interface),
+                    vtable_slot_bound: Some(64),
+                },
             ],
             events: Vec::new(),
             coclass_names: Vec::new(),
@@ -1175,7 +1198,7 @@ mod tests {
             "explicit vtable slots project a dual-interface descriptor"
         );
         assert_eq!(dispatch.name, "OxVba.TestDispatch._Dispatch");
-        assert_eq!(dispatch.members.len(), 2);
+        assert_eq!(dispatch.members.len(), 3);
         assert_eq!(dispatch.members[0].name, "Value");
         assert_eq!(dispatch.members[0].dispatch_id, 0);
         assert_eq!(dispatch.members[0].vtable_slot, Some(7));
@@ -1185,6 +1208,7 @@ mod tests {
         );
         assert_eq!(dispatch.members[0].arity, 0);
         assert!(dispatch.members[0].is_default_member);
+        assert!(!dispatch.members[0].is_enumerator_member);
         assert_eq!(dispatch.members[1].name, "Item");
         assert_eq!(dispatch.members[1].dispatch_id, 5);
         assert_eq!(
@@ -1204,6 +1228,21 @@ mod tests {
             dispatch.members[1].return_type,
             Some(RuntimeValueType::Variant)
         );
+        assert!(!dispatch.members[1].is_enumerator_member);
+        assert_eq!(dispatch.members[2].name, "NewEnum");
+        assert_eq!(dispatch.members[2].dispatch_id, -4);
+        assert_eq!(dispatch.members[2].vtable_slot, Some(9));
+        assert_eq!(
+            dispatch.members[2].invoke_kind,
+            RuntimeMemberInvokeKind::PropertyGet
+        );
+        assert_eq!(dispatch.members[2].arity, 0);
+        assert_eq!(
+            dispatch.members[2].return_type,
+            Some(RuntimeValueType::Object)
+        );
+        assert!(!dispatch.members[2].is_default_member);
+        assert!(dispatch.members[2].is_enumerator_member);
         assert_eq!(
             dispatch.members[0].return_type,
             Some(RuntimeValueType::Long)
