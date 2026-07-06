@@ -1019,6 +1019,12 @@ Variant-held project receivers for default-member `Property Get`/`Property Let` 
 default-member `Property Set`. `As New`, predeclared singletons, cross-project classes, events, and
 `Class_Terminate` remain split to the follow-up beads.
 
+Current WIP addendum (2026-07-07): `bd-h4oh.10.21` now has a green partial JIT path for
+active-project `As New` slot registration, lazy first read through `Is Nothing`, and pre-access
+`Set ... = Nothing`. The bead remains open because source-level re-instantiation after
+`Set ... = Nothing` still exposes an adjacent Variant-temp branch/lowering shape; that row must be
+green before `10.21` is closed.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and

@@ -124,21 +124,47 @@ fn jit_project_typed_local_is_nothing_matches_vm3_without_construction() {
 }
 
 #[test]
-fn jit_project_dim_as_new_is_nothing_declines_without_vm_fallback() {
+fn jit_project_dim_as_new_is_nothing_matches_vm3_without_fallback() {
     let modules = [
         (
             "Main",
             Procedural,
-            "Public r As Long\nSub Main()\n  Dim w As New Widget\n  If w Is Nothing Then\n    r = 41\n  Else\n    r = 43\n  End If\nEnd Sub\n",
+            "Public r As Long\nPublic initCount As Long\nSub Main()\n  Dim w As New Widget\n  If w Is Nothing Then\n    r = 41\n  Else\n    r = 43 + initCount\n  End If\nEnd Sub\n",
         ),
-        ("Widget", Class, "' project class marker\n"),
+        (
+            "Widget",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\nEnd Sub\n",
+        ),
     ];
 
     let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
-    assert_completed_with_i32("VM3", vm3, 43);
+    assert_completed_with_i32("VM3", vm3, 44);
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
-    assert_jit_declines(jit, "AsNew", "lazy activation");
+    assert_completed_with_i32("JIT", jit, 44);
+}
+
+#[test]
+fn jit_project_dim_as_new_set_nothing_before_access_is_lazy_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nPublic initCount As Long\nSub Main()\n  Dim c As New Counter\n  Set c = Nothing\n  r = initCount\nEnd Sub\n",
+        ),
+        (
+            "Counter",
+            Class,
+            "Private Sub Class_Initialize()\n  Main.initCount = Main.initCount + 1\nEnd Sub\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 0);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 0);
 }
 
 #[test]
