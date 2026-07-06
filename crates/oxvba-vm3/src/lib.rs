@@ -5125,6 +5125,7 @@ mod tests {
                     name: "Twice".into(),
                     kind: ProjectMemberKind::Method,
                     proc: ProcId(1),
+                    dispid: None,
                     is_default_member: false,
                     is_enumerator_member: false,
                 }],

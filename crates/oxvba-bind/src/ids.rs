@@ -29,6 +29,7 @@ use oxvba_symbol::model::{
 };
 use oxvba_symbol::provider::ResolutionEnvironment;
 use oxvba_symbol::signature::{BuiltinType, PassingMode, Signature, VarTypeRef};
+use oxvba_symbol::surface::SurfaceTypeKind;
 use oxvba_syntax::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 
 use crate::error::BindError;
@@ -268,6 +269,7 @@ impl IdAllocator {
                 predeclared_class_of.insert(fold_identifier(&display), class_id);
             }
             let folded = fold_identifier(&display);
+            let surface_dispids = class_member_dispids(env, &display);
             let default_member = env
                 .resolve_default_member(&VarTypeRef::Object(display.clone()))
                 .and_then(|binding| {
@@ -291,15 +293,21 @@ impl IdAllocator {
                 match fold_identifier(&info.name).as_str() {
                     "class_initialize" => initialize = Some(info.proc_id),
                     "class_terminate" => terminate = Some(info.proc_id),
-                    _ => methods.push(CoreClassMethod {
-                        name: info.name.clone(),
-                        kind: member_kind_of(info.kind),
-                        proc: info.proc_id,
-                        is_default_member: default_member.as_ref().is_some_and(|(name, _)| {
-                            fold_identifier(name) == fold_identifier(&info.name)
-                        }),
-                        is_enumerator_member: info.is_enumerator_member,
-                    }),
+                    _ => {
+                        let kind = member_kind_of(info.kind);
+                        methods.push(CoreClassMethod {
+                            name: info.name.clone(),
+                            kind,
+                            proc: info.proc_id,
+                            dispid: surface_dispids
+                                .get(&(fold_identifier(&info.name), kind))
+                                .copied(),
+                            is_default_member: default_member.as_ref().is_some_and(|(name, _)| {
+                                fold_identifier(name) == fold_identifier(&info.name)
+                            }),
+                            is_enumerator_member: info.is_enumerator_member,
+                        });
+                    }
                 }
             }
             // `Implements I` clauses: record the interface names, mark them as
@@ -684,6 +692,32 @@ fn property_accessor_kind(decl: SyntaxNode<'_>) -> ProjectMemberKind {
         }
     }
     ProjectMemberKind::PropertyGet
+}
+
+fn class_member_dispids(
+    env: &ResolutionEnvironment,
+    class_name: &str,
+) -> HashMap<(String, ProjectMemberKind), i32> {
+    let Some(active) = env.export_surfaces().first() else {
+        return HashMap::new();
+    };
+    let folded_class = fold_identifier(class_name);
+    let Some(surface_type) = active.types.iter().find(|ty| {
+        matches!(ty.kind, SurfaceTypeKind::Coclass { .. })
+            && fold_identifier(&ty.name) == folded_class
+    }) else {
+        return HashMap::new();
+    };
+    surface_type
+        .members
+        .iter()
+        .map(|member| {
+            (
+                (fold_identifier(&member.name), member.member_kind),
+                member.dispid,
+            )
+        })
+        .collect()
 }
 
 fn has_user_mem_id_decl(node: SyntaxNode<'_>, id: i32) -> bool {

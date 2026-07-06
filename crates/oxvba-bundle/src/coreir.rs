@@ -183,6 +183,9 @@ pub struct CoreClassMethod {
     pub name: String,
     pub kind: ProjectMemberKind,
     pub proc: ProcId,
+    /// COM/VBA dispatch id assigned by the project export surface, when this
+    /// class member is part of that surface.
+    pub dispid: Option<i32>,
     pub is_default_member: bool,
     pub is_enumerator_member: bool,
 }

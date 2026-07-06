@@ -237,7 +237,7 @@ pub fn synthesize_export_surface(
             }
             match member.kind {
                 SymbolKind::Procedure | SymbolKind::Function => {
-                    let dispid = take_dispid(member.is_default, &mut next_dispid);
+                    let dispid = take_dispid(member, &mut next_dispid);
                     members.push(method_member(
                         member,
                         dispid,
@@ -248,7 +248,7 @@ pub fn synthesize_export_surface(
                     ));
                 }
                 SymbolKind::Property => {
-                    let dispid = take_dispid(member.is_default, &mut next_dispid);
+                    let dispid = take_dispid(member, &mut next_dispid);
                     property_members(
                         member,
                         dispid,
@@ -263,7 +263,7 @@ pub fn synthesize_export_surface(
                 // `WithEventsField` is Private-only in VBA (no `Public WithEvents`)
                 // and is not an exportable accessor, so it never reaches the surface.
                 SymbolKind::Field => {
-                    let dispid = take_dispid(member.is_default, &mut next_dispid);
+                    let dispid = take_dispid(member, &mut next_dispid);
                     field_members(
                         member,
                         dispid,
@@ -335,9 +335,11 @@ fn collect_consts(
     }
 }
 
-fn take_dispid(is_default: bool, next: &mut i32) -> i32 {
-    if is_default {
+fn take_dispid(member: &ScannedMember, next: &mut i32) -> i32 {
+    if member.is_default {
         0
+    } else if member.is_enumerator {
+        -4
     } else {
         let d = *next;
         *next += 1;
@@ -1058,5 +1060,24 @@ mod tests {
                 .iter()
                 .any(|m| m.member_kind == ProjectMemberKind::PropertyLet)
         );
+    }
+
+    #[test]
+    fn newenum_member_uses_standard_enumerator_dispid() {
+        let s = synth(vec![class_mod(
+            "Widget",
+            "Public Property Get NewEnum() As IUnknown\nEnd Property\n\
+             Attribute NewEnum.VB_UserMemId = -4\n",
+            true,
+            true,
+        )]);
+        let widget = find_type(&s, "Widget").unwrap();
+        let member = widget
+            .members
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case("NewEnum"))
+            .expect("NewEnum member");
+        assert_eq!(member.dispid, -4);
+        assert_eq!(member.member_kind, ProjectMemberKind::PropertyGet);
     }
 }

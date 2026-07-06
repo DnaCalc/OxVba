@@ -112,6 +112,7 @@ fn build() -> Bundle {
             name: spec.name.to_string(),
             kind: spec.member_kind,
             proc,
+            dispid: builtin_collection_dispid(spec.name),
             is_default_member: spec.name.eq_ignore_ascii_case("Item"),
             is_enumerator_member: spec.name.eq_ignore_ascii_case("_NewEnum"),
         });
@@ -210,6 +211,17 @@ fn build() -> Bundle {
     }
 }
 
+fn builtin_collection_dispid(name: &str) -> Option<i32> {
+    Some(match name.to_ascii_lowercase().as_str() {
+        "item" => 0,
+        "add" => 1,
+        "count" => 2,
+        "remove" => 3,
+        "_newenum" => -4,
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +243,20 @@ mod tests {
                 .iter()
                 .any(|m| m.name == "_NewEnum" && m.is_enumerator_member),
             "Collection _NewEnum must carry enumerator metadata in the package"
+        );
+        assert!(
+            collection
+                .methods
+                .iter()
+                .any(|m| m.name == "Item" && m.dispid == Some(0)),
+            "Collection Item must carry default-member DISPID 0"
+        );
+        assert!(
+            collection
+                .methods
+                .iter()
+                .any(|m| m.name == "_NewEnum" && m.dispid == Some(-4)),
+            "Collection _NewEnum must carry enumerator DISPID -4"
         );
         // Every method resolves to a native-bodied procedure.
         for m in &collection.methods {

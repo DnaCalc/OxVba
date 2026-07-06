@@ -201,6 +201,7 @@ fn lower_class(c: &CoreClass) -> OxClass {
                 name: m.name.clone(),
                 kind: m.kind,
                 proc: FuncId(m.proc.0),
+                dispid: m.dispid,
                 is_default_member: m.is_default_member,
                 is_enumerator_member: m.is_enumerator_member,
             })
@@ -3222,6 +3223,7 @@ mod tests {
                     name: "Value".into(),
                     kind: ProjectMemberKind::PropertyGet,
                     proc: CoreProcId(0),
+                    dispid: None,
                     is_default_member: false,
                     is_enumerator_member: false,
                 }],

@@ -248,6 +248,10 @@ pub struct ClassMethod {
     pub name: String,
     pub kind: ProjectMemberKind,
     pub proc: usize,
+    /// COM/VBA dispatch id assigned by the project export surface, when this
+    /// class member is part of that surface.
+    #[serde(default)]
+    pub dispid: Option<i32>,
     pub is_default_member: bool,
     /// True for the VBA enumerator member (`_NewEnum`, `VB_UserMemId = -4`).
     /// Carried in the executable package so VM/JIT/COM-export consumers do not
