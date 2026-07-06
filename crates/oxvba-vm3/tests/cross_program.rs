@@ -13,6 +13,7 @@ use oxvba_bundle::{
 use oxvba_hal::HostPolicy;
 use oxvba_hal::adapters::null::NullHostServices;
 use oxvba_oxir::elaborate::elaborate;
+use oxvba_runtime::RuntimeProjectClassIdentity;
 use oxvba_vm3::{Vm3, Vm3Error};
 
 fn add_token() -> ExportToken {
@@ -683,6 +684,72 @@ fn app_new_extern_program() -> CoreProgram {
     }
 }
 
+/// Referrer with its own `Class Widget`, also creating `New Lib.Widget`. The two object
+/// descriptors must remain distinguishable even though their display names match.
+fn app_same_named_widget_identity_program() -> CoreProgram {
+    let main = CoreProc {
+        name: "Main".into(),
+        kind: ProcedureKind::Sub,
+        params: Vec::new(),
+        locals: Vec::new(),
+        return_local: None,
+        label_lines: Vec::new(),
+        body: vec![
+            CoreStmt::Assign {
+                place: CorePlace::Global(GlobalId(0)),
+                value: CoreValue::NewExtern { import: 0 },
+                intent: AssignmentIntent::Set,
+                target_kind: AssignmentTargetKind::Object,
+                target_name: "libObj".into(),
+                target_type_name: "Object".into(),
+            },
+            CoreStmt::Assign {
+                place: CorePlace::Global(GlobalId(1)),
+                value: CoreValue::New(ClassId(0)),
+                intent: AssignmentIntent::Set,
+                target_kind: AssignmentTargetKind::Object,
+                target_name: "appObj".into(),
+                target_type_name: "Object".into(),
+            },
+        ],
+    };
+    CoreProgram {
+        long_ptr_width: Default::default(),
+        globals: vec![
+            CoreGlobal {
+                name: "libObj".into(),
+                ty: oxvba_bundle::VarTypeRef::Variant,
+                array_element: None,
+            },
+            CoreGlobal {
+                name: "appObj".into(),
+                ty: oxvba_bundle::VarTypeRef::Variant,
+                array_element: None,
+            },
+        ],
+        procs: vec![main],
+        classes: vec![CoreClass {
+            name: "Widget".into(),
+            predeclared: false,
+            initialize: None,
+            terminate: None,
+            fields: Vec::new(),
+            methods: Vec::new(),
+            as_new_fields: Vec::new(),
+            implements: Vec::new(),
+        }],
+        imports: vec![BundleImport {
+            unit: "Lib".into(),
+            token: ExportToken::Class {
+                name: "Widget".into(),
+            },
+        }],
+        unit_name: "App".into(),
+        entry: Some(ProcId(0)),
+        ..Default::default()
+    }
+}
+
 /// Referrer: `Sub Main()` does `result = Lib.Widget.Val()` referencing Widget as a predeclared
 /// singleton of the referenced project (a `PredeclaredExtern`, no `New`).
 fn app_predeclared_extern_program() -> CoreProgram {
@@ -750,6 +817,41 @@ fn cross_program_new_creates_and_dispatches_the_referenced_class() {
     let mut vm = Vm3::link(&[&lib, &app], &host).expect("link");
     vm.run_entry().expect("run");
     assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(42));
+}
+
+#[test]
+fn cross_program_same_named_classes_keep_runtime_descriptor_identity() {
+    let lib = elaborate(&lib_widget_program()).expect("elaborate lib");
+    let app = elaborate(&app_same_named_widget_identity_program()).expect("elaborate app");
+    let host = NullHostServices::new(HostPolicy::deterministic_runtime());
+    let mut vm = Vm3::link(&[&lib, &app], &host).expect("link");
+    vm.run_entry().expect("run");
+
+    let lib_obj = vm
+        .slot(0)
+        .and_then(|value| value.as_object_ref())
+        .expect("Lib.Widget object");
+    let app_obj = vm
+        .slot(1)
+        .and_then(|value| value.as_object_ref())
+        .expect("App.Widget object");
+
+    assert_eq!(lib_obj.class_descriptor().name, "Widget");
+    assert_eq!(app_obj.class_descriptor().name, "Widget");
+    assert_eq!(
+        lib_obj.class_descriptor().project_identity,
+        Some(RuntimeProjectClassIdentity {
+            unit_name: "Lib",
+            class_index: 0,
+        })
+    );
+    assert_eq!(
+        app_obj.class_descriptor().project_identity,
+        Some(RuntimeProjectClassIdentity {
+            unit_name: "App",
+            class_index: 0,
+        })
+    );
 }
 
 #[test]

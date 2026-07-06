@@ -736,6 +736,7 @@ pub fn runtime_class_descriptor_from_typelib_metadata(
     );
     Box::leak(Box::new(RuntimeClassDescriptor {
         name: class_name,
+        project_identity: None,
         predeclared: false,
         lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
         fields: &[],
@@ -1187,6 +1188,7 @@ mod tests {
 
         let descriptor = runtime_class_descriptor_from_typelib_metadata(&metadata);
         assert_eq!(descriptor.name, "OxVba.TestDispatch");
+        assert_eq!(descriptor.project_identity, None);
         assert_eq!(descriptor.interfaces.len(), 1);
         let dispatch = descriptor
             .interfaces

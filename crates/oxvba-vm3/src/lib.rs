@@ -73,7 +73,7 @@ use oxvba_runtime::object_ref::{
     RuntimeClassAsNewFieldDescriptor, RuntimeClassDescriptor, RuntimeClassFieldDescriptor,
     RuntimeClassLifecycleDescriptor, RuntimeGuid, RuntimeInterfaceDescriptor, RuntimeInterfaceId,
     RuntimeInterfaceIdentity, RuntimeInterfaceKind, RuntimeMemberDescriptor,
-    RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeValueType,
+    RuntimeMemberInvokeKind, RuntimeParamDescriptor, RuntimeProjectClassIdentity, RuntimeValueType,
 };
 use oxvba_runtime::safe_array::{SafeArray, SafeArrayBound};
 use oxvba_runtime::variant::VarType;
@@ -96,6 +96,7 @@ const VBA_COLLECTION_ROUTE_KEY: i32 = i32::MIN;
 /// so `New Collection` needs no per-instance descriptor leak.
 static VBA_COLLECTION_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescriptor {
     name: "Collection",
+    project_identity: None,
     predeclared: false,
     lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
     fields: &[],
@@ -505,7 +506,10 @@ impl<'h> Vm3<'h> {
         let class_descriptors: Vec<&'static RuntimeClassDescriptor> = program
             .classes
             .iter()
-            .map(|class| Self::build_runtime_class_descriptor(program, class))
+            .enumerate()
+            .map(|(class_index, class)| {
+                Self::build_runtime_class_descriptor(program, class_index, class)
+            })
             .collect();
         let mut event_routes: HashMap<(i32, i32), usize> = HashMap::new();
         for route in &program.event_routes {
@@ -528,9 +532,14 @@ impl<'h> Vm3<'h> {
 
     fn build_runtime_class_descriptor(
         program: &OxProgram,
+        class_index: usize,
         class: &oxvba_oxir::OxClass,
     ) -> &'static RuntimeClassDescriptor {
         let name: &'static str = leak_runtime_str(&class.name);
+        let project_identity = RuntimeProjectClassIdentity {
+            unit_name: leak_runtime_str(&program.unit_name),
+            class_index,
+        };
         let fields: &'static [RuntimeClassFieldDescriptor] = Box::leak(
             class
                 .fields
@@ -603,6 +612,7 @@ impl<'h> Vm3<'h> {
             Box::leak(interface_descriptors.into_boxed_slice());
         &*Box::leak(Box::new(RuntimeClassDescriptor {
             name,
+            project_identity: Some(project_identity),
             predeclared: class.predeclared,
             lifecycle,
             fields,
@@ -5653,6 +5663,13 @@ mod tests {
         let class_descriptor = obj.class_descriptor();
 
         assert_eq!(class_descriptor.name, "Widget");
+        assert_eq!(
+            class_descriptor.project_identity,
+            Some(RuntimeProjectClassIdentity {
+                unit_name: "T",
+                class_index: 0,
+            })
+        );
         assert!(class_descriptor.predeclared);
         assert!(class_descriptor.lifecycle.has_initialize);
         assert!(class_descriptor.lifecycle.has_terminate);
@@ -5880,6 +5897,13 @@ mod tests {
         let class_descriptor = obj.class_descriptor();
 
         assert_eq!(class_descriptor.implements, &["IShape"]);
+        assert_eq!(
+            class_descriptor.project_identity,
+            Some(RuntimeProjectClassIdentity {
+                unit_name: "T",
+                class_index: 0,
+            })
+        );
         assert_eq!(class_descriptor.interfaces.len(), 3);
         assert!(
             obj.query_interface_descriptor(RuntimeInterfaceId::IUnknown)
