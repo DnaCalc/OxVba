@@ -160,6 +160,28 @@ fn jit_project_typed_null_set_assignment_matches_vm3_without_construction() {
 }
 
 #[test]
+fn jit_project_member_dispatch_on_unset_object_declines_without_vm_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  On Error Resume Next\n  Dim w As Widget\n  r = w.Value\n  r = Err.Number\nEnd Sub\n",
+        ),
+        (
+            "Widget",
+            Class,
+            "Public Property Get Value() As Long\n  Value = 5\nEnd Property\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 91);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_jit_declines(jit, "ComCallLate", "late-bound COM invocation");
+}
+
+#[test]
 fn jit_project_typeof_declines_without_vm_fallback() {
     let modules = [
         (
