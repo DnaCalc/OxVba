@@ -29,18 +29,18 @@ use oxvba_oxir::{
     OxLocal, OxNativeCallee, OxOperand, OxPlace, OxProgram, OxTerminator, OxTy,
 };
 use oxvba_rt_abi::{
-    ExecState, LoadedProgram, ProcInvokeBridge, RT_ARITH_ADD, RT_ARITH_DIV, RT_ARITH_INT_DIV,
-    RT_ARITH_MOD, RT_ARITH_MUL, RT_ARITH_POW, RT_ARITH_SUB, RT_COMPARE_EQ, RT_COMPARE_GE,
-    RT_COMPARE_GT, RT_COMPARE_LE, RT_COMPARE_LT, RT_COMPARE_NE, RT_ERR_FIELD_DESCRIPTION,
-    RT_ERR_FIELD_HELP_CONTEXT, RT_ERR_FIELD_HELP_FILE, RT_ERR_FIELD_LAST_DLL_ERROR,
-    RT_ERR_FIELD_NUMBER, RT_ERR_FIELD_SOURCE, RT_ERROR_HANDLER_GOTO_0, RT_ERROR_HANDLER_GOTO_LABEL,
-    RT_ERROR_HANDLER_GOTO_MINUS_1, RT_ERROR_HANDLER_RESUME_NEXT, RT_FAULT_DISP_HANDLER,
-    RT_FAULT_DISP_RESUME_NEXT, RT_FAULT_DISP_UNWIND, RT_LOGIC_AND, RT_LOGIC_EQV, RT_LOGIC_IMP,
-    RT_LOGIC_OR, RT_LOGIC_XOR, RT_NUMERIC_CHECKED_BOOLEAN, RT_NUMERIC_CHECKED_BYTE,
-    RT_NUMERIC_CHECKED_CURRENCY, RT_NUMERIC_CHECKED_DATE, RT_NUMERIC_CHECKED_DOUBLE,
-    RT_NUMERIC_CHECKED_INTEGER, RT_NUMERIC_CHECKED_LONG, RT_NUMERIC_CHECKED_LONGLONG,
-    RT_NUMERIC_CHECKED_SINGLE, RT_NUMERIC_WIDENING, RT_RESUME_LABEL, RT_RESUME_NEXT,
-    RT_RESUME_SAME, RT_STRING_COMPARE_BINARY, RT_STRING_COMPARE_TEXT, RawExecState,
+    EventBinding, ExecState, LoadedProgram, ProcInvokeBridge, RT_ARITH_ADD, RT_ARITH_DIV,
+    RT_ARITH_INT_DIV, RT_ARITH_MOD, RT_ARITH_MUL, RT_ARITH_POW, RT_ARITH_SUB, RT_COMPARE_EQ,
+    RT_COMPARE_GE, RT_COMPARE_GT, RT_COMPARE_LE, RT_COMPARE_LT, RT_COMPARE_NE,
+    RT_ERR_FIELD_DESCRIPTION, RT_ERR_FIELD_HELP_CONTEXT, RT_ERR_FIELD_HELP_FILE,
+    RT_ERR_FIELD_LAST_DLL_ERROR, RT_ERR_FIELD_NUMBER, RT_ERR_FIELD_SOURCE, RT_ERROR_HANDLER_GOTO_0,
+    RT_ERROR_HANDLER_GOTO_LABEL, RT_ERROR_HANDLER_GOTO_MINUS_1, RT_ERROR_HANDLER_RESUME_NEXT,
+    RT_FAULT_DISP_HANDLER, RT_FAULT_DISP_RESUME_NEXT, RT_FAULT_DISP_UNWIND, RT_LOGIC_AND,
+    RT_LOGIC_EQV, RT_LOGIC_IMP, RT_LOGIC_OR, RT_LOGIC_XOR, RT_NUMERIC_CHECKED_BOOLEAN,
+    RT_NUMERIC_CHECKED_BYTE, RT_NUMERIC_CHECKED_CURRENCY, RT_NUMERIC_CHECKED_DATE,
+    RT_NUMERIC_CHECKED_DOUBLE, RT_NUMERIC_CHECKED_INTEGER, RT_NUMERIC_CHECKED_LONG,
+    RT_NUMERIC_CHECKED_LONGLONG, RT_NUMERIC_CHECKED_SINGLE, RT_NUMERIC_WIDENING, RT_RESUME_LABEL,
+    RT_RESUME_NEXT, RT_RESUME_SAME, RT_STRING_COMPARE_BINARY, RT_STRING_COMPARE_TEXT, RawExecState,
     RtSavedErrState, ST_FAULT, ST_HALT, ST_OK, exec_state_as_raw, rt_add_i16, rt_add_i32,
     rt_add_i64, rt_add_u8, rt_arith_v, rt_coerce_fixed_string_v, rt_coerce_numeric_v,
     rt_coerce_string_v, rt_compare_v, rt_currency_add, rt_currency_mul, rt_currency_sub,
@@ -57,6 +57,7 @@ use oxvba_rt_abi::{
 };
 use oxvba_runtime::{
     Decimal96, VarType, Variant, VbaRecord,
+    object_ref::ObjectRef,
     safe_array::{
         SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
         VT_DECIMAL_VALUE, VT_DISPATCH_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE,
@@ -430,10 +431,13 @@ unsafe extern "C" fn jit_proc_invoke(
         let entry = unsafe { *image.functions.add(proc) };
         // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
         let status = unsafe { entry(run as *mut JitRun, ctx.state) };
-        run.frames.pop();
-        prune_for_each_from_depth(run, run.frames.len());
-        prune_as_new_slots_from_depth(run, run.frames.len());
-        prune_param_array_aliases_from_depth(run, run.frames.len());
+        let Some(frame) = run.frames.pop() else {
+            return ST_FAULT;
+        };
+        let cleanup_status = after_jit_frame_pop(run, ctx.state, &frame);
+        if cleanup_status != ST_OK {
+            return cleanup_status;
+        }
         let restore_status = rt_err_restore_activation(ctx.state, &saved_err);
         if restore_status != ST_OK {
             restore_status
@@ -538,12 +542,17 @@ fn build_loaded<'p>(program: &'p OxProgram) -> Result<LoadedProgram<'p>, JitErro
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let event_routes = program
+        .event_routes
+        .iter()
+        .map(|route| ((route.binding, route.event), route.handler))
+        .collect();
     Ok(LoadedProgram {
         program,
         globals,
         class_descriptors: runtime_class_descriptors_for_program(program),
         predeclared_singletons: HashMap::new(),
-        event_routes: HashMap::new(),
+        event_routes,
     })
 }
 
@@ -671,6 +680,12 @@ struct Imports {
     predeclared_set: ClifFuncId,
     field_get_slot: ClifFuncId,
     field_set_slot: ClifFuncId,
+    withevents_get_slot: ClifFuncId,
+    withevents_set_slot: ClifFuncId,
+    withevents_clear_owner_slot: ClifFuncId,
+    withevents_first_owner_slot: ClifFuncId,
+    withevents_next_owner_slot: ClifFuncId,
+    raise_event: ClifFuncId,
     project_member_get_slot: ClifFuncId,
     project_type_name_slot: ClifFuncId,
     new_record_slot: ClifFuncId,
@@ -1101,6 +1116,33 @@ impl<'a> LowerFunc<'a> {
                 field,
                 value,
             } => self.emit_field_set(builder, module, object, *field, value),
+            OxInst::WithEventsGet {
+                dst,
+                owner,
+                binding,
+            } => self.emit_withevents_get_to_slot(builder, module, *dst, owner, *binding),
+            OxInst::WithEventsSet {
+                dst,
+                owner,
+                binding,
+                value,
+            } => self.emit_withevents_set_to_slot(builder, module, *dst, owner, *binding, value),
+            OxInst::WithEventsClearOwner { dst, owner } => {
+                self.emit_withevents_clear_owner_to_slot(builder, module, *dst, owner)
+            }
+            OxInst::WithEventsFirstOwner {
+                dst,
+                source,
+                binding,
+            } => self.emit_withevents_first_owner_to_slot(builder, module, *dst, source, *binding),
+            OxInst::WithEventsNextOwner { dst } => {
+                self.emit_withevents_next_owner_to_slot(builder, module, *dst)
+            }
+            OxInst::RaiseEvent {
+                source,
+                event,
+                args,
+            } => self.emit_raise_event(builder, module, source, *event, args),
             OxInst::ComCallLate {
                 dst,
                 recv,
@@ -3362,6 +3404,201 @@ impl<'a> LowerFunc<'a> {
         let call = builder
             .ins()
             .call(callee, &[self.state, self.run, operands_ptr, field]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_withevents_get_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        owner: &OxOperand,
+        binding: i32,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let owner = self.lower_variant_operand(builder, owner)?;
+        let owner_ptr = self.emit_variant_operand_descriptors(builder, module, &[owner])?;
+        let (area, index) = place_addr(dst);
+        let binding = builder.ins().iconst(types::I32, i64::from(binding));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.withevents_get_slot);
+        let call = builder.ins().call(
+            callee,
+            &[self.state, self.run, owner_ptr, binding, area, index],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_withevents_set_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        owner: &OxOperand,
+        binding: i32,
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let owner = self.lower_variant_operand(builder, owner)?;
+        let value = self.lower_variant_operand(builder, value)?;
+        let operands = [owner, value];
+        let operands_ptr = self.emit_variant_operand_descriptors(builder, module, &operands)?;
+        let (area, index) = place_addr(dst);
+        let binding = builder.ins().iconst(types::I32, i64::from(binding));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.withevents_set_slot);
+        let call = builder.ins().call(
+            callee,
+            &[self.state, self.run, operands_ptr, binding, area, index],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_withevents_clear_owner_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        owner: &OxOperand,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let owner = self.lower_variant_operand(builder, owner)?;
+        let owner_ptr = self.emit_variant_operand_descriptors(builder, module, &[owner])?;
+        let (area, index) = place_addr(dst);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.withevents_clear_owner_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, owner_ptr, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_withevents_first_owner_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        source: &OxOperand,
+        binding: i32,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let source = self.lower_variant_operand(builder, source)?;
+        let source_ptr = self.emit_variant_operand_descriptors(builder, module, &[source])?;
+        let (area, index) = place_addr(dst);
+        let binding = builder.ins().iconst(types::I32, i64::from(binding));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.withevents_first_owner_slot);
+        let call = builder.ins().call(
+            callee,
+            &[self.state, self.run, source_ptr, binding, area, index],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_withevents_next_owner_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let (area, index) = place_addr(dst);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.withevents_next_owner_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn lower_event_args(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        args: &[OxArg],
+    ) -> Result<Vec<LoweredCallArg>, JitError> {
+        let mut lowered = Vec::with_capacity(args.len());
+        let zero_i32 = builder.ins().iconst(types::I32, 0);
+        let zero_i64 = builder.ins().iconst(types::I64, 0);
+        for arg in args {
+            match arg {
+                OxArg::ByVal(arg) => {
+                    let operand = self.lower_variant_operand(builder, arg)?;
+                    lowered.push(LoweredCallArg {
+                        kind: builder
+                            .ins()
+                            .iconst(types::I32, i64::from(JIT_CALL_ARG_BYVAL_VARIANT)),
+                        aux: operand.kind,
+                        value: operand.value,
+                        area: operand.area,
+                        index: operand.index,
+                    });
+                }
+                OxArg::ByRef(place) => {
+                    let (area, index) = place_addr(*place);
+                    lowered.push(LoweredCallArg {
+                        kind: builder
+                            .ins()
+                            .iconst(types::I32, i64::from(JIT_CALL_ARG_BYREF_ALIAS)),
+                        aux: zero_i32,
+                        value: zero_i64,
+                        area: builder.ins().iconst(types::I32, i64::from(area)),
+                        index: builder.ins().iconst(types::I32, index as i64),
+                    });
+                }
+                OxArg::Omitted => {
+                    lowered.push(LoweredCallArg {
+                        kind: builder
+                            .ins()
+                            .iconst(types::I32, i64::from(JIT_CALL_ARG_OMITTED)),
+                        aux: zero_i32,
+                        value: zero_i64,
+                        area: zero_i32,
+                        index: zero_i32,
+                    });
+                }
+            }
+        }
+        Ok(lowered)
+    }
+
+    fn emit_raise_event(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        source: &OxOperand,
+        event: i32,
+        args: &[OxArg],
+    ) -> Result<(), JitError> {
+        let source = self.lower_variant_operand(builder, source)?;
+        let source_ptr = self.emit_variant_operand_descriptors(builder, module, &[source])?;
+        let lowered_args = self.lower_event_args(builder, args)?;
+        let args_ptr = self.emit_call_arg_descriptors(builder, module, &lowered_args)?;
+        let argc = i32::try_from(args.len())
+            .map_err(|_| JitError::unsupported("JIT RaiseEvent argument count is too large"))?;
+        let event = builder.ins().iconst(types::I32, i64::from(event));
+        let argc = builder.ins().iconst(types::I32, i64::from(argc));
+        let callee = self.import(builder, module, self.imports.raise_event);
+        let call = builder.ins().call(
+            callee,
+            &[self.state, self.run, source_ptr, event, args_ptr, argc],
+        );
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
@@ -8217,6 +8454,27 @@ fn register_symbols(builder: &mut JITBuilder) {
         rt_jit_project_field_set as *const u8,
     );
     builder.symbol(
+        "rt_jit_withevents_get_to_slot",
+        rt_jit_withevents_get_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_withevents_set_to_slot",
+        rt_jit_withevents_set_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_withevents_clear_owner_to_slot",
+        rt_jit_withevents_clear_owner_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_withevents_first_owner_to_slot",
+        rt_jit_withevents_first_owner_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_withevents_next_owner_to_slot",
+        rt_jit_withevents_next_owner_to_slot as *const u8,
+    );
+    builder.symbol("rt_jit_raise_event", rt_jit_raise_event as *const u8);
+    builder.symbol(
         "rt_jit_project_member_get_to_slot",
         rt_jit_project_member_get_to_slot as *const u8,
     );
@@ -8697,6 +8955,87 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
             Linkage::Import,
             &field_set_slot_sig,
         )
+        .map_err(module_err)?;
+
+    let mut withevents_get_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, ptr_ty, types::I32, types::I32, types::I32] {
+        withevents_get_slot_sig.params.push(AbiParam::new(param));
+    }
+    withevents_get_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let withevents_get_slot = module
+        .declare_function(
+            "rt_jit_withevents_get_to_slot",
+            Linkage::Import,
+            &withevents_get_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut withevents_set_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, ptr_ty, types::I32, types::I32, types::I32] {
+        withevents_set_slot_sig.params.push(AbiParam::new(param));
+    }
+    withevents_set_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let withevents_set_slot = module
+        .declare_function(
+            "rt_jit_withevents_set_to_slot",
+            Linkage::Import,
+            &withevents_set_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut withevents_clear_owner_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, ptr_ty, types::I32, types::I32] {
+        withevents_clear_owner_slot_sig
+            .params
+            .push(AbiParam::new(param));
+    }
+    withevents_clear_owner_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let withevents_clear_owner_slot = module
+        .declare_function(
+            "rt_jit_withevents_clear_owner_to_slot",
+            Linkage::Import,
+            &withevents_clear_owner_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut withevents_next_owner_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, types::I32, types::I32] {
+        withevents_next_owner_slot_sig
+            .params
+            .push(AbiParam::new(param));
+    }
+    withevents_next_owner_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let withevents_next_owner_slot = module
+        .declare_function(
+            "rt_jit_withevents_next_owner_to_slot",
+            Linkage::Import,
+            &withevents_next_owner_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let withevents_first_owner_slot = module
+        .declare_function(
+            "rt_jit_withevents_first_owner_to_slot",
+            Linkage::Import,
+            &withevents_get_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut raise_event_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, ptr_ty, types::I32, ptr_ty, types::I32] {
+        raise_event_sig.params.push(AbiParam::new(param));
+    }
+    raise_event_sig.returns.push(AbiParam::new(types::I32));
+    let raise_event = module
+        .declare_function("rt_jit_raise_event", Linkage::Import, &raise_event_sig)
         .map_err(module_err)?;
 
     let mut project_member_get_slot_sig = module.make_signature();
@@ -9734,6 +10073,12 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         predeclared_set,
         field_get_slot,
         field_set_slot,
+        withevents_get_slot,
+        withevents_set_slot,
+        withevents_clear_owner_slot,
+        withevents_first_owner_slot,
+        withevents_next_owner_slot,
+        raise_event,
         project_member_get_slot,
         project_type_name_slot,
         new_record_slot,
@@ -10133,24 +10478,6 @@ fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str
         ),
         OxInst::FieldArraySet { .. } => Some(
             "JIT project object/class instruction FieldArraySet is unsupported: in-place array field writes require descriptor-backed object state",
-        ),
-        OxInst::WithEventsGet { .. } => Some(
-            "JIT project object/class instruction WithEventsGet is unsupported: event subscription graph state remains VM3-only",
-        ),
-        OxInst::WithEventsSet { .. } => Some(
-            "JIT project object/class instruction WithEventsSet is unsupported: event subscription mutation remains VM3-only",
-        ),
-        OxInst::WithEventsClearOwner { .. } => Some(
-            "JIT project object/class instruction WithEventsClearOwner is unsupported: event owner teardown remains VM3-only",
-        ),
-        OxInst::WithEventsFirstOwner { .. } => Some(
-            "JIT project object/class instruction WithEventsFirstOwner is unsupported: event owner iteration remains VM3-only",
-        ),
-        OxInst::WithEventsNextOwner { .. } => Some(
-            "JIT project object/class instruction WithEventsNextOwner is unsupported: event owner iteration remains VM3-only",
-        ),
-        OxInst::RaiseEvent { .. } => Some(
-            "JIT project object/class instruction RaiseEvent is unsupported: event dispatch and handler fault routing remain VM3-only",
         ),
         _ => None,
     }
@@ -12093,8 +12420,7 @@ unsafe extern "C" fn rt_jit_store_variant(
         let Some(slot) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        *slot = src;
-        ST_OK
+        replace_jit_slot_with_cleanup(state, slot, src)
     })
 }
 
@@ -12240,8 +12566,7 @@ unsafe extern "C" fn rt_jit_new_object_to_slot(
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
-        *slot = value;
-        ST_OK
+        replace_jit_slot_with_cleanup(state, slot, value)
     })
 }
 
@@ -12278,8 +12603,7 @@ unsafe extern "C" fn rt_jit_predeclared_to_slot(
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
-        *slot = value;
-        ST_OK
+        replace_jit_slot_with_cleanup(state, slot, value)
     })
 }
 
@@ -12330,6 +12654,426 @@ fn variant_to_project_object_for_jit(
         return Err(rt_raise_runtime_error_number(state, 91));
     }
     Err(rt_raise_runtime_error_number(state, 424))
+}
+
+unsafe fn jit_exec_state_mut<'a>(state: *mut RawExecState) -> Option<&'a mut ExecState<'a>> {
+    if state.is_null() {
+        None
+    } else {
+        // SAFETY: JIT helpers receive pointers produced by `exec_state_as_raw` for a
+        // live `ExecState` during the synchronous compiled run.
+        Some(unsafe { &mut *(state as *mut ExecState<'a>) })
+    }
+}
+
+fn jit_object_identity(value: &Variant) -> i32 {
+    value
+        .as_object_ref()
+        .map(|object| object.raw())
+        .unwrap_or(0)
+}
+
+fn jit_withevents_key(owner: &ObjectRef, binding: i64) -> i64 {
+    (i64::from(owner.raw()) << 32) | (binding & 0xFFFF_FFFF)
+}
+
+fn jit_withevents_owner_raw(key: i64) -> i32 {
+    (key >> 32) as i32
+}
+
+fn jit_withevents_binding(key: i64) -> i64 {
+    key & 0xFFFF_FFFF
+}
+
+fn clear_jit_withevents_owners_before_releasing_values<'a>(
+    state: *mut RawExecState,
+    values: impl IntoIterator<Item = &'a Variant>,
+) -> i32 {
+    let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+        return ST_FAULT;
+    };
+    let mut candidates: HashMap<i32, (ObjectRef, u32)> = HashMap::new();
+    for value in values {
+        let Some(owner) = value.as_object_ref() else {
+            continue;
+        };
+        if !owner.is_project_instance() {
+            continue;
+        }
+        let owner_raw = owner.raw();
+        candidates
+            .entry(owner_raw)
+            .and_modify(|(_, count)| *count += 1)
+            .or_insert((owner, 1));
+    }
+
+    for (owner_raw, (owner, releasing_refs)) in candidates {
+        let event_binding_refs = exec
+            .events
+            .withevents
+            .keys()
+            .filter(|key| jit_withevents_owner_raw(**key) == owner_raw)
+            .count() as u32;
+        if event_binding_refs == 0 {
+            continue;
+        }
+        let retained_event_refs = event_binding_refs;
+        if owner.strong_count() == retained_event_refs + releasing_refs + 1 {
+            exec.events
+                .withevents
+                .retain(|key, _| jit_withevents_owner_raw(*key) != owner_raw);
+        }
+    }
+    ST_OK
+}
+
+fn replace_jit_slot_with_cleanup(
+    state: *mut RawExecState,
+    slot: &mut Variant,
+    value: Variant,
+) -> i32 {
+    let status =
+        clear_jit_withevents_owners_before_releasing_values(state, std::iter::once(&*slot));
+    if status != ST_OK {
+        return status;
+    }
+    *slot = value;
+    ST_OK
+}
+
+fn cleanup_jit_frame_withevents_owners(state: *mut RawExecState, frame: &JitFrame) -> i32 {
+    clear_jit_withevents_owners_before_releasing_values(
+        state,
+        frame.locals.iter().chain(frame.temps.iter()),
+    )
+}
+
+fn after_jit_frame_pop(run: &mut JitRun, state: *mut RawExecState, frame: &JitFrame) -> i32 {
+    let status = cleanup_jit_frame_withevents_owners(state, frame);
+    if status != ST_OK {
+        return status;
+    }
+    prune_for_each_from_depth(run, run.frames.len());
+    prune_as_new_slots_from_depth(run, run.frames.len());
+    prune_param_array_aliases_from_depth(run, run.frames.len());
+    ST_OK
+}
+
+unsafe extern "C" fn rt_jit_withevents_get_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    owner: *const JitVariantOperandDesc,
+    binding: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || owner.is_null() || dst_area < 0 || dst_index < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: the compiled caller provides one live descriptor.
+        let owner_operand = unsafe { *owner };
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run = unsafe { &mut *run };
+        let owner_value = match variant_operand_value_with_as_new(run, state, owner_operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let owner_ref = match variant_to_project_object_for_jit(state, &owner_value) {
+            Ok(owner) => owner,
+            Err(status) => return status,
+        };
+        let key = jit_withevents_key(&owner_ref, binding as i64);
+        let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+            return ST_FAULT;
+        };
+        let value = exec
+            .events
+            .withevents
+            .get(&key)
+            .map(|binding| binding.source.clone())
+            .unwrap_or_else(|| Variant::from_i32(0));
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_withevents_set_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    operands: *const JitVariantOperandDesc,
+    binding: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || operands.is_null() || dst_area < 0 || dst_index < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and the compiled caller writes two live descriptors.
+        let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run = unsafe { &mut *run };
+        let owner_value = match variant_operand_value_with_as_new(run, state, operands[0]) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let value = match variant_operand_value_with_as_new(run, state, operands[1]) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let owner_ref = match variant_to_project_object_for_jit(state, &owner_value) {
+            Ok(owner) => owner,
+            Err(status) => return status,
+        };
+        let key = jit_withevents_key(&owner_ref, binding as i64);
+        let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+            return ST_FAULT;
+        };
+        if jit_is_nothing(&value) {
+            exec.events.withevents.remove(&key);
+        } else {
+            let order = exec.events.next_withevents_order;
+            exec.events.next_withevents_order = exec.events.next_withevents_order.wrapping_add(1);
+            exec.events.withevents.insert(
+                key,
+                EventBinding {
+                    owner: owner_value,
+                    source: value.clone(),
+                    order,
+                },
+            );
+        }
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_withevents_clear_owner_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    owner: *const JitVariantOperandDesc,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || owner.is_null() || dst_area < 0 || dst_index < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: the compiled caller provides one live descriptor.
+        let owner_operand = unsafe { *owner };
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run = unsafe { &mut *run };
+        let owner_value = match variant_operand_value_with_as_new(run, state, owner_operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let owner_ref = match variant_to_project_object_for_jit(state, &owner_value) {
+            Ok(owner) => owner,
+            Err(status) => return status,
+        };
+        let owner_raw = owner_ref.raw();
+        let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+            return ST_FAULT;
+        };
+        exec.events
+            .withevents
+            .retain(|key, _| jit_withevents_owner_raw(*key) != owner_raw);
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = Variant::from_i32(0);
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_withevents_first_owner_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    source: *const JitVariantOperandDesc,
+    binding: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || source.is_null() || dst_area < 0 || dst_index < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: the compiled caller provides one live descriptor.
+        let source_operand = unsafe { *source };
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run = unsafe { &mut *run };
+        let source_value = match variant_operand_value_with_as_new(run, state, source_operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let mut owners: Vec<(u64, ObjectRef)> = Vec::new();
+        if !jit_is_nothing(&source_value) {
+            let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+                return ST_FAULT;
+            };
+            let source_id = jit_object_identity(&source_value);
+            for (key, binding_data) in &exec.events.withevents {
+                if jit_withevents_binding(*key) == (binding as i64 & 0xFFFF_FFFF)
+                    && jit_object_identity(&binding_data.source) == source_id
+                    && let Some(owner) = binding_data.owner.as_object_ref()
+                {
+                    owners.push((binding_data.order, owner));
+                }
+            }
+        }
+        owners.sort_unstable_by_key(|(order, _)| *order);
+        let owners: Vec<ObjectRef> = owners.into_iter().map(|(_, owner)| owner).collect();
+        let value = match owners.first().cloned() {
+            Some(first) => {
+                let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+                    return ST_FAULT;
+                };
+                exec.events.withevents_iters.push((owners, 1));
+                Variant::from_object_ref(first)
+            }
+            None => Variant::from_i32(0),
+        };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_withevents_next_owner_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || dst_area < 0 || dst_index < 0 {
+            return ST_FAULT;
+        }
+        let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+            return ST_FAULT;
+        };
+        let next = exec
+            .events
+            .withevents_iters
+            .last_mut()
+            .and_then(|(owners, pos)| {
+                let value = owners.get(*pos).cloned();
+                if value.is_some() {
+                    *pos += 1;
+                }
+                value
+            });
+        let value = match next {
+            Some(owner) => Variant::from_object_ref(owner),
+            None => {
+                exec.events.withevents_iters.pop();
+                Variant::from_i32(0)
+            }
+        };
+        // SAFETY: null was rejected and this helper mutates only the destination slot.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_raise_event(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    source: *const JitVariantOperandDesc,
+    event: i32,
+    args: *const JitCallArgDesc,
+    argc: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || source.is_null()
+            || argc < 0
+            || (argc > 0 && args.is_null())
+        {
+            return ST_FAULT;
+        }
+        let argc = argc as usize;
+        let args = if argc == 0 {
+            &[]
+        } else {
+            // SAFETY: null was rejected and the compiled caller writes `argc` descriptors.
+            unsafe { std::slice::from_raw_parts(args, argc) }
+        };
+        // SAFETY: the compiled caller provides one live descriptor.
+        let source_operand = unsafe { *source };
+        // SAFETY: null was rejected and this helper clones before invoking handlers.
+        let run = unsafe { &mut *run };
+        let source_value = match variant_operand_value_with_as_new(run, state, source_operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let source_object = match variant_to_project_object_for_jit(state, &source_value) {
+            Ok(object) => object,
+            Err(status) => return status,
+        };
+        let source_id = source_object.raw();
+        let targets: Vec<(u64, Variant, usize, usize)> = {
+            let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+                return ST_FAULT;
+            };
+            let mut targets = Vec::new();
+            for (key, binding) in &exec.events.withevents {
+                if jit_object_identity(&binding.source) != source_id {
+                    continue;
+                }
+                let token = jit_withevents_binding(*key) as i32;
+                let owner_bundle = binding
+                    .owner
+                    .as_object_ref()
+                    .map(|owner| owner.bundle_id() as usize)
+                    .unwrap_or_else(|| {
+                        run.frames
+                            .last()
+                            .map(|frame| frame.program_index)
+                            .unwrap_or(0)
+                    });
+                if let Some(&handler) = exec
+                    .programs
+                    .get(owner_bundle)
+                    .and_then(|program| program.event_routes.get(&(token, event)))
+                {
+                    targets.push((binding.order, binding.owner.clone(), handler, owner_bundle));
+                }
+            }
+            targets.sort_by_key(|(order, ..)| *order);
+            targets
+        };
+        let names = vec![
+            JitCallArgNameDesc {
+                ptr: 0,
+                len: -1,
+                _pad: 0,
+            };
+            args.len()
+        ];
+        for (_, sink, handler, owner_bundle) in targets {
+            if let Err(status) =
+                invoke_project_member_with_me(run, state, owner_bundle, handler, sink, args, &names)
+            {
+                return status;
+            }
+        }
+        ST_OK
+    })
 }
 
 unsafe extern "C" fn rt_jit_project_field_get_to_slot(
@@ -12524,10 +13268,13 @@ fn invoke_project_member_with_me(
     } else {
         None
     };
-    run.frames.pop();
-    prune_for_each_from_depth(run, run.frames.len());
-    prune_as_new_slots_from_depth(run, run.frames.len());
-    prune_param_array_aliases_from_depth(run, run.frames.len());
+    let Some(frame) = run.frames.pop() else {
+        return Err(ST_FAULT);
+    };
+    let cleanup_status = after_jit_frame_pop(run, state, &frame);
+    if cleanup_status != ST_OK {
+        return Err(cleanup_status);
+    }
     let restore_status = rt_err_restore_activation(state, &saved_err);
     if restore_status != ST_OK {
         return Err(restore_status);
@@ -12599,10 +13346,13 @@ fn invoke_project_default_member_values(
         &args,
         &names,
     );
-    run.frames.pop();
-    prune_for_each_from_depth(run, run.frames.len());
-    prune_as_new_slots_from_depth(run, run.frames.len());
-    prune_param_array_aliases_from_depth(run, run.frames.len());
+    let Some(frame) = run.frames.pop() else {
+        return Err(ST_FAULT);
+    };
+    let cleanup_status = after_jit_frame_pop(run, state, &frame);
+    if cleanup_status != ST_OK {
+        return Err(cleanup_status);
+    }
     result
 }
 
@@ -14165,9 +14915,10 @@ unsafe extern "C" fn rt_jit_direct_exit_noarg_sub(
         let Some(frame) = run.frames.pop() else {
             return ST_FAULT;
         };
-        prune_for_each_from_depth(run, run.frames.len());
-        prune_as_new_slots_from_depth(run, run.frames.len());
-        prune_param_array_aliases_from_depth(run, run.frames.len());
+        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        if cleanup_status != ST_OK {
+            return cleanup_status;
+        }
         let restore_status = rt_err_restore_activation(state, &frame.saved_err);
         if restore_status != ST_OK {
             restore_status
@@ -14273,9 +15024,10 @@ unsafe extern "C" fn rt_jit_direct_exit_noarg_func(
         let Some(frame) = run.frames.pop() else {
             return ST_FAULT;
         };
-        prune_for_each_from_depth(run, run.frames.len());
-        prune_as_new_slots_from_depth(run, run.frames.len());
-        prune_param_array_aliases_from_depth(run, run.frames.len());
+        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        if cleanup_status != ST_OK {
+            return cleanup_status;
+        }
         let restore_status = rt_err_restore_activation(state, &frame.saved_err);
         if restore_status != ST_OK {
             return restore_status;
@@ -15061,10 +15813,13 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
         } else {
             None
         };
-        run.frames.pop();
-        prune_for_each_from_depth(run, run.frames.len());
-        prune_as_new_slots_from_depth(run, run.frames.len());
-        prune_param_array_aliases_from_depth(run, run.frames.len());
+        let Some(frame) = run.frames.pop() else {
+            return ST_FAULT;
+        };
+        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        if cleanup_status != ST_OK {
+            return cleanup_status;
+        }
         let restore_status = rt_err_restore_activation(state, &saved_err);
         if restore_status != ST_OK {
             return restore_status;
@@ -19127,58 +19882,6 @@ mod tests {
                     value: OxOperand::Const(OxConst::I32(42)),
                 },
                 "FieldArraySet",
-            ),
-            (
-                "WithEventsGet",
-                OxInst::WithEventsGet {
-                    dst: OxPlace::Local(LocalId(1)),
-                    owner: object(),
-                    binding: 10,
-                },
-                "WithEventsGet",
-            ),
-            (
-                "WithEventsSet",
-                OxInst::WithEventsSet {
-                    dst: OxPlace::Local(LocalId(1)),
-                    owner: object(),
-                    binding: 10,
-                    value: other(),
-                },
-                "WithEventsSet",
-            ),
-            (
-                "WithEventsClearOwner",
-                OxInst::WithEventsClearOwner {
-                    dst: OxPlace::Local(LocalId(1)),
-                    owner: object(),
-                },
-                "WithEventsClearOwner",
-            ),
-            (
-                "WithEventsFirstOwner",
-                OxInst::WithEventsFirstOwner {
-                    dst: OxPlace::Local(LocalId(1)),
-                    source: object(),
-                    binding: 10,
-                },
-                "WithEventsFirstOwner",
-            ),
-            (
-                "WithEventsNextOwner",
-                OxInst::WithEventsNextOwner {
-                    dst: OxPlace::Local(LocalId(1)),
-                },
-                "WithEventsNextOwner",
-            ),
-            (
-                "RaiseEvent",
-                OxInst::RaiseEvent {
-                    source: object(),
-                    event: 99,
-                    args: Vec::new(),
-                },
-                "RaiseEvent",
             ),
         ];
 

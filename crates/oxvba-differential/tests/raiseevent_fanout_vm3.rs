@@ -35,6 +35,60 @@ fn assert_result(modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)], e
     );
 }
 
+fn assert_i32_for(
+    executor: Executor,
+    modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)],
+    expected: i32,
+) {
+    assert_i32_values_for(executor, modules, &[expected]);
+}
+
+fn assert_i32_values_for(
+    executor: Executor,
+    modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)],
+    expected: &[i32],
+) {
+    let outcome = run_modules(executor, modules, "VBAProject");
+    assert!(
+        outcome.unsupported.is_none(),
+        "{executor:?} declined RaiseEvent fan-out case as unsupported: {:?}",
+        outcome.unsupported
+    );
+    if let Some(balance) = outcome.handle_balance {
+        assert!(
+            balance.is_zero(),
+            "{executor:?} RaiseEvent fan-out case leaked runtime handles: {:?}",
+            outcome.handle_balance
+        );
+    }
+    let values = outcome
+        .result
+        .unwrap_or_else(|err| panic!("{executor:?} RaiseEvent fan-out case failed: {err}"));
+    for expected in expected {
+        let expected = canon(&Variant::from_i32(*expected));
+        assert!(
+            values.contains(&expected),
+            "{executor:?} snapshot {values:?} did not contain {expected:?}"
+        );
+    }
+}
+
+fn assert_i32_vm3_and_jit(
+    modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)],
+    expected: i32,
+) {
+    assert_i32_for(Executor::Vm3, modules, expected);
+    assert_i32_for(Executor::Jit, modules, expected);
+}
+
+fn assert_i32_values_vm3_and_jit(
+    modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)],
+    expected: &[i32],
+) {
+    assert_i32_values_for(Executor::Vm3, modules, expected);
+    assert_i32_values_for(Executor::Jit, modules, expected);
+}
+
 const SOURCE: &str = r#"
 Public Event Poked(ByRef n As Long)
 
@@ -119,6 +173,292 @@ Private Sub src_Poked(ByRef n As Long)
     n = n * 10 + 3
 End Sub
 "#;
+
+const NUMERIC_SINK_ONE: &str = r#"
+Private WithEvents src As Source
+
+Public Sub Wire(ByVal value As Source)
+    Set src = value
+End Sub
+
+Public Sub Clear()
+    Set src = Nothing
+End Sub
+
+Private Sub src_Poked(ByRef n As Long)
+    n = 1
+End Sub
+"#;
+
+const NUMERIC_SINK_TWO: &str = r#"
+Private WithEvents src As Source
+
+Public Sub Wire(ByVal value As Source)
+    Set src = value
+End Sub
+
+Private Sub src_Poked(ByRef n As Long)
+    n = 2
+End Sub
+"#;
+
+const NUMERIC_SINK_SEVEN: &str = r#"
+Private WithEvents src As Source
+
+Public Sub Wire(ByVal value As Source)
+    Set src = value
+End Sub
+
+Private Sub src_Poked(ByRef n As Long)
+    n = 7
+End Sub
+"#;
+
+const NUMERIC_TERMINATING_SINK: &str = r#"
+Private WithEvents src As Source
+
+Public Sub Wire(ByVal value As Source)
+    Set src = value
+End Sub
+
+Private Sub Class_Terminate()
+    Main.termCount = Main.termCount + 1
+End Sub
+
+Private Sub src_Poked(ByRef n As Long)
+    n = n + 3
+End Sub
+"#;
+
+const NUMERIC_FAULTING_SINK: &str = r#"
+Private WithEvents src As Source
+
+Public Sub Wire(ByVal value As Source)
+    Set src = value
+End Sub
+
+Private Sub src_Poked(ByRef n As Long)
+    n = n + 3
+    Err.Raise 77
+End Sub
+"#;
+
+#[test]
+fn jit_project_events_two_sinks_dispatch_in_subscription_order() {
+    assert_i32_vm3_and_jit(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public result As Variant
+Sub Main()
+    Dim s As Source
+    Dim a As SinkOne
+    Dim b As SinkTwo
+    Set s = New Source
+    Set a = New SinkOne
+    Set b = New SinkTwo
+    b.Wire s
+    a.Wire s
+    result = s.FireWith(9)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("SinkOne", Class, NUMERIC_SINK_ONE),
+            ("SinkTwo", Class, NUMERIC_SINK_TWO),
+        ],
+        1,
+    );
+}
+
+#[test]
+fn jit_project_events_reassigning_existing_field_moves_subscription_to_end() {
+    assert_i32_vm3_and_jit(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public result As Variant
+Sub Main()
+    Dim s As Source
+    Dim a As SinkOne
+    Dim b As SinkTwo
+    Set s = New Source
+    Set a = New SinkOne
+    Set b = New SinkTwo
+    a.Wire s
+    b.Wire s
+    a.Wire s
+    result = s.FireWith(9)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("SinkOne", Class, NUMERIC_SINK_ONE),
+            ("SinkTwo", Class, NUMERIC_SINK_TWO),
+        ],
+        1,
+    );
+}
+
+#[test]
+fn jit_project_events_reassigned_field_detaches_old_source() {
+    assert_i32_values_vm3_and_jit(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public firstResult As Variant
+Public secondResult As Variant
+Sub Main()
+    Dim s1 As Source
+    Dim s2 As Source
+    Dim k As SinkSeven
+    Set s1 = New Source
+    Set s2 = New Source
+    Set k = New SinkSeven
+    k.Wire s1
+    k.Wire s2
+    firstResult = s1.FireWith(9)
+    secondResult = s2.FireWith(9)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("SinkSeven", Class, NUMERIC_SINK_SEVEN),
+        ],
+        &[9, 7],
+    );
+}
+
+#[test]
+fn jit_project_events_clear_and_rewire_moves_subscription_to_end() {
+    assert_i32_vm3_and_jit(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public result As Variant
+Sub Main()
+    Dim s As Source
+    Dim a As SinkOne
+    Dim b As SinkTwo
+    Set s = New Source
+    Set a = New SinkOne
+    Set b = New SinkTwo
+    a.Wire s
+    b.Wire s
+    a.Clear
+    a.Wire s
+    result = s.FireWith(9)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("SinkOne", Class, NUMERIC_SINK_ONE),
+            ("SinkTwo", Class, NUMERIC_SINK_TWO),
+        ],
+        1,
+    );
+}
+
+#[test]
+fn jit_project_events_terminated_owner_unsubscribes_before_next_raise() {
+    assert_i32_values_vm3_and_jit(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public firstResult As Variant
+Public secondResult As Variant
+Public termCount As Long
+Sub Main()
+    Dim s As Source
+    Dim k As TerminatingSink
+    Set s = New Source
+    Set k = New TerminatingSink
+    k.Wire s
+    firstResult = s.FireWith(1)
+    Set k = Nothing
+    secondResult = s.FireWith(2)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("TerminatingSink", Class, NUMERIC_TERMINATING_SINK),
+        ],
+        &[4, 2, 1],
+    );
+}
+
+#[test]
+fn jit_project_events_scoped_owner_unsubscribes_before_caller_continues() {
+    assert_i32_values_vm3_and_jit(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public firstResult As Variant
+Public secondResult As Variant
+Public termCount As Long
+
+Sub WireAndDrop(ByVal s As Source)
+    Dim k As TerminatingSink
+    Set k = New TerminatingSink
+    k.Wire s
+    firstResult = s.FireWith(1)
+End Sub
+
+Sub Main()
+    Dim s As Source
+    Set s = New Source
+    WireAndDrop s
+    secondResult = s.FireWith(2)
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("TerminatingSink", Class, NUMERIC_TERMINATING_SINK),
+        ],
+        &[4, 2, 1],
+    );
+}
+
+#[test]
+fn jit_project_events_handler_fault_routes_to_raiser_caller_resume_next() {
+    assert_i32_values_vm3_and_jit(
+        &[
+            (
+                "Main",
+                Procedural,
+                r#"
+Public result As Variant
+Public errNo As Variant
+Sub Main()
+    Dim s As Source
+    Dim k As FaultingSink
+    Set s = New Source
+    Set k = New FaultingSink
+    k.Wire s
+    On Error Resume Next
+    result = s.FireWith(1)
+    errNo = Err.Number
+End Sub
+"#,
+            ),
+            ("Source", Class, SOURCE),
+            ("FaultingSink", Class, NUMERIC_FAULTING_SINK),
+        ],
+        &[77],
+    );
+}
 
 #[test]
 fn same_sink_two_fields_dispatch_in_subscription_order() {

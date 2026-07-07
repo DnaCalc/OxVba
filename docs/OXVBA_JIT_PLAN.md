@@ -1056,6 +1056,17 @@ same-type `Set` assignment, referenced property dispatch, cross-bundle `TypeName
 `TypeOf ... Is`, referenced incompatible-class assignment diagnostics, and referenced predeclared
 singleton method/property dispatch with no VM fallback.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.25` is complete for project events. The JIT
+now lowers project `WithEventsGet`, `WithEventsSet`, `WithEventsClearOwner`,
+`WithEventsFirstOwner`, `WithEventsNextOwner`, and `RaiseEvent` over the shared `ExecState` event
+fabric and loaded event-route tables. Frame-pop and object-carrier slot-overwrite cleanup break
+project `WithEvents` owner cycles before the final owner reference drops, matching VM3 owner
+termination unsubscribe timing. VM3/JIT rows now cover subscription ordering, same-source
+reassignment order, reassignment to a different source, clear/rewire order, explicit `Set owner =
+Nothing`, scoped owner teardown before caller continuation, and handler fault routing through
+`On Error Resume Next`. COM connection-point transport and IP-08/V11 ByRef COM event writeback
+remain explicitly out of M4-8 scope.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1072,9 +1083,11 @@ Class/JIT follow-up bead order:
    2026-07-07; linked-image execution, `NewExtern`, referenced same-type `Set`,
    incompatible-assignment diagnostics, referenced predeclared singleton dispatch,
    cross-bundle `TypeName`, and cross-bundle `TypeOf` are green.
-9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT. Active
-   2026-07-07.
-10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events.
+9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT. Complete
+   2026-07-07; project event get/set/clear/iteration, `RaiseEvent` fan-out, ordering,
+   reassignment/detach, owner termination unsubscribe, and handler fault routing are green.
+10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events. Active
+    2026-07-07.
 11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite.
 12. `bd-h4oh.10.28` - VM3/JIT class execution parity sweep for the accepted project-class subset.
 13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff.

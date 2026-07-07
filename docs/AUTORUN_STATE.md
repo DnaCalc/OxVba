@@ -9,25 +9,26 @@ Recovery rule: an accidental interim status reply is non-blocking and must be tr
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Current user instruction (2026-07-07): take stock from the IP-08B detour, resume class-module
 support in the JIT, and keep follow-up class-related beads ready in line with the current
-class-module plan. `bd-h4oh.10.24`
-(`M4-8 JIT cross-project class descriptors and construction`) is closed; continue with
-`bd-h4oh.10.25` (`M4-8 JIT project events and WithEvents fan-out`). Current `.10.24` evidence has
-linked-image JIT execution, referenced `NewExtern`, referenced same-type `Set`, referenced
-incompatible-assignment diagnostics, referenced predeclared singleton dispatch, cross-project
-member dispatch, cross-bundle `TypeName`, and cross-bundle `TypeOf` green.
+class-module plan. `bd-h4oh.10.25`
+(`M4-8 JIT project events and WithEvents fan-out`) is closed; continue with
+`bd-h4oh.10.26` (`M4-8 class metadata/package contract residual audit`). Current `.10.25`
+evidence has project `WithEvents` get/set/clear/iteration lowering, project `RaiseEvent`
+fan-out, event-route-table loading, subscription ordering, reassignment/detach, clear/rewire,
+owner termination unsubscribe, scoped owner teardown, and handler fault routing green under
+VM3/JIT numeric differential rows.
 `bd-aprs.8.8` / IP-08B COM-host work is deferred from scheduler/ready output, not closed; its
 remaining state is documented in `CURRENT_BLOCKERS.md` and
 `docs/worksets/WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md`.
 GPT-5.5 startup note: keep resume context bounded. Read the authoritative status surfaces below, then open only the active workset/bead/evidence files needed for the next outcome.
 
 Active ladder/work bead:
-- `bd-h4oh.10.25` under `bd-h4oh.10` / M4-8 objects, classes, lifecycle, after closing
-  `bd-h4oh.10.24`.
-Completed gate: `.10.24` linked JIT images
-compile all programs, callback/function/global routing is program-indexed, and
-`jit_project_objects` covers referenced `New`, referenced predeclared singleton dispatch,
-cross-project member/property calls, same-type referenced `Set`, incompatible referenced-class
-assignment diagnostics, cross-bundle `TypeName`, and cross-bundle `TypeOf`.
+- `bd-h4oh.10.26` under `bd-h4oh.10` / M4-8 objects, classes, lifecycle, after closing
+  `bd-h4oh.10.25`.
+Completed gate: `.10.25` project event fan-out lowers project `WithEvents` and `RaiseEvent`
+without VM fallback, keeps route lookup in loaded runtime descriptors, clears owner event cycles
+on frame exit and object-slot overwrite, and covers ordering, reassignment/detach, clear/rewire,
+owner termination unsubscribe, scoped owner teardown, and handler fault routing in
+`raiseevent_fanout_vm3`.
 Follow-up beads staged under `bd-h4oh.10`: `bd-h4oh.10.24` through `bd-h4oh.10.29`, chained in
 execution order after `bd-h4oh.10.23`. `bd-h4oh.10.26-.29` cover the post-events class metadata
 audit, binder/lowering residual suite, VM3/JIT parity sweep, and terminal docs/residual handoff.
@@ -48,5 +49,5 @@ Authoritative status surfaces:
 
 Resume protocol:
 1. Read `AGENTS.md` and this file.
-2. Inspect `bd-h4oh.10.25`, `bd-h4oh.10`, and `docs/OXVBA_JIT_PLAN.md` M4-8.
+2. Inspect `bd-h4oh.10.26`, `bd-h4oh.10`, and `docs/OXVBA_JIT_PLAN.md` M4-8.
 3. Continue with the scoped class/JIT slice; do not resume IP-08B unless explicitly redirected.
