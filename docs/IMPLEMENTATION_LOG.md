@@ -2254,3 +2254,57 @@
   - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
   - `cargo test -p oxvba-jit -- --format terse`
   - `cargo test -p oxvba-rt-abi -- --format terse`
+
+# 2026-07-07 - JIT class termination, cross-project classes, and project events
+
+- Closed the remaining behavior-delivery class beads through `bd-h4oh.10.25`.
+- Added JIT `Class_Terminate` release/drain support for the covered project-class paths, including
+  statement/procedure-boundary drains, initializer-failure cleanup/retry, cascaded field release,
+  and suppressed termination faults.
+- Extended the JIT image carrier for linked referenced projects, so `NewExtern`,
+  `PredeclaredExtern`, and `PredeclaredExternSet` resolve referenced-project class imports to
+  linked `(program, class)` descriptors while imported VBA/COM coclasses keep deterministic
+  unsupported diagnostics.
+- Added project `WithEvents` and `RaiseEvent` lowering over the shared runtime event-route tables,
+  including reassignment/detach, owner teardown before final release, fan-out order, and handler
+  fault routing.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `cargo test -p oxvba-jit -- --format terse`
+  - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
+  - `cargo test -p oxvba-differential --test raiseevent_fanout_vm3 -- --nocapture`
+  - `cargo test -p oxvba-differential --test class_lifecycle_vm3 -- --nocapture`
+
+# 2026-07-07 - Class metadata, binder, and parity sweep audits
+
+- Closed support beads `bd-h4oh.10.26`, `bd-h4oh.10.27`, and `bd-h4oh.10.28`.
+- Recorded the project-class metadata/package contract audit in
+  `docs/evidence/class_metadata_package_contract_audit_20260707.md`; no new VM/JIT descriptor
+  field is required for the accepted M4-8 class subset.
+- Recorded the binder/lowering residual suite audit in
+  `docs/evidence/class_binder_lowering_residual_suite_audit_20260707.md`; no new source-to-OxIR
+  lowering gap was found for the accepted project-class subset.
+- Recorded the VM3/JIT class parity sweep in
+  `docs/evidence/class_vm3_jit_parity_sweep_20260707.md`; construction, `As New`, predeclared
+  singletons, identity/type checks, member/property/default-member dispatch, object-valued
+  properties, lifecycle timing, cross-project classes, project events, unsupported diagnostics, and
+  handle-balance checks are green for the accepted subset.
+- Verification completed:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `cargo test -p oxvba-jit -- --format terse`
+  - `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture`
+  - `cargo test -p oxvba-differential --test raiseevent_fanout_vm3 -- --nocapture`
+  - `cargo test -p oxvba-differential --test class_lifecycle_vm3 -- --nocapture`
+
+# 2026-07-07 - M4-8 class terminal residual handoff
+
+- Completed the terminal documentation and residual handoff for `bd-h4oh.10.29`.
+- Added `docs/evidence/class_m4_8_terminal_residual_handoff_20260707.md`, which names the
+  supported M4-8 project-class subset, evidence chain, deterministic unsupported class/COM
+  boundaries, and later-lane residual beads.
+- Kept class-related COM export/server readiness deferred to `bd-h4oh.15.1` under M4-13; M4-8
+  does not claim imported COM coclass activation, COM connection points, COM server/export
+  readiness, AOT COM vtables, or live Windows COM interop.
+- No additional in-scope M4-8 project-class delivery bead was identified by the terminal review.

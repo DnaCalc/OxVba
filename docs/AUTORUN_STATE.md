@@ -9,23 +9,24 @@ Recovery rule: an accidental interim status reply is non-blocking and must be tr
 Reply condition: only report back when the active ladder end gate is passed, or when all remaining progress is blocked by documented blockers.
 Current user instruction (2026-07-07): take stock from the IP-08B detour, resume class-module
 support in the JIT, and keep follow-up class-related beads ready in line with the current
-class-module plan. `bd-h4oh.10.28`
-(`M4-8 VM3/JIT class execution parity sweep`) is closed; continue with `bd-h4oh.10.29`
-(`M4-8 class support terminal docs and residual handoff`). Current `.10.28` evidence is
-`docs/evidence/class_vm3_jit_parity_sweep_20260707.md`: accepted project-class execution rows are
-green for construction, `As New`, identity/type checks, member/property/default-member dispatch,
-object-valued properties, predeclared singletons, lifecycle/termination timing, cross-project
-classes, project events, unsupported diagnostics, and exposed handle-balance checks.
+class-module plan. `bd-h4oh.10.29`
+(`M4-8 class support terminal docs and residual handoff`) is closed. Current terminal evidence is
+`docs/evidence/class_m4_8_terminal_residual_handoff_20260707.md`: accepted project-class execution
+rows are green for construction, `As New`, identity/type checks, member/property/default-member
+dispatch, object-valued properties, predeclared singletons, lifecycle/termination timing,
+cross-project classes, project events, unsupported diagnostics, and exposed handle-balance checks.
+COM activation/dispatch, COM connection points, COM server/export, AOT COM vtables, and live
+Windows COM interop remain later-lane residuals.
 `bd-aprs.8.8` / IP-08B COM-host work is deferred from scheduler/ready output, not closed; its
 remaining state is documented in `CURRENT_BLOCKERS.md` and
 `docs/worksets/WORKSET_2026-03-19_IP-08B_EXECUTION_CHECKLIST.md`.
 GPT-5.5 startup note: keep resume context bounded. Read the authoritative status surfaces below, then open only the active workset/bead/evidence files needed for the next outcome.
 
 Active ladder/work bead:
-- `bd-h4oh.10.29` under `bd-h4oh.10` / M4-8 objects, classes, lifecycle, after closing
-  `bd-h4oh.10.28`.
-Completed gate: `.10.28` swept the accepted VM3/JIT project-class execution subset and found no
-in-scope class execution gap.
+- `bd-h4oh.10` remains open only because its legacy ladder dependency `bd-h4oh.9` is still open;
+  all class-related child beads through `bd-h4oh.10.29` are closed.
+Completed gate: `.10.29` reconciled terminal docs, unsupported diagnostics, and residual handoff
+for the accepted M4-8 project-class execution subset.
 Follow-up beads staged under `bd-h4oh.10`: `bd-h4oh.10.24` through `bd-h4oh.10.29`, chained in
 execution order after `bd-h4oh.10.23`. `bd-h4oh.10.26-.29` cover the post-events class metadata
 audit, binder/lowering residual suite, VM3/JIT parity sweep, and terminal docs/residual handoff.
@@ -46,5 +47,6 @@ Authoritative status surfaces:
 
 Resume protocol:
 1. Read `AGENTS.md` and this file.
-2. Inspect `bd-h4oh.10.29`, `bd-h4oh.10`, and `docs/OXVBA_JIT_PLAN.md` M4-8.
-3. Continue with the scoped class/JIT slice; do not resume IP-08B unless explicitly redirected.
+2. Inspect `bd-h4oh.10`, `bd-h4oh.9`, and `docs/OXVBA_JIT_PLAN.md` M4-8/M4-7 before attempting
+   parent-bead closure.
+3. Do not resume IP-08B unless explicitly redirected.

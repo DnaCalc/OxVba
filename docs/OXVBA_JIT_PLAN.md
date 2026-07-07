@@ -1093,6 +1093,13 @@ dispatch, default members, object-valued properties, predeclared singletons, lif
 timing, cross-project class calls/diagnostics, project events, unsupported diagnostics, and exposed
 handle-balance checks. No in-scope execution gap was found in the sweep.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.29` is complete. Terminal residual handoff is
+recorded in `docs/evidence/class_m4_8_terminal_residual_handoff_20260707.md`. The M4-8 class/JIT
+lane closes only for the accepted project-class subset listed above. Imported VBA/COM coclass
+activation, COM dispatch, COM connection points, COM server/export readiness, AOT COM vtables, and
+live Windows COM interop remain later-lane residuals, with class COM-export descriptor readiness
+deferred to `bd-h4oh.15.1`.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1119,8 +1126,8 @@ Class/JIT follow-up bead order:
     audit evidence recorded with no new lowering gap found for the accepted project-class subset.
 12. `bd-h4oh.10.28` - VM3/JIT class execution parity sweep for the accepted project-class subset.
     Complete 2026-07-07; accepted project-class VM3/JIT corpus green.
-13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff. Active
-    2026-07-07.
+13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff. Complete
+    2026-07-07; M4-8 project-class scope and COM residuals reconciled.
 
 Class-related COM export/server readiness is intentionally not part of this M4-8 chain. The
 deferred handoff bead is `bd-h4oh.15.1` under M4-13, where generated COM vtables and AOT/export
