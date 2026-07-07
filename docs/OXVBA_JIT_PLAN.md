@@ -1086,6 +1086,13 @@ versus `Set` reference contexts, object-valued properties, indexed Property Let/
 rules including named indexes, and invalid Let/Set/member combinations for the accepted
 project-class subset.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.28` is complete. The VM3/JIT class execution
+parity sweep is recorded in `docs/evidence/class_vm3_jit_parity_sweep_20260707.md`. The accepted
+project-class subset is green for construction, `As New`, identity/type checks, member/property
+dispatch, default members, object-valued properties, predeclared singletons, lifecycle/termination
+timing, cross-project class calls/diagnostics, project events, unsupported diagnostics, and exposed
+handle-balance checks. No in-scope execution gap was found in the sweep.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1111,8 +1118,9 @@ Class/JIT follow-up bead order:
 11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite. Complete 2026-07-07;
     audit evidence recorded with no new lowering gap found for the accepted project-class subset.
 12. `bd-h4oh.10.28` - VM3/JIT class execution parity sweep for the accepted project-class subset.
-    Active 2026-07-07.
-13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff.
+    Complete 2026-07-07; accepted project-class VM3/JIT corpus green.
+13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff. Active
+    2026-07-07.
 
 Class-related COM export/server readiness is intentionally not part of this M4-8 chain. The
 deferred handoff bead is `bd-h4oh.15.1` under M4-13, where generated COM vtables and AOT/export
