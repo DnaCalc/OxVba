@@ -1067,6 +1067,16 @@ Nothing`, scoped owner teardown before caller continuation, and handler fault ro
 `On Error Resume Next`. COM connection-point transport and IP-08/V11 ByRef COM event writeback
 remain explicitly out of M4-8 scope.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.26` is complete as a support audit. The class
+metadata/package contract was reconciled in
+`docs/evidence/class_metadata_package_contract_audit_20260707.md`. Bundle, OxIR, rt-abi, runtime,
+VM3, and JIT descriptor surfaces carry the VM/JIT-needed facts for project-class execution without
+source reconstruction: class identity, fields, `As New` fields, methods/properties, hidden `Me`,
+default members, `_NewEnum`, lifecycle hooks, predeclared singletons, implemented project
+interfaces, and project event routes. No new descriptor field is required before the next
+binder/lowering residual suite. COM export/server readiness remains explicitly deferred to the
+later COM/AOT lane.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1086,9 +1096,10 @@ Class/JIT follow-up bead order:
 9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT. Complete
    2026-07-07; project event get/set/clear/iteration, `RaiseEvent` fan-out, ordering,
    reassignment/detach, owner termination unsubscribe, and handler fault routing are green.
-10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events. Active
-    2026-07-07.
-11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite.
+10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events.
+    Complete 2026-07-07; audit evidence recorded with no new descriptor field required before
+    binder/lowering work.
+11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite. Active 2026-07-07.
 12. `bd-h4oh.10.28` - VM3/JIT class execution parity sweep for the accepted project-class subset.
 13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff.
 
