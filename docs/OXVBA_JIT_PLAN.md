@@ -1077,6 +1077,15 @@ interfaces, and project event routes. No new descriptor field is required before
 binder/lowering residual suite. COM export/server readiness remains explicitly deferred to the
 later COM/AOT lane.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.27` is complete. The binder/lowering residual
+suite was reconciled in
+`docs/evidence/class_binder_lowering_residual_suite_audit_20260707.md`. Existing bind/OxIR/JIT
+fixtures cover hidden `Me`, instance fields, explicit and cross-project `New`, lazy `As New`,
+predeclared singleton reset/replacement, property accessor grouping, default-member value contexts
+versus `Set` reference contexts, object-valued properties, indexed Property Let/Set value-last
+rules including named indexes, and invalid Let/Set/member combinations for the accepted
+project-class subset.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1099,8 +1108,10 @@ Class/JIT follow-up bead order:
 10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events.
     Complete 2026-07-07; audit evidence recorded with no new descriptor field required before
     binder/lowering work.
-11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite. Active 2026-07-07.
+11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite. Complete 2026-07-07;
+    audit evidence recorded with no new lowering gap found for the accepted project-class subset.
 12. `bd-h4oh.10.28` - VM3/JIT class execution parity sweep for the accepted project-class subset.
+    Active 2026-07-07.
 13. `bd-h4oh.10.29` - M4-8 terminal docs, unsupported diagnostics, and residual handoff.
 
 Class-related COM export/server readiness is intentionally not part of this M4-8 chain. The
