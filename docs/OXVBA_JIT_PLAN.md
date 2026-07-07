@@ -1045,6 +1045,17 @@ termination, initializer-failure cleanup/retry, and cascaded field release to ch
 Cross-project classes remain split to `bd-h4oh.10.24`; project events remain split to
 `bd-h4oh.10.25`; COM server/export release behavior remains out of M4-8 scope.
 
+Current evidence addendum (2026-07-07): `bd-h4oh.10.24` is complete. The JIT image carrier now
+compiles every linked `OxProgram`, keeps per-program function tables, tags frames with owning
+program indexes, and resolves globals through the owning frame so referenced-project methods and
+initializers read/write their own project state. `NewExtern`, `PredeclaredExtern`, and
+`PredeclaredExternSet` now resolve referenced-project class imports to linked `(program, class)`
+descriptors and reuse the project object/predeclared runtime helpers; imported `VBA`/COM library
+coclasses remain an explicit unsupported path. VM3/JIT rows now cover `New Lib.Widget`, referenced
+same-type `Set` assignment, referenced property dispatch, cross-bundle `TypeName`, cross-bundle
+`TypeOf ... Is`, referenced incompatible-class assignment diagnostics, and referenced predeclared
+singleton method/property dispatch with no VM fallback.
+
 Class/JIT follow-up bead order:
 1. `bd-h4oh.10.17` - active-project construction and property-read slice. Complete 2026-07-07.
 2. `bd-h4oh.10.18` - active-project object identity, reference ownership, `Is`, `TypeOf`, and
@@ -1057,8 +1068,12 @@ Class/JIT follow-up bead order:
    2026-07-07.
 7. `bd-h4oh.10.23` - `Class_Terminate`, release ownership, and termination drains. Complete
    2026-07-07.
-8. `bd-h4oh.10.24` - referenced-project class descriptors and construction.
-9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT.
+8. `bd-h4oh.10.24` - referenced-project class descriptors and construction. Complete
+   2026-07-07; linked-image execution, `NewExtern`, referenced same-type `Set`,
+   incompatible-assignment diagnostics, referenced predeclared singleton dispatch,
+   cross-bundle `TypeName`, and cross-bundle `TypeOf` are green.
+9. `bd-h4oh.10.25` - project `WithEvents` and `RaiseEvent` fan-out in JIT. Active
+   2026-07-07.
 10. `bd-h4oh.10.26` - class metadata/package contract residual audit after project events.
 11. `bd-h4oh.10.27` - binder and lowering class semantics residual suite.
 12. `bd-h4oh.10.28` - VM3/JIT class execution parity sweep for the accepted project-class subset.

@@ -349,30 +349,26 @@ pub fn run_project_closure(
             }
         }
         Executor::Jit => {
-            if closure_leaf_first.len() != 1 {
-                RunOutcome::unsupported("M4-3 JIT supports one-project closure execution only")
-            } else {
-                match jit_candidate_engine()
-                    .execute_project_closure_with_variant_snapshot(closure_leaf_first)
-                {
-                    Ok(values) => RunOutcome {
-                        result: Ok(values.iter().map(canon).collect()),
-                        err: FinalErr::default(),
-                        raised: false,
-                        unsupported: None,
-                        handle_balance: None,
-                    },
-                    Err(err) => {
-                        if err.diagnostic().code.as_str().contains("JIT-UNSUPPORTED") {
-                            RunOutcome::unsupported(err.message().to_string())
-                        } else {
-                            RunOutcome {
-                                result: Err(err.message().to_string()),
-                                err: FinalErr::default(),
-                                raised: false,
-                                unsupported: None,
-                                handle_balance: None,
-                            }
+            match jit_candidate_engine()
+                .execute_project_closure_with_variant_snapshot(closure_leaf_first)
+            {
+                Ok(values) => RunOutcome {
+                    result: Ok(values.iter().map(canon).collect()),
+                    err: FinalErr::default(),
+                    raised: false,
+                    unsupported: None,
+                    handle_balance: None,
+                },
+                Err(err) => {
+                    if err.diagnostic().code.as_str().contains("JIT-UNSUPPORTED") {
+                        RunOutcome::unsupported(err.message().to_string())
+                    } else {
+                        RunOutcome {
+                            result: Err(err.message().to_string()),
+                            err: FinalErr::default(),
+                            raised: false,
+                            unsupported: None,
+                            handle_balance: None,
                         }
                     }
                 }

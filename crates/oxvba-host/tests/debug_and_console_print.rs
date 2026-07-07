@@ -146,7 +146,7 @@ fn jit_request_is_rejected_rather_than_falling_back() {
     let err = run("Sub Main()\nDebug.Print \"x\"\nEnd Sub", true, callbacks)
         .expect_err("JIT execution is not implemented; it must not silently fall back");
     assert!(
-        err.contains("JIT execution"),
+        err.contains("CallNative") || err.contains("JIT"),
         "unexpected diagnostic: {err}"
     );
 }

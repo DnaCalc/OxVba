@@ -4,7 +4,8 @@ use oxvba_differential::{Executor, RunOutcome, canon, run_modules, run_project_c
 use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
 use oxvba_symbol::manifest::{
-    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, SymbolProjectManifest,
+    ModuleAttributes, ModuleKind, ModuleUnit, ProjectKind, ProjectReference,
+    ReferencedProjectManifest, SymbolProjectManifest,
 };
 
 fn module(name: &str, kind: ModuleKind, src: &str) -> ModuleUnit {
@@ -28,11 +29,60 @@ fn predeclared_class_module(name: &str, src: &str) -> ModuleUnit {
     module
 }
 
+fn exposed_class_module(name: &str, src: &str) -> ModuleUnit {
+    let mut module = module(name, Class, src);
+    module.attributes.vb_exposed = true;
+    module.attributes.vb_creatable = true;
+    module
+}
+
 fn project(modules: Vec<ModuleUnit>) -> SymbolProjectManifest {
     SymbolProjectManifest {
         project_name: "VBAProject".to_string(),
         project_kind: ProjectKind::Source,
         modules,
+        references: Vec::new(),
+        reference_projects: Vec::new(),
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    }
+}
+
+fn referenced(project_name: &str, modules: Vec<ModuleUnit>) -> ReferencedProjectManifest {
+    ReferencedProjectManifest {
+        project_name: project_name.to_string(),
+        project_kind: ProjectKind::Library,
+        modules,
+    }
+}
+
+fn project_with_refs(
+    name: &str,
+    modules: Vec<ModuleUnit>,
+    refs: Vec<ReferencedProjectManifest>,
+) -> SymbolProjectManifest {
+    let references = refs
+        .iter()
+        .map(|reference| ProjectReference::Project {
+            referenced_project_name: reference.project_name.clone(),
+        })
+        .collect();
+    SymbolProjectManifest {
+        project_name: name.to_string(),
+        project_kind: ProjectKind::Source,
+        modules,
+        references,
+        reference_projects: refs,
+        conditional_constants: BTreeMap::new(),
+        conditional_compilation_target: Default::default(),
+    }
+}
+
+fn library_project(reference: &ReferencedProjectManifest) -> SymbolProjectManifest {
+    SymbolProjectManifest {
+        project_name: reference.project_name.clone(),
+        project_kind: ProjectKind::Library,
+        modules: reference.modules.clone(),
         references: Vec::new(),
         reference_projects: Vec::new(),
         conditional_constants: BTreeMap::new(),
@@ -866,4 +916,88 @@ fn jit_project_class_terminate_field_release_cascades_to_child() {
 
     let jit = run_modules(Executor::Jit, &modules, "VBAProject");
     assert_completed_prefix_i32("JIT", jit, &[1, 1, 1, 1, 1]);
+}
+
+#[test]
+fn jit_referenced_project_new_class_property_call_matches_vm3_without_fallback() {
+    let lib = referenced(
+        "Lib",
+        vec![exposed_class_module(
+            "Widget",
+            "Private m As Long\nPrivate Sub Class_Initialize()\n  m = 42\nEnd Sub\nPublic Property Get Value() As Long\n  Value = m\nEnd Property\n",
+        )],
+    );
+    let app = project_with_refs(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nPublic nameLen As Long\nPublic isWidget As Long\nSub Main()\n  Dim w As Lib.Widget\n  Dim b As Lib.Widget\n  Set w = New Lib.Widget\n  Set b = w\n  r = b.Value\n  nameLen = Len(TypeName(b))\n  If TypeOf b Is Lib.Widget Then\n    isWidget = 1\n  Else\n    isWidget = 2\n  End If\nEnd Sub\n",
+        )],
+        vec![lib.clone()],
+    );
+    let lib_project = library_project(&lib);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[lib_project.clone(), app.clone()]);
+    assert_completed_prefix_i32("VM3", vm3, &[42, 6, 1]);
+
+    let jit = run_project_closure(Executor::Jit, &[lib_project, app]);
+    assert_completed_prefix_i32("JIT", jit, &[42, 6, 1]);
+}
+
+#[test]
+fn jit_referenced_project_predeclared_singleton_matches_vm3_without_fallback() {
+    let lib = referenced(
+        "Lib",
+        vec![predeclared_class_module(
+            "Host",
+            "Private m As Long\nPrivate Sub Class_Initialize()\n  m = 17\nEnd Sub\nPublic Sub Bump()\n  m = 18\nEnd Sub\nPublic Property Get Value() As Long\n  Value = m\nEnd Property\n",
+        )],
+    );
+    let app = project_with_refs(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nSub Main()\n  Host.Bump\n  r = Host.Value\nEnd Sub\n",
+        )],
+        vec![lib.clone()],
+    );
+    let lib_project = library_project(&lib);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[lib_project.clone(), app.clone()]);
+    assert_completed_with_i32("VM3", vm3, 18);
+
+    let jit = run_project_closure(Executor::Jit, &[lib_project, app]);
+    assert_completed_with_i32("JIT", jit, 18);
+}
+
+#[test]
+fn jit_referenced_project_incompatible_assignment_diagnostic_matches_vm3_without_fallback() {
+    let lib = referenced(
+        "Lib",
+        vec![
+            exposed_class_module(
+                "Alpha",
+                "Public Property Get Value() As Long\n  Value = 1\nEnd Property\n",
+            ),
+            exposed_class_module(
+                "Beta",
+                "Public Property Get Value() As Long\n  Value = 2\nEnd Property\n",
+            ),
+        ],
+    );
+    let app = project_with_refs(
+        "App",
+        vec![proc_module(
+            "Main",
+            "Public r As Long\nPublic okErr As Long\nSub Main()\n  Dim a As Lib.Alpha\n  Dim b As Lib.Beta\n  Set b = New Lib.Beta\n  On Error Resume Next\n  Set a = b\n  r = Err.Number\n  Err.Clear\n  Set a = New Lib.Alpha\n  okErr = Err.Number\n  On Error GoTo 0\nEnd Sub\n",
+        )],
+        vec![lib.clone()],
+    );
+    let lib_project = library_project(&lib);
+
+    let vm3 = run_project_closure(Executor::Vm3, &[lib_project.clone(), app.clone()]);
+    assert_completed_prefix_i32("VM3", vm3, &[13, 0]);
+
+    let jit = run_project_closure(Executor::Jit, &[lib_project, app]);
+    assert_completed_prefix_i32("JIT", jit, &[13, 0]);
 }

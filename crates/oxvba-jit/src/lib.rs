@@ -191,26 +191,50 @@ impl JitEngine {
 pub struct CompiledImage<'p> {
     #[allow(dead_code)]
     module: JITModule,
-    program: &'p OxProgram,
-    functions: Vec<JitEntryFn>,
+    programs: Vec<&'p OxProgram>,
+    functions: Vec<Vec<JitEntryFn>>,
 }
 
 impl<'p> CompiledImage<'p> {
     pub fn run<'a>(&'a self, host: &'a dyn HostServices) -> Result<JitOutcome, JitError> {
+        let Some(entry_program_index) = self.programs.len().checked_sub(1) else {
+            return Err(JitError::Runtime(
+                "compiled image has no programs".to_string(),
+            ));
+        };
+        let entry_program = self.programs[entry_program_index];
         let mut exec = ExecState::new(host);
-        exec.default_error_source = self.program.unit_name.clone();
-        exec.programs = vec![build_loaded(self.program)?];
-        let globals_ptr = &mut exec.programs[0].globals as *mut Vec<Variant>;
+        exec.default_error_source = entry_program.unit_name.clone();
+        exec.programs = self
+            .programs
+            .iter()
+            .map(|program| build_loaded(program))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut globals = exec
+            .programs
+            .iter_mut()
+            .map(|loaded| &mut loaded.globals as *mut Vec<Variant>)
+            .collect::<Vec<_>>();
+        let program_images = self
+            .programs
+            .iter()
+            .zip(self.functions.iter())
+            .map(|(program, functions)| JitProgramImage {
+                program: *program as *const OxProgram,
+                functions: functions.as_ptr(),
+                function_count: functions.len(),
+            })
+            .collect::<Vec<_>>();
         let mut run = JitRun {
-            globals: globals_ptr,
+            globals: globals.as_mut_ptr(),
+            global_count: globals.len(),
             frames: Vec::new(),
             explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
-            program: self.program as *const OxProgram,
-            functions: self.functions.as_ptr(),
-            function_count: self.functions.len(),
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
         };
         let state = exec_state_as_raw(&mut exec);
         let mut bridge_ctx = JitProcInvokeCtx {
@@ -223,8 +247,8 @@ impl<'p> CompiledImage<'p> {
         });
 
         oxvba_runtime::reset_pending_terminations();
-        if let Some(init) = self.program.global_initializer {
-            let status = self.invoke_func(init, &mut run, state)?;
+        if let Some(init) = entry_program.global_initializer {
+            let status = self.invoke_func(entry_program_index, init, &mut run, state)?;
             if status == ST_FAULT {
                 return Ok(JitOutcome {
                     values: Vec::new(),
@@ -241,8 +265,8 @@ impl<'p> CompiledImage<'p> {
             }
         }
 
-        if let Some(entry) = self.program.entry {
-            let status = self.invoke_func(entry, &mut run, state)?;
+        if let Some(entry) = entry_program.entry {
+            let status = self.invoke_func(entry_program_index, entry, &mut run, state)?;
             if status == ST_FAULT {
                 return Ok(JitOutcome {
                     values: Vec::new(),
@@ -277,12 +301,16 @@ impl<'p> CompiledImage<'p> {
 
     fn invoke_func(
         &self,
+        program_index: usize,
         func: FuncId,
         run: &mut JitRun,
         state: *mut RawExecState,
     ) -> Result<i32, JitError> {
-        let f = self
-            .program
+        let program = self
+            .programs
+            .get(program_index)
+            .ok_or_else(|| JitError::Runtime(format!("program {program_index} out of range")))?;
+        let f = program
             .funcs
             .get(func.0)
             .ok_or_else(|| JitError::Runtime(format!("function {} out of range", func.0)))?;
@@ -291,14 +319,20 @@ impl<'p> CompiledImage<'p> {
         run.param_array_aliases.clear();
         let entry = *self
             .functions
-            .get(func.0)
-            .ok_or_else(|| JitError::Runtime(format!("function {} not compiled", func.0)))?;
+            .get(program_index)
+            .and_then(|functions| functions.get(func.0))
+            .ok_or_else(|| {
+                JitError::Runtime(format!(
+                    "function {} not compiled in program {}",
+                    func.0, program_index
+                ))
+            })?;
         let mut saved_err = RtSavedErrState::default();
         let enter_status = rt_err_enter_activation(state, &mut saved_err);
         if enter_status != ST_OK {
             return Ok(enter_status);
         }
-        run.frames.push(new_jit_frame(self.program, f)?);
+        run.frames.push(new_jit_frame(program, program_index, f)?);
         // SAFETY: `entry` was produced by Cranelift for the exact `JitEntryFn`
         // signature in `Compiler::entry_signature`; `run` and `state` live for the call.
         let status = unsafe { entry(run, state) };
@@ -312,20 +346,27 @@ impl<'p> CompiledImage<'p> {
 }
 
 struct JitRun {
-    globals: *mut Vec<Variant>,
+    globals: *mut *mut Vec<Variant>,
+    global_count: usize,
     frames: Vec<JitFrame>,
     explicit_refs: Vec<Variant>,
     for_each: HashMap<SlotAlias, JitForEachState>,
     as_new_slots: HashMap<SlotAlias, OxAsNew>,
     param_array_aliases: HashMap<SlotAlias, Vec<Option<SlotAlias>>>,
-    program: *const OxProgram,
-    functions: *const JitEntryFn,
-    function_count: usize,
+    programs: *const JitProgramImage,
+    program_count: usize,
 }
 
 struct JitProcInvokeCtx {
     run: *mut JitRun,
     state: *mut RawExecState,
+}
+
+#[derive(Clone, Copy)]
+struct JitProgramImage {
+    program: *const OxProgram,
+    functions: *const JitEntryFn,
+    function_count: usize,
 }
 
 unsafe extern "C" fn jit_proc_invoke(
@@ -336,7 +377,7 @@ unsafe extern "C" fn jit_proc_invoke(
     _suppress: i32,
 ) -> i32 {
     status_guard(|| {
-        if ctx.is_null() || target_prog != 0 || me.is_null() {
+        if ctx.is_null() || me.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `ctx` is installed from `CompiledImage::run` and remains live while
@@ -347,11 +388,16 @@ unsafe extern "C" fn jit_proc_invoke(
         }
         // SAFETY: null was rejected and the run is uniquely borrowed by the active helper.
         let run = unsafe { &mut *ctx.run };
-        if run.program.is_null() || run.functions.is_null() || proc >= run.function_count {
+        if run.programs.is_null() || target_prog >= run.program_count {
+            return ST_FAULT;
+        }
+        // SAFETY: target_prog is bounds-checked and the table is live for the run.
+        let image = unsafe { *run.programs.add(target_prog) };
+        if image.program.is_null() || image.functions.is_null() || proc >= image.function_count {
             return ST_FAULT;
         }
         // SAFETY: installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let Some(func) = program.funcs.get(proc) else {
             return ST_FAULT;
         };
@@ -369,7 +415,7 @@ unsafe extern "C" fn jit_proc_invoke(
         if run.frames.len() >= MAX_JIT_FRAMES {
             return rt_raise_out_of_stack(ctx.state);
         }
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, target_prog, func) else {
             return ST_FAULT;
         };
         // SAFETY: `me` was checked non-null and is borrowed only for this synchronous call.
@@ -381,7 +427,7 @@ unsafe extern "C" fn jit_proc_invoke(
         }
         run.frames.push(frame);
         // SAFETY: function pointer bounds were checked above.
-        let entry = unsafe { *run.functions.add(proc) };
+        let entry = unsafe { *image.functions.add(proc) };
         // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
         let status = unsafe { entry(run as *mut JitRun, ctx.state) };
         run.frames.pop();
@@ -403,6 +449,7 @@ struct JitForEachState {
 }
 
 struct JitFrame {
+    program_index: usize,
     locals: Vec<Variant>,
     temps: Vec<Variant>,
     aliases: Vec<Option<SlotAlias>>,
@@ -452,7 +499,11 @@ struct JitSlotAliasDesc {
     index: i32,
 }
 
-fn new_jit_frame(program: &OxProgram, func: &OxFunc) -> Result<JitFrame, JitError> {
+fn new_jit_frame(
+    program: &OxProgram,
+    program_index: usize,
+    func: &OxFunc,
+) -> Result<JitFrame, JitError> {
     let locals = func
         .locals
         .iter()
@@ -466,6 +517,7 @@ fn new_jit_frame(program: &OxProgram, func: &OxFunc) -> Result<JitFrame, JitErro
         .map(|ty| default_slot_value(program, ty))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(JitFrame {
+        program_index,
         locals,
         temps,
         aliases: vec![None; func.locals.len()],
@@ -577,9 +629,10 @@ fn err_from_exec(exec: &ExecState<'_>) -> JitFinalErr {
 }
 
 fn snapshot_values(exec: &ExecState<'_>, run: &JitRun) -> Vec<Variant> {
+    let entry_program_index = run.program_count.saturating_sub(1);
     let mut values = exec
         .programs
-        .first()
+        .get(entry_program_index)
         .map(|loaded| loaded.globals.clone())
         .unwrap_or_default();
     if let Some(frame) = run.frames.last() {
@@ -690,28 +743,36 @@ struct Imports {
 struct Compiler<'p> {
     module: JITModule,
     imports: Imports,
-    program: &'p OxProgram,
-    clif_ids: Vec<ClifFuncId>,
+    programs: Vec<&'p OxProgram>,
+    clif_ids: Vec<Vec<ClifFuncId>>,
 }
 
 impl<'p> Compiler<'p> {
     fn compile_image(programs: &[&'p OxProgram]) -> Result<CompiledImage<'p>, JitError> {
-        let [program] = programs else {
+        if programs.is_empty() {
             return Err(JitError::unsupported(
-                "M4-3 supports one OxProgram image; cross-project images start in M4-4+",
+                "JIT compile_image requires at least one OxProgram",
             ));
-        };
-        validate_program_shape(program)?;
+        }
+        for program in programs {
+            validate_program_shape(program)?;
+        }
 
         let mut builder = jit_builder()?;
         register_symbols(&mut builder);
         let mut module = JITModule::new(builder);
         let imports = declare_imports(&mut module)?;
-        let clif_ids = declare_program_functions(&mut module, program)?;
+        let clif_ids = programs
+            .iter()
+            .enumerate()
+            .map(|(program_index, program)| {
+                declare_program_functions(&mut module, program_index, program)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut compiler = Self {
             module,
             imports,
-            program,
+            programs: programs.to_vec(),
             clif_ids,
         };
         compiler.define_program_functions()?;
@@ -720,17 +781,22 @@ impl<'p> Compiler<'p> {
         let functions = compiler
             .clif_ids
             .iter()
-            .map(|id| {
-                let ptr = compiler.module.get_finalized_function(*id);
-                // SAFETY: every declared local function uses `entry_signature`, which is
-                // exactly `unsafe extern "C" fn(*mut JitRun, *mut RawExecState) -> i32`.
-                unsafe { std::mem::transmute::<*const u8, JitEntryFn>(ptr) }
+            .map(|program_ids| {
+                program_ids
+                    .iter()
+                    .map(|id| {
+                        let ptr = compiler.module.get_finalized_function(*id);
+                        // SAFETY: every declared local function uses `entry_signature`, which is
+                        // exactly `unsafe extern "C" fn(*mut JitRun, *mut RawExecState) -> i32`.
+                        unsafe { std::mem::transmute::<*const u8, JitEntryFn>(ptr) }
+                    })
+                    .collect::<Vec<_>>()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         Ok(CompiledImage {
             module: compiler.module,
-            program,
+            programs: programs.to_vec(),
             functions,
         })
     }
@@ -738,23 +804,30 @@ impl<'p> Compiler<'p> {
     fn define_program_functions(&mut self) -> Result<(), JitError> {
         let mut ctx = self.module.make_context();
         let mut func_ctx = FunctionBuilderContext::new();
-        for index in 0..self.program.funcs.len() {
-            self.define_function(index, &mut ctx, &mut func_ctx)?;
-            self.module.clear_context(&mut ctx);
+        for program_index in 0..self.programs.len() {
+            for index in 0..self.programs[program_index].funcs.len() {
+                self.define_function(program_index, index, &mut ctx, &mut func_ctx)?;
+                self.module.clear_context(&mut ctx);
+            }
         }
         Ok(())
     }
 
     fn define_function(
         &mut self,
+        program_index: usize,
         index: usize,
         ctx: &mut cranelift_codegen::Context,
         func_ctx: &mut FunctionBuilderContext,
     ) -> Result<(), JitError> {
-        let func = &self.program.funcs[index];
+        let program = self.programs[program_index];
+        let func = &program.funcs[index];
         validate_func_shape(func)?;
         ctx.func.signature = entry_signature(&mut self.module);
-        ctx.func.name = UserFuncName::user(0, self.clif_ids[index].as_u32());
+        ctx.func.name = UserFuncName::user(
+            program_index as u32,
+            self.clif_ids[program_index][index].as_u32(),
+        );
 
         {
             let mut builder = FunctionBuilder::new(&mut ctx.func, func_ctx);
@@ -777,12 +850,14 @@ impl<'p> Compiler<'p> {
             builder.ins().jump(first, &[]);
 
             let mut lower = LowerFunc {
-                program: self.program,
+                programs: &self.programs,
+                program_index,
+                program,
                 func,
                 imports: self.imports,
-                clif_ids: &self.clif_ids,
+                clif_ids: &self.clif_ids[program_index],
                 blocks,
-                static_proc_refs: collect_static_proc_refs(self.program, func),
+                static_proc_refs: collect_static_proc_refs(program, func),
                 has_label_error_handler: func_has_label_error_handler(func),
                 run,
                 state,
@@ -794,12 +869,14 @@ impl<'p> Compiler<'p> {
         }
 
         self.module
-            .define_function(self.clif_ids[index], ctx)
+            .define_function(self.clif_ids[program_index][index], ctx)
             .map_err(module_err)
     }
 }
 
 struct LowerFunc<'a> {
+    programs: &'a [&'a OxProgram],
+    program_index: usize,
     program: &'a OxProgram,
     func: &'a OxFunc,
     imports: Imports,
@@ -982,8 +1059,16 @@ impl<'a> LowerFunc<'a> {
                 src,
                 intent,
                 target_kind,
+                target_type_name,
                 ..
-            } => self.emit_validate_assignment(builder, module, src, *intent, *target_kind),
+            } => self.emit_validate_assignment(
+                builder,
+                module,
+                src,
+                *intent,
+                *target_kind,
+                target_type_name,
+            ),
             OxInst::AsNew { place, binding } => {
                 self.emit_as_new_register(builder, module, *place, binding)
             }
@@ -993,11 +1078,20 @@ impl<'a> LowerFunc<'a> {
             OxInst::NewObject { dst, class } => {
                 self.emit_new_object_to_slot(builder, module, *dst, class.0)
             }
+            OxInst::NewExtern { dst, import } => {
+                self.emit_new_extern_to_slot(builder, module, *dst, *import)
+            }
             OxInst::Predeclared { dst, class } => {
                 self.emit_predeclared_to_slot(builder, module, *dst, class.0)
             }
+            OxInst::PredeclaredExtern { dst, import } => {
+                self.emit_predeclared_extern_to_slot(builder, module, *dst, *import)
+            }
             OxInst::PredeclaredSet { class, value } => {
                 self.emit_predeclared_set(builder, module, class.0, value)
+            }
+            OxInst::PredeclaredExternSet { import, value } => {
+                self.emit_predeclared_extern_set(builder, module, *import, value)
             }
             OxInst::FieldGet { dst, object, field } => {
                 self.emit_field_get_to_slot(builder, module, *dst, object, *field)
@@ -2757,7 +2851,9 @@ impl<'a> LowerFunc<'a> {
             let false_value = builder.ins().iconst(types::I32, 0);
             return self.emit_store_bool(builder, module, dst, false_value);
         }
-        if !is_project_object_static_ty(&operand_static_ty(self.program, self.func, object)?) {
+        if !is_project_object_static_ty(&operand_static_ty(self.program, self.func, object)?)
+            && self.programs.len() == 1
+        {
             return Err(JitError::unsupported(format!(
                 "JIT project object/class instruction TypeOfIs is unsupported for {type_name}: currently supports only statically typed active-project class/interface receivers"
             )));
@@ -3017,7 +3113,9 @@ impl<'a> LowerFunc<'a> {
         let class_index = i32::try_from(class_index)
             .map_err(|_| JitError::unsupported("JIT NewObject class index is too large"))?;
         let (area, index) = place_addr(dst);
-        let program = builder.ins().iconst(types::I32, 0);
+        let program = i32::try_from(self.program_index)
+            .map_err(|_| JitError::unsupported("JIT program index is too large"))?;
+        let program = builder.ins().iconst(types::I32, i64::from(program));
         let class = builder.ins().iconst(types::I32, i64::from(class_index));
         let area = builder.ins().iconst(types::I32, i64::from(area));
         let index = builder.ins().iconst(types::I32, index as i64);
@@ -3028,6 +3126,25 @@ impl<'a> LowerFunc<'a> {
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
+    }
+
+    fn emit_new_extern_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        import: oxvba_oxir::ImportId,
+    ) -> Result<(), JitError> {
+        let (program_index, class_index) = self.resolve_cross_project_class(import)?;
+        self.emit_project_class_to_slot(
+            builder,
+            module,
+            dst,
+            program_index,
+            class_index,
+            self.imports.new_object_slot,
+            "NewExtern",
+        )
     }
 
     fn emit_predeclared_to_slot(
@@ -3041,11 +3158,62 @@ impl<'a> LowerFunc<'a> {
         let class_index = i32::try_from(class_index)
             .map_err(|_| JitError::unsupported("JIT Predeclared class index is too large"))?;
         let (area, index) = place_addr(dst);
-        let program = builder.ins().iconst(types::I32, 0);
+        let program = i32::try_from(self.program_index)
+            .map_err(|_| JitError::unsupported("JIT program index is too large"))?;
+        let program = builder.ins().iconst(types::I32, i64::from(program));
         let class = builder.ins().iconst(types::I32, i64::from(class_index));
         let area = builder.ins().iconst(types::I32, i64::from(area));
         let index = builder.ins().iconst(types::I32, index as i64);
         let callee = self.import(builder, module, self.imports.predeclared_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, program, class, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_predeclared_extern_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        import: oxvba_oxir::ImportId,
+    ) -> Result<(), JitError> {
+        let (program_index, class_index) = self.resolve_cross_project_class(import)?;
+        self.emit_project_class_to_slot(
+            builder,
+            module,
+            dst,
+            program_index,
+            class_index,
+            self.imports.predeclared_slot,
+            "PredeclaredExtern",
+        )
+    }
+
+    fn emit_project_class_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        program_index: usize,
+        class_index: usize,
+        callee_id: ClifFuncId,
+        label: &'static str,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let program_index = i32::try_from(program_index).map_err(|_| {
+            JitError::unsupported(format!("JIT {label} program index is too large"))
+        })?;
+        let class_index = i32::try_from(class_index)
+            .map_err(|_| JitError::unsupported(format!("JIT {label} class index is too large")))?;
+        let (area, index) = place_addr(dst);
+        let program = builder.ins().iconst(types::I32, i64::from(program_index));
+        let class = builder.ins().iconst(types::I32, i64::from(class_index));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, callee_id);
         let call = builder
             .ins()
             .call(callee, &[self.state, self.run, program, class, area, index]);
@@ -3065,7 +3233,9 @@ impl<'a> LowerFunc<'a> {
             .map_err(|_| JitError::unsupported("JIT PredeclaredSet class index is too large"))?;
         let operand = self.lower_variant_operand(builder, value)?;
         let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &[operand])?;
-        let program = builder.ins().iconst(types::I32, 0);
+        let program = i32::try_from(self.program_index)
+            .map_err(|_| JitError::unsupported("JIT program index is too large"))?;
+        let program = builder.ins().iconst(types::I32, i64::from(program));
         let class = builder.ins().iconst(types::I32, i64::from(class_index));
         let callee = self.import(builder, module, self.imports.predeclared_set);
         let call = builder
@@ -3074,6 +3244,80 @@ impl<'a> LowerFunc<'a> {
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
+    }
+
+    fn emit_predeclared_extern_set(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        import: oxvba_oxir::ImportId,
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        let (program_index, class_index) = self.resolve_cross_project_class(import)?;
+        let program_index = i32::try_from(program_index).map_err(|_| {
+            JitError::unsupported("JIT PredeclaredExternSet program index is too large")
+        })?;
+        let class_index = i32::try_from(class_index).map_err(|_| {
+            JitError::unsupported("JIT PredeclaredExternSet class index is too large")
+        })?;
+        let operand = self.lower_variant_operand(builder, value)?;
+        let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &[operand])?;
+        let program = builder.ins().iconst(types::I32, i64::from(program_index));
+        let class = builder.ins().iconst(types::I32, i64::from(class_index));
+        let callee = self.import(builder, module, self.imports.predeclared_set);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, program, class, operand_ptr]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn resolve_cross_project_class(
+        &self,
+        import: oxvba_oxir::ImportId,
+    ) -> Result<(usize, usize), JitError> {
+        let imp = self.program.imports.get(import.0).ok_or_else(|| {
+            JitError::Compile(format!("NewExtern import {} out of range", import.0))
+        })?;
+        if imp.unit.eq_ignore_ascii_case("VBA") {
+            return Err(JitError::unsupported(
+                "JIT NewExtern for imported VBA/COM library classes remains unsupported; referenced-project classes are supported",
+            ));
+        }
+        let program_index = self
+            .programs
+            .iter()
+            .position(|program| program.unit_name.eq_ignore_ascii_case(&imp.unit))
+            .ok_or_else(|| {
+                JitError::unsupported(format!(
+                    "JIT cross-project class import names unresolved unit '{}'",
+                    imp.unit
+                ))
+            })?;
+        let program = self.programs[program_index];
+        let export = program
+            .exports
+            .iter()
+            .find(|export| export.token.matches(&imp.token))
+            .ok_or_else(|| {
+                JitError::unsupported(format!(
+                    "JIT cross-project class import {} has no matching export in '{}'",
+                    import.0, imp.unit
+                ))
+            })?;
+        let ExportTarget::Class(class_index) = export.target else {
+            return Err(JitError::unsupported(
+                "JIT cross-project class import resolved to a non-class export",
+            ));
+        };
+        if class_index >= program.classes.len() {
+            return Err(JitError::unsupported(format!(
+                "JIT cross-project class import {} resolved to out-of-range class {}",
+                import.0, class_index
+            )));
+        }
+        Ok((program_index, class_index))
     }
 
     fn emit_field_get_to_slot(
@@ -3136,6 +3380,7 @@ impl<'a> LowerFunc<'a> {
     ) -> Result<(), JitError> {
         if !default_member
             && !is_project_object_static_ty(&operand_static_ty(self.program, self.func, recv)?)
+            && self.programs.len() == 1
         {
             return Err(JitError::unsupported(
                 "JIT ComCallLate is unsupported for non-project class/interface receivers: currently supports only statically typed active-project class/interface receivers",
@@ -3217,6 +3462,12 @@ impl<'a> LowerFunc<'a> {
         Ok(())
     }
 
+    fn should_route_project_type_name(&self, object: &OxOperand) -> Result<bool, JitError> {
+        let ty = operand_static_ty(self.program, self.func, object)?;
+        Ok(is_project_object_static_ty(&ty)
+            || (self.programs.len() > 1 && matches!(ty, OxTy::Object(_))))
+    }
+
     fn emit_validate_assignment(
         &self,
         builder: &mut FunctionBuilder<'_>,
@@ -3224,6 +3475,7 @@ impl<'a> LowerFunc<'a> {
         src: &OxOperand,
         intent: AssignmentIntent,
         target_kind: AssignmentTargetKind,
+        target_type_name: &str,
     ) -> Result<(), JitError> {
         let operands = [self.lower_variant_operand(builder, src)?];
         let operand_ptr = self.emit_variant_operand_descriptors(builder, module, &operands)?;
@@ -3234,10 +3486,29 @@ impl<'a> LowerFunc<'a> {
             types::I32,
             i64::from(raw_assignment_target_kind(target_kind)),
         );
+        let ptr_ty = module.target_config().pointer_type();
+        let target_type_ptr = if target_type_name.is_empty() {
+            builder.ins().iconst(ptr_ty, 0)
+        } else {
+            builder
+                .ins()
+                .iconst(ptr_ty, target_type_name.as_ptr() as i64)
+        };
+        let target_type_len = i32::try_from(target_type_name.len())
+            .map_err(|_| JitError::unsupported("JIT assignment target type name is too long"))?;
+        let target_type_len = builder.ins().iconst(types::I32, i64::from(target_type_len));
         let callee = self.import(builder, module, self.imports.validate_assignment);
         let call = builder.ins().call(
             callee,
-            &[self.state, self.run, operand_ptr, intent, target_kind],
+            &[
+                self.state,
+                self.run,
+                operand_ptr,
+                intent,
+                target_kind,
+                target_type_ptr,
+                target_type_len,
+            ],
         );
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
@@ -5611,7 +5882,7 @@ impl<'a> LowerFunc<'a> {
         if native_impl == NativeImplId::TypeName
             && let Some(dst) = dst
             && let [OxArg::ByVal(object)] = args
-            && is_project_object_static_ty(&operand_static_ty(self.program, self.func, object)?)
+            && self.should_route_project_type_name(object)?
         {
             return self.emit_project_type_name_to_slot(builder, module, dst, object);
         }
@@ -5681,7 +5952,7 @@ impl<'a> LowerFunc<'a> {
         if *native_impl == NativeImplId::TypeName
             && let Some(dst) = dst
             && let [OxCallArg::Operand(object)] = args
-            && is_project_object_static_ty(&operand_static_ty(self.program, self.func, object)?)
+            && self.should_route_project_type_name(object)?
         {
             return self.emit_project_type_name_to_slot(builder, module, dst, object);
         }
@@ -8510,6 +8781,10 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
     validate_assignment_sig
         .params
         .push(AbiParam::new(types::I32));
+    validate_assignment_sig.params.push(AbiParam::new(ptr_ty));
+    validate_assignment_sig
+        .params
+        .push(AbiParam::new(types::I32));
     validate_assignment_sig
         .returns
         .push(AbiParam::new(types::I32));
@@ -9531,6 +9806,7 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
 
 fn declare_program_functions(
     module: &mut JITModule,
+    program_index: usize,
     program: &OxProgram,
 ) -> Result<Vec<ClifFuncId>, JitError> {
     let sig = entry_signature(module);
@@ -9539,7 +9815,10 @@ fn declare_program_functions(
         .iter()
         .enumerate()
         .map(|(index, func)| {
-            let name = format!("ox$p0$f{index}${}", sanitize_symbol(&func.name));
+            let name = format!(
+                "ox$p{program_index}$f{index}${}",
+                sanitize_symbol(&func.name)
+            );
             module
                 .declare_function(&name, Linkage::Local, &sig)
                 .map_err(module_err)
@@ -9705,15 +9984,6 @@ fn native_impl_index(id: NativeImplId) -> Result<u32, JitError> {
 }
 
 fn validate_program_shape(program: &OxProgram) -> Result<(), JitError> {
-    if program
-        .imports
-        .iter()
-        .any(|import| !import.unit.eq_ignore_ascii_case("VBA"))
-    {
-        return Err(JitError::unsupported(
-            "cross-program imports start in M4-4/M4-9",
-        ));
-    }
     if !program.external_calls.is_empty() || !program.com_interfaces.is_empty() {
         return Err(JitError::unsupported("native/COM calls start in M4-9"));
     }
@@ -9857,15 +10127,6 @@ fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str
         ),
         OxInst::ComCallEarly { .. } => Some(
             "JIT COM object dispatch instruction ComCallEarly is unsupported: typed COM invocation remains VM3-only",
-        ),
-        OxInst::NewExtern { .. } => Some(
-            "JIT cross-project object/class instruction NewExtern is unsupported: referenced-project construction requires linked runtime descriptors",
-        ),
-        OxInst::PredeclaredExtern { .. } => Some(
-            "JIT cross-project object/class instruction PredeclaredExtern is unsupported: referenced-project singleton construction remains VM3-only",
-        ),
-        OxInst::PredeclaredExternSet { .. } => Some(
-            "JIT cross-project object/class instruction PredeclaredExternSet is unsupported: referenced-project singleton ownership remains VM3-only",
         ),
         OxInst::FieldArrayGet { .. } => Some(
             "JIT project object/class instruction FieldArrayGet is unsupported: in-place array field reads require descriptor-backed object state",
@@ -10710,7 +10971,7 @@ fn float_compare_cc(op: CmpOp) -> ir::condcodes::FloatCC {
 fn current_frame_slot(run: &JitRun, area: u32, index: u32) -> Option<SlotAlias> {
     match area {
         AREA_GLOBAL => Some(SlotAlias {
-            frame: None,
+            frame: Some(run.frames.len().checked_sub(1)?),
             area,
             index,
         }),
@@ -10730,6 +10991,19 @@ fn direct_call_arg_alias(run: &JitRun, area: i32, index: i32) -> Option<SlotAlia
     current_frame_slot(run, area as u32, index as u32)
 }
 
+fn program_image(run: &JitRun, program_index: usize) -> Option<JitProgramImage> {
+    if run.programs.is_null() || program_index >= run.program_count {
+        return None;
+    }
+    // SAFETY: program_index is bounds-checked and the table is live for the run.
+    Some(unsafe { *run.programs.add(program_index) })
+}
+
+fn current_program_image(run: &JitRun) -> Option<(usize, JitProgramImage)> {
+    let program_index = run.frames.last()?.program_index;
+    Some((program_index, program_image(run, program_index)?))
+}
+
 fn frame_local_alias(run: &JitRun, frame: usize, index: usize) -> Option<SlotAlias> {
     run.frames.get(frame)?.aliases.get(index).copied().flatten()
 }
@@ -10739,8 +11013,9 @@ fn resolve_slot_alias(run: &JitRun, mut alias: SlotAlias) -> Option<SlotAlias> {
     for _ in 0..=max_alias_hops {
         match alias.area {
             AREA_GLOBAL => {
+                alias.frame?;
                 return Some(SlotAlias {
-                    frame: None,
+                    frame: alias.frame,
                     area: AREA_GLOBAL,
                     index: alias.index,
                 });
@@ -10778,12 +11053,19 @@ fn slot_alias_mut(run: &mut JitRun, alias: SlotAlias) -> Option<&mut Variant> {
     let index = alias.index as usize;
     match alias.area {
         AREA_GLOBAL => {
-            if run.globals.is_null() {
+            let program_index = run.frames.get(alias.frame?)?.program_index;
+            if run.globals.is_null() || program_index >= run.global_count {
                 None
             } else {
-                // SAFETY: `globals` is installed from the live ExecState global vector for
-                // the duration of a compiled function invocation.
-                unsafe { (&mut *run.globals).get_mut(index) }
+                // SAFETY: globals points at the live ExecState global vectors for the run;
+                // program_index was bounds-checked above.
+                let globals = unsafe { *run.globals.add(program_index) };
+                if globals.is_null() {
+                    None
+                } else {
+                    // SAFETY: selected global vector belongs to the live ExecState.
+                    unsafe { (&mut *globals).get_mut(index) }
+                }
             }
         }
         AREA_LOCAL => run.frames.get_mut(alias.frame?)?.locals.get_mut(index),
@@ -10797,12 +11079,19 @@ fn slot_alias_ref(run: &JitRun, alias: SlotAlias) -> Option<&Variant> {
     let index = alias.index as usize;
     match alias.area {
         AREA_GLOBAL => {
-            if run.globals.is_null() {
+            let program_index = run.frames.get(alias.frame?)?.program_index;
+            if run.globals.is_null() || program_index >= run.global_count {
                 None
             } else {
-                // SAFETY: `globals` is installed from the live ExecState global vector for
-                // the duration of a compiled function invocation.
-                unsafe { (&*run.globals).get(index) }
+                // SAFETY: globals points at the live ExecState global vectors for the run;
+                // program_index was bounds-checked above.
+                let globals = unsafe { *run.globals.add(program_index) };
+                if globals.is_null() {
+                    None
+                } else {
+                    // SAFETY: selected global vector belongs to the live ExecState.
+                    unsafe { (&*globals).get(index) }
+                }
             }
         }
         AREA_LOCAL => run.frames.get(alias.frame?)?.locals.get(index),
@@ -11017,14 +11306,15 @@ fn class_field_as_new_binding_for_jit(
     object: &oxvba_runtime::object_ref::ObjectRef,
     field: i32,
 ) -> Option<OxAsNew> {
-    if !object.is_project_instance() || object.bundle_id() != 0 {
+    if !object.is_project_instance() {
         return None;
     }
-    if run.program.is_null() {
+    let image = program_image(run, object.bundle_id() as usize)?;
+    if image.program.is_null() {
         return None;
     }
     // SAFETY: installed from the owning CompiledImage for this run.
-    let program = unsafe { &*run.program };
+    let program = unsafe { &*image.program };
     program
         .classes
         .get(object.route_key() as usize)?
@@ -11331,8 +11621,7 @@ fn seed_jit_member_frame_args(
                     return ST_FAULT;
                 }
                 let frame_index = match arg.area as u32 {
-                    AREA_GLOBAL => None,
-                    AREA_LOCAL | AREA_TEMP => Some(caller_frame),
+                    AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
                     _ => return ST_FAULT,
                 };
                 let alias = SlotAlias {
@@ -12151,16 +12440,20 @@ fn project_default_member_for_jit<'a>(
 fn invoke_project_member_with_me(
     run: &mut JitRun,
     state: *mut RawExecState,
+    program_index: usize,
     proc: usize,
     me: Variant,
     args: &[JitCallArgDesc],
     names: &[JitCallArgNameDesc],
 ) -> Result<Variant, i32> {
-    if run.program.is_null() || run.functions.is_null() || proc >= run.function_count {
+    let Some(image) = program_image(run, program_index) else {
+        return Err(ST_FAULT);
+    };
+    if image.program.is_null() || image.functions.is_null() || proc >= image.function_count {
         return Err(ST_FAULT);
     }
     // SAFETY: installed from the owning CompiledImage for this run.
-    let program = unsafe { &*run.program };
+    let program = unsafe { &*image.program };
     let Some(func) = program.funcs.get(proc) else {
         return Err(ST_FAULT);
     };
@@ -12185,7 +12478,7 @@ fn invoke_project_member_with_me(
     let Some(caller_frame) = run.frames.len().checked_sub(1) else {
         return Err(ST_FAULT);
     };
-    let mut frame = new_jit_frame(program, func).map_err(|_| ST_FAULT)?;
+    let mut frame = new_jit_frame(program, program_index, func).map_err(|_| ST_FAULT)?;
     frame.locals[0] = me;
     let mut pending_param_array_aliases = Vec::new();
     let seed_status = seed_jit_member_frame_args(
@@ -12218,7 +12511,7 @@ fn invoke_project_member_with_me(
         );
     }
     // SAFETY: function pointer bounds were checked above.
-    let entry = unsafe { *run.functions.add(proc) };
+    let entry = unsafe { *image.functions.add(proc) };
     // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
     let status = unsafe { entry(run as *mut JitRun, state) };
     let return_value = if status == ST_OK {
@@ -12253,15 +12546,16 @@ fn invoke_project_default_member_values(
     values: &[Variant],
 ) -> Result<Variant, i32> {
     let object = variant_to_project_object_for_jit(state, &recv_value)?;
-    if !object.is_project_instance() || object.bundle_id() != 0 {
+    if !object.is_project_instance() {
         return Err(rt_raise_runtime_error_number(state, 438));
     }
-    if run.program.is_null() {
+    let program_index = object.bundle_id() as usize;
+    let Some(image) = program_image(run, program_index) else {
         return Err(ST_FAULT);
-    }
+    };
     let class_idx = object.route_key() as usize;
     // SAFETY: installed from the owning CompiledImage for this run.
-    let program = unsafe { &*run.program };
+    let program = unsafe { &*image.program };
     let class = program
         .classes
         .get(class_idx)
@@ -12288,6 +12582,7 @@ fn invoke_project_default_member_values(
         args.len()
     ];
     let frame = JitFrame {
+        program_index,
         locals: Vec::new(),
         temps: values.to_vec(),
         aliases: Vec::new(),
@@ -12295,8 +12590,15 @@ fn invoke_project_default_member_values(
         saved_err: RtSavedErrState::default(),
     };
     run.frames.push(frame);
-    let result =
-        invoke_project_member_with_me(run, state, member.proc.0, recv_value, &args, &names);
+    let result = invoke_project_member_with_me(
+        run,
+        state,
+        program_index,
+        member.proc.0,
+        recv_value,
+        &args,
+        &names,
+    );
     run.frames.pop();
     prune_for_each_from_depth(run, run.frames.len());
     prune_as_new_slots_from_depth(run, run.frames.len());
@@ -12371,16 +12673,19 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
             Ok(object) => object,
             Err(status) => return status,
         };
-        if !object.is_project_instance() || object.bundle_id() != 0 {
+        if !object.is_project_instance() {
             return ST_FAULT;
         }
+        let program_index = object.bundle_id() as usize;
         let class_idx = object.route_key() as usize;
-        let Some(program) = (!run.program.is_null()).then(|| {
-            // SAFETY: installed from the owning CompiledImage for this run.
-            unsafe { &*run.program }
-        }) else {
+        let Some(image) = program_image(run, program_index) else {
             return ST_FAULT;
         };
+        if image.program.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: installed from the owning CompiledImage for this run.
+        let program = unsafe { &*image.program };
         let Some(class) = program.classes.get(class_idx) else {
             return rt_raise_runtime_error_number(state, 438);
         };
@@ -12410,12 +12715,18 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
         let Some(member) = member else {
             return rt_raise_runtime_error_number(state, 438);
         };
-        let value =
-            match invoke_project_member_with_me(run, state, member.proc.0, recv_value, args, names)
-            {
-                Ok(value) => value,
-                Err(status) => return status,
-            };
+        let value = match invoke_project_member_with_me(
+            run,
+            state,
+            program_index,
+            member.proc.0,
+            recv_value,
+            args,
+            names,
+        ) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
         if let Some((area, index)) = dst {
             let Some(slot) = slot_mut(run, area, index) else {
                 return ST_FAULT;
@@ -12517,9 +12828,16 @@ unsafe extern "C" fn rt_jit_validate_assignment(
     operand: *const JitVariantOperandDesc,
     intent: i32,
     target_kind: i32,
+    target_type_name_ptr: *const u8,
+    target_type_name_len: i32,
 ) -> i32 {
     status_guard(|| {
-        if run.is_null() || state.is_null() || operand.is_null() {
+        if run.is_null()
+            || state.is_null()
+            || operand.is_null()
+            || target_type_name_len < 0
+            || (target_type_name_len > 0 && target_type_name_ptr.is_null())
+        {
             return ST_FAULT;
         }
         // SAFETY: null was rejected and the compiled caller writes one descriptor to
@@ -12546,10 +12864,90 @@ unsafe extern "C" fn rt_jit_validate_assignment(
             JIT_ASSIGN_INTENT_LET if target_kind == JIT_ASSIGN_TARGET_OBJECT => {
                 rt_raise_runtime_error_number(state, 424)
             }
+            JIT_ASSIGN_INTENT_SET
+                if matches!(value.vtype(), VarType::Object) && target_type_name_len > 0 =>
+            {
+                validate_jit_project_set_compatibility(
+                    state,
+                    run_ref,
+                    &value,
+                    target_type_name_ptr,
+                    target_type_name_len,
+                )
+            }
             JIT_ASSIGN_INTENT_IMPLICIT | JIT_ASSIGN_INTENT_LET | JIT_ASSIGN_INTENT_SET => ST_OK,
             _ => ST_FAULT,
         }
     })
+}
+
+fn validate_jit_project_set_compatibility(
+    state: *mut RawExecState,
+    run: &JitRun,
+    value: &Variant,
+    target_type_name_ptr: *const u8,
+    target_type_name_len: i32,
+) -> i32 {
+    if jit_is_nothing(value) {
+        return ST_OK;
+    }
+    let Some(object) = value.as_object_ref() else {
+        return ST_OK;
+    };
+    if !object.is_project_instance() {
+        return ST_OK;
+    }
+    let target_type_name = if target_type_name_len == 0 {
+        ""
+    } else {
+        // SAFETY: pointer and length were validated by the extern helper and point to
+        // immutable OxIR metadata that outlives the compiled run.
+        let bytes = unsafe {
+            std::slice::from_raw_parts(target_type_name_ptr, target_type_name_len as usize)
+        };
+        match std::str::from_utf8(bytes) {
+            Ok(name) => name,
+            Err(_) => return ST_FAULT,
+        }
+    };
+    let bare_target = target_type_name
+        .rsplit('.')
+        .next()
+        .unwrap_or(target_type_name);
+    if bare_target.is_empty() {
+        return ST_OK;
+    }
+    let Some(image) = program_image(run, object.bundle_id() as usize) else {
+        return ST_FAULT;
+    };
+    if image.program.is_null() {
+        return ST_FAULT;
+    }
+    // SAFETY: the image was installed from CompiledImage for this run.
+    let program = unsafe { &*image.program };
+    let target_is_project = program.classes.iter().any(|class| {
+        class.name.eq_ignore_ascii_case(bare_target)
+            || class
+                .implements
+                .iter()
+                .any(|interface| interface.eq_ignore_ascii_case(bare_target))
+    });
+    if !target_is_project {
+        return ST_OK;
+    }
+    let Some(class) = program.classes.get(object.route_key() as usize) else {
+        return ST_FAULT;
+    };
+    let compatible = class.name.eq_ignore_ascii_case(bare_target)
+        || class
+            .implements
+            .iter()
+            .any(|interface| interface.eq_ignore_ascii_case(bare_target));
+    if compatible {
+        ST_OK
+    } else {
+        rt_raise_type_mismatch(state)
+    }
 }
 
 unsafe extern "C" fn rt_jit_array_literal_to_slot(
@@ -13719,13 +14117,16 @@ unsafe extern "C" fn rt_jit_direct_enter_noarg_sub(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -13738,7 +14139,7 @@ unsafe extern "C" fn rt_jit_direct_enter_noarg_sub(
             return rt_raise_out_of_stack(state);
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
@@ -13787,13 +14188,16 @@ unsafe extern "C" fn rt_jit_direct_enter_noarg_func(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -13806,7 +14210,7 @@ unsafe extern "C" fn rt_jit_direct_enter_noarg_func(
             return rt_raise_out_of_stack(state);
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
@@ -13832,11 +14236,14 @@ unsafe extern "C" fn rt_jit_direct_exit_noarg_func(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((_program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
         let Some(func) = program.funcs.get(proc) else {
             return ST_FAULT;
@@ -13898,13 +14305,16 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_sub(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -13928,7 +14338,7 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_sub(
             return rt_raise_out_of_stack(state);
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.locals[0] = Variant::from_i32(arg0);
@@ -13953,13 +14363,16 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_func(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -13989,7 +14402,7 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_func(
             return rt_raise_out_of_stack(state);
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.locals[0] = Variant::from_i32(arg0);
@@ -14015,13 +14428,16 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_sub(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -14051,7 +14467,7 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_sub(
             return ST_FAULT;
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.aliases[0] = Some(alias);
@@ -14077,13 +14493,16 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_func(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -14119,7 +14538,7 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_func(
             return ST_FAULT;
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.aliases[0] = Some(alias);
@@ -14145,13 +14564,16 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_sub(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -14175,7 +14597,7 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_sub(
             return rt_raise_out_of_stack(state);
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.locals[0] = Variant::from_i32(arg0);
@@ -14202,13 +14624,16 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_func(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
-        if proc >= run.function_count {
+        if proc >= image.function_count {
             return ST_FAULT;
         }
         let Some(func) = program.funcs.get(proc) else {
@@ -14238,7 +14663,7 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_func(
             return rt_raise_out_of_stack(state);
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.locals[0] = Variant::from_i32(arg0);
@@ -14265,17 +14690,20 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
         }
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
         let Some(func) = program.funcs.get(proc) else {
             return ST_FAULT;
         };
         let argc = argc as usize;
-        if proc >= run.function_count || argc != func.param_count {
+        if proc >= image.function_count || argc != func.param_count {
             return ST_FAULT;
         }
         let args = if argc == 0 {
@@ -14295,7 +14723,7 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
             return rt_raise_out_of_stack(state);
         }
 
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         let mut pending_param_array_aliases = Vec::new();
@@ -14385,8 +14813,7 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
                         return ST_FAULT;
                     }
                     let frame_index = match arg.area as u32 {
-                        AREA_GLOBAL => None,
-                        AREA_LOCAL | AREA_TEMP => Some(caller_frame),
+                        AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
                         _ => return ST_FAULT,
                     };
                     let alias = SlotAlias {
@@ -14449,17 +14876,20 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
         };
         // SAFETY: null was rejected and the compiled call gives unique run ownership.
         let run = unsafe { &mut *run };
-        if run.program.is_null() || run.functions.is_null() {
+        let Some((program_index, image)) = current_program_image(run) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run.program };
+        let program = unsafe { &*image.program };
         let proc = proc as usize;
         let Some(func) = program.funcs.get(proc) else {
             return ST_FAULT;
         };
         let argc = argc as usize;
-        if proc >= run.function_count || argc != func.param_count {
+        if proc >= image.function_count || argc != func.param_count {
             return ST_FAULT;
         }
         let args = if argc == 0 {
@@ -14478,7 +14908,7 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
         if run.frames.len() >= MAX_JIT_FRAMES {
             return rt_raise_out_of_stack(state);
         }
-        let Ok(mut frame) = new_jit_frame(program, func) else {
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         let return_local = if dst.is_some() {
@@ -14582,8 +15012,7 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
                         return ST_FAULT;
                     }
                     let frame_index = match arg.area as u32 {
-                        AREA_GLOBAL => None,
-                        AREA_LOCAL | AREA_TEMP => Some(caller_frame),
+                        AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
                         _ => return ST_FAULT,
                     };
                     let alias = SlotAlias {
@@ -14618,7 +15047,7 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
             );
         }
         // SAFETY: bounds and null checks above prove the function pointer exists.
-        let entry = unsafe { *run.functions.add(proc) };
+        let entry = unsafe { *image.functions.add(proc) };
         // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state`
         // remain live for the nested call.
         let status = unsafe { entry(run as *mut JitRun, state) };
@@ -14678,7 +15107,10 @@ unsafe extern "C" fn rt_jit_expect_proc_ref_i32(
         let Some(proc) = resolved else {
             return rt_raise_invalid_proc_ref(state);
         };
-        if proc >= run_ref.function_count || proc > i32::MAX as usize {
+        let Some((_program_index, image)) = current_program_image(run_ref) else {
+            return ST_FAULT;
+        };
+        if proc >= image.function_count || proc > i32::MAX as usize {
             return rt_raise_invalid_proc_ref(state);
         }
         if proc != expected_proc as usize {
@@ -14712,7 +15144,10 @@ unsafe extern "C" fn rt_jit_call_proc_ref_i32(
         let Some(proc) = resolved else {
             return rt_raise_invalid_proc_ref(state);
         };
-        if proc >= run_ref.function_count || proc > i32::MAX as usize {
+        let Some((_program_index, image)) = current_program_image(run_ref) else {
+            return ST_FAULT;
+        };
+        if proc >= image.function_count || proc > i32::MAX as usize {
             return rt_raise_invalid_proc_ref(state);
         }
         let signature_proc = if expected_proc >= 0 {
@@ -14730,11 +15165,11 @@ unsafe extern "C" fn rt_jit_call_proc_ref_i32(
             };
             Some(signature_proc)
         };
-        if argc < 0 || run_ref.program.is_null() {
+        if argc < 0 || image.program.is_null() {
             return ST_FAULT;
         }
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*run_ref.program };
+        let program = unsafe { &*image.program };
         let Some(func) = program.funcs.get(proc) else {
             return rt_raise_invalid_proc_ref(state);
         };
@@ -17156,18 +17591,24 @@ mod tests {
         let program = straight_line_program();
         let mut functions: Vec<JitEntryFn> = vec![unreachable_entry];
         let mut globals = Vec::new();
+        let mut globals_table = vec![&mut globals as *mut Vec<Variant>];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: functions.as_mut_ptr(),
+            function_count: functions.len(),
+        }];
         let mut run = JitRun {
-            globals: &mut globals,
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
             frames: (0..MAX_JIT_FRAMES)
-                .map(|_| new_jit_frame(&program, &program.funcs[0]).expect("frame"))
+                .map(|_| new_jit_frame(&program, 0, &program.funcs[0]).expect("frame"))
                 .collect(),
             explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
-            program: &program,
-            functions: functions.as_mut_ptr(),
-            function_count: functions.len(),
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -17190,22 +17631,28 @@ mod tests {
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
         exec.programs = vec![build_loaded(&program).expect("loaded")];
-        let globals_ptr = &mut exec.programs[0].globals as *mut Vec<Variant>;
+        let mut globals_table = vec![&mut exec.programs[0].globals as *mut Vec<Variant>];
+        let functions = &compiled.functions[0];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: functions.as_ptr(),
+            function_count: functions.len(),
+        }];
         let mut run = JitRun {
-            globals: globals_ptr,
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
             frames: (0..MAX_JIT_FRAMES)
-                .map(|_| new_jit_frame(&program, &program.funcs[0]).expect("frame"))
+                .map(|_| new_jit_frame(&program, 0, &program.funcs[0]).expect("frame"))
                 .collect(),
             explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
-            program: &program,
-            functions: compiled.functions.as_ptr(),
-            function_count: compiled.functions.len(),
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
         };
         let state = exec_state_as_raw(&mut exec);
-        let entry = compiled.functions[0];
+        let entry = compiled.functions[0][0];
 
         let status = unsafe { entry(&mut run, state) };
         assert_eq!(status, ST_FAULT);
@@ -18648,30 +19095,6 @@ mod tests {
                     type_name: "IWidget".to_string(),
                 },
                 "TypeOfIs",
-            ),
-            (
-                "NewExtern",
-                OxInst::NewExtern {
-                    dst: OxPlace::Local(LocalId(0)),
-                    import: ImportId(0),
-                },
-                "NewExtern",
-            ),
-            (
-                "PredeclaredExtern",
-                OxInst::PredeclaredExtern {
-                    dst: OxPlace::Local(LocalId(0)),
-                    import: ImportId(0),
-                },
-                "PredeclaredExtern",
-            ),
-            (
-                "PredeclaredExternSet",
-                OxInst::PredeclaredExternSet {
-                    import: ImportId(0),
-                    value: other(),
-                },
-                "PredeclaredExternSet",
             ),
             (
                 "ComCallLate",
@@ -30018,18 +30441,24 @@ mod tests {
     fn jit_call_proc_ref_out_of_range_target_seats_error_490() {
         let program = proc_ref_program();
         let mut globals = Vec::new();
-        let mut frame = new_jit_frame(&program, &program.funcs[0]).expect("frame");
+        let mut globals_table = vec![&mut globals as *mut Vec<Variant>];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: std::ptr::null(),
+            function_count: 2,
+        }];
+        let mut frame = new_jit_frame(&program, 0, &program.funcs[0]).expect("frame");
         frame.locals[1] = Variant::from_proc_ref(99);
         let mut run = JitRun {
-            globals: &mut globals,
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
             frames: vec![frame],
             explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
-            program: &program,
-            functions: std::ptr::null(),
-            function_count: 2,
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -30068,18 +30497,24 @@ mod tests {
     fn jit_expect_proc_ref_helper_seats_error_490_for_out_of_range_target() {
         let program = proc_ref_program();
         let mut globals = Vec::new();
-        let mut frame = new_jit_frame(&program, &program.funcs[0]).expect("frame");
+        let mut globals_table = vec![&mut globals as *mut Vec<Variant>];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: std::ptr::null(),
+            function_count: 2,
+        }];
+        let mut frame = new_jit_frame(&program, 0, &program.funcs[0]).expect("frame");
         frame.locals[1] = Variant::from_proc_ref(99);
         let mut run = JitRun {
-            globals: &mut globals,
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
             frames: vec![frame],
             explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
-            program: &program,
-            functions: std::ptr::null(),
-            function_count: 2,
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -30149,16 +30584,22 @@ mod tests {
         };
         let mut globals = Vec::new();
         let functions: Vec<JitEntryFn> = vec![assert_missing_entry];
+        let mut globals_table = vec![&mut globals as *mut Vec<Variant>];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: functions.as_ptr(),
+            function_count: functions.len(),
+        }];
         let mut run = JitRun {
-            globals: &mut globals,
-            frames: vec![new_jit_frame(&program, &program.funcs[0]).expect("frame")],
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
+            frames: vec![new_jit_frame(&program, 0, &program.funcs[0]).expect("frame")],
             explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
-            program: &program,
-            functions: functions.as_ptr(),
-            function_count: 1,
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -30232,16 +30673,22 @@ mod tests {
         };
         let mut globals = vec![Variant::empty()];
         let functions: Vec<JitEntryFn> = vec![set_variant_return];
+        let mut globals_table = vec![&mut globals as *mut Vec<Variant>];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: functions.as_ptr(),
+            function_count: functions.len(),
+        }];
         let mut run = JitRun {
-            globals: &mut globals,
-            frames: vec![new_jit_frame(&program, &program.funcs[0]).expect("frame")],
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
+            frames: vec![new_jit_frame(&program, 0, &program.funcs[0]).expect("frame")],
             explicit_refs: Vec::new(),
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
-            program: &program,
-            functions: functions.as_ptr(),
-            function_count: 1,
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);

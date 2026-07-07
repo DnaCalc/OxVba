@@ -684,27 +684,7 @@ impl Engine {
         closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
     ) -> Result<Vec<Variant>, PhaseDiagnostic> {
         if self.config.backend.is_jit() {
-            if closure.len() != 1 {
-                return Err(jit_runtime_diagnostic(JitError::Unsupported(
-                    "M4-3 JIT supports one-project closure execution only".to_string(),
-                )));
-            }
-            return match self.execute_manifest_snapshot_with_err_jit_shape(&closure[0], true) {
-                SnapshotOutcome::Completed { values, .. } => Ok(values),
-                SnapshotOutcome::Raised { err } => {
-                    Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
-                        "RUN-E-JIT-FAULT",
-                        OxDiagnosticPhase::Runtime,
-                        format!("VBA error {}", err.number),
-                    )))
-                }
-                SnapshotOutcome::Unsupported(what) => {
-                    Err(jit_runtime_diagnostic(JitError::Unsupported(what)))
-                }
-                SnapshotOutcome::Failed(msg) => Err(PhaseDiagnostic::from_diagnostic(
-                    OxDiagnostic::error("RUN-E-JIT-FAILED", OxDiagnosticPhase::Runtime, msg),
-                )),
-            };
+            return self.execute_project_closure_with_variant_snapshot_jit(closure);
         }
         match self.execute_project_closure_with_variant_snapshot_vm3(closure) {
             Vm3Snapshot::Ran(values) => Ok(values),
@@ -716,6 +696,88 @@ impl Engine {
                 OxDiagnosticPhase::Host,
                 msg,
             ))),
+        }
+    }
+
+    fn execute_project_closure_with_variant_snapshot_jit(
+        &self,
+        closure: &[oxvba_symbol::manifest::SymbolProjectManifest],
+    ) -> Result<Vec<Variant>, PhaseDiagnostic> {
+        let closure: Vec<_> = closure
+            .iter()
+            .map(|manifest| self.manifest_with_runtime_conditional_target(manifest))
+            .collect();
+        let programs = match oxvba_bind::bind_projects(&closure, &*self.typelib_resolver) {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                    "BIND-E-JIT-FAILED",
+                    OxDiagnosticPhase::Bind,
+                    format!("bind: {e}"),
+                )));
+            }
+        };
+        let mut ox_programs = Vec::with_capacity(programs.len());
+        for program in &programs {
+            match oxvba_oxir::elaborate::elaborate(program) {
+                Ok(o) => ox_programs.push(o),
+                Err(oxvba_oxir::elaborate::ElaborateError::Unimplemented { what }) => {
+                    return Err(jit_runtime_diagnostic(JitError::Unsupported(format!(
+                        "elaborate: {what}"
+                    ))));
+                }
+                Err(e) => {
+                    return Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                        "ELAB-E-JIT-FAILED",
+                        OxDiagnosticPhase::Host,
+                        format!("elaborate: {e}"),
+                    )));
+                }
+            }
+        }
+        let refs: Vec<&oxvba_oxir::OxProgram> = ox_programs.iter().collect();
+        let engine = JitEngine;
+        let compiled = match engine.compile_image(&refs) {
+            Ok(compiled) => compiled,
+            Err(err) => {
+                if err.unsupported_message().is_some() {
+                    return Err(jit_runtime_diagnostic(err));
+                }
+                return Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                    "RUN-E-JIT-COMPILE",
+                    OxDiagnosticPhase::Runtime,
+                    err.to_string(),
+                )));
+            }
+        };
+        let entry_global_count = ox_programs
+            .last()
+            .map(|program| program.globals.len())
+            .unwrap_or(0);
+        match compiled.run(&*self.host_services) {
+            Ok(mut outcome) => {
+                outcome.values.truncate(entry_global_count);
+                if outcome.raised {
+                    Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                        "RUN-E-JIT-FAULT",
+                        OxDiagnosticPhase::Runtime,
+                        format!("VBA error {}", outcome.err.number),
+                    )))
+                } else {
+                    Ok(outcome.values)
+                }
+            }
+            Err(err) => {
+                if err.unsupported_message().is_some() {
+                    Err(jit_runtime_diagnostic(err))
+                } else {
+                    Err(PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+                        "RUN-E-JIT-FAILED",
+                        OxDiagnosticPhase::Runtime,
+                        err.to_string(),
+                    )))
+                }
+            }
         }
     }
 
@@ -1075,14 +1137,14 @@ mod tests {
         let err = engine
             .execute_source_with_variant_snapshot_clean(
                 "Sub Main()\n\
-                 Dim s As String\n\
-                 s = \"x\"\n\
+                 Dim c As Collection\n\
+                 Set c = New Collection\n\
                  End Sub\n",
             )
             .expect_err("unsupported JIT shape should return a diagnostic");
         assert_eq!(err.phase(), DiagnosticPhase::Runtime);
         assert_eq!(err.diagnostic().code.as_str(), "RUN-E-JIT-UNSUPPORTED");
-        assert!(err.message().contains("M4-3"));
+        assert!(err.message().contains("unsupported"));
     }
 
     #[test]
