@@ -1011,6 +1011,28 @@ impl SafeArray {
         SafeArrayElementKind::from_vartype(element_vt).is_some()
     }
 
+    fn supports_zeroed_scalar_payload(kind: SafeArrayElementKind) -> bool {
+        matches!(
+            kind,
+            SafeArrayElementKind::I1
+                | SafeArrayElementKind::Ui1
+                | SafeArrayElementKind::I2
+                | SafeArrayElementKind::Ui2
+                | SafeArrayElementKind::I4
+                | SafeArrayElementKind::Ui4
+                | SafeArrayElementKind::I8
+                | SafeArrayElementKind::Ui8
+                | SafeArrayElementKind::Int
+                | SafeArrayElementKind::UInt
+                | SafeArrayElementKind::R4
+                | SafeArrayElementKind::R8
+                | SafeArrayElementKind::Currency
+                | SafeArrayElementKind::Date
+                | SafeArrayElementKind::Bool
+                | SafeArrayElementKind::Decimal
+        )
+    }
+
     fn from_bounds_and_variants(
         bounds: Vec<SafeArrayBound>,
         element_vt: u16,
@@ -1095,6 +1117,44 @@ impl SafeArray {
 
     pub fn from_shape_typed(bounds: Vec<SafeArrayBound>, element_vt: u16) -> Result<Self, String> {
         Self::from_bounds_and_variants(bounds, element_vt, None)
+    }
+
+    pub fn from_zeroed_typed_scalars_nd(
+        bounds: Vec<SafeArrayBound>,
+        element_vt: u16,
+    ) -> Result<Self, String> {
+        let kind = SafeArrayElementKind::from_vartype(element_vt).ok_or_else(|| {
+            format!("unsupported intrinsic SAFEARRAY element vartype 0x{element_vt:04X}")
+        })?;
+        if !Self::supports_zeroed_scalar_payload(kind) {
+            return Err(format!(
+                "SAFEARRAY element vartype 0x{element_vt:04X} cannot be defaulted by zeroed scalar payload"
+            ));
+        }
+        let expected_len = bounds_total_len(&bounds)?;
+        let pv_data = if expected_len == 0 {
+            core::ptr::null_mut()
+        } else {
+            let layout = payload_layout(kind, expected_len)?;
+            // SAFETY: `payload_layout` returns a non-zero-size layout for non-empty
+            // arrays; the null allocation case is handled immediately below. For the
+            // supported scalar element kinds, all-zero bytes are the VBA default value.
+            let raw = unsafe { std::alloc::alloc_zeroed(layout) };
+            if raw.is_null() {
+                return Err("failed to allocate SAFEARRAY payload".to_string());
+            }
+            raw.cast()
+        };
+        let header = match alloc_header(&bounds, element_vt, kind.element_size(), pv_data, None) {
+            Ok(header) => header,
+            Err(err) => {
+                // SAFETY: `pv_data` is null or the zeroed scalar payload allocated above
+                // for exactly `expected_len` elements of `kind`; it never escaped.
+                unsafe { free_payload(kind, pv_data, expected_len) };
+                return Err(err);
+            }
+        };
+        Ok(Self(header))
     }
 
     pub fn from_variants(values: Vec<Variant>) -> Self {
@@ -1642,8 +1702,8 @@ mod tests {
         ARRAY_TAG_BASE, FADF_BSTR_VALUE, FADF_DISPATCH_VALUE, FADF_HAVEVARTYPE_VALUE,
         FADF_UNKNOWN_VALUE, FADF_VARIANT_VALUE, RawSafeArray, SafeArray, SafeArrayBound,
         VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
-        VT_DISPATCH_VALUE, VT_I2_VALUE, VT_RECORD_VALUE, VT_UNKNOWN_VALUE, VT_VARIANT_VALUE,
-        array_len_from_tag, array_tag_from_safe_array, header_prefix_ptr,
+        VT_DISPATCH_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_RECORD_VALUE, VT_UNKNOWN_VALUE,
+        VT_VARIANT_VALUE, array_len_from_tag, array_tag_from_safe_array, header_prefix_ptr,
         marshal_dispatch_argument, safe_array_from_tag,
     };
     use crate::{
@@ -1861,6 +1921,30 @@ mod tests {
             Some(vec![SafeArrayBound { lower: 0, count: 5 }])
         );
         assert_eq!(array.variant_elements(), None);
+    }
+
+    #[test]
+    fn safe_array_zeroed_typed_scalar_payload_is_materialized_and_writable() {
+        let mut array = SafeArray::from_zeroed_typed_scalars_nd(
+            vec![SafeArrayBound {
+                lower: -1,
+                count: 3,
+            }],
+            VT_I4_VALUE,
+        )
+        .expect("zeroed Long payload");
+        assert_eq!(
+            array.variant_elements(),
+            Some(vec![
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+                Variant::from_i32(0),
+            ])
+        );
+        array
+            .set_variant_element(1, &Variant::from_i32(42))
+            .expect("write zeroed payload");
+        assert_eq!(array.variant_element(1), Ok(Variant::from_i32(42)));
     }
 
     #[test]

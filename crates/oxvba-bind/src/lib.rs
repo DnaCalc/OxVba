@@ -37,8 +37,12 @@ use oxvba_symbol::model::{
 };
 use oxvba_symbol::provider::{ResolutionContext, ResolutionEnvironment};
 use oxvba_symbol::signature::{BuiltinType, VarTypeRef};
+use oxvba_symbol::surface::ProjectExportSurface;
 use oxvba_symbol::surface::{MemberOrigin, SurfaceType, SurfaceTypeKind};
-use oxvba_symbol::{TypeLibResolver, build_resolution_environment};
+use oxvba_symbol::{
+    TypeLibResolver, build_resolution_environment,
+    build_resolution_environment_with_project_surfaces,
+};
 use oxvba_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::ids::{DefaultTypeRules, IdAllocator, ProcInfo};
@@ -73,6 +77,24 @@ pub fn bind_program(
     typelibs: &dyn TypeLibResolver,
 ) -> Result<CoreProgram, BindError> {
     let env = build_resolution_environment(manifest, typelibs)?;
+    bind_one(&env, manifest)
+}
+
+/// Bind one source project against already-compiled referenced project
+/// surfaces. The supplied surfaces are the source-less equivalent of
+/// `manifest.reference_projects`: they publish names, callable signatures, and
+/// class activation contracts, while their bodies are linked later as separate
+/// compiled programs.
+pub fn bind_program_with_project_surfaces(
+    manifest: &SymbolProjectManifest,
+    typelibs: &dyn TypeLibResolver,
+    external_project_surfaces: &[ProjectExportSurface],
+) -> Result<CoreProgram, BindError> {
+    let env = build_resolution_environment_with_project_surfaces(
+        manifest,
+        typelibs,
+        external_project_surfaces,
+    )?;
     bind_one(&env, manifest)
 }
 

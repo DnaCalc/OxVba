@@ -5,11 +5,11 @@ Sub Main()
     Dim c As New Collection
     Dim v As Variant
 
-    For i = 1 To 7000
+    For i = 1 To 1500
         c.Add i
     Next i
 
-    For i = 1 To 7000
+    For i = 1 To 1500
         v = c.Item(1)
         result = result + v
         c.Remove 1

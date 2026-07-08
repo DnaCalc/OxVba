@@ -30,5 +30,5 @@ pub use binding::{Binding, DispatchRoute};
 pub use model::{SymbolKind, SymbolModelError, SymbolTable};
 pub use provider::{
     CatalogTypeLibResolver, Provider, ResolutionContext, ResolutionEnvironment, TypeLibResolver,
-    build_resolution_environment,
+    build_resolution_environment, build_resolution_environment_with_project_surfaces,
 };

@@ -14,6 +14,7 @@ cranelift-module.workspace = true
 cranelift-native.workspace = true
 oxvba-bundle.workspace = true
 oxvba-com.workspace = true
+oxvba-eval.workspace = true
 oxvba-hal.workspace = true
 oxvba-oxir.workspace = true
 oxvba-rt-abi.workspace = true

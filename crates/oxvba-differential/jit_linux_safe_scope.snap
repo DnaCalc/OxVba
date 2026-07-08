@@ -1,0 +1,10 @@
+scalar/checked_long_loop	compiled
+coercion/variant_string_long	compiled
+arrays/dynamic_long_loop	compiled
+records/nested_udt_arrays	compiled
+strings/mid_mutation_boundary	compiled
+error/resume_next_div_zero	compiled
+unsupported/native_declare	declined	native/COM calls start in M4-9
+project_object/call_by_name_method	compiled
+project_object/class_field_aggregates	compiled
+project_reference/bundle_only_class_aggregates	compiled

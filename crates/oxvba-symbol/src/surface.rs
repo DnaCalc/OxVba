@@ -21,8 +21,8 @@
 
 use std::collections::HashMap;
 
-use oxvba_bundle::ProjectMemberKind;
-use oxvba_bundle::coreir::CoreConst;
+use oxvba_bundle::coreir::{CoreConst, CoreProgram};
+use oxvba_bundle::{ExportTarget, ExportToken, ProcedureKind, ProjectMemberKind};
 use oxvba_com::{TypeLibMemberInvokeKind, TypeLibParamType};
 
 use crate::const_eval::FoldedOptionalDefaults;
@@ -142,6 +142,181 @@ pub struct SurfaceConst {
     /// For an `Enum` member, the display name of its containing enum (so a referrer
     /// resolves `EnumName.Member`); `None` for a plain `Public Const`.
     pub enum_name: Option<String>,
+}
+
+/// Synthesize the published reference contract from a compiled CoreProgram.
+///
+/// This is the source-less project-reference path: the caller has a compiled
+/// bundle/CoreProgram, not the referenced project's modules. Only callable
+/// members and coclasses can be reconstructed from the compiled contract. Public
+/// field exports remain intentionally unreachable across bundle boundaries until
+/// the compiled artifact carries synthesized field accessors.
+pub fn synthesize_export_surface_from_core_program(program: &CoreProgram) -> ProjectExportSurface {
+    let mut surface = ProjectExportSurface {
+        project_name: program.unit_name.clone(),
+        types: Vec::new(),
+        consts: Vec::new(),
+        interfaces: Vec::new(),
+    };
+    for class in &program.classes {
+        for interface in &class.implements {
+            if !surface
+                .interfaces
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(interface))
+            {
+                surface.interfaces.push(interface.clone());
+            }
+        }
+    }
+
+    for export in &program.exports {
+        match &export.token {
+            ExportToken::Class { name } => {
+                let ExportTarget::Class(class_index) = export.target else {
+                    continue;
+                };
+                let Some(class) = program.classes.get(class_index) else {
+                    continue;
+                };
+                let mut ty = SurfaceType {
+                    name: name.clone(),
+                    description: None,
+                    kind: SurfaceTypeKind::Coclass {
+                        prog_id: None,
+                        // The legacy compiled export token does not preserve the
+                        // source `VB_Creatable` bit. Treat exported classes as
+                        // creatable for OxVBA bundle references; a future artifact
+                        // schema can carry the exact flag.
+                        creatable: true,
+                        class_symbol: compiled_surface_symbol_id(class_index),
+                    },
+                    global_namespace: false,
+                    predeclared: class.predeclared,
+                    members: Vec::new(),
+                    events: Vec::new(),
+                    implements: class.implements.clone(),
+                };
+                for method in &class.methods {
+                    let Some(proc) = program.procs.get(method.proc.0) else {
+                        continue;
+                    };
+                    ty.members.push(surface_member_from_proc(
+                        method.name.clone(),
+                        method.kind,
+                        method.dispid.unwrap_or_else(|| {
+                            i32::try_from(ty.members.len() + 1).unwrap_or(i32::MAX)
+                        }),
+                        method.vtable_slot,
+                        method.is_default_member,
+                        proc,
+                        compiled_surface_symbol_id(method.proc.0),
+                    ));
+                }
+                surface.types.push(ty);
+            }
+            ExportToken::ModuleFunc {
+                module,
+                member,
+                kind,
+            } => {
+                let ExportTarget::Proc(proc_index) = export.target else {
+                    continue;
+                };
+                let Some(proc) = program.procs.get(proc_index) else {
+                    continue;
+                };
+                let type_index = match surface
+                    .types
+                    .iter()
+                    .position(|ty| ty.name.eq_ignore_ascii_case(module))
+                {
+                    Some(index) => index,
+                    None => {
+                        surface.types.push(SurfaceType {
+                            name: module.clone(),
+                            description: None,
+                            kind: SurfaceTypeKind::Module,
+                            global_namespace: true,
+                            predeclared: false,
+                            members: Vec::new(),
+                            events: Vec::new(),
+                            implements: Vec::new(),
+                        });
+                        surface.types.len() - 1
+                    }
+                };
+                let ty = &mut surface.types[type_index];
+                ty.members.push(surface_member_from_proc(
+                    member.clone(),
+                    *kind,
+                    i32::try_from(ty.members.len() + 1).unwrap_or(i32::MAX),
+                    None,
+                    false,
+                    proc,
+                    compiled_surface_symbol_id(proc_index),
+                ));
+            }
+        }
+    }
+    surface
+}
+
+fn compiled_surface_symbol_id(index: usize) -> SymbolId {
+    SymbolId(u32::try_from(index).unwrap_or(u32::MAX))
+}
+
+fn surface_member_from_proc(
+    name: String,
+    member_kind: ProjectMemberKind,
+    dispid: i32,
+    vtable_slot: Option<u16>,
+    is_default: bool,
+    proc: &oxvba_bundle::coreir::CoreProc,
+    symbol: SymbolId,
+) -> SurfaceMember {
+    let parameter_names = proc.params.iter().map(|param| param.name.clone()).collect();
+    let parameter_types = proc
+        .params
+        .iter()
+        .map(|param| param_type(&param.ty, param.by_ref))
+        .collect();
+    let parameter_optional = proc.params.iter().map(|param| param.optional).collect();
+    let parameter_optional_defaults = proc.params.iter().map(|_| None).collect();
+    let parameter_variadic = proc.params.iter().any(|param| param.variadic);
+    let return_type = proc
+        .return_local
+        .and_then(|local| proc.locals.get(local.0))
+        .map(|local| param_type(&local.ty, false))
+        .or_else(|| match proc.kind {
+            ProcedureKind::Function | ProcedureKind::PropertyGet => Some(TypeLibParamType::Variant),
+            _ => None,
+        });
+    SurfaceMember {
+        name,
+        dispid,
+        vtable_slot,
+        invoke_kind: invoke_kind_for_member(member_kind),
+        member_kind,
+        is_default,
+        parameter_names,
+        parameter_types,
+        parameter_optional,
+        parameter_optional_defaults,
+        parameter_variadic,
+        return_type,
+        symbol,
+        origin: MemberOrigin::Proc,
+    }
+}
+
+fn invoke_kind_for_member(member_kind: ProjectMemberKind) -> TypeLibMemberInvokeKind {
+    match member_kind {
+        ProjectMemberKind::Method => TypeLibMemberInvokeKind::Method,
+        ProjectMemberKind::PropertyGet => TypeLibMemberInvokeKind::PropertyGet,
+        ProjectMemberKind::PropertyLet => TypeLibMemberInvokeKind::PropertyPut,
+        ProjectMemberKind::PropertySet => TypeLibMemberInvokeKind::PropertyPutRef,
+    }
 }
 
 /// Synthesize a project's export surface from its modules + scans.

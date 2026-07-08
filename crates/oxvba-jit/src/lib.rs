@@ -19,7 +19,14 @@ use oxvba_bundle::{
     array_element_type_for_vartype, default_array_element, redim_safearray_from_elements,
     safearray_vartype_for_element, vba_library_bundle, vba_record_layout_for_fields,
 };
-use oxvba_com::TypeLibMemberInvokeKind;
+use oxvba_com::{
+    DynamicCallArg, DynamicCallKind, DynamicCallRequest, DynamicMemberSelector, DynamicValue,
+    TypeLibMemberInvokeKind,
+};
+use oxvba_eval::{
+    arith,
+    collection::{CollectionError, CollectionMethod, dispatch_collection},
+};
 use oxvba_hal::HostServices;
 use oxvba_oxir::inst::OxAsNew;
 use oxvba_oxir::ty::ClassId;
@@ -29,7 +36,7 @@ use oxvba_oxir::{
     OxLocal, OxNativeCallee, OxOperand, OxPlace, OxProgram, OxTerminator, OxTy,
 };
 use oxvba_rt_abi::{
-    EventBinding, ExecState, LoadedProgram, ProcInvokeBridge, RT_ARITH_ADD, RT_ARITH_DIV,
+    EventBinding, ExecState, Fault, LoadedProgram, ProcInvokeBridge, RT_ARITH_ADD, RT_ARITH_DIV,
     RT_ARITH_INT_DIV, RT_ARITH_MOD, RT_ARITH_MUL, RT_ARITH_POW, RT_ARITH_SUB, RT_COMPARE_EQ,
     RT_COMPARE_GE, RT_COMPARE_GT, RT_COMPARE_LE, RT_COMPARE_LT, RT_COMPARE_NE,
     RT_ERR_FIELD_DESCRIPTION, RT_ERR_FIELD_HELP_CONTEXT, RT_ERR_FIELD_HELP_FILE,
@@ -56,13 +63,15 @@ use oxvba_rt_abi::{
     runtime_class_descriptors_for_program, variant_changed,
 };
 use oxvba_runtime::{
-    Decimal96, VarType, Variant, VbaRecord,
-    object_ref::ObjectRef,
+    Decimal96, RUNTIME_CLASS_LIFECYCLE_NONE, RuntimeByRefSlot, RuntimeClassDescriptor, VarType,
+    Variant, VbaRecord,
+    object_ref::{ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR},
     safe_array::{
         SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,
         VT_DECIMAL_VALUE, VT_DISPATCH_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_I8_VALUE, VT_R4_VALUE,
         VT_R8_VALUE, VT_RECORD_VALUE, VT_UI1_VALUE, VT_VARIANT_VALUE,
     },
+    variant_to_vba_string,
 };
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -103,6 +112,18 @@ const JIT_PROC_REF_RET_EXACT_DOUBLE: i32 = 103;
 const JIT_PROC_REF_RET_EXACT_DATE: i32 = 104;
 const JIT_PROC_REF_RET_EXACT_BYTE: i32 = 105;
 const JIT_PROC_REF_RET_EXACT_INTEGER: i32 = 106;
+const VBA_COLLECTION_ROUTE_KEY: i32 = i32::MIN;
+
+static VBA_COLLECTION_DESCRIPTOR: RuntimeClassDescriptor = RuntimeClassDescriptor {
+    name: "Collection",
+    project_identity: None,
+    predeclared: false,
+    lifecycle: RUNTIME_CLASS_LIFECYCLE_NONE,
+    fields: &[],
+    as_new_fields: &[],
+    implements: &[],
+    interfaces: &[RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR],
+};
 const JIT_PROC_REF_RET_EXACT_BOOL: i32 = 107;
 const JIT_VARIANT_OPERAND_PLACE: i32 = 0;
 const JIT_VARIANT_OPERAND_EMPTY: i32 = 1;
@@ -234,6 +255,7 @@ impl<'p> CompiledImage<'p> {
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
         };
@@ -354,6 +376,7 @@ struct JitRun {
     for_each: HashMap<SlotAlias, JitForEachState>,
     as_new_slots: HashMap<SlotAlias, OxAsNew>,
     param_array_aliases: HashMap<SlotAlias, Vec<Option<SlotAlias>>>,
+    next_collection_instance_id: i32,
     programs: *const JitProgramImage,
     program_count: usize,
 }
@@ -675,6 +698,8 @@ struct Imports {
     add_ref: ClifFuncId,
     release: ClifFuncId,
     as_new_project_class_slot: ClifFuncId,
+    as_new_collection_slot: ClifFuncId,
+    new_collection_slot: ClifFuncId,
     new_object_slot: ClifFuncId,
     predeclared_slot: ClifFuncId,
     predeclared_set: ClifFuncId,
@@ -687,8 +712,16 @@ struct Imports {
     withevents_next_owner_slot: ClifFuncId,
     raise_event: ClifFuncId,
     project_member_get_slot: ClifFuncId,
+    call_by_name_slot: ClifFuncId,
     project_type_name_slot: ClifFuncId,
     new_record_slot: ClifFuncId,
+    record_get_slot: ClifFuncId,
+    record_set_slot: ClifFuncId,
+    record_lset_slot: ClifFuncId,
+    record_array_get_slot: ClifFuncId,
+    record_array_set_slot: ClifFuncId,
+    field_array_get_slot: ClifFuncId,
+    field_array_set_slot: ClifFuncId,
     validate_assignment: ClifFuncId,
     err_clear: ClifFuncId,
     err_i32_field: ClifFuncId,
@@ -719,9 +752,11 @@ struct Imports {
     bound_slot: ClifFuncId,
     for_each_init_slot: ClifFuncId,
     for_each_next_slot: ClifFuncId,
+    call_extern_proc_i32: ClifFuncId,
     call_proc_ref_i32: ClifFuncId,
     lib_invoke_slot: ClifFuncId,
     arith_v_slot: ClifFuncId,
+    concat_v_slot: ClifFuncId,
     neg_v_slot: ClifFuncId,
     compare_v_slot: ClifFuncId,
     compare_object_is_slot: ClifFuncId,
@@ -1090,6 +1125,29 @@ impl<'a> LowerFunc<'a> {
             OxInst::NewRecord { dst, fields } => {
                 self.emit_new_record_to_slot(builder, module, *dst, fields)
             }
+            OxInst::RecordGet { dst, record, index } => {
+                self.emit_record_get_to_slot(builder, module, *dst, record, *index)
+            }
+            OxInst::RecordSet {
+                record,
+                index,
+                value,
+            } => self.emit_record_set(builder, module, *record, *index, value),
+            OxInst::RecordLSet { record, value } => {
+                self.emit_record_lset(builder, module, *record, value)
+            }
+            OxInst::RecordArrayGet {
+                dst,
+                record,
+                index,
+                indices,
+            } => self.emit_record_array_get_to_slot(builder, module, *dst, record, *index, indices),
+            OxInst::RecordArraySet {
+                record,
+                index,
+                indices,
+                value,
+            } => self.emit_record_array_set(builder, module, *record, *index, indices, value),
             OxInst::NewObject { dst, class } => {
                 self.emit_new_object_to_slot(builder, module, *dst, class.0)
             }
@@ -1116,6 +1174,18 @@ impl<'a> LowerFunc<'a> {
                 field,
                 value,
             } => self.emit_field_set(builder, module, object, *field, value),
+            OxInst::FieldArrayGet {
+                dst,
+                object,
+                field,
+                indices,
+            } => self.emit_field_array_get_to_slot(builder, module, *dst, object, *field, indices),
+            OxInst::FieldArraySet {
+                object,
+                field,
+                indices,
+                value,
+            } => self.emit_field_array_set(builder, module, object, *field, indices, value),
             OxInst::WithEventsGet {
                 dst,
                 owner,
@@ -1160,6 +1230,15 @@ impl<'a> LowerFunc<'a> {
                 *invoke_kind,
                 args,
             ),
+            OxInst::CallByName {
+                dst,
+                object,
+                name,
+                calltype,
+                args,
+            } => {
+                self.emit_call_by_name_to_slot(builder, module, *dst, object, name, calltype, args)
+            }
             OxInst::Box { dst, src, from } => {
                 self.ensure_variant_place(*dst)?;
                 if !is_jit_supported_slot_ty(from) {
@@ -1243,6 +1322,11 @@ impl<'a> LowerFunc<'a> {
             }
             OxInst::Coerce { dst, src, target } => {
                 if let OxCoerceTarget::Numeric(target_ty) = target {
+                    if matches!(place_ty(self.program, self.func, *dst)?, OxTy::Variant) {
+                        return self.emit_variant_numeric_coerce_slot_call(
+                            builder, module, *dst, *target_ty, src,
+                        );
+                    }
                     self.ensure_numeric_target_place(*dst, *target_ty)?;
                     if self.numeric_coerce_requires_variant_helper(src, *target_ty)? {
                         return self.emit_variant_numeric_coerce_slot_call(
@@ -1338,11 +1422,6 @@ impl<'a> LowerFunc<'a> {
                 mode,
             } => match place_ty(self.program, self.func, *dst)? {
                 OxTy::Variant => {
-                    if !matches!(mode, NumericMode::Widening) {
-                        return Err(JitError::unsupported(format!(
-                            "M4-4 Variant arithmetic lowering requires Widening mode, got {op:?} {mode:?}",
-                        )));
-                    }
                     self.emit_variant_arith_slot_call(builder, module, *dst, *op, *mode, lhs, rhs)
                 }
                 OxTy::Long => {
@@ -1368,6 +1447,17 @@ impl<'a> LowerFunc<'a> {
                             )));
                         }
                     };
+                    if self
+                        .numeric_coerce_requires_variant_helper(lhs, NumericCoerceTarget::Long)?
+                        || self.numeric_coerce_requires_variant_helper(
+                            rhs,
+                            NumericCoerceTarget::Long,
+                        )?
+                    {
+                        return self.emit_variant_arith_slot_call(
+                            builder, module, *dst, *op, *mode, lhs, rhs,
+                        );
+                    }
                     let lhs = self.lower_operand_i32(builder, module, lhs)?;
                     let rhs = self.lower_operand_i32(builder, module, rhs)?;
                     self.emit_checked_slot_call(builder, module, *dst, helper, lhs, rhs)
@@ -1389,6 +1479,17 @@ impl<'a> LowerFunc<'a> {
                             )));
                         }
                     };
+                    if self
+                        .numeric_coerce_requires_variant_helper(lhs, NumericCoerceTarget::Integer)?
+                        || self.numeric_coerce_requires_variant_helper(
+                            rhs,
+                            NumericCoerceTarget::Integer,
+                        )?
+                    {
+                        return self.emit_variant_arith_slot_call(
+                            builder, module, *dst, *op, *mode, lhs, rhs,
+                        );
+                    }
                     let lhs = self.lower_operand_i16_i32(builder, module, lhs)?;
                     let rhs = self.lower_operand_i16_i32(builder, module, rhs)?;
                     self.emit_checked_slot_call(builder, module, *dst, helper, lhs, rhs)
@@ -1410,6 +1511,17 @@ impl<'a> LowerFunc<'a> {
                             )));
                         }
                     };
+                    if self
+                        .numeric_coerce_requires_variant_helper(lhs, NumericCoerceTarget::Byte)?
+                        || self.numeric_coerce_requires_variant_helper(
+                            rhs,
+                            NumericCoerceTarget::Byte,
+                        )?
+                    {
+                        return self.emit_variant_arith_slot_call(
+                            builder, module, *dst, *op, *mode, lhs, rhs,
+                        );
+                    }
                     let lhs = self.lower_operand_u8_i32(builder, module, lhs)?;
                     let rhs = self.lower_operand_u8_i32(builder, module, rhs)?;
                     self.emit_checked_slot_call(builder, module, *dst, helper, lhs, rhs)
@@ -1437,6 +1549,17 @@ impl<'a> LowerFunc<'a> {
                             )));
                         }
                     };
+                    if self.numeric_coerce_requires_variant_helper(
+                        lhs,
+                        NumericCoerceTarget::LongLong,
+                    )? || self.numeric_coerce_requires_variant_helper(
+                        rhs,
+                        NumericCoerceTarget::LongLong,
+                    )? {
+                        return self.emit_variant_arith_slot_call(
+                            builder, module, *dst, *op, *mode, lhs, rhs,
+                        );
+                    }
                     let lhs = self.lower_operand_i64(builder, module, lhs)?;
                     let rhs = self.lower_operand_i64(builder, module, rhs)?;
                     self.emit_checked_slot_call(builder, module, *dst, helper, lhs, rhs)
@@ -1458,6 +1581,17 @@ impl<'a> LowerFunc<'a> {
                             )));
                         }
                     };
+                    if self.numeric_coerce_requires_variant_helper(
+                        lhs,
+                        NumericCoerceTarget::Currency,
+                    )? || self.numeric_coerce_requires_variant_helper(
+                        rhs,
+                        NumericCoerceTarget::Currency,
+                    )? {
+                        return self.emit_variant_arith_slot_call(
+                            builder, module, *dst, *op, *mode, lhs, rhs,
+                        );
+                    }
                     let lhs = self.lower_operand_currency_i64(builder, module, lhs)?;
                     let rhs = self.lower_operand_currency_i64(builder, module, rhs)?;
                     self.emit_checked_slot_call(builder, module, *dst, helper, lhs, rhs)
@@ -1468,17 +1602,32 @@ impl<'a> LowerFunc<'a> {
                             "M4-4 lowers only checked Single add/sub/mul, got {op:?} {mode:?}",
                         )));
                     }
+                    match op {
+                        ArithOp::Add | ArithOp::Sub | ArithOp::Mul => {}
+                        _ => {
+                            return Err(JitError::unsupported(format!(
+                                "M4-4 lowers only checked Single add/sub/mul, got {op:?} {mode:?}",
+                            )));
+                        }
+                    }
+                    if self
+                        .numeric_coerce_requires_variant_helper(lhs, NumericCoerceTarget::Single)?
+                        || self.numeric_coerce_requires_variant_helper(
+                            rhs,
+                            NumericCoerceTarget::Single,
+                        )?
+                    {
+                        return self.emit_variant_arith_slot_call(
+                            builder, module, *dst, *op, *mode, lhs, rhs,
+                        );
+                    }
                     let lhs = self.lower_operand_f32(builder, module, lhs)?;
                     let rhs = self.lower_operand_f32(builder, module, rhs)?;
                     let value = match op {
                         ArithOp::Add => builder.ins().fadd(lhs, rhs),
                         ArithOp::Sub => builder.ins().fsub(lhs, rhs),
                         ArithOp::Mul => builder.ins().fmul(lhs, rhs),
-                        _ => {
-                            return Err(JitError::unsupported(format!(
-                                "M4-4 lowers only checked Single add/sub/mul, got {op:?} {mode:?}",
-                            )));
-                        }
+                        _ => unreachable!("checked Single op above"),
                     };
                     self.emit_store_f32(builder, module, *dst, value)
                 }
@@ -1488,17 +1637,32 @@ impl<'a> LowerFunc<'a> {
                             "M4-4 lowers only checked Double add/sub/mul, got {op:?} {mode:?}",
                         )));
                     }
+                    match op {
+                        ArithOp::Add | ArithOp::Sub | ArithOp::Mul => {}
+                        _ => {
+                            return Err(JitError::unsupported(format!(
+                                "M4-4 lowers only checked Double add/sub/mul, got {op:?} {mode:?}",
+                            )));
+                        }
+                    }
+                    if self
+                        .numeric_coerce_requires_variant_helper(lhs, NumericCoerceTarget::Double)?
+                        || self.numeric_coerce_requires_variant_helper(
+                            rhs,
+                            NumericCoerceTarget::Double,
+                        )?
+                    {
+                        return self.emit_variant_arith_slot_call(
+                            builder, module, *dst, *op, *mode, lhs, rhs,
+                        );
+                    }
                     let lhs = self.lower_operand_f64(builder, module, lhs)?;
                     let rhs = self.lower_operand_f64(builder, module, rhs)?;
                     let value = match op {
                         ArithOp::Add => builder.ins().fadd(lhs, rhs),
                         ArithOp::Sub => builder.ins().fsub(lhs, rhs),
                         ArithOp::Mul => builder.ins().fmul(lhs, rhs),
-                        _ => {
-                            return Err(JitError::unsupported(format!(
-                                "M4-4 lowers only checked Double add/sub/mul, got {op:?} {mode:?}",
-                            )));
-                        }
+                        _ => unreachable!("checked Double op above"),
                     };
                     self.emit_store_f64(builder, module, *dst, value)
                 }
@@ -1529,6 +1693,10 @@ impl<'a> LowerFunc<'a> {
                     lhs,
                     rhs,
                 )
+            }
+            OxInst::Concat { dst, lhs, rhs } => {
+                self.ensure_concat_destination_place(*dst)?;
+                self.emit_variant_concat_slot_call(builder, module, *dst, lhs, rhs)
             }
             OxInst::Neg { dst, src, mode } => match place_ty(self.program, self.func, *dst)? {
                 OxTy::Long => {
@@ -2795,6 +2963,41 @@ impl<'a> LowerFunc<'a> {
         Ok(())
     }
 
+    fn ensure_concat_destination_place(&self, place: OxPlace) -> Result<(), JitError> {
+        let ty = place_ty(self.program, self.func, place)?;
+        if !matches!(ty, OxTy::Str | OxTy::FixedStr(_) | OxTy::Variant) {
+            return Err(JitError::unsupported(format!(
+                "M4-4 Concat lowering supports only String/FixedString/Variant destinations, got {ty:?} at {place:?}"
+            )));
+        }
+        Ok(())
+    }
+
+    fn emit_variant_concat_slot_call(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        lhs: &OxOperand,
+        rhs: &OxOperand,
+    ) -> Result<(), JitError> {
+        let operands = [
+            self.lower_variant_operand(builder, lhs)?,
+            self.lower_variant_operand(builder, rhs)?,
+        ];
+        let operands_ptr = self.emit_variant_operand_descriptors(builder, module, &operands)?;
+        let (area, index) = place_addr(dst);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let index = builder.ins().iconst(types::I32, index as i64);
+        let callee = self.import(builder, module, self.imports.concat_v_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, operands_ptr, area, index]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
     fn emit_variant_neg_slot_call(
         &self,
         builder: &mut FunctionBuilder<'_>,
@@ -3123,25 +3326,40 @@ impl<'a> LowerFunc<'a> {
         binding: &OxAsNew,
     ) -> Result<(), JitError> {
         self.ensure_variant_carrier_place(place)?;
-        let class = match binding {
-            OxAsNew::ProjectClass { class } => class.0,
-            OxAsNew::ExternClass { .. } | OxAsNew::ComClass { .. } => {
-                return Err(JitError::unsupported(
-                    "JIT AsNew currently supports only active-project class bindings",
-                ));
+        match binding {
+            OxAsNew::ProjectClass { class } => {
+                let class = i32::try_from(class.0)
+                    .map_err(|_| JitError::unsupported("JIT AsNew class index is too large"))?;
+                let (area, index) = place_addr(place);
+                let area = builder.ins().iconst(types::I32, i64::from(area));
+                let index = builder.ins().iconst(types::I32, index as i64);
+                let class = builder.ins().iconst(types::I32, i64::from(class));
+                let callee = self.import(builder, module, self.imports.as_new_project_class_slot);
+                let call = builder.ins().call(callee, &[self.run, area, index, class]);
+                let status = builder.inst_results(call)[0];
+                self.return_if_not_ok(builder, status);
+                Ok(())
             }
-        };
-        let class = i32::try_from(class)
-            .map_err(|_| JitError::unsupported("JIT AsNew class index is too large"))?;
-        let (area, index) = place_addr(place);
-        let area = builder.ins().iconst(types::I32, i64::from(area));
-        let index = builder.ins().iconst(types::I32, index as i64);
-        let class = builder.ins().iconst(types::I32, i64::from(class));
-        let callee = self.import(builder, module, self.imports.as_new_project_class_slot);
-        let call = builder.ins().call(callee, &[self.run, area, index, class]);
-        let status = builder.inst_results(call)[0];
-        self.return_if_not_ok(builder, status);
-        Ok(())
+            OxAsNew::ExternClass { import } if self.is_vba_collection_import(*import)? => {
+                let (area, index) = place_addr(place);
+                let area = builder.ins().iconst(types::I32, i64::from(area));
+                let index = builder.ins().iconst(types::I32, index as i64);
+                let program = i32::try_from(self.program_index).map_err(|_| {
+                    JitError::unsupported("JIT AsNew Collection program index is too large")
+                })?;
+                let program = builder.ins().iconst(types::I32, i64::from(program));
+                let callee = self.import(builder, module, self.imports.as_new_collection_slot);
+                let call = builder
+                    .ins()
+                    .call(callee, &[self.run, area, index, program]);
+                let status = builder.inst_results(call)[0];
+                self.return_if_not_ok(builder, status);
+                Ok(())
+            }
+            OxAsNew::ExternClass { .. } | OxAsNew::ComClass { .. } => Err(JitError::unsupported(
+                "JIT AsNew supports active-project classes and built-in VBA.Collection only",
+            )),
+        }
     }
 
     fn emit_new_object_to_slot(
@@ -3177,6 +3395,23 @@ impl<'a> LowerFunc<'a> {
         dst: OxPlace,
         import: oxvba_oxir::ImportId,
     ) -> Result<(), JitError> {
+        if self.is_vba_collection_import(import)? {
+            self.ensure_variant_carrier_place(dst)?;
+            let (area, index) = place_addr(dst);
+            let area = builder.ins().iconst(types::I32, i64::from(area));
+            let index = builder.ins().iconst(types::I32, index as i64);
+            let program = i32::try_from(self.program_index).map_err(|_| {
+                JitError::unsupported("JIT NewExtern Collection program index is too large")
+            })?;
+            let program = builder.ins().iconst(types::I32, i64::from(program));
+            let callee = self.import(builder, module, self.imports.new_collection_slot);
+            let call = builder
+                .ins()
+                .call(callee, &[self.state, self.run, area, index, program]);
+            let status = builder.inst_results(call)[0];
+            self.return_if_not_ok(builder, status);
+            return Ok(());
+        }
         let (program_index, class_index) = self.resolve_cross_project_class(import)?;
         self.emit_project_class_to_slot(
             builder,
@@ -3313,6 +3548,30 @@ impl<'a> LowerFunc<'a> {
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
+    }
+
+    fn is_vba_collection_import(&self, import: oxvba_oxir::ImportId) -> Result<bool, JitError> {
+        let imp = self.program.imports.get(import.0).ok_or_else(|| {
+            JitError::Compile(format!("NewExtern import {} out of range", import.0))
+        })?;
+        if !imp.unit.eq_ignore_ascii_case("VBA") {
+            return Ok(false);
+        }
+        let lib = vba_library_bundle();
+        let Some(export) = lib
+            .exports
+            .iter()
+            .find(|export| export.token.matches(&imp.token))
+        else {
+            return Ok(false);
+        };
+        let ExportTarget::Class(class_index) = export.target else {
+            return Ok(false);
+        };
+        Ok(lib
+            .classes
+            .get(class_index)
+            .is_some_and(|class| class.name.eq_ignore_ascii_case("Collection")))
     }
 
     fn resolve_cross_project_class(
@@ -3615,14 +3874,6 @@ impl<'a> LowerFunc<'a> {
         invoke_kind: TypeLibMemberInvokeKind,
         args: &[OxCallArg],
     ) -> Result<(), JitError> {
-        if !default_member
-            && !is_project_object_static_ty(&operand_static_ty(self.program, self.func, recv)?)
-            && self.programs.len() == 1
-        {
-            return Err(JitError::unsupported(
-                "JIT ComCallLate is unsupported for non-project class/interface receivers: currently supports only statically typed active-project class/interface receivers",
-            ));
-        }
         if let Some(dst) = dst {
             self.ensure_variant_carrier_place(dst)?;
         }
@@ -3665,6 +3916,61 @@ impl<'a> LowerFunc<'a> {
                 name_ptr,
                 name_len,
                 invoke_kind,
+                argc,
+                args_ptr,
+                arg_names_ptr,
+                area,
+                index,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_call_by_name_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: Option<OxPlace>,
+        object: &OxOperand,
+        name: &OxOperand,
+        calltype: &OxOperand,
+        args: &[OxCallArg],
+    ) -> Result<(), JitError> {
+        if let Some(dst) = dst {
+            self.ensure_variant_carrier_place(dst)?;
+        }
+        let object = self.lower_variant_operand(builder, object)?;
+        let name = self.lower_variant_operand(builder, name)?;
+        let calltype = self.lower_variant_operand(builder, calltype)?;
+        let operands_ptr =
+            self.emit_variant_operand_descriptors(builder, module, &[object, name, calltype])?;
+        let (lowered_args, arg_names) = self.lower_project_call_args(builder, args)?;
+        let args_ptr = self.emit_call_arg_descriptors(builder, module, &lowered_args)?;
+        let arg_names_ptr = self.emit_call_arg_name_descriptors(builder, module, &arg_names)?;
+        let argc = i32::try_from(args.len())
+            .map_err(|_| JitError::unsupported("JIT CallByName argument count is too large"))?;
+        let argc = builder.ins().iconst(types::I32, i64::from(argc));
+        let (area, index) = if let Some(dst) = dst {
+            let (area, index) = place_addr(dst);
+            (
+                builder.ins().iconst(types::I32, i64::from(area)),
+                builder.ins().iconst(types::I32, index as i64),
+            )
+        } else {
+            (
+                builder.ins().iconst(types::I32, -1),
+                builder.ins().iconst(types::I32, -1),
+            )
+        };
+        let callee = self.import(builder, module, self.imports.call_by_name_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                operands_ptr,
                 argc,
                 args_ptr,
                 arg_names_ptr,
@@ -3787,6 +4093,281 @@ impl<'a> LowerFunc<'a> {
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
+    }
+
+    fn emit_record_get_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        record: &OxOperand,
+        index: usize,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        let index = i32::try_from(index)
+            .map_err(|_| JitError::unsupported("M4-4 RecordGet field index exceeds i32"))?;
+        let record = self.lower_variant_operand(builder, record)?;
+        let record_ptr = self.emit_variant_operand_descriptors(builder, module, &[record])?;
+        let (area, slot) = place_addr(dst);
+        let index = builder.ins().iconst(types::I32, i64::from(index));
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let slot = builder.ins().iconst(types::I32, i64::from(slot));
+        let callee = self.import(builder, module, self.imports.record_get_slot);
+        let call = builder.ins().call(
+            callee,
+            &[self.state, self.run, record_ptr, index, area, slot],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_record_set(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        record: OxPlace,
+        index: usize,
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(record)?;
+        let index = i32::try_from(index)
+            .map_err(|_| JitError::unsupported("M4-4 RecordSet field index exceeds i32"))?;
+        let value = self.lower_variant_operand(builder, value)?;
+        let value_ptr = self.emit_variant_operand_descriptors(builder, module, &[value])?;
+        let (area, slot) = place_addr(record);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let slot = builder.ins().iconst(types::I32, i64::from(slot));
+        let index = builder.ins().iconst(types::I32, i64::from(index));
+        let callee = self.import(builder, module, self.imports.record_set_slot);
+        let call = builder.ins().call(
+            callee,
+            &[self.state, self.run, area, slot, index, value_ptr],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_record_lset(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        record: OxPlace,
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(record)?;
+        let value = self.lower_variant_operand(builder, value)?;
+        let value_ptr = self.emit_variant_operand_descriptors(builder, module, &[value])?;
+        let (area, slot) = place_addr(record);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let slot = builder.ins().iconst(types::I32, slot as i64);
+        let callee = self.import(builder, module, self.imports.record_lset_slot);
+        let call = builder
+            .ins()
+            .call(callee, &[self.state, self.run, area, slot, value_ptr]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_record_array_get_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        record: &OxOperand,
+        index: usize,
+        indices: &[OxOperand],
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        if indices.is_empty() {
+            return Err(JitError::unsupported(
+                "M4-7 RecordArrayGet lowering requires at least one subscript",
+            ));
+        }
+        let index = i32::try_from(index)
+            .map_err(|_| JitError::unsupported("M4-7 RecordArrayGet field index exceeds i32"))?;
+        let record = self.lower_variant_operand(builder, record)?;
+        let record_ptr = self.emit_variant_operand_descriptors(builder, module, &[record])?;
+        let indices_ptr =
+            self.emit_lowered_i32_indices(builder, module, indices, "RecordArrayGet subscript")?;
+        let dimensions = i32::try_from(indices.len()).map_err(|_| {
+            JitError::unsupported("M4-7 RecordArrayGet subscript count is too large")
+        })?;
+        let dimensions = builder.ins().iconst(types::I32, i64::from(dimensions));
+        let (dst_area, dst_slot) = place_addr(dst);
+        let dst_area = builder.ins().iconst(types::I32, i64::from(dst_area));
+        let dst_slot = builder.ins().iconst(types::I32, dst_slot as i64);
+        let index = builder.ins().iconst(types::I32, i64::from(index));
+        let callee = self.import(builder, module, self.imports.record_array_get_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                record_ptr,
+                index,
+                indices_ptr,
+                dimensions,
+                dst_area,
+                dst_slot,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_record_array_set(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        record: OxPlace,
+        index: usize,
+        indices: &[OxOperand],
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(record)?;
+        if indices.is_empty() {
+            return Err(JitError::unsupported(
+                "M4-7 RecordArraySet lowering requires at least one subscript",
+            ));
+        }
+        let index = i32::try_from(index)
+            .map_err(|_| JitError::unsupported("M4-7 RecordArraySet field index exceeds i32"))?;
+        let indices_ptr =
+            self.emit_lowered_i32_indices(builder, module, indices, "RecordArraySet subscript")?;
+        let dimensions = i32::try_from(indices.len()).map_err(|_| {
+            JitError::unsupported("M4-7 RecordArraySet subscript count is too large")
+        })?;
+        let dimensions = builder.ins().iconst(types::I32, i64::from(dimensions));
+        let value = self.lower_variant_operand(builder, value)?;
+        let value_ptr = self.emit_variant_operand_descriptors(builder, module, &[value])?;
+        let (area, slot) = place_addr(record);
+        let area = builder.ins().iconst(types::I32, i64::from(area));
+        let slot = builder.ins().iconst(types::I32, slot as i64);
+        let index = builder.ins().iconst(types::I32, i64::from(index));
+        let callee = self.import(builder, module, self.imports.record_array_set_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                area,
+                slot,
+                index,
+                indices_ptr,
+                dimensions,
+                value_ptr,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_field_array_get_to_slot(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+        object: &OxOperand,
+        field: i32,
+        indices: &[OxOperand],
+    ) -> Result<(), JitError> {
+        self.ensure_variant_carrier_place(dst)?;
+        if indices.is_empty() {
+            return Err(JitError::unsupported(
+                "M4-8 FieldArrayGet lowering requires at least one subscript",
+            ));
+        }
+        let object = self.lower_variant_operand(builder, object)?;
+        let object_ptr = self.emit_variant_operand_descriptors(builder, module, &[object])?;
+        let indices_ptr =
+            self.emit_lowered_i32_indices(builder, module, indices, "FieldArrayGet subscript")?;
+        let dimensions = i32::try_from(indices.len()).map_err(|_| {
+            JitError::unsupported("M4-8 FieldArrayGet subscript count is too large")
+        })?;
+        let dimensions = builder.ins().iconst(types::I32, i64::from(dimensions));
+        let field = builder.ins().iconst(types::I32, i64::from(field));
+        let (dst_area, dst_slot) = place_addr(dst);
+        let dst_area = builder.ins().iconst(types::I32, i64::from(dst_area));
+        let dst_slot = builder.ins().iconst(types::I32, dst_slot as i64);
+        let callee = self.import(builder, module, self.imports.field_array_get_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                object_ptr,
+                field,
+                indices_ptr,
+                dimensions,
+                dst_area,
+                dst_slot,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_field_array_set(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        object: &OxOperand,
+        field: i32,
+        indices: &[OxOperand],
+        value: &OxOperand,
+    ) -> Result<(), JitError> {
+        if indices.is_empty() {
+            return Err(JitError::unsupported(
+                "M4-8 FieldArraySet lowering requires at least one subscript",
+            ));
+        }
+        let object = self.lower_variant_operand(builder, object)?;
+        let object_ptr = self.emit_variant_operand_descriptors(builder, module, &[object])?;
+        let indices_ptr =
+            self.emit_lowered_i32_indices(builder, module, indices, "FieldArraySet subscript")?;
+        let dimensions = i32::try_from(indices.len()).map_err(|_| {
+            JitError::unsupported("M4-8 FieldArraySet subscript count is too large")
+        })?;
+        let dimensions = builder.ins().iconst(types::I32, i64::from(dimensions));
+        let value = self.lower_variant_operand(builder, value)?;
+        let value_ptr = self.emit_variant_operand_descriptors(builder, module, &[value])?;
+        let field = builder.ins().iconst(types::I32, i64::from(field));
+        let callee = self.import(builder, module, self.imports.field_array_set_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                object_ptr,
+                field,
+                indices_ptr,
+                dimensions,
+                value_ptr,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_lowered_i32_indices(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        indices: &[OxOperand],
+        label: &'static str,
+    ) -> Result<Value, JitError> {
+        let mut index_values = Vec::with_capacity(indices.len());
+        for index in indices {
+            index_values.push(self.lower_operand_i32(builder, module, index)?);
+        }
+        self.emit_i32_stack_values(builder, module, &index_values, label)
     }
 
     fn emit_unbox_to_slot(
@@ -4227,7 +4808,9 @@ impl<'a> LowerFunc<'a> {
         fixed: bool,
     ) -> Result<(), JitError> {
         let dst_ty = place_ty(self.program, self.func, dst)?;
-        let supported_dst = if fixed {
+        let supported_dst = if matches!(dst_ty, OxTy::Variant) {
+            true
+        } else if fixed {
             is_m4_4_fixed_array_ty_for_element(dst_ty, element)
         } else {
             is_m4_4_array_ty_for_element(dst_ty, element)
@@ -4366,7 +4949,7 @@ impl<'a> LowerFunc<'a> {
         element: &ArrayElementType,
     ) -> Result<(), JitError> {
         let array_ty = place_ty(self.program, self.func, array)?;
-        if !is_m4_4_array_ty_for_element(array_ty, element) {
+        if !matches!(array_ty, OxTy::Variant) && !is_m4_4_array_ty_for_element(array_ty, element) {
             return Err(JitError::unsupported(format!(
                 "M4-4 ArrayErase lowers only supported array places, got {array_ty:?} with element {element:?} at {array:?}"
             )));
@@ -6114,6 +6697,18 @@ impl<'a> LowerFunc<'a> {
         import: oxvba_oxir::ImportId,
         args: &[oxvba_oxir::OxArg],
     ) -> Result<(), JitError> {
+        if let Some((target_program, target_proc)) =
+            resolve_cross_project_proc_import(self.programs, self.program, import)?
+        {
+            return self.lower_cross_project_call_extern(
+                builder,
+                module,
+                dst,
+                target_program,
+                target_proc,
+                args,
+            );
+        }
         let (native_id, native_impl, string_typed_alias) =
             resolve_vba_library_import(self.program, import)?;
         if native_impl == NativeImplId::TypeName
@@ -6173,6 +6768,105 @@ impl<'a> LowerFunc<'a> {
         Ok(())
     }
 
+    fn lower_cross_project_call_extern(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: Option<OxPlace>,
+        target_program: usize,
+        target_proc: FuncId,
+        args: &[oxvba_oxir::OxArg],
+    ) -> Result<(), JitError> {
+        let callee = self
+            .programs
+            .get(target_program)
+            .and_then(|program| program.funcs.get(target_proc.0))
+            .ok_or_else(|| {
+                JitError::Compile(format!(
+                    "cross-project CallExtern target {}:{} out of range",
+                    target_program, target_proc.0
+                ))
+            })?;
+        if let Some(dst) = dst {
+            let Some(ret) = callee.return_local else {
+                return Err(JitError::unsupported(format!(
+                    "cross-project CallExtern destination was requested for Sub {}",
+                    callee.name
+                )));
+            };
+            let Some(ret_ty) = callee.locals.get(ret.0).map(|local| &local.ty) else {
+                return Err(JitError::Compile(format!(
+                    "return local {} out of range in {}",
+                    ret.0, callee.name
+                )));
+            };
+            if !is_jit_static_call_ty(ret_ty) {
+                return Err(JitError::unsupported(format!(
+                    "JIT cross-project CallExtern accepts supported scalar/carrier returns in {}, got {ret_ty:?}",
+                    callee.name
+                )));
+            }
+            let dst_ty = place_ty(self.program, self.func, dst)?;
+            if !is_m4_4_call_return_destination_ty(dst_ty, ret_ty) {
+                return Err(JitError::unsupported(format!(
+                    "M4-4 cross-project CallExtern requires exact return destination type match or a Variant destination, got {dst_ty:?} for {ret_ty:?}"
+                )));
+            }
+        }
+        if args.len() != callee.param_count {
+            return Err(JitError::unsupported(format!(
+                "cross-project CallExtern argument count {} does not match callee param_count {} for {}",
+                args.len(),
+                callee.param_count,
+                callee.name
+            )));
+        }
+        for (index, arg) in args.iter().enumerate() {
+            validate_static_scalar_call_arg(callee, index, arg)?;
+        }
+        let lowered_args = self.lower_static_call_args(builder, module, callee, args)?;
+        let args_ptr = self.emit_call_arg_descriptors(builder, module, &lowered_args)?;
+        let argc = i32::try_from(args.len()).map_err(|_| {
+            JitError::unsupported("M4-4 cross-project CallExtern argument count is too large")
+        })?;
+        let target_program = i32::try_from(target_program)
+            .map_err(|_| JitError::unsupported("JIT target program index is too large"))?;
+        let target_proc = i32::try_from(target_proc.0)
+            .map_err(|_| JitError::unsupported("JIT target proc index is too large"))?;
+        let target_program = builder.ins().iconst(types::I32, i64::from(target_program));
+        let target_proc = builder.ins().iconst(types::I32, i64::from(target_proc));
+        let argc = builder.ins().iconst(types::I32, i64::from(argc));
+        let (dst_area, dst_index) = if let Some(dst) = dst {
+            let (area, index) = place_addr(dst);
+            (
+                builder.ins().iconst(types::I32, i64::from(area)),
+                builder.ins().iconst(types::I32, i64::from(index)),
+            )
+        } else {
+            (
+                builder.ins().iconst(types::I32, -1),
+                builder.ins().iconst(types::I32, -1),
+            )
+        };
+        let callee = self.import(builder, module, self.imports.call_extern_proc_i32);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.run,
+                self.state,
+                target_program,
+                target_proc,
+                argc,
+                args_ptr,
+                dst_area,
+                dst_index,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
     fn lower_call_native(
         &self,
         builder: &mut FunctionBuilder<'_>,
@@ -6198,7 +6892,7 @@ impl<'a> LowerFunc<'a> {
             let dst_ty = place_ty(self.program, self.func, dst)?;
             if !is_m4_4_call_extern_destination_ty(dst_ty) {
                 return Err(JitError::unsupported(format!(
-                    "M4-4 CallNative built-in subset lowers only scalar/Variant destinations, got {dst_ty:?}"
+                    "M4-4 CallNative built-in subset lowers only scalar/String/Variant destinations, got {dst_ty:?}"
                 )));
             }
         }
@@ -6352,36 +7046,132 @@ impl<'a> LowerFunc<'a> {
     ) -> Result<(), JitError> {
         let shape = match native_impl {
             NativeImplId::Like => "Like(Variant, Variant, compare-const)",
+            NativeImplId::MidStmt => "MidStmt(target, start[, count], value)",
+            NativeImplId::CreateObject => "CreateObject(\"OxVba.TestDispatch\")",
             _ => {
                 return Err(JitError::unsupported(format!(
-                    "M4-4 CallNative built-in subset currently lowers only Like, got {native_impl:?}"
+                    "M4-4 CallNative built-in subset currently lowers only Like, MidStmt, and fixture-backed CreateObject, got {native_impl:?}"
                 )));
             }
         };
-        self.validate_call_extern_variant_destination(dst, shape)?;
-        if args.len() != 3 {
+        match native_impl {
+            NativeImplId::Like => {
+                self.validate_call_extern_variant_destination(dst, shape)?;
+                if args.len() != 3 {
+                    return Err(JitError::unsupported(format!(
+                        "M4-4 CallNative {shape} subset requires exactly three arguments, got {}",
+                        args.len()
+                    )));
+                }
+                for arg in &args[..2] {
+                    let OxCallArg::Operand(operand) = arg else {
+                        return Err(JitError::unsupported(format!(
+                            "M4-4 CallNative {shape} subset lowers only Variant operands followed by a compare constant"
+                        )));
+                    };
+                    if !self.is_supported_variant_extern_operand(operand)? {
+                        return Err(JitError::unsupported(format!(
+                            "M4-4 CallNative {shape} subset lowers only supported Variant operands, got {operand:?}"
+                        )));
+                    }
+                }
+                match args[2] {
+                    OxCallArg::Const(0 | 1) => Ok(()),
+                    ref other => Err(JitError::unsupported(format!(
+                        "M4-4 CallNative {shape} subset requires a binary/text compare constant, got {other:?}"
+                    ))),
+                }
+            }
+            NativeImplId::MidStmt => {
+                self.validate_call_native_mid_stmt_destination(dst, shape)?;
+                if !(args.len() == 3 || args.len() == 4) {
+                    return Err(JitError::unsupported(format!(
+                        "M4-4 CallNative {shape} subset requires three or four arguments, got {}",
+                        args.len()
+                    )));
+                }
+                for arg in args {
+                    let OxCallArg::Operand(operand) = arg else {
+                        return Err(JitError::unsupported(format!(
+                            "M4-4 CallNative {shape} subset lowers only ordinary operands"
+                        )));
+                    };
+                    if !self.is_supported_call_native_mid_stmt_operand(operand)? {
+                        return Err(JitError::unsupported(format!(
+                            "M4-4 CallNative {shape} subset lowers only supported string/scalar operands, got {operand:?}"
+                        )));
+                    }
+                }
+                Ok(())
+            }
+            NativeImplId::CreateObject => {
+                self.validate_call_extern_variant_destination(dst, shape)?;
+                if args.len() != 1 {
+                    return Err(JitError::unsupported(format!(
+                        "M4-4 CallNative {shape} subset requires exactly one argument, got {}",
+                        args.len()
+                    )));
+                }
+                let OxCallArg::Operand(OxOperand::Const(OxConst::Str(prog_id))) = &args[0] else {
+                    return Err(JitError::unsupported(format!(
+                        "M4-4 CallNative {shape} subset requires a literal ProgID"
+                    )));
+                };
+                if prog_id.eq_ignore_ascii_case("OxVba.TestDispatch") {
+                    Ok(())
+                } else {
+                    Err(JitError::unsupported(format!(
+                        "M4-4 CallNative {shape} subset is limited to OxVba.TestDispatch, got {prog_id:?}"
+                    )))
+                }
+            }
+            _ => unreachable!("validated CallNative built-in shape above"),
+        }
+    }
+
+    fn validate_call_native_mid_stmt_destination(
+        &self,
+        dst: Option<OxPlace>,
+        shape: &'static str,
+    ) -> Result<(), JitError> {
+        let Some(dst) = dst else {
             return Err(JitError::unsupported(format!(
-                "M4-4 CallNative {shape} subset requires exactly three arguments, got {}",
-                args.len()
+                "M4-4 CallNative {shape} subset requires a destination"
+            )));
+        };
+        let dst_ty = place_ty(self.program, self.func, dst)?;
+        if !matches!(dst_ty, OxTy::Str | OxTy::FixedStr(_) | OxTy::Variant) {
+            return Err(JitError::unsupported(format!(
+                "M4-4 CallNative {shape} subset requires a String/FixedString/Variant destination, got {dst_ty:?}"
             )));
         }
-        for arg in &args[..2] {
-            let OxCallArg::Operand(operand) = arg else {
-                return Err(JitError::unsupported(format!(
-                    "M4-4 CallNative {shape} subset lowers only Variant operands followed by a compare constant"
-                )));
-            };
-            if !self.is_supported_variant_extern_operand(operand)? {
-                return Err(JitError::unsupported(format!(
-                    "M4-4 CallNative {shape} subset lowers only supported Variant operands, got {operand:?}"
-                )));
-            }
-        }
-        match args[2] {
-            OxCallArg::Const(0 | 1) => Ok(()),
-            ref other => Err(JitError::unsupported(format!(
-                "M4-4 CallNative {shape} subset requires a binary/text compare constant, got {other:?}"
-            ))),
+        Ok(())
+    }
+
+    fn is_supported_call_native_mid_stmt_operand(
+        &self,
+        operand: &OxOperand,
+    ) -> Result<bool, JitError> {
+        match operand {
+            OxOperand::Const(
+                OxConst::Empty
+                | OxConst::Null
+                | OxConst::Bool(_)
+                | OxConst::I16(_)
+                | OxConst::I32(_)
+                | OxConst::I64(_)
+                | OxConst::F32(_)
+                | OxConst::F64(_)
+                | OxConst::Currency(_)
+                | OxConst::Date(_),
+            ) => Ok(true),
+            OxOperand::Const(OxConst::Str(value)) => Ok(i32::try_from(value.len()).is_ok()),
+            OxOperand::Use(place) => Ok(is_m4_4_variant_descriptor_operand_ty(place_ty(
+                self.program,
+                self.func,
+                *place,
+            )?)),
+            _ => Ok(false),
         }
     }
 
@@ -8434,6 +9224,14 @@ fn register_symbols(builder: &mut JITBuilder) {
         rt_jit_as_new_project_class_slot as *const u8,
     );
     builder.symbol(
+        "rt_jit_as_new_collection_slot",
+        rt_jit_as_new_collection_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_new_collection_to_slot",
+        rt_jit_new_collection_to_slot as *const u8,
+    );
+    builder.symbol(
         "rt_jit_new_object_to_slot",
         rt_jit_new_object_to_slot as *const u8,
     );
@@ -8479,12 +9277,38 @@ fn register_symbols(builder: &mut JITBuilder) {
         rt_jit_project_member_get_to_slot as *const u8,
     );
     builder.symbol(
+        "rt_jit_call_by_name_to_slot",
+        rt_jit_call_by_name_to_slot as *const u8,
+    );
+    builder.symbol(
         "rt_jit_project_type_name_to_slot",
         rt_jit_project_type_name_to_slot as *const u8,
     );
     builder.symbol(
         "rt_jit_new_record_to_slot",
         rt_jit_new_record_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_record_get_to_slot",
+        rt_jit_record_get_to_slot as *const u8,
+    );
+    builder.symbol("rt_jit_record_set", rt_jit_record_set as *const u8);
+    builder.symbol("rt_jit_record_lset", rt_jit_record_lset as *const u8);
+    builder.symbol(
+        "rt_jit_record_array_get_to_slot",
+        rt_jit_record_array_get_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_record_array_set",
+        rt_jit_record_array_set as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_project_field_array_get_to_slot",
+        rt_jit_project_field_array_get_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_project_field_array_set",
+        rt_jit_project_field_array_set as *const u8,
     );
     builder.symbol(
         "rt_jit_validate_assignment",
@@ -8580,6 +9404,10 @@ fn register_symbols(builder: &mut JITBuilder) {
         rt_jit_for_each_next_variant_array as *const u8,
     );
     builder.symbol("rt_jit_unbox_to_slot", rt_jit_unbox_to_slot as *const u8);
+    builder.symbol(
+        "rt_jit_call_extern_proc_i32",
+        rt_jit_call_extern_proc_i32 as *const u8,
+    );
     builder.symbol("rt_jit_call_proc_i32", rt_jit_call_proc_i32 as *const u8);
     builder.symbol(
         "rt_jit_call_proc_ref_i32",
@@ -8592,6 +9420,10 @@ fn register_symbols(builder: &mut JITBuilder) {
     builder.symbol(
         "rt_jit_arith_v_to_slot",
         rt_jit_arith_v_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_concat_v_to_slot",
+        rt_jit_concat_v_to_slot as *const u8,
     );
     builder.symbol("rt_jit_neg_v_to_slot", rt_jit_neg_v_to_slot as *const u8);
     builder.symbol(
@@ -8879,6 +9711,28 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
             &as_new_project_class_slot_sig,
         )
         .map_err(module_err)?;
+    let as_new_collection_slot = module
+        .declare_function(
+            "rt_jit_as_new_collection_slot",
+            Linkage::Import,
+            &as_new_project_class_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut new_collection_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, types::I32, types::I32, types::I32] {
+        new_collection_slot_sig.params.push(AbiParam::new(param));
+    }
+    new_collection_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let new_collection_slot = module
+        .declare_function(
+            "rt_jit_new_collection_to_slot",
+            Linkage::Import,
+            &new_collection_slot_sig,
+        )
+        .map_err(module_err)?;
 
     let mut new_object_slot_sig = module.make_signature();
     new_object_slot_sig.params.push(AbiParam::new(ptr_ty));
@@ -9067,6 +9921,30 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         )
         .map_err(module_err)?;
 
+    let mut call_by_name_slot_sig = module.make_signature();
+    for param in [
+        ptr_ty,
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        types::I32,
+    ] {
+        call_by_name_slot_sig.params.push(AbiParam::new(param));
+    }
+    call_by_name_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let call_by_name_slot = module
+        .declare_function(
+            "rt_jit_call_by_name_to_slot",
+            Linkage::Import,
+            &call_by_name_slot_sig,
+        )
+        .map_err(module_err)?;
+
     let mut project_type_name_slot_sig = module.make_signature();
     project_type_name_slot_sig
         .params
@@ -9107,6 +9985,132 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
             "rt_jit_new_record_to_slot",
             Linkage::Import,
             &new_record_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut record_get_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, ptr_ty, types::I32, types::I32, types::I32] {
+        record_get_slot_sig.params.push(AbiParam::new(param));
+    }
+    record_get_slot_sig.returns.push(AbiParam::new(types::I32));
+    let record_get_slot = module
+        .declare_function(
+            "rt_jit_record_get_to_slot",
+            Linkage::Import,
+            &record_get_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut record_set_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, types::I32, types::I32, types::I32, ptr_ty] {
+        record_set_slot_sig.params.push(AbiParam::new(param));
+    }
+    record_set_slot_sig.returns.push(AbiParam::new(types::I32));
+    let record_set_slot = module
+        .declare_function("rt_jit_record_set", Linkage::Import, &record_set_slot_sig)
+        .map_err(module_err)?;
+
+    let mut record_lset_slot_sig = module.make_signature();
+    for param in [ptr_ty, ptr_ty, types::I32, types::I32, ptr_ty] {
+        record_lset_slot_sig.params.push(AbiParam::new(param));
+    }
+    record_lset_slot_sig.returns.push(AbiParam::new(types::I32));
+    let record_lset_slot = module
+        .declare_function("rt_jit_record_lset", Linkage::Import, &record_lset_slot_sig)
+        .map_err(module_err)?;
+
+    let mut record_array_get_slot_sig = module.make_signature();
+    for param in [
+        ptr_ty,
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        ptr_ty,
+        types::I32,
+        types::I32,
+        types::I32,
+    ] {
+        record_array_get_slot_sig.params.push(AbiParam::new(param));
+    }
+    record_array_get_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let record_array_get_slot = module
+        .declare_function(
+            "rt_jit_record_array_get_to_slot",
+            Linkage::Import,
+            &record_array_get_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut record_array_set_slot_sig = module.make_signature();
+    for param in [
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        types::I32,
+        types::I32,
+        ptr_ty,
+        types::I32,
+        ptr_ty,
+    ] {
+        record_array_set_slot_sig.params.push(AbiParam::new(param));
+    }
+    record_array_set_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let record_array_set_slot = module
+        .declare_function(
+            "rt_jit_record_array_set",
+            Linkage::Import,
+            &record_array_set_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut field_array_get_slot_sig = module.make_signature();
+    for param in [
+        ptr_ty,
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        ptr_ty,
+        types::I32,
+        types::I32,
+        types::I32,
+    ] {
+        field_array_get_slot_sig.params.push(AbiParam::new(param));
+    }
+    field_array_get_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let field_array_get_slot = module
+        .declare_function(
+            "rt_jit_project_field_array_get_to_slot",
+            Linkage::Import,
+            &field_array_get_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut field_array_set_slot_sig = module.make_signature();
+    for param in [
+        ptr_ty,
+        ptr_ty,
+        ptr_ty,
+        types::I32,
+        ptr_ty,
+        types::I32,
+        ptr_ty,
+    ] {
+        field_array_set_slot_sig.params.push(AbiParam::new(param));
+    }
+    field_array_set_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let field_array_set_slot = module
+        .declare_function(
+            "rt_jit_project_field_array_set",
+            Linkage::Import,
+            &field_array_set_slot_sig,
         )
         .map_err(module_err)?;
 
@@ -9697,6 +10701,24 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         .declare_function("rt_jit_unbox_to_slot", Linkage::Import, &unbox_slot_sig)
         .map_err(module_err)?;
 
+    let mut call_extern_proc_sig = module.make_signature();
+    call_extern_proc_sig.params.push(AbiParam::new(ptr_ty));
+    call_extern_proc_sig.params.push(AbiParam::new(ptr_ty));
+    call_extern_proc_sig.params.push(AbiParam::new(types::I32));
+    call_extern_proc_sig.params.push(AbiParam::new(types::I32));
+    call_extern_proc_sig.params.push(AbiParam::new(types::I32));
+    call_extern_proc_sig.params.push(AbiParam::new(ptr_ty));
+    call_extern_proc_sig.params.push(AbiParam::new(types::I32));
+    call_extern_proc_sig.params.push(AbiParam::new(types::I32));
+    call_extern_proc_sig.returns.push(AbiParam::new(types::I32));
+    let call_extern_proc_i32 = module
+        .declare_function(
+            "rt_jit_call_extern_proc_i32",
+            Linkage::Import,
+            &call_extern_proc_sig,
+        )
+        .map_err(module_err)?;
+
     let mut call_proc_ref_sig = module.make_signature();
     call_proc_ref_sig.params.push(AbiParam::new(ptr_ty));
     call_proc_ref_sig.params.push(AbiParam::new(ptr_ty));
@@ -9746,6 +10768,21 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
     arith_v_slot_sig.returns.push(AbiParam::new(types::I32));
     let arith_v_slot = module
         .declare_function("rt_jit_arith_v_to_slot", Linkage::Import, &arith_v_slot_sig)
+        .map_err(module_err)?;
+
+    let mut concat_v_slot_sig = module.make_signature();
+    concat_v_slot_sig.params.push(AbiParam::new(ptr_ty));
+    concat_v_slot_sig.params.push(AbiParam::new(ptr_ty));
+    concat_v_slot_sig.params.push(AbiParam::new(ptr_ty));
+    concat_v_slot_sig.params.push(AbiParam::new(types::I32));
+    concat_v_slot_sig.params.push(AbiParam::new(types::I32));
+    concat_v_slot_sig.returns.push(AbiParam::new(types::I32));
+    let concat_v_slot = module
+        .declare_function(
+            "rt_jit_concat_v_to_slot",
+            Linkage::Import,
+            &concat_v_slot_sig,
+        )
         .map_err(module_err)?;
 
     let mut neg_v_slot_sig = module.make_signature();
@@ -10068,6 +11105,8 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         add_ref,
         release,
         as_new_project_class_slot,
+        as_new_collection_slot,
+        new_collection_slot,
         new_object_slot,
         predeclared_slot,
         predeclared_set,
@@ -10080,8 +11119,16 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         withevents_next_owner_slot,
         raise_event,
         project_member_get_slot,
+        call_by_name_slot,
         project_type_name_slot,
         new_record_slot,
+        record_get_slot,
+        record_set_slot,
+        record_lset_slot,
+        record_array_get_slot,
+        record_array_set_slot,
+        field_array_get_slot,
+        field_array_set_slot,
         validate_assignment,
         err_clear,
         err_i32_field,
@@ -10112,9 +11159,11 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         bound_slot,
         for_each_init_slot,
         for_each_next_slot,
+        call_extern_proc_i32,
         call_proc_ref_i32,
         lib_invoke_slot,
         arith_v_slot,
+        concat_v_slot,
         neg_v_slot,
         compare_v_slot,
         compare_object_is_slot,
@@ -10283,9 +11332,10 @@ fn resolve_vba_library_import(
         .get(import.0)
         .ok_or_else(|| JitError::Compile(format!("CallExtern import {} out of range", import.0)))?;
     if !imp.unit.eq_ignore_ascii_case("VBA") {
-        return Err(JitError::unsupported(
-            "M4-4 CallExtern lowers only synthetic VBA library imports; cross-project imports remain unsupported",
-        ));
+        return Err(JitError::unsupported(format!(
+            "JIT CallExtern could not resolve non-VBA import unit '{}'",
+            imp.unit
+        )));
     }
     let lib = vba_library_bundle();
     let export = lib
@@ -10316,6 +11366,46 @@ fn resolve_vba_library_import(
     );
     let native_index = native_impl_index(id)?;
     Ok((native_index, id, string_typed_alias))
+}
+
+fn resolve_cross_project_proc_import(
+    programs: &[&OxProgram],
+    program: &OxProgram,
+    import: oxvba_oxir::ImportId,
+) -> Result<Option<(usize, FuncId)>, JitError> {
+    let imp = program
+        .imports
+        .get(import.0)
+        .ok_or_else(|| JitError::Compile(format!("CallExtern import {} out of range", import.0)))?;
+    if imp.unit.eq_ignore_ascii_case("VBA") {
+        return Ok(None);
+    }
+    let Some((program_index, target_program)) = programs
+        .iter()
+        .enumerate()
+        .find(|(_, candidate)| candidate.unit_name.eq_ignore_ascii_case(&imp.unit))
+    else {
+        return Err(JitError::unsupported(format!(
+            "JIT cross-project CallExtern could not resolve unit '{}'",
+            imp.unit
+        )));
+    };
+    let export = target_program
+        .exports
+        .iter()
+        .find(|export| export.token.matches(&imp.token))
+        .ok_or_else(|| {
+            JitError::unsupported(format!(
+                "JIT cross-project CallExtern could not resolve export in unit '{}'",
+                imp.unit
+            ))
+        })?;
+    let ExportTarget::Proc(proc) = export.target else {
+        return Err(JitError::unsupported(
+            "JIT cross-project CallExtern resolved to a non-procedure export",
+        ));
+    };
+    Ok(Some((program_index, FuncId(proc))))
 }
 
 fn native_impl_index(id: NativeImplId) -> Result<u32, JitError> {
@@ -10467,17 +11557,8 @@ fn validate_scalar_call_arg_against_param(
 
 fn unsupported_project_object_inst_message(inst: &OxInst) -> Option<&'static str> {
     match inst {
-        OxInst::CallByName { .. } => Some(
-            "JIT object dispatch instruction CallByName is unsupported: dynamic member invocation remains VM3-only",
-        ),
         OxInst::ComCallEarly { .. } => Some(
             "JIT COM object dispatch instruction ComCallEarly is unsupported: typed COM invocation remains VM3-only",
-        ),
-        OxInst::FieldArrayGet { .. } => Some(
-            "JIT project object/class instruction FieldArrayGet is unsupported: in-place array field reads require descriptor-backed object state",
-        ),
-        OxInst::FieldArraySet { .. } => Some(
-            "JIT project object/class instruction FieldArraySet is unsupported: in-place array field writes require descriptor-backed object state",
         ),
         _ => None,
     }
@@ -10932,6 +12013,8 @@ fn is_m4_4_call_extern_destination_ty(ty: &OxTy) -> bool {
             | OxTy::Byte
             | OxTy::Integer
             | OxTy::Bool
+            | OxTy::Str
+            | OxTy::FixedStr(_)
             | OxTy::Variant
     )
 }
@@ -11621,11 +12704,36 @@ fn instantiate_as_new_for_jit(
                 Err(status)
             }
         }
-        OxAsNew::ExternClass { .. } | OxAsNew::ComClass { .. } => {
-            let _ = run;
-            Err(ST_FAULT)
+        OxAsNew::ComClass { prog_id } => {
+            let Some(program_index) = prog_id
+                .strip_prefix("__jit_vba_collection:")
+                .and_then(|raw| raw.parse::<i32>().ok())
+            else {
+                return Err(ST_FAULT);
+            };
+            new_collection_variant_for_jit(run, program_index)
         }
+        OxAsNew::ExternClass { .. } => Err(ST_FAULT),
     }
+}
+
+fn new_collection_variant_for_jit(run: &mut JitRun, program_index: i32) -> Result<Variant, i32> {
+    if program_index < 0 {
+        return Err(ST_FAULT);
+    }
+    let instance_id = run.next_collection_instance_id;
+    run.next_collection_instance_id = run
+        .next_collection_instance_id
+        .checked_add(1)
+        .unwrap_or(i32::MIN + 1);
+    let object = ObjectRef::from_project_instance(
+        instance_id,
+        VBA_COLLECTION_ROUTE_KEY,
+        program_index,
+        false,
+        &VBA_COLLECTION_DESCRIPTOR,
+    );
+    Ok(Variant::from_object_ref(object))
 }
 
 fn class_field_as_new_binding_for_jit(
@@ -11703,6 +12811,13 @@ fn call_arg_variant_value(run: &JitRun, arg: JitCallArgDesc) -> Option<Variant> 
                 index: arg.index,
             },
         ),
+        JIT_CALL_ARG_BYREF_ALIAS => {
+            if arg.area < 0 || arg.index < 0 {
+                None
+            } else {
+                slot_ref(run, arg.area as u32, arg.index as u32).cloned()
+            }
+        }
         JIT_CALL_ARG_OMITTED => Some(Variant::from_error_code(MISSING_ARG)),
         _ => None,
     }
@@ -11797,6 +12912,24 @@ fn call_arg_name(name: JitCallArgNameDesc) -> Result<Option<String>, i32> {
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
     let name = std::str::from_utf8(bytes).map_err(|_| ST_FAULT)?;
     Ok(Some(name.to_ascii_lowercase()))
+}
+
+fn call_arg_name_preserved(name: JitCallArgNameDesc) -> Result<Option<String>, i32> {
+    if name.len < 0 {
+        return Ok(None);
+    }
+    if name.ptr == 0 {
+        return Err(ST_FAULT);
+    }
+    let len = usize::try_from(name.len).map_err(|_| ST_FAULT)?;
+    let ptr = usize::try_from(name.ptr).map_err(|_| ST_FAULT)? as *const u8;
+    if ptr.is_null() && len != 0 {
+        return Err(ST_FAULT);
+    }
+    // SAFETY: compiled descriptors point at source names owned by the live OxProgram.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let name = std::str::from_utf8(bytes).map_err(|_| ST_FAULT)?;
+    Ok(Some(name.to_string()))
 }
 
 fn order_project_member_call_args(
@@ -12530,6 +13663,57 @@ unsafe extern "C" fn rt_jit_as_new_project_class_slot(
             },
         );
         ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_as_new_collection_slot(
+    run: *mut JitRun,
+    area: u32,
+    index: u32,
+    program_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if run.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and compiled code gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let Some(alias) =
+            current_frame_slot(run, area, index).and_then(|alias| resolve_slot_alias(run, alias))
+        else {
+            return ST_FAULT;
+        };
+        run.as_new_slots.insert(
+            alias,
+            OxAsNew::ComClass {
+                prog_id: format!("__jit_vba_collection:{program_index}"),
+            },
+        );
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_new_collection_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    dst_area: i32,
+    dst_index: i32,
+    program_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || dst_area < 0 || dst_index < 0 || program_index < 0 {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and compiled caller gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let value = match new_collection_variant_for_jit(run, program_index) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        replace_jit_slot_with_cleanup(state, slot, value)
     })
 }
 
@@ -13419,61 +14603,31 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
             Ok(value) => value,
             Err(status) => return status,
         };
-        let object = match variant_to_project_object_for_jit(state, &recv_value) {
-            Ok(object) => object,
-            Err(status) => return status,
-        };
-        if !object.is_project_instance() {
-            return ST_FAULT;
-        }
-        let program_index = object.bundle_id() as usize;
-        let class_idx = object.route_key() as usize;
-        let Some(image) = program_image(run, program_index) else {
-            return ST_FAULT;
-        };
-        if image.program.is_null() {
-            return ST_FAULT;
-        }
-        // SAFETY: installed from the owning CompiledImage for this run.
-        let program = unsafe { &*image.program };
-        let Some(class) = program.classes.get(class_idx) else {
-            return rt_raise_runtime_error_number(state, 438);
-        };
-        let member = if name.is_empty() {
-            project_default_member_for_jit(class, kind, args.is_empty())
-        } else {
-            let exact = class
-                .methods
-                .iter()
-                .find(|method| method.name.eq_ignore_ascii_case(name) && method.kind == kind);
-            exact.or_else(|| {
-                if kind == ProjectMemberKind::PropertyGet && args.is_empty() {
-                    class.methods.iter().find(|method| {
-                        method.name.eq_ignore_ascii_case(name)
-                            && method.kind == ProjectMemberKind::Method
-                    })
-                } else if kind == ProjectMemberKind::Method {
-                    class.methods.iter().find(|method| {
-                        method.name.eq_ignore_ascii_case(name)
-                            && method.kind == ProjectMemberKind::PropertyGet
-                    })
-                } else {
-                    None
-                }
-            })
-        };
-        let Some(member) = member else {
-            return rt_raise_runtime_error_number(state, 438);
-        };
-        let value = match invoke_project_member_with_me(
-            run,
-            state,
-            program_index,
-            member.proc.0,
-            recv_value,
-            args,
-            names,
-        ) {
+        invoke_project_member_to_slot_for_jit(state, run, recv_value, name, kind, args, names, dst)
+    })
+}
+
+fn invoke_project_member_to_slot_for_jit(
+    state: *mut RawExecState,
+    run: &mut JitRun,
+    recv_value: Variant,
+    name: &str,
+    kind: ProjectMemberKind,
+    args: &[JitCallArgDesc],
+    names: &[JitCallArgNameDesc],
+    dst: Option<(u32, u32)>,
+) -> i32 {
+    let object = match variant_to_project_object_for_jit(state, &recv_value) {
+        Ok(object) => object,
+        Err(status) => return status,
+    };
+    if !object.is_project_instance() {
+        return invoke_foreign_member_to_slot_for_jit(
+            state, run, object, name, kind, args, names, dst,
+        );
+    }
+    if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
+        let value = match dispatch_collection_member_for_jit(state, run, &object, name, args) {
             Ok(value) => value,
             Err(status) => return status,
         };
@@ -13483,7 +14637,343 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
             };
             *slot = value;
         }
-        ST_OK
+        return ST_OK;
+    }
+    let program_index = object.bundle_id() as usize;
+    let class_idx = object.route_key() as usize;
+    let Some(image) = program_image(run, program_index) else {
+        return ST_FAULT;
+    };
+    if image.program.is_null() {
+        return ST_FAULT;
+    }
+    // SAFETY: installed from the owning CompiledImage for this run.
+    let program = unsafe { &*image.program };
+    let Some(class) = program.classes.get(class_idx) else {
+        return rt_raise_runtime_error_number(state, 438);
+    };
+    let member = if name.is_empty() {
+        project_default_member_for_jit(class, kind, args.is_empty())
+    } else {
+        let exact = class
+            .methods
+            .iter()
+            .find(|method| method.name.eq_ignore_ascii_case(name) && method.kind == kind);
+        exact.or_else(|| {
+            if kind == ProjectMemberKind::PropertyGet && args.is_empty() {
+                class.methods.iter().find(|method| {
+                    method.name.eq_ignore_ascii_case(name)
+                        && method.kind == ProjectMemberKind::Method
+                })
+            } else if kind == ProjectMemberKind::Method {
+                class.methods.iter().find(|method| {
+                    method.name.eq_ignore_ascii_case(name)
+                        && method.kind == ProjectMemberKind::PropertyGet
+                })
+            } else {
+                None
+            }
+        })
+    };
+    let Some(member) = member else {
+        return rt_raise_runtime_error_number(state, 438);
+    };
+    let value = match invoke_project_member_with_me(
+        run,
+        state,
+        program_index,
+        member.proc.0,
+        recv_value,
+        args,
+        names,
+    ) {
+        Ok(value) => value,
+        Err(status) => return status,
+    };
+    if let Some((area, index)) = dst {
+        let Some(slot) = slot_mut(run, area, index) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+    }
+    ST_OK
+}
+
+fn dispatch_collection_member_for_jit(
+    state: *mut RawExecState,
+    run: &JitRun,
+    object: &ObjectRef,
+    name: &str,
+    args: &[JitCallArgDesc],
+) -> Result<Variant, i32> {
+    let native = vba_collection_native_method_for_jit(name)
+        .ok_or_else(|| rt_raise_runtime_error_number(state, 438))?;
+    let method = match native {
+        oxvba_bundle::NativeMethodId::CollectionAdd => CollectionMethod::Add,
+        oxvba_bundle::NativeMethodId::CollectionItem => CollectionMethod::Item,
+        oxvba_bundle::NativeMethodId::CollectionCount => CollectionMethod::Count,
+        oxvba_bundle::NativeMethodId::CollectionRemove => CollectionMethod::Remove,
+        oxvba_bundle::NativeMethodId::CollectionNewEnum => {
+            return Err(rt_raise_runtime_error_number(state, 438));
+        }
+    };
+    let argv = collection_call_arg_values_for_jit(run, args)?;
+    object
+        .with_native_collection(|data| dispatch_collection(method, data, &argv))
+        .ok_or(ST_FAULT)?
+        .map_err(|err| raise_collection_error_for_jit(state, err))
+}
+
+fn collection_call_arg_values_for_jit(
+    run: &JitRun,
+    args: &[JitCallArgDesc],
+) -> Result<Vec<Variant>, i32> {
+    args.iter()
+        .copied()
+        .map(|arg| call_arg_variant_value(run, arg).ok_or(ST_FAULT))
+        .collect()
+}
+
+fn vba_collection_native_method_for_jit(member: &str) -> Option<oxvba_bundle::NativeMethodId> {
+    let member = member.trim().trim_start_matches('[').trim_end_matches(']');
+    let lib = vba_library_bundle();
+    let class = lib.classes.first()?;
+    let method = class
+        .methods
+        .iter()
+        .find(|method| method.name.eq_ignore_ascii_case(member))?;
+    match lib.procedures.get(method.proc).and_then(|proc| proc.native) {
+        Some(NativeBody::Method(id)) => Some(id),
+        _ => None,
+    }
+}
+
+fn raise_collection_error_for_jit(state: *mut RawExecState, err: CollectionError) -> i32 {
+    match err {
+        CollectionError::NotFound => rt_raise_subscript_out_of_range(state),
+        CollectionError::DuplicateKey => rt_raise_runtime_error_number(state, 457),
+        CollectionError::BadArgument => rt_raise_runtime_error_number(state, 5),
+        CollectionError::ArgNotOptional => rt_raise_runtime_error_number(state, 449),
+    }
+}
+
+fn project_member_kind_to_dynamic(kind: ProjectMemberKind) -> DynamicCallKind {
+    match kind {
+        ProjectMemberKind::Method => DynamicCallKind::Method,
+        ProjectMemberKind::PropertyGet => DynamicCallKind::PropertyGet,
+        ProjectMemberKind::PropertyLet => DynamicCallKind::PropertyLet,
+        ProjectMemberKind::PropertySet => DynamicCallKind::PropertySet,
+    }
+}
+
+fn foreign_member_selector_for_jit(name: &str) -> DynamicMemberSelector {
+    if name.is_empty() {
+        DynamicMemberSelector::DefaultMember
+    } else {
+        DynamicMemberSelector::Name(name.to_string())
+    }
+}
+
+fn invoke_foreign_member_to_slot_for_jit(
+    state: *mut RawExecState,
+    run: &mut JitRun,
+    object: ObjectRef,
+    name: &str,
+    kind: ProjectMemberKind,
+    args: &[JitCallArgDesc],
+    names: &[JitCallArgNameDesc],
+    dst: Option<(u32, u32)>,
+) -> i32 {
+    if args.len() != names.len() {
+        return ST_FAULT;
+    }
+    let mut call_args = Vec::with_capacity(args.len());
+    for (index, (arg, name)) in args.iter().copied().zip(names.iter().copied()).enumerate() {
+        let value = if arg.kind == JIT_CALL_ARG_OMITTED {
+            None
+        } else {
+            match call_arg_variant_value(run, arg) {
+                Some(value) => Some(DynamicValue::from_variant(value)),
+                None => return ST_FAULT,
+            }
+        };
+        let name = match call_arg_name_preserved(name) {
+            Ok(name) => name,
+            Err(status) => return status,
+        };
+        call_args.push(DynamicCallArg {
+            value,
+            name,
+            by_ref: (arg.kind == JIT_CALL_ARG_BYREF_ALIAS)
+                .then(|| RuntimeByRefSlot::new(index as u32, None)),
+        });
+    }
+    let request = DynamicCallRequest {
+        object,
+        member: foreign_member_selector_for_jit(name),
+        args: call_args,
+        call_kind_hint: Some(project_member_kind_to_dynamic(kind)),
+    };
+    // SAFETY: JIT helpers receive pointers produced by `exec_state_as_raw` for a
+    // live `ExecState` during the synchronous compiled run.
+    let exec = match unsafe { jit_exec_state_mut(state) } {
+        Some(exec) => exec,
+        None => return ST_FAULT,
+    };
+    let (value, writebacks) = match exec
+        .host
+        .com()
+        .dispatch_invoke_dynamic_variant_with_writebacks(&request)
+    {
+        Ok(result) => result,
+        Err(err) => {
+            exec.err_engine.raise(Fault::from_hal(err), "OxVba");
+            return ST_FAULT;
+        }
+    };
+    for (index, arg) in args.iter().copied().enumerate() {
+        if arg.kind != JIT_CALL_ARG_BYREF_ALIAS {
+            continue;
+        }
+        let Some(Some(value)) = writebacks.get(index) else {
+            continue;
+        };
+        if arg.area < 0 || arg.index < 0 {
+            return ST_FAULT;
+        }
+        let Some(slot) = slot_mut(run, arg.area as u32, arg.index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value.clone();
+    }
+    if let Some((area, index)) = dst {
+        let Some(slot) = slot_mut(run, area, index) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+    }
+    ST_OK
+}
+
+fn call_by_name_member_name(value: &Variant) -> String {
+    variant_to_vba_string(value)
+        .map(|text| text.as_str())
+        .unwrap_or_default()
+}
+
+fn call_by_name_calltype(value: &Variant) -> Result<i64, i32> {
+    if let Some(value) = value.as_i64() {
+        return Ok(value);
+    }
+    if let Some(value) = value.as_i32() {
+        return Ok(i64::from(value));
+    }
+    if let Some(value) = value.as_i16() {
+        return Ok(i64::from(value));
+    }
+    if let Some(value) = value.as_u8() {
+        return Ok(i64::from(value));
+    }
+    if let Some(value) = value.as_bool() {
+        return Ok(if value { -1 } else { 0 });
+    }
+    if let Some(value) = value.as_f64() {
+        if !value.is_finite() || value.abs() >= 9.223_372_036_854_775e18 {
+            return Err(6);
+        }
+        return Ok(value.round_ties_even() as i64);
+    }
+    if let Some(value) = value.as_f32() {
+        let value = f64::from(value);
+        if !value.is_finite() || value.abs() >= 9.223_372_036_854_775e18 {
+            return Err(6);
+        }
+        return Ok(value.round_ties_even() as i64);
+    }
+    if value.vtype() == VarType::Null {
+        return Err(94);
+    }
+    Err(13)
+}
+
+unsafe extern "C" fn rt_jit_call_by_name_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    operands: *const JitVariantOperandDesc,
+    argc: i32,
+    args: *const JitCallArgDesc,
+    names: *const JitCallArgNameDesc,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || operands.is_null()
+            || argc < 0
+            || dst_area < -1
+            || dst_index < -1
+        {
+            return ST_FAULT;
+        }
+        let dst = match (dst_area, dst_index) {
+            (-1, -1) => None,
+            (area, index) if area >= 0 && index >= 0 => Some((area as u32, index as u32)),
+            _ => return ST_FAULT,
+        };
+        let argc = argc as usize;
+        let args = if argc == 0 {
+            &[]
+        } else if args.is_null() || names.is_null() {
+            return ST_FAULT;
+        } else {
+            // SAFETY: compiled code provides exactly `argc` call and name descriptors.
+            unsafe { std::slice::from_raw_parts(args, argc) }
+        };
+        let names = if argc == 0 {
+            &[]
+        } else {
+            // SAFETY: null was rejected above and the descriptor count matches `args`.
+            unsafe { std::slice::from_raw_parts(names, argc) }
+        };
+        // SAFETY: compiled code writes object/name/calltype descriptors in that order.
+        let operands = unsafe { std::slice::from_raw_parts(operands, 3) };
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run = unsafe { &mut *run };
+        let object = match variant_operand_value_with_as_new(run, state, operands[0]) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let name_value = match variant_operand_value_with_as_new(run, state, operands[1]) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let calltype_value = match variant_operand_value_with_as_new(run, state, operands[2]) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let member_name = call_by_name_member_name(&name_value);
+        let calltype = match call_by_name_calltype(&calltype_value) {
+            Ok(value) => value,
+            Err(code) => return rt_raise_runtime_error_number(state, code),
+        };
+        let kind = match calltype {
+            1 => ProjectMemberKind::Method,
+            2 => ProjectMemberKind::PropertyGet,
+            4 => ProjectMemberKind::PropertyLet,
+            8 => ProjectMemberKind::PropertySet,
+            _ => return rt_raise_runtime_error_number(state, 5),
+        };
+        invoke_project_member_to_slot_for_jit(
+            state,
+            run,
+            object,
+            &member_name,
+            kind,
+            args,
+            names,
+            dst,
+        )
     })
 }
 
@@ -13569,6 +15059,467 @@ unsafe extern "C" fn rt_jit_new_record_to_slot(
         };
         *slot = Variant::from_vba_record(record);
         ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_record_get_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    record: *const JitVariantOperandDesc,
+    field_index: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || record.is_null()
+            || field_index < 0
+            || dst_area < 0
+            || dst_index < 0
+        {
+            return ST_FAULT;
+        }
+        // SAFETY: compiled caller provides one live descriptor.
+        let record = unsafe { *record };
+        // SAFETY: null was rejected and source is cloned before destination write.
+        let run_ref = unsafe { &*run };
+        let Some(record) = variant_operand_value(run_ref, record) else {
+            return ST_FAULT;
+        };
+        let value = match record.read_record_field_variant(field_index as usize) {
+            Ok(value) => value,
+            Err(_) => return rt_raise_type_mismatch(state),
+        };
+        // SAFETY: null was rejected and the value no longer borrows from source slots.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_record_set(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    record_area: i32,
+    record_index: i32,
+    field_index: i32,
+    value: *const JitVariantOperandDesc,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || value.is_null()
+            || record_area < 0
+            || record_index < 0
+            || field_index < 0
+        {
+            return ST_FAULT;
+        }
+        // SAFETY: compiled caller provides one live descriptor.
+        let value = unsafe { *value };
+        // SAFETY: null was rejected and value is cloned before mutable record access.
+        let run_ref = unsafe { &*run };
+        let Some(value) = variant_operand_value(run_ref, value) else {
+            return ST_FAULT;
+        };
+        // SAFETY: immutable borrows ended; compiled caller gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let Some(record) = slot_mut(run, record_area as u32, record_index as u32) else {
+            return ST_FAULT;
+        };
+        match record.write_record_field_variant(field_index as usize, &value) {
+            Ok(()) => ST_OK,
+            Err(_) => rt_raise_type_mismatch(state),
+        }
+    })
+}
+
+unsafe extern "C" fn rt_jit_record_lset(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    record_area: i32,
+    record_index: i32,
+    value: *const JitVariantOperandDesc,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || value.is_null()
+            || record_area < 0
+            || record_index < 0
+        {
+            return ST_FAULT;
+        }
+        // SAFETY: compiled caller provides one live descriptor.
+        let value = unsafe { *value };
+        // SAFETY: null was rejected and value is cloned before mutable record access.
+        let run_ref = unsafe { &*run };
+        let Some(value) = variant_operand_value(run_ref, value) else {
+            return ST_FAULT;
+        };
+        // SAFETY: immutable borrows ended; compiled caller gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let Some(record) = slot_mut(run, record_area as u32, record_index as u32) else {
+            return ST_FAULT;
+        };
+        match record.lset_record_from(&value) {
+            Ok(()) => ST_OK,
+            Err(_) => rt_raise_type_mismatch(state),
+        }
+    })
+}
+
+fn jit_flat_index_from_bounds(
+    state: *mut RawExecState,
+    bounds: &[SafeArrayBound],
+    len: usize,
+    indices: &[i32],
+) -> Result<usize, i32> {
+    if indices.len() != bounds.len() {
+        return Err(rt_raise_subscript_out_of_range(state));
+    }
+    let mut flat = 0usize;
+    for (&raw, bound) in indices.iter().zip(bounds) {
+        let offset = i64::from(raw) - i64::from(bound.lower);
+        if offset < 0 || offset >= i64::from(bound.count) {
+            return Err(rt_raise_subscript_out_of_range(state));
+        }
+        let Ok(offset) = usize::try_from(offset) else {
+            return Err(rt_raise_subscript_out_of_range(state));
+        };
+        flat = flat
+            .checked_mul(bound.count as usize)
+            .and_then(|base| base.checked_add(offset))
+            .ok_or_else(|| rt_raise_subscript_out_of_range(state))?;
+    }
+    if flat >= len {
+        return Err(rt_raise_subscript_out_of_range(state));
+    }
+    Ok(flat)
+}
+
+fn jit_record_array_flat_index(
+    state: *mut RawExecState,
+    record: &Variant,
+    field_index: usize,
+    indices: &[i32],
+) -> Result<usize, i32> {
+    let bounds_len = match record.record_array_field_bounds_len(field_index) {
+        Ok(Some(bounds_len)) => bounds_len,
+        Ok(None) => return Err(rt_raise_expected_array(state)),
+        Err(_) => return Err(rt_raise_type_mismatch(state)),
+    };
+    let (bounds, len) = bounds_len;
+    jit_flat_index_from_bounds(state, &bounds, len, indices)
+}
+
+fn jit_array_element_value(
+    state: *mut RawExecState,
+    array: &Variant,
+    indices: &[i32],
+) -> Result<Variant, i32> {
+    if array.vtype() != VarType::ArrayVariant {
+        return Err(rt_raise_expected_array(state));
+    }
+    let flat = jit_flat_index(state, array, indices)?;
+    match array.safearray_element(flat) {
+        Some(Ok(value)) => Ok(value),
+        Some(Err(_)) => Err(rt_raise_type_mismatch(state)),
+        None => Err(rt_raise_expected_array(state)),
+    }
+}
+
+fn jit_array_element_set(
+    state: *mut RawExecState,
+    array: &mut Variant,
+    indices: &[i32],
+    value: &Variant,
+) -> Result<(), i32> {
+    if array.vtype() != VarType::ArrayVariant {
+        return Err(rt_raise_expected_array(state));
+    }
+    let flat = jit_flat_index(state, array, indices)?;
+    array
+        .set_safearray_element(flat, value)
+        .map_err(|_| rt_raise_type_mismatch(state))
+}
+
+unsafe extern "C" fn rt_jit_record_array_get_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    record: *const JitVariantOperandDesc,
+    field_index: i32,
+    indices: *const i32,
+    dimensions: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || record.is_null()
+            || field_index < 0
+            || dimensions <= 0
+            || indices.is_null()
+            || dst_area < 0
+            || dst_index < 0
+        {
+            return ST_FAULT;
+        }
+        let dimensions = dimensions as usize;
+        // SAFETY: compiled caller writes exactly `dimensions` subscripts.
+        let indices = unsafe { std::slice::from_raw_parts(indices, dimensions) };
+        // SAFETY: compiled caller provides one live descriptor.
+        let record = unsafe { *record };
+        // SAFETY: null was rejected and source is cloned before destination write.
+        let run_ref = unsafe { &*run };
+        let Some(record) = variant_operand_value(run_ref, record) else {
+            return ST_FAULT;
+        };
+        let flat = match jit_record_array_flat_index(state, &record, field_index as usize, indices)
+        {
+            Ok(flat) => flat,
+            Err(status) => return status,
+        };
+        let value = match record.record_array_field_element(field_index as usize, flat) {
+            Ok(Some(value)) => value,
+            Ok(None) => return rt_raise_expected_array(state),
+            Err(_) => return rt_raise_type_mismatch(state),
+        };
+        // SAFETY: null was rejected and value no longer borrows from source slots.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_record_array_set(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    record_area: i32,
+    record_index: i32,
+    field_index: i32,
+    indices: *const i32,
+    dimensions: i32,
+    value: *const JitVariantOperandDesc,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || value.is_null()
+            || record_area < 0
+            || record_index < 0
+            || field_index < 0
+            || dimensions <= 0
+            || indices.is_null()
+        {
+            return ST_FAULT;
+        }
+        let dimensions = dimensions as usize;
+        // SAFETY: compiled caller writes exactly `dimensions` subscripts.
+        let indices = unsafe { std::slice::from_raw_parts(indices, dimensions) };
+        // SAFETY: compiled caller provides one live descriptor.
+        let value = unsafe { *value };
+        // SAFETY: null was rejected and all immutable values are cloned before mutation.
+        let run_ref = unsafe { &*run };
+        let Some(value) = variant_operand_value(run_ref, value) else {
+            return ST_FAULT;
+        };
+        let Some(record) = slot_ref(run_ref, record_area as u32, record_index as u32) else {
+            return ST_FAULT;
+        };
+        let flat = match jit_record_array_flat_index(state, record, field_index as usize, indices) {
+            Ok(flat) => flat,
+            Err(status) => return status,
+        };
+        // SAFETY: immutable borrows ended; compiled caller gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let Some(record) = slot_mut(run, record_area as u32, record_index as u32) else {
+            return ST_FAULT;
+        };
+        match record.set_record_array_field_element(field_index as usize, flat, &value) {
+            Ok(Some(())) => ST_OK,
+            Ok(None) => rt_raise_expected_array(state),
+            Err(_) => rt_raise_type_mismatch(state),
+        }
+    })
+}
+
+unsafe extern "C" fn rt_jit_project_field_array_get_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    object: *const JitVariantOperandDesc,
+    field: i32,
+    indices: *const i32,
+    dimensions: i32,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || object.is_null()
+            || dimensions <= 0
+            || indices.is_null()
+            || dst_area < 0
+            || dst_index < 0
+        {
+            return ST_FAULT;
+        }
+        let dimensions = dimensions as usize;
+        // SAFETY: compiled caller writes exactly `dimensions` subscripts.
+        let indices = unsafe { std::slice::from_raw_parts(indices, dimensions) };
+        // SAFETY: compiled caller provides one live descriptor.
+        let object_operand = unsafe { *object };
+        // SAFETY: null was rejected and this helper clones before mutating destination slots.
+        let run = unsafe { &mut *run };
+        let object_value = match variant_operand_value_with_as_new(run, state, object_operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let object = match variant_to_project_object_for_jit(state, &object_value) {
+            Ok(object) => object,
+            Err(status) => return status,
+        };
+        let fast = object
+            .with_project_field(field, |stored| {
+                let stored = stored?;
+                if stored.as_object_ref().is_some() {
+                    return None;
+                }
+                Some(jit_array_element_value(state, stored, indices))
+            })
+            .flatten();
+        let value = match fast {
+            Some(Ok(value)) => value,
+            Some(Err(status)) => return status,
+            None => {
+                let field_value =
+                    match project_field_get_with_as_new_for_jit(run, state, &object, field) {
+                        Ok(value) => value,
+                        Err(status) => return status,
+                    };
+                if field_value.as_object_ref().is_some() {
+                    let args: Vec<Variant> =
+                        indices.iter().copied().map(Variant::from_i32).collect();
+                    match invoke_project_default_member_values(
+                        run,
+                        state,
+                        field_value,
+                        ProjectMemberKind::PropertyGet,
+                        &args,
+                    ) {
+                        Ok(value) => value,
+                        Err(status) => return status,
+                    }
+                } else {
+                    match jit_array_element_value(state, &field_value, indices) {
+                        Ok(value) => value,
+                        Err(status) => return status,
+                    }
+                }
+            }
+        };
+        let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
+            return ST_FAULT;
+        };
+        *slot = value;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_project_field_array_set(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    object: *const JitVariantOperandDesc,
+    field: i32,
+    indices: *const i32,
+    dimensions: i32,
+    value: *const JitVariantOperandDesc,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null()
+            || run.is_null()
+            || object.is_null()
+            || value.is_null()
+            || dimensions <= 0
+            || indices.is_null()
+        {
+            return ST_FAULT;
+        }
+        let dimensions = dimensions as usize;
+        // SAFETY: compiled caller writes exactly `dimensions` subscripts.
+        let indices = unsafe { std::slice::from_raw_parts(indices, dimensions) };
+        // SAFETY: compiled caller provides live descriptors.
+        let object_operand = unsafe { *object };
+        let value_operand = unsafe { *value };
+        // SAFETY: null was rejected and value/object are cloned before field mutation.
+        let run = unsafe { &mut *run };
+        let object_value = match variant_operand_value_with_as_new(run, state, object_operand) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let value = match variant_operand_value(run, value_operand) {
+            Some(value) => value,
+            None => return ST_FAULT,
+        };
+        let object = match variant_to_project_object_for_jit(state, &object_value) {
+            Ok(object) => object,
+            Err(status) => return status,
+        };
+        let fast = object
+            .with_project_field_mut(field, |stored| {
+                if stored.as_object_ref().is_some() {
+                    return None;
+                }
+                Some(jit_array_element_set(state, stored, indices, &value))
+            })
+            .flatten();
+        match fast {
+            Some(Ok(())) => return ST_OK,
+            Some(Err(status)) => return status,
+            None => {}
+        }
+
+        let mut field_value =
+            match project_field_get_with_as_new_for_jit(run, state, &object, field) {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        if field_value.as_object_ref().is_some() {
+            let mut args: Vec<Variant> = indices.iter().copied().map(Variant::from_i32).collect();
+            args.push(value);
+            let invoke_kind = if args.last().and_then(Variant::as_object_ref).is_some() {
+                ProjectMemberKind::PropertySet
+            } else {
+                ProjectMemberKind::PropertyLet
+            };
+            return match invoke_project_default_member_values(
+                run,
+                state,
+                field_value,
+                invoke_kind,
+                &args,
+            ) {
+                Ok(_) => ST_OK,
+                Err(status) => status,
+            };
+        }
+        if let Err(status) = jit_array_element_set(state, &mut field_value, indices, &value) {
+            return status;
+        }
+        if object.project_field_set(field, field_value) {
+            ST_OK
+        } else {
+            rt_raise_runtime_error_number(state, 438)
+        }
     })
 }
 
@@ -13826,6 +15777,43 @@ fn jit_array_element_count(
     Ok(count)
 }
 
+enum JitRedimDefaultArrayError {
+    OutOfMemory,
+    TypeMismatch,
+}
+
+fn jit_redim_default_safearray(
+    bounds: Vec<SafeArrayBound>,
+    element: &ArrayElementType,
+    count: usize,
+    fixed: bool,
+) -> Result<SafeArray, JitRedimDefaultArrayError> {
+    match element {
+        ArrayElementType::Integer
+        | ArrayElementType::Long
+        | ArrayElementType::LongLong
+        | ArrayElementType::Byte
+        | ArrayElementType::Single
+        | ArrayElementType::Double
+        | ArrayElementType::Currency
+        | ArrayElementType::Date
+        | ArrayElementType::Boolean => {
+            SafeArray::from_zeroed_typed_scalars_nd(bounds, safearray_vartype_for_element(element))
+                .map(|array| array.with_fixed_size(fixed))
+                .map_err(|_| JitRedimDefaultArrayError::OutOfMemory)
+        }
+        _ => {
+            let mut values = Vec::new();
+            values
+                .try_reserve_exact(count)
+                .map_err(|_| JitRedimDefaultArrayError::OutOfMemory)?;
+            values.resize_with(count, || default_array_element(element));
+            redim_safearray_from_elements(bounds, element, values, fixed)
+                .map_err(|_| JitRedimDefaultArrayError::TypeMismatch)
+        }
+    }
+}
+
 fn jit_flat_index(
     state: *mut RawExecState,
     value: &Variant,
@@ -13939,12 +15927,22 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
         // SAFETY: null was rejected and the compiled image passes a pointer into
         // the live OxProgram instruction's immutable element metadata.
         let element = unsafe { (*element).clone() };
-        let mut values = Vec::new();
-        if values.try_reserve_exact(count).is_err() {
-            return rt_raise_out_of_memory(state);
-        }
-        values.resize_with(count, || default_array_element(&element));
-        if preserve != 0 {
+        let array = if preserve == 0 {
+            match jit_redim_default_safearray(bounds, &element, count, fixed != 0) {
+                Ok(array) => array,
+                Err(JitRedimDefaultArrayError::OutOfMemory) => {
+                    return rt_raise_out_of_memory(state);
+                }
+                Err(JitRedimDefaultArrayError::TypeMismatch) => {
+                    return rt_raise_type_mismatch(state);
+                }
+            }
+        } else {
+            let mut values = Vec::new();
+            if values.try_reserve_exact(count).is_err() {
+                return rt_raise_out_of_memory(state);
+            }
+            values.resize_with(count, || default_array_element(&element));
             // SAFETY: null was rejected; all element reads clone into `values` before the
             // destination slot is replaced below.
             let run_ref = unsafe { &*run };
@@ -13978,10 +15976,10 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
                     values[new_index] = value;
                 }
             }
-        }
-        let array = match redim_safearray_from_elements(bounds, &element, values, fixed != 0) {
-            Ok(array) => array,
-            Err(_) => return rt_raise_type_mismatch(state),
+            match redim_safearray_from_elements(bounds, &element, values, fixed != 0) {
+                Ok(array) => array,
+                Err(_) => return rt_raise_type_mismatch(state),
+            }
         };
         // SAFETY: null was rejected and the freshly built array no longer borrows from `run`.
         let run = unsafe { &mut *run };
@@ -14073,10 +16071,7 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
         let Some(array) = slot_ref(run_ref, array_area, array_index) else {
             return ST_FAULT;
         };
-        if array.as_safearray().is_none() {
-            if array.vtype() == VarType::ArrayVariant {
-                return rt_raise_array_has_no_bounds(state);
-            }
+        if array.vtype() != VarType::ArrayVariant {
             if array.as_object_ref().is_some() {
                 let recv_value = array.clone();
                 let args: Vec<Variant> = indices.iter().copied().map(Variant::from_i32).collect();
@@ -14151,10 +16146,7 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
         let Some(array) = slot_ref(run_ref, array_area, array_index) else {
             return ST_FAULT;
         };
-        if array.as_safearray().is_none() {
-            if array.vtype() == VarType::ArrayVariant {
-                return rt_raise_array_has_no_bounds(state);
-            }
+        if array.vtype() != VarType::ArrayVariant {
             if array.as_object_ref().is_some() {
                 let recv_value = array.clone();
                 let mut args: Vec<Variant> =
@@ -14465,6 +16457,49 @@ unsafe extern "C" fn rt_jit_arith_v_to_slot(
             return ST_FAULT;
         };
         rt_arith_v(state, op, mode, &lhs, &rhs, out)
+    })
+}
+
+unsafe extern "C" fn rt_jit_concat_v_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    operands: *const JitVariantOperandDesc,
+    dst_area: u32,
+    dst_index: u32,
+) -> i32 {
+    status_guard(|| {
+        if run.is_null() || state.is_null() || operands.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and the compiled caller writes two descriptors to
+        // a stack slot that stays live for this helper call.
+        let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
+        // SAFETY: null was rejected and operand values are cloned before destination write.
+        let run_ref = unsafe { &*run };
+        let Some(lhs) = variant_operand_value(run_ref, operands[0]) else {
+            return ST_FAULT;
+        };
+        let Some(rhs) = variant_operand_value(run_ref, operands[1]) else {
+            return ST_FAULT;
+        };
+        let out = match arith::concat(&lhs, &rhs) {
+            Ok(value) => value,
+            Err(err) => {
+                // SAFETY: JIT helpers receive a live ExecState raw pointer during run.
+                let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+                    return ST_FAULT;
+                };
+                exec.err_engine.raise(Fault::from_arith(err), "OxVba");
+                return ST_FAULT;
+            }
+        };
+        // SAFETY: null was rejected and operand clones no longer borrow from `run`.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area, dst_index) else {
+            return ST_FAULT;
+        };
+        *slot = out;
+        ST_OK
     })
 }
 
@@ -15599,6 +17634,246 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
             );
         }
         ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_call_extern_proc_i32(
+    run: *mut JitRun,
+    state: *mut RawExecState,
+    program_index: i32,
+    proc: i32,
+    argc: i32,
+    args: *const JitCallArgDesc,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if run.is_null()
+            || state.is_null()
+            || program_index < 0
+            || proc < 0
+            || argc < 0
+            || dst_area < -1
+            || dst_index < -1
+        {
+            return ST_FAULT;
+        }
+        let dst = match (dst_area, dst_index) {
+            (-1, -1) => None,
+            (area, index) if area >= 0 && index >= 0 => Some((area as u32, index as u32)),
+            _ => return ST_FAULT,
+        };
+        // SAFETY: null was rejected and the compiled call gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let program_index = program_index as usize;
+        let Some(image) = program_image(run, program_index) else {
+            return ST_FAULT;
+        };
+        if image.program.is_null() || image.functions.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: `program` is installed from the owning CompiledImage for this run.
+        let program = unsafe { &*image.program };
+        let proc = proc as usize;
+        let Some(func) = program.funcs.get(proc) else {
+            return ST_FAULT;
+        };
+        let argc = argc as usize;
+        if proc >= image.function_count || argc != func.param_count {
+            return ST_FAULT;
+        }
+        let args = if argc == 0 {
+            &[]
+        } else if args.is_null() {
+            return ST_FAULT;
+        } else {
+            // SAFETY: the compiled caller writes exactly `argc` descriptors to a stack slot
+            // that stays live for this helper call.
+            unsafe { std::slice::from_raw_parts(args, argc) }
+        };
+
+        let Some(caller_frame) = run.frames.len().checked_sub(1) else {
+            return ST_FAULT;
+        };
+        if run.frames.len() >= MAX_JIT_FRAMES {
+            return rt_raise_out_of_stack(state);
+        }
+        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
+            return ST_FAULT;
+        };
+        let return_local = if dst.is_some() {
+            let Some(ret) = func.return_local else {
+                return ST_FAULT;
+            };
+            let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
+                return ST_FAULT;
+            };
+            if !is_jit_static_call_ty(&ret_ty) {
+                return ST_FAULT;
+            }
+            Some((ret.0, ret_ty))
+        } else {
+            None
+        };
+        let mut pending_param_array_aliases = Vec::new();
+        for (index, arg) in args.iter().copied().enumerate() {
+            let Some(param) = func.locals.get(index) else {
+                return ST_FAULT;
+            };
+            let Some(param_info) = param.param.as_ref() else {
+                return ST_FAULT;
+            };
+            if param_info.variadic {
+                if !is_m4_4_supported_paramarray_param(&param.ty, *param_info)
+                    || arg.kind != JIT_CALL_ARG_BYVAL_VARIANT
+                {
+                    return ST_FAULT;
+                }
+            } else if !is_jit_static_call_ty(&param.ty) {
+                return ST_FAULT;
+            }
+            match arg.kind {
+                JIT_CALL_ARG_BYVAL_SCALAR
+                    if !param_info.by_ref
+                        && matches!(classify_jit_ty(&param.ty), JitTypeSupport::FastScalar) =>
+                {
+                    let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                        return ST_FAULT;
+                    };
+                    frame.locals[index] = value;
+                }
+                JIT_CALL_ARG_BYVAL_VARIANT
+                    if !param_info.by_ref && matches!(param.ty, OxTy::Long) =>
+                {
+                    let Some(value) = call_arg_long_i32_value(run, arg) else {
+                        return ST_FAULT;
+                    };
+                    frame.locals[index] = Variant::from_i32(value);
+                }
+                JIT_CALL_ARG_BYVAL_VARIANT
+                    if !param_info.by_ref
+                        && (is_jit_variant_carrier_ty(&param.ty) || param_info.variadic) =>
+                {
+                    let param_array_aliases = if param_info.variadic {
+                        param_array_aliases_for_call_arg(run, arg)
+                    } else {
+                        None
+                    };
+                    let Some(value) = call_arg_variant_value(run, arg) else {
+                        return ST_FAULT;
+                    };
+                    if param_info.variadic && value.safearray_bounds_len().is_none() {
+                        return ST_FAULT;
+                    }
+                    frame.locals[index] = match coerce_call_arg_for_param(state, &param.ty, &value)
+                    {
+                        Ok(value) => value,
+                        Err(status) => return status,
+                    };
+                    if let Some(aliases) = param_array_aliases {
+                        pending_param_array_aliases.push((index, aliases));
+                    }
+                }
+                JIT_CALL_ARG_OMITTED if !param_info.by_ref && matches!(param.ty, OxTy::Variant) => {
+                    let Some(value) = call_arg_variant_value(run, arg) else {
+                        return ST_FAULT;
+                    };
+                    frame.locals[index] = value;
+                }
+                JIT_CALL_ARG_BYREF_COPY if param_info.by_ref => {
+                    if is_jit_variant_carrier_ty(&param.ty) {
+                        let Some(value) = call_arg_variant_value(run, arg) else {
+                            return ST_FAULT;
+                        };
+                        frame.locals[index] =
+                            match coerce_call_arg_for_param(state, &param.ty, &value) {
+                                Ok(value) => value,
+                                Err(status) => return status,
+                            };
+                    } else {
+                        let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                            return ST_FAULT;
+                        };
+                        frame.locals[index] = value;
+                    }
+                }
+                JIT_CALL_ARG_BYREF_ALIAS if param_info.by_ref => {
+                    if arg.area < 0 || arg.index < 0 {
+                        return ST_FAULT;
+                    }
+                    let frame_index = match arg.area as u32 {
+                        AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
+                        _ => return ST_FAULT,
+                    };
+                    let alias = SlotAlias {
+                        frame: frame_index,
+                        area: arg.area as u32,
+                        index: arg.index as u32,
+                    };
+                    if slot_alias_ref(run, alias).is_none() {
+                        return ST_FAULT;
+                    }
+                    frame.aliases[index] = Some(alias);
+                }
+                _ => return ST_FAULT,
+            }
+        }
+
+        let mut saved_err = RtSavedErrState::default();
+        let enter_status = rt_err_enter_activation(state, &mut saved_err);
+        if enter_status != ST_OK {
+            return enter_status;
+        }
+        run.frames.push(frame);
+        let callee_frame = run.frames.len() - 1;
+        for (index, aliases) in pending_param_array_aliases {
+            run.param_array_aliases.insert(
+                SlotAlias {
+                    frame: Some(callee_frame),
+                    area: AREA_LOCAL,
+                    index: index as u32,
+                },
+                aliases,
+            );
+        }
+        // SAFETY: bounds and null checks above prove the function pointer exists.
+        let entry = unsafe { *image.functions.add(proc) };
+        // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state`
+        // remain live for the nested call.
+        let status = unsafe { entry(run as *mut JitRun, state) };
+        let return_value = if status == ST_OK {
+            return_local.as_ref().and_then(|(local, ty)| {
+                run.frames
+                    .last()
+                    .and_then(|frame| frame.locals.get(*local))
+                    .and_then(|value| call_return_variant(ty, value))
+            })
+        } else {
+            None
+        };
+        let Some(frame) = run.frames.pop() else {
+            return ST_FAULT;
+        };
+        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        if cleanup_status != ST_OK {
+            return cleanup_status;
+        }
+        let restore_status = rt_err_restore_activation(state, &saved_err);
+        if restore_status != ST_OK {
+            return restore_status;
+        }
+        if status == ST_OK
+            && let Some((area, index)) = dst
+        {
+            let Some(value) = return_value else {
+                return ST_FAULT;
+            };
+            let Some(slot) = slot_mut(run, area, index) else {
+                return ST_FAULT;
+            };
+            *slot = value;
+        }
+        status
     })
 }
 
@@ -18362,6 +20637,7 @@ mod tests {
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
         };
@@ -18403,6 +20679,7 @@ mod tests {
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
         };
@@ -19837,53 +22114,17 @@ mod tests {
 
     #[test]
     fn jit_declines_project_object_instructions_with_specific_diagnostics() {
-        let object = || OxOperand::local(LocalId(0));
         let other = || OxOperand::local(LocalId(1));
         let flag = OxPlace::Local(LocalId(2));
-        let value = OxPlace::Local(LocalId(3));
-        let cases = vec![
-            (
-                "TypeOfIs",
-                OxInst::TypeOfIs {
-                    dst: flag,
-                    object: other(),
-                    type_name: "IWidget".to_string(),
-                },
-                "TypeOfIs",
-            ),
-            (
-                "ComCallLate",
-                OxInst::ComCallLate {
-                    dst: Some(value),
-                    recv: other(),
-                    name: "Value".to_string(),
-                    default_member: false,
-                    invoke_kind: TypeLibMemberInvokeKind::PropertyGet,
-                    args: Vec::new(),
-                },
-                "ComCallLate",
-            ),
-            (
-                "FieldArrayGet",
-                OxInst::FieldArrayGet {
-                    dst: value,
-                    object: object(),
-                    field: 2,
-                    indices: vec![OxOperand::Const(OxConst::I32(0))],
-                },
-                "FieldArrayGet",
-            ),
-            (
-                "FieldArraySet",
-                OxInst::FieldArraySet {
-                    object: object(),
-                    field: 2,
-                    indices: vec![OxOperand::Const(OxConst::I32(0))],
-                    value: OxOperand::Const(OxConst::I32(42)),
-                },
-                "FieldArraySet",
-            ),
-        ];
+        let cases = vec![(
+            "TypeOfIs",
+            OxInst::TypeOfIs {
+                dst: flag,
+                object: other(),
+                type_name: "IWidget".to_string(),
+            },
+            "TypeOfIs",
+        )];
 
         for (label, inst, expected_instruction) in cases {
             assert_jit_declines_project_object_instruction(label, inst, expected_instruction);
@@ -31160,6 +33401,7 @@ mod tests {
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
         };
@@ -31216,6 +33458,7 @@ mod tests {
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
         };
@@ -31301,6 +33544,7 @@ mod tests {
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
         };
@@ -31390,6 +33634,7 @@ mod tests {
             for_each: HashMap::new(),
             as_new_slots: HashMap::new(),
             param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
         };

@@ -42,13 +42,13 @@ fn udt_fixed_array_field_preserves_explicit_lower_bound() {
 }
 
 #[test]
-fn udt_fixed_array_field_single_bound_is_zero_based_under_option_base_one() {
+fn udt_fixed_array_field_single_bound_follows_option_base_one() {
     assert_snapshot_contains(
         "Option Base 1\n\
          Private Type State\n    Buses(2) As Long\nEnd Type\n\
          Public r As Variant\n\
          Sub Main()\n    Dim s As State\n    s.Buses(1) = 11\n    s.Buses(2) = 22\n    r = CStr(LBound(s.Buses)) & \":\" & CStr(UBound(s.Buses)) & \":\" & CStr(s.Buses(1)) & \":\" & CStr(s.Buses(2))\nEnd Sub\n",
-        s("0:2:11:22"),
+        s("1:2:11:22"),
     );
 }
 

@@ -403,6 +403,116 @@ fn jit_project_method_named_dispatch_matches_vm3_without_fallback() {
 }
 
 #[test]
+fn jit_project_untyped_variant_named_method_dispatch_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim c\n  Set c = New Calc\n  r = c.Add(2, 3)\nEnd Sub\n",
+        ),
+        (
+            "Calc",
+            Class,
+            "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\n  Add = a + b\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 5);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 5);
+}
+
+#[test]
+fn jit_project_object_named_method_dispatch_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim c As Object\n  Set c = New Calc\n  r = c.Add(4, 6)\nEnd Sub\n",
+        ),
+        (
+            "Calc",
+            Class,
+            "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\n  Add = a + b\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 10);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 10);
+}
+
+#[test]
+fn jit_call_by_name_project_method_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim c As Object\n  Set c = New Calc\n  r = CallByName(c, \"Add\", vbMethod, 7, 8)\nEnd Sub\n",
+        ),
+        (
+            "Calc",
+            Class,
+            "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\n  Add = a + b\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 15);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 15);
+}
+
+#[test]
+fn jit_call_by_name_project_property_get_let_matches_vm3_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  Dim c As Object\n  Set c = New Calc\n  CallByName c, \"Value\", vbLet, 42\n  r = CallByName(c, \"Value\", vbGet)\nEnd Sub\n",
+        ),
+        (
+            "Calc",
+            Class,
+            "Private m As Long\nPublic Property Get Value() As Long\n  Value = m\nEnd Property\nPublic Property Let Value(ByVal v As Long)\n  m = v\nEnd Property\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 42);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 42);
+}
+
+#[test]
+fn jit_call_by_name_invalid_calltype_raises_error_5_without_fallback() {
+    let modules = [
+        (
+            "Main",
+            Procedural,
+            "Public r As Long\nSub Main()\n  On Error Resume Next\n  Dim c As Object\n  Set c = New Calc\n  r = CallByName(c, \"Add\", 99, 1, 2)\n  r = Err.Number\nEnd Sub\n",
+        ),
+        (
+            "Calc",
+            Class,
+            "Public Function Add(ByVal a As Long, ByVal b As Long) As Long\n  Add = a + b\nEnd Function\n",
+        ),
+    ];
+
+    let vm3 = run_modules(Executor::Vm3, &modules, "VBAProject");
+    assert_completed_with_i32("VM3", vm3, 5);
+
+    let jit = run_modules(Executor::Jit, &modules, "VBAProject");
+    assert_completed_with_i32("JIT", jit, 5);
+}
+
+#[test]
 fn jit_project_method_optional_dispatch_matches_vm3_without_fallback() {
     let modules = [
         (

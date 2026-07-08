@@ -12,7 +12,7 @@ Sub Main()
     Dim i As Long
 
     p.Label = "abcd"
-    For i = 1 To 10000
+    For i = 1 To 2000
         p.X = p.X + 1
         p.Y = p.Y + p.X
         q = p

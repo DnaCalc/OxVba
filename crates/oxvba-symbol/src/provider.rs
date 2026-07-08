@@ -226,6 +226,10 @@ pub struct ResolutionEnvironment {
     /// Folded unqualified type names that have multiple public type-space owners,
     /// keyed by folded project name.
     ambiguous_type_names: HashMap<String, HashSet<String>>,
+    /// Folded project names contributed by compiled reference surfaces. These
+    /// references have no source scope, but still need to act as namespace
+    /// qualifiers for `Lib.Widget` / `Lib.Module.Member`.
+    external_project_names: HashSet<String>,
 }
 
 impl ResolutionEnvironment {
@@ -458,6 +462,9 @@ impl ResolutionEnvironment {
     /// Is `name` (any case) an active or referenced VBA project name?
     pub fn is_project_name(&self, name: &str) -> bool {
         let target = crate::model::fold_identifier(name);
+        if self.external_project_names.contains(&target) {
+            return true;
+        }
         self.symbols.scopes().iter().any(|scope| {
             matches!(
                 scope.kind,
@@ -1286,6 +1293,18 @@ pub fn build_resolution_environment(
     manifest: &SymbolProjectManifest,
     typelibs: &dyn TypeLibResolver,
 ) -> Result<ResolutionEnvironment, SymbolModelError> {
+    build_resolution_environment_with_project_surfaces(manifest, typelibs, &[])
+}
+
+/// Stand up the full resolution environment, plus already-compiled referenced
+/// project surfaces. This is the source-less reference path: the active project
+/// still binds from source, while each supplied surface contributes the same
+/// contract a source-backed referenced project would publish.
+pub fn build_resolution_environment_with_project_surfaces(
+    manifest: &SymbolProjectManifest,
+    typelibs: &dyn TypeLibResolver,
+    external_project_surfaces: &[ProjectExportSurface],
+) -> Result<ResolutionEnvironment, SymbolModelError> {
     let mut symbols = SymbolTable::new();
     let mut signatures = SignatureTable::new();
 
@@ -1512,6 +1531,7 @@ pub fn build_resolution_environment(
     );
     let mut surfaces = vec![active_surface];
     surfaces.extend(referenced_surfaces.iter().cloned());
+    surfaces.extend(external_project_surfaces.iter().cloned());
 
     // The cross-module index is the ACTIVE project only — a referenced project is
     // reached through its export-surface provider, not by flattening its modules
@@ -1564,11 +1584,19 @@ pub fn build_resolution_environment(
     for surface in &referenced_surfaces {
         providers.push(Box::new(SurfaceProvider::new(surface.clone())));
     }
+    for surface in external_project_surfaces {
+        providers.push(Box::new(SurfaceProvider::new(surface.clone())));
+    }
     providers.push(Box::new(VbaLibraryProvider));
     providers.push(Box::new(HostProvider::new(host_blobs)));
     for com in com_providers {
         providers.push(Box::new(com));
     }
+
+    let external_project_names = external_project_surfaces
+        .iter()
+        .map(|surface| fold_identifier(&surface.project_name))
+        .collect();
 
     Ok(ResolutionEnvironment {
         symbols,
@@ -1581,5 +1609,6 @@ pub fn build_resolution_environment(
         udt_fields: type_index.udt_fields,
         enum_types: type_index.enum_types,
         ambiguous_type_names,
+        external_project_names,
     })
 }

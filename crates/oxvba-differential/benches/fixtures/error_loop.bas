@@ -6,7 +6,7 @@ Sub Main()
     Dim x As Long
 
     On Error Resume Next
-    For i = 1 To 28000
+    For i = 1 To 5000
         x = 1 / 0
         If Err.Number <> 0 Then
             n = n + Err.Number

@@ -7,11 +7,11 @@ Sub Main()
     Dim v As Variant
     Dim item As Variant
 
-    ReDim a(0 To 24999)
-    For i = 0 To 24999
+    ReDim a(0 To 499)
+    For i = 0 To 499
         a(i) = i Mod 31
     Next i
-    For i = 0 To 24999
+    For i = 0 To 499
         total = total + a(i)
     Next i
 

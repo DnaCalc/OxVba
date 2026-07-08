@@ -45,6 +45,24 @@ fn jit_candidate_engine() -> Engine {
     differential_engine(HostConfig::jit())
 }
 
+fn final_err_from_jit(err: oxvba_jit::JitFinalErr) -> FinalErr {
+    FinalErr {
+        number: err.number,
+        source: err.source,
+        description: err.description,
+        last_dll_error: err.last_dll_error,
+    }
+}
+
+fn final_err_from_vm3(vm: &oxvba_vm3::Vm3<'_>) -> FinalErr {
+    FinalErr {
+        number: vm.err_number(),
+        source: vm.err_source().to_string(),
+        description: vm.err_description().to_string(),
+        last_dll_error: vm.last_dll_error(),
+    }
+}
+
 /// A canonical, comparable projection of a runtime [`Variant`].
 ///
 /// Value types are compared by `(tag, payload)`; floats are NaN-canonicalized so
@@ -307,6 +325,27 @@ pub fn run_modules(
     outcome.with_handle_balance(before)
 }
 
+/// Run a fully-specified single-project manifest under `executor`, including references.
+pub fn run_manifest(
+    executor: Executor,
+    manifest: &oxvba_symbol::manifest::SymbolProjectManifest,
+) -> RunOutcome {
+    let _balance_guard = balance_measurement_lock()
+        .lock()
+        .expect("balance measurement lock poisoned");
+    let before = live_handle_counts();
+    let engine = vm3_oracle_engine();
+    let outcome = match executor {
+        Executor::Vm3 => {
+            RunOutcome::from_snapshot(engine.execute_manifest_snapshot_with_err_vm3(manifest))
+        }
+        Executor::Jit => RunOutcome::from_snapshot(
+            jit_candidate_engine().execute_manifest_snapshot_with_err_jit(manifest),
+        ),
+    };
+    outcome.with_handle_balance(before)
+}
+
 /// Run a leaf-first project closure under `executor` and capture the entry project's globals.
 ///
 /// This is the differential counterpart of
@@ -372,6 +411,128 @@ pub fn run_project_closure(
                         }
                     }
                 }
+            }
+        }
+    };
+    outcome.with_handle_balance(before)
+}
+
+/// Run an already-elaborated OxIR program closure under `executor`.
+///
+/// This is the source-less/bundle-only counterpart to [`run_project_closure`]:
+/// callers can compile referenced projects once, load them from an image, bind
+/// an entry project against their export surface, and still use the same
+/// serialized handle-balance discipline as the source-backed differential
+/// helpers.
+pub fn run_ox_programs(executor: Executor, programs: &[oxvba_oxir::OxProgram]) -> RunOutcome {
+    let _balance_guard = balance_measurement_lock()
+        .lock()
+        .expect("balance measurement lock poisoned");
+    let before = live_handle_counts();
+    let host = vm3_oracle_engine().host_services();
+    let outcome = match executor {
+        Executor::Vm3 => {
+            let refs: Vec<&oxvba_oxir::OxProgram> = programs.iter().collect();
+            let entry_unit = programs
+                .last()
+                .map(|program| program.unit_name.clone())
+                .unwrap_or_default();
+            match oxvba_vm3::Vm3::link(&refs, &*host) {
+                Ok(mut vm) => match vm.run_entry() {
+                    Ok(()) => {
+                        let entry_globals = programs
+                            .last()
+                            .map(|program| program.globals.len())
+                            .unwrap_or(0);
+                        let err = final_err_from_vm3(&vm);
+                        RunOutcome {
+                            result: Ok((0..entry_globals)
+                                .map(|slot| canon(&vm.slot(slot).unwrap_or_else(Variant::empty)))
+                                .collect()),
+                            err,
+                            raised: false,
+                            unsupported: None,
+                            handle_balance: None,
+                        }
+                    }
+                    Err(oxvba_vm3::Vm3Error::Fault(fault)) => RunOutcome {
+                        result: Err(format!("VBA error {}", fault.code)),
+                        err: FinalErr {
+                            number: fault.code,
+                            source: fault.source.unwrap_or(entry_unit),
+                            description: fault.message,
+                            last_dll_error: 0,
+                        },
+                        raised: true,
+                        unsupported: None,
+                        handle_balance: None,
+                    },
+                    Err(oxvba_vm3::Vm3Error::Unimplemented { what }) => {
+                        RunOutcome::unsupported(what)
+                    }
+                    Err(oxvba_vm3::Vm3Error::Malformed(err)) => RunOutcome {
+                        result: Err(format!("vm3: {err}")),
+                        err: FinalErr::default(),
+                        raised: false,
+                        unsupported: None,
+                        handle_balance: None,
+                    },
+                },
+                Err(err) => RunOutcome {
+                    result: Err(err.to_string()),
+                    err: FinalErr::default(),
+                    raised: false,
+                    unsupported: None,
+                    handle_balance: None,
+                },
+            }
+        }
+        Executor::Jit => {
+            let refs: Vec<&oxvba_oxir::OxProgram> = programs.iter().collect();
+            match oxvba_jit::JitEngine.compile_image(&refs) {
+                Ok(compiled) => match compiled.run(&*host) {
+                    Ok(mut outcome) => {
+                        if outcome.raised {
+                            RunOutcome {
+                                result: Err(format!("VBA error {}", outcome.err.number)),
+                                err: final_err_from_jit(outcome.err),
+                                raised: true,
+                                unsupported: None,
+                                handle_balance: None,
+                            }
+                        } else {
+                            let entry_globals = programs
+                                .last()
+                                .map(|program| program.globals.len())
+                                .unwrap_or(0);
+                            outcome.values.truncate(entry_globals);
+                            RunOutcome {
+                                result: Ok(outcome.values.iter().map(canon).collect()),
+                                err: final_err_from_jit(outcome.err),
+                                raised: false,
+                                unsupported: None,
+                                handle_balance: None,
+                            }
+                        }
+                    }
+                    Err(err) => RunOutcome {
+                        result: Err(err.to_string()),
+                        err: FinalErr::default(),
+                        raised: false,
+                        unsupported: None,
+                        handle_balance: None,
+                    },
+                },
+                Err(err) if err.unsupported_message().is_some() => {
+                    RunOutcome::unsupported(err.unsupported_message().unwrap_or_default())
+                }
+                Err(err) => RunOutcome {
+                    result: Err(err.to_string()),
+                    err: FinalErr::default(),
+                    raised: false,
+                    unsupported: None,
+                    handle_balance: None,
+                },
             }
         }
     };

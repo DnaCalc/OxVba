@@ -4,7 +4,7 @@ Sub Main()
     Dim i As Long
     Dim n As Long
 
-    For i = 1 To 25000
+    For i = 1 To 5000
         n = AddByVal(n, i)
         BumpByRef n
     Next i
