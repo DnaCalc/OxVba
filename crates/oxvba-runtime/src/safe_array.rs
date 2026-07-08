@@ -317,6 +317,19 @@ fn bounds_total_len(bounds: &[SafeArrayBound]) -> Result<usize, String> {
     Ok(total)
 }
 
+unsafe fn raw_bounds_slice<'a>(header: *const RawSafeArray) -> &'a [SafeArrayBound] {
+    // SAFETY: callers pass a live descriptor allocated by this module. Reading
+    // c_dims and forming the slice over the inline rgsabound tail mirrors
+    // `SafeArray::raw_bounds` without allocating.
+    let dims = unsafe { (*header).c_dims as usize };
+    if dims == 0 {
+        return &[];
+    }
+    // SAFETY: `alloc_header` initialized exactly `dims` bounds at rgsabound.
+    let ptr = unsafe { core::ptr::addr_of!((*header).rgsabound).cast::<SafeArrayBound>() };
+    unsafe { core::slice::from_raw_parts(ptr, dims) }
+}
+
 fn header_prefix_ptr(header: *const RawSafeArray) -> *const RawSafeArrayOwnerPrefix {
     // SAFETY: every descriptor reaching this helper was allocated by
     // `alloc_header` with `owner_layout`, which places a
@@ -1264,24 +1277,15 @@ impl SafeArray {
     }
 
     fn raw_bounds(&self) -> Vec<SafeArrayBound> {
-        let dims = self.dimensions() as usize;
-        if dims == 0 {
-            return Vec::new();
-        }
-        // SAFETY: `self.0` is this value's live descriptor; `addr_of!` only
-        // computes the address of its `rgsabound` field without reading past
-        // the header.
-        let ptr =
-            unsafe { core::ptr::addr_of!((*self.0.as_ptr()).rgsabound).cast::<SafeArrayBound>() };
-        // SAFETY: `alloc_header` allocated and initialized `c_dims` contiguous
-        // SafeArrayBound entries starting at `rgsabound` (declared-dimension
-        // order), and `dims` was read from this same descriptor, so the slice
-        // is in-bounds and initialized for the duration of this borrow.
-        unsafe { core::slice::from_raw_parts(ptr, dims) }.to_vec()
+        // SAFETY: `self.0` is this value's live descriptor; the helper only
+        // borrows the initialized inline bounds tail.
+        unsafe { raw_bounds_slice(self.0.as_ptr()) }.to_vec()
     }
 
     pub fn len(&self) -> usize {
-        bounds_total_len(&self.raw_bounds()).unwrap_or(0)
+        // SAFETY: `self.0` is this value's live descriptor; the helper only
+        // borrows the initialized inline bounds tail.
+        bounds_total_len(unsafe { raw_bounds_slice(self.0.as_ptr()) }).unwrap_or(0)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1312,10 +1316,11 @@ impl SafeArray {
         if data.is_null() {
             return None;
         }
+        let len = self.len();
         if let Some(layout) = self.vba_record_layout() {
-            let mut values = Vec::with_capacity(self.len());
+            let mut values = Vec::with_capacity(len);
             let mut index = 0usize;
-            while index < self.len() {
+            while index < len {
                 // SAFETY: `data` is the record payload of `self.len()` records strided
                 // by `layout.size()`, and `index < self.len()`, so this is in-bounds.
                 let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
@@ -1330,9 +1335,9 @@ impl SafeArray {
             return Some(values);
         }
         let kind = self.element_kind();
-        let mut values = Vec::with_capacity(self.len());
+        let mut values = Vec::with_capacity(len);
         let mut index = 0usize;
-        while index < self.len() {
+        while index < len {
             // SAFETY: `data` is the non-null payload built by
             // `alloc_payload_from_variants` for exactly `self.len()` initialized
             // elements of this descriptor's `kind`, and `index < self.len()`.
@@ -1346,10 +1351,10 @@ impl SafeArray {
     }
 
     pub fn variant_element(&self, index: usize) -> Result<Variant, String> {
-        if index >= self.len() {
+        let len = self.len();
+        if index >= len {
             return Err(format!(
-                "SAFEARRAY index {index} out of range for length {}",
-                self.len()
+                "SAFEARRAY index {index} out of range for length {len}"
             ));
         }
         // SAFETY: `self.0` is this value's live descriptor; reading `pv_data` is
@@ -1381,10 +1386,10 @@ impl SafeArray {
     }
 
     pub fn set_variant_element(&mut self, index: usize, value: &Variant) -> Result<(), String> {
-        if index >= self.len() {
+        let len = self.len();
+        if index >= len {
             return Err(format!(
-                "SAFEARRAY index {index} out of range for length {}",
-                self.len()
+                "SAFEARRAY index {index} out of range for length {len}"
             ));
         }
         // SAFETY: `self.0` is this value's live descriptor; reading `pv_data` is
@@ -1417,6 +1422,51 @@ impl SafeArray {
         // SAFETY: `data` is the non-null intrinsic payload of `self.len()` elements of
         // this descriptor's kind, and `index < self.len()`, so the slot is writable.
         unsafe { replace_element_variant(self.element_kind(), data, index, value) }
+    }
+
+    pub fn i32_element(&self, index: usize) -> Result<Option<i32>, String> {
+        let Some(kind @ (SafeArrayElementKind::I4 | SafeArrayElementKind::Int)) =
+            SafeArrayElementKind::from_vartype(self.element_vartype())
+        else {
+            return Ok(None);
+        };
+        let len = self.len();
+        if index >= len {
+            return Err(format!(
+                "SAFEARRAY index {index} out of range for length {len}"
+            ));
+        }
+        // SAFETY: `self.0` is this value's live descriptor; reading `pv_data` is valid.
+        let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
+        if data.is_null() {
+            return Err("SAFEARRAY has no materialized element payload".to_string());
+        }
+        // SAFETY: kind/len checks above prove this is an in-bounds i32 slot.
+        let ptr = unsafe { data.add(payload_offset(kind, index)) };
+        Ok(Some(unsafe { *ptr.cast::<i32>() }))
+    }
+
+    pub fn set_i32_element(&mut self, index: usize, value: i32) -> Result<bool, String> {
+        let Some(kind @ (SafeArrayElementKind::I4 | SafeArrayElementKind::Int)) =
+            SafeArrayElementKind::from_vartype(self.element_vartype())
+        else {
+            return Ok(false);
+        };
+        let len = self.len();
+        if index >= len {
+            return Err(format!(
+                "SAFEARRAY index {index} out of range for length {len}"
+            ));
+        }
+        // SAFETY: `self.0` is this value's live descriptor; reading `pv_data` is valid.
+        let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
+        if data.is_null() {
+            return Err("SAFEARRAY has no materialized element payload".to_string());
+        }
+        // SAFETY: kind/len checks above prove this is an in-bounds writable i32 slot.
+        let ptr = unsafe { data.add(payload_offset(kind, index)) };
+        unsafe { *ptr.cast::<i32>() = value };
+        Ok(true)
     }
 
     pub fn raw_safearray_ptr(&self) -> *mut core::ffi::c_void {
@@ -1519,6 +1569,37 @@ impl SafeArray {
         result
     }
 
+    pub unsafe fn raw_safearray_i32_element(
+        raw: *mut core::ffi::c_void,
+        index: usize,
+    ) -> Result<Option<i32>, String> {
+        let header = NonNull::new(raw.cast::<RawSafeArray>())
+            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
+        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor.
+        unsafe { validated_header_prefix(header.as_ptr()) }
+            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
+        let borrowed = Self(header);
+        let result = borrowed.i32_element(index);
+        core::mem::forget(borrowed);
+        result
+    }
+
+    pub unsafe fn set_raw_safearray_i32_element(
+        raw: *mut core::ffi::c_void,
+        index: usize,
+        value: i32,
+    ) -> Result<bool, String> {
+        let header = NonNull::new(raw.cast::<RawSafeArray>())
+            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
+        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor.
+        unsafe { validated_header_prefix(header.as_ptr()) }
+            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
+        let mut borrowed = Self(header);
+        let result = borrowed.set_i32_element(index, value);
+        core::mem::forget(borrowed);
+        result
+    }
+
     /// Reads the bounds and element count of a raw SAFEARRAY descriptor **without
     /// cloning the element payload** — O(rank). Used with
     /// [`Self::raw_safearray_variant_element`] to bounds-check and index an array
@@ -1534,10 +1615,14 @@ impl SafeArray {
         // SAFETY: as above — borrow the descriptor without taking ownership.
         unsafe { validated_header_prefix(header.as_ptr()) }?;
         let borrowed = Self(header);
-        let bounds = borrowed.bounds();
-        let len = borrowed.len();
+        let bounds = borrowed.raw_bounds();
+        let len = bounds_total_len(&bounds).ok()?;
         core::mem::forget(borrowed);
-        bounds.map(|b| (b, len))
+        if bounds.is_empty() {
+            None
+        } else {
+            Some((bounds, len))
+        }
     }
 }
 

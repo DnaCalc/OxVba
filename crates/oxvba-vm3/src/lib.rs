@@ -1639,6 +1639,15 @@ impl<'h> Vm3<'h> {
                                     "subscript out of range",
                                 )));
                             }
+                            if let Some(result) = arr.safearray_i32_element(flat) {
+                                match result {
+                                    Ok(Some(value)) => return Ok(Variant::from_i32(value)),
+                                    Ok(None) => {}
+                                    Err(err) => {
+                                        return Err(Vm3Error::Fault(Fault::new(13, err)));
+                                    }
+                                }
+                            }
                             arr.safearray_element(flat)
                                 .expect("safearray_bounds_len proved this is an array")
                                 .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
@@ -1679,6 +1688,17 @@ impl<'h> Vm3<'h> {
                                     9,
                                     "subscript out of range",
                                 )));
+                            }
+                            if let Some(value_i32) = v.as_i32()
+                                && let Some(result) = arr.set_safearray_i32_element(flat, value_i32)
+                            {
+                                match result {
+                                    Ok(true) => return Ok(()),
+                                    Ok(false) => {}
+                                    Err(err) => {
+                                        return Err(Vm3Error::Fault(Fault::new(13, err)));
+                                    }
+                                }
                             }
                             arr.set_safearray_element(flat, &v)
                                 .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))
@@ -1730,6 +1750,13 @@ impl<'h> Vm3<'h> {
                         }
                         other => other.clone(),
                     };
+                    if Self::element_supports_zeroed_redim(&et) {
+                        return SafeArray::from_zeroed_typed_scalars_nd(
+                            bounds,
+                            safearray_vartype_for_element(&et),
+                        )
+                        .map(|array| array.with_fixed_size(true));
+                    }
                     let elems: Vec<Variant> =
                         (0..count).map(|_| default_array_element(&et)).collect();
                     redim_safearray_from_elements(bounds, &et, elems, true)
@@ -2427,6 +2454,15 @@ impl<'h> Vm3<'h> {
                 "wrong number of array subscripts",
             )));
         }
+        if let ([index_op], [bound]) = (indices, bounds) {
+            let index_v = self.operand(index_op)?;
+            let raw = arith::int(&index_v).map_err(arith_fault)? as i32;
+            let offset = i64::from(raw) - i64::from(bound.lower);
+            if offset < 0 || offset >= i64::from(bound.count) {
+                return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+            }
+            return Ok(offset as usize);
+        }
         let mut flat = 0usize;
         for (i, index_op) in indices.iter().enumerate() {
             let index_v = self.operand(index_op)?;
@@ -2470,6 +2506,13 @@ impl<'h> Vm3<'h> {
         let Some(arr) = self.read_loc_ref(loc)? else {
             return Ok(None);
         };
+        if let Some(result) = arr.safearray_i32_element(flat) {
+            match result {
+                Ok(Some(value)) => return Ok(Some(Variant::from_i32(value))),
+                Ok(None) => {}
+                Err(err) => return Err(Vm3Error::Fault(Fault::new(13, err))),
+            }
+        }
         let value = arr
             .safearray_element(flat)
             .expect("safearray_bounds_len already proved this is an array")
@@ -2505,6 +2548,18 @@ impl<'h> Vm3<'h> {
         let arr = self
             .read_loc_mut(loc)?
             .expect("location borrowed immutably just above is still present");
+        if let Some(value_i32) = value.as_i32()
+            && let Some(result) = arr.set_safearray_i32_element(flat, value_i32)
+        {
+            match result {
+                Ok(true) => {
+                    self.mirror_param_array_element_write(loc, flat, value)?;
+                    return Ok(true);
+                }
+                Ok(false) => {}
+                Err(err) => return Err(Vm3Error::Fault(Fault::new(13, err))),
+            }
+        }
         arr.set_safearray_element(flat, value)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
         self.mirror_param_array_element_write(loc, flat, value)?;
@@ -2674,6 +2729,13 @@ impl<'h> Vm3<'h> {
         if flat >= arr.len() {
             return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
         }
+        if let Some(result) = recv.safearray_i32_element(flat) {
+            match result {
+                Ok(Some(value)) => return self.store(dst, Variant::from_i32(value)),
+                Ok(None) => {}
+                Err(err) => return Err(Vm3Error::Fault(Fault::new(13, err))),
+            }
+        }
         let value = arr
             .variant_element(flat)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
@@ -2720,6 +2782,15 @@ impl<'h> Vm3<'h> {
         let flat = self.flat_index(indices, &bounds)?;
         if flat >= arr.len() {
             return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
+        }
+        if let Some(value_i32) = value.as_i32()
+            && let Some(result) = recv.set_safearray_i32_element(flat, value_i32)
+        {
+            match result {
+                Ok(true) => return Ok(recv),
+                Ok(false) => {}
+                Err(err) => return Err(Vm3Error::Fault(Fault::new(13, err))),
+            }
         }
         recv.set_safearray_element(flat, value)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
@@ -2793,6 +2864,16 @@ impl<'h> Vm3<'h> {
                 .checked_mul(b.count as usize)
                 .ok_or_else(|| Vm3Error::Fault(Fault::new(7, "array too large to allocate")))?;
         }
+        if !preserve && Self::element_supports_zeroed_redim(element) {
+            let array = SafeArray::from_zeroed_typed_scalars_nd(
+                bounds,
+                safearray_vartype_for_element(element),
+            )
+            .map(|array| array.with_fixed_size(fixed))
+            .map_err(|_| Vm3Error::Fault(Fault::new(7, "array allocation failed")))?;
+            self.store(dst, Variant::from_safearray(array))?;
+            return Ok(());
+        }
         let elems: Vec<Variant> = if preserve {
             let cur = self.read(dst)?;
             match cur.as_safearray().and_then(|a| {
@@ -2838,6 +2919,21 @@ impl<'h> Vm3<'h> {
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
         self.store(dst, Variant::from_safearray(array))?;
         Ok(())
+    }
+
+    fn element_supports_zeroed_redim(element: &ArrayElementType) -> bool {
+        matches!(
+            element,
+            ArrayElementType::Integer
+                | ArrayElementType::Long
+                | ArrayElementType::LongLong
+                | ArrayElementType::Byte
+                | ArrayElementType::Single
+                | ArrayElementType::Double
+                | ArrayElementType::Currency
+                | ArrayElementType::Date
+                | ArrayElementType::Boolean
+        )
     }
 
     /// `Let`/`Set` legality check (mirrors vm2). `Set` requires an object source (else

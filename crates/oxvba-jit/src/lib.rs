@@ -748,7 +748,9 @@ struct Imports {
     array_redim_slot: ClifFuncId,
     array_erase_slot: ClifFuncId,
     array_get_slot: ClifFuncId,
+    array_get_i32_1d_slot: ClifFuncId,
     array_set_slot: ClifFuncId,
+    array_set_i32_1d_slot: ClifFuncId,
     bound_slot: ClifFuncId,
     for_each_init_slot: ClifFuncId,
     for_each_next_slot: ClifFuncId,
@@ -4906,6 +4908,31 @@ impl<'a> LowerFunc<'a> {
                 "M4-4 ArrayGet lowering requires at least one subscript",
             ));
         }
+        if indices.len() == 1 && is_m4_4_long_array_ty(array_ty) {
+            let index_value = self.lower_operand_i32(builder, module, &indices[0])?;
+            let (array_area, array_index) = place_addr(*array_place);
+            let array_area = builder.ins().iconst(types::I32, i64::from(array_area));
+            let array_index = builder.ins().iconst(types::I32, array_index as i64);
+            let (dst_area, dst_index) = place_addr(dst);
+            let dst_area = builder.ins().iconst(types::I32, i64::from(dst_area));
+            let dst_index = builder.ins().iconst(types::I32, dst_index as i64);
+            let callee = self.import(builder, module, self.imports.array_get_i32_1d_slot);
+            let call = builder.ins().call(
+                callee,
+                &[
+                    self.state,
+                    self.run,
+                    array_area,
+                    array_index,
+                    index_value,
+                    dst_area,
+                    dst_index,
+                ],
+            );
+            let status = builder.inst_results(call)[0];
+            self.return_if_not_ok(builder, status);
+            return Ok(());
+        }
 
         let mut index_values = Vec::with_capacity(indices.len());
         for index in indices {
@@ -4999,6 +5026,31 @@ impl<'a> LowerFunc<'a> {
             return Err(JitError::unsupported(
                 "M4-4 ArraySet lowering requires at least one subscript",
             ));
+        }
+        if indices.len() == 1
+            && is_m4_4_long_array_ty(array_ty)
+            && self.can_lower_direct_i32_operand(value)
+        {
+            let index_value = self.lower_operand_i32(builder, module, &indices[0])?;
+            let value = self.lower_operand_i32(builder, module, value)?;
+            let (array_area, array_index) = place_addr(array);
+            let array_area = builder.ins().iconst(types::I32, i64::from(array_area));
+            let array_index = builder.ins().iconst(types::I32, array_index as i64);
+            let callee = self.import(builder, module, self.imports.array_set_i32_1d_slot);
+            let call = builder.ins().call(
+                callee,
+                &[
+                    self.state,
+                    self.run,
+                    array_area,
+                    array_index,
+                    index_value,
+                    value,
+                ],
+            );
+            let status = builder.inst_results(call)[0];
+            self.return_if_not_ok(builder, status);
+            return Ok(());
         }
 
         let mut index_values = Vec::with_capacity(indices.len());
@@ -9391,8 +9443,16 @@ fn register_symbols(builder: &mut JITBuilder) {
         rt_jit_array_get_variant_to_slot as *const u8,
     );
     builder.symbol(
+        "rt_jit_array_get_i32_1d_to_slot",
+        rt_jit_array_get_i32_1d_to_slot as *const u8,
+    );
+    builder.symbol(
         "rt_jit_array_set_variant_slot",
         rt_jit_array_set_variant_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_array_set_i32_1d_slot",
+        rt_jit_array_set_i32_1d_slot as *const u8,
     );
     builder.symbol("rt_jit_bound_to_slot", rt_jit_bound_to_slot as *const u8);
     builder.symbol(
@@ -10606,6 +10666,35 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         )
         .map_err(module_err)?;
 
+    let mut array_get_i32_1d_slot_sig = module.make_signature();
+    array_get_i32_1d_slot_sig.params.push(AbiParam::new(ptr_ty));
+    array_get_i32_1d_slot_sig.params.push(AbiParam::new(ptr_ty));
+    array_get_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_get_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_get_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_get_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_get_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_get_i32_1d_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let array_get_i32_1d_slot = module
+        .declare_function(
+            "rt_jit_array_get_i32_1d_to_slot",
+            Linkage::Import,
+            &array_get_i32_1d_slot_sig,
+        )
+        .map_err(module_err)?;
+
     let mut array_set_slot_sig = module.make_signature();
     array_set_slot_sig.params.push(AbiParam::new(ptr_ty));
     array_set_slot_sig.params.push(AbiParam::new(ptr_ty));
@@ -10620,6 +10709,32 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
             "rt_jit_array_set_variant_slot",
             Linkage::Import,
             &array_set_slot_sig,
+        )
+        .map_err(module_err)?;
+
+    let mut array_set_i32_1d_slot_sig = module.make_signature();
+    array_set_i32_1d_slot_sig.params.push(AbiParam::new(ptr_ty));
+    array_set_i32_1d_slot_sig.params.push(AbiParam::new(ptr_ty));
+    array_set_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_set_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_set_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_set_i32_1d_slot_sig
+        .params
+        .push(AbiParam::new(types::I32));
+    array_set_i32_1d_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let array_set_i32_1d_slot = module
+        .declare_function(
+            "rt_jit_array_set_i32_1d_slot",
+            Linkage::Import,
+            &array_set_i32_1d_slot_sig,
         )
         .map_err(module_err)?;
 
@@ -11155,7 +11270,9 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         array_redim_slot,
         array_erase_slot,
         array_get_slot,
+        array_get_i32_1d_slot,
         array_set_slot,
+        array_set_i32_1d_slot,
         bound_slot,
         for_each_init_slot,
         for_each_next_slot,
@@ -11726,6 +11843,10 @@ fn is_m4_4_fixed_long_array_ty(ty: &OxTy) -> bool {
         ty,
         OxTy::Array(element, ArrayShape::Fixed { .. }) if matches!(element.as_ref(), OxTy::Long)
     )
+}
+
+fn is_m4_4_long_array_ty(ty: &OxTy) -> bool {
+    is_m4_4_dynamic_long_array_ty(ty) || is_m4_4_fixed_long_array_ty(ty)
 }
 
 fn is_m4_4_dynamic_longlong_array_ty(ty: &OxTy) -> bool {
@@ -15226,6 +15347,13 @@ fn jit_array_element_value(
         return Err(rt_raise_expected_array(state));
     }
     let flat = jit_flat_index(state, array, indices)?;
+    if let Some(result) = array.safearray_i32_element(flat) {
+        match result {
+            Ok(Some(value)) => return Ok(Variant::from_i32(value)),
+            Ok(None) => {}
+            Err(_) => return Err(rt_raise_type_mismatch(state)),
+        }
+    }
     match array.safearray_element(flat) {
         Some(Ok(value)) => Ok(value),
         Some(Err(_)) => Err(rt_raise_type_mismatch(state)),
@@ -15243,6 +15371,17 @@ fn jit_array_element_set(
         return Err(rt_raise_expected_array(state));
     }
     let flat = jit_flat_index(state, array, indices)?;
+    if let Some(value_i32) = value.as_i32()
+        && let Some(result) = array.set_safearray_i32_element(flat, value_i32)
+    {
+        return match result {
+            Ok(true) => Ok(()),
+            Ok(false) => array
+                .set_safearray_element(flat, value)
+                .map_err(|_| rt_raise_type_mismatch(state)),
+            Err(_) => Err(rt_raise_type_mismatch(state)),
+        };
+    }
     array
         .set_safearray_element(flat, value)
         .map_err(|_| rt_raise_type_mismatch(state))
@@ -15782,36 +15921,42 @@ enum JitRedimDefaultArrayError {
     TypeMismatch,
 }
 
+fn jit_redim_element_supports_zeroed(element: &ArrayElementType) -> bool {
+    matches!(
+        element,
+        ArrayElementType::Integer
+            | ArrayElementType::Long
+            | ArrayElementType::LongLong
+            | ArrayElementType::Byte
+            | ArrayElementType::Single
+            | ArrayElementType::Double
+            | ArrayElementType::Currency
+            | ArrayElementType::Date
+            | ArrayElementType::Boolean
+    )
+}
+
 fn jit_redim_default_safearray(
     bounds: Vec<SafeArrayBound>,
     element: &ArrayElementType,
     count: usize,
     fixed: bool,
 ) -> Result<SafeArray, JitRedimDefaultArrayError> {
-    match element {
-        ArrayElementType::Integer
-        | ArrayElementType::Long
-        | ArrayElementType::LongLong
-        | ArrayElementType::Byte
-        | ArrayElementType::Single
-        | ArrayElementType::Double
-        | ArrayElementType::Currency
-        | ArrayElementType::Date
-        | ArrayElementType::Boolean => {
-            SafeArray::from_zeroed_typed_scalars_nd(bounds, safearray_vartype_for_element(element))
-                .map(|array| array.with_fixed_size(fixed))
-                .map_err(|_| JitRedimDefaultArrayError::OutOfMemory)
-        }
-        _ => {
-            let mut values = Vec::new();
-            values
-                .try_reserve_exact(count)
-                .map_err(|_| JitRedimDefaultArrayError::OutOfMemory)?;
-            values.resize_with(count, || default_array_element(element));
-            redim_safearray_from_elements(bounds, element, values, fixed)
-                .map_err(|_| JitRedimDefaultArrayError::TypeMismatch)
-        }
+    if jit_redim_element_supports_zeroed(element) {
+        return SafeArray::from_zeroed_typed_scalars_nd(
+            bounds,
+            safearray_vartype_for_element(element),
+        )
+        .map(|array| array.with_fixed_size(fixed))
+        .map_err(|_| JitRedimDefaultArrayError::OutOfMemory);
     }
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(count)
+        .map_err(|_| JitRedimDefaultArrayError::OutOfMemory)?;
+    values.resize_with(count, || default_array_element(element));
+    redim_safearray_from_elements(bounds, element, values, fixed)
+        .map_err(|_| JitRedimDefaultArrayError::TypeMismatch)
 }
 
 fn jit_flat_index(
@@ -15829,6 +15974,17 @@ fn jit_flat_index(
     if indices.len() != bounds.len() {
         return Err(rt_raise_subscript_out_of_range(state));
     }
+    if let ([raw], [bound]) = (indices, bounds.as_slice()) {
+        let offset = i64::from(*raw) - i64::from(bound.lower);
+        if offset < 0 || offset >= i64::from(bound.count) {
+            return Err(rt_raise_subscript_out_of_range(state));
+        }
+        let flat = usize::try_from(offset).map_err(|_| rt_raise_subscript_out_of_range(state))?;
+        if flat >= len {
+            return Err(rt_raise_subscript_out_of_range(state));
+        }
+        return Ok(flat);
+    }
     let mut flat = 0usize;
     for (&raw, bound) in indices.iter().zip(&bounds) {
         let offset = i64::from(raw) - i64::from(bound.lower);
@@ -15843,6 +15999,28 @@ fn jit_flat_index(
             .and_then(|base| base.checked_add(offset))
             .ok_or_else(|| rt_raise_subscript_out_of_range(state))?;
     }
+    if flat >= len {
+        return Err(rt_raise_subscript_out_of_range(state));
+    }
+    Ok(flat)
+}
+
+fn jit_flat_index_1d(state: *mut RawExecState, value: &Variant, index: i32) -> Result<usize, i32> {
+    let Some((bounds, len)) = value.safearray_bounds_len() else {
+        return if value.vtype() == VarType::ArrayVariant {
+            Err(rt_raise_array_has_no_bounds(state))
+        } else {
+            Err(rt_raise_expected_array(state))
+        };
+    };
+    let [bound] = bounds.as_slice() else {
+        return Err(rt_raise_subscript_out_of_range(state));
+    };
+    let offset = i64::from(index) - i64::from(bound.lower);
+    if offset < 0 || offset >= i64::from(bound.count) {
+        return Err(rt_raise_subscript_out_of_range(state));
+    }
+    let flat = usize::try_from(offset).map_err(|_| rt_raise_subscript_out_of_range(state))?;
     if flat >= len {
         return Err(rt_raise_subscript_out_of_range(state));
     }
@@ -16022,14 +16200,24 @@ unsafe extern "C" fn rt_jit_array_erase_variant_slot(
                     }
                     other => other,
                 };
-                let mut values = Vec::new();
-                if values.try_reserve_exact(count).is_err() {
-                    return ST_FAULT;
-                }
-                values.resize_with(count, || default_array_element(&element));
-                match redim_safearray_from_elements(bounds, &element, values, true) {
-                    Ok(array) => Variant::from_safearray(array),
-                    Err(_) => return rt_raise_type_mismatch(state),
+                if jit_redim_element_supports_zeroed(&element) {
+                    match SafeArray::from_zeroed_typed_scalars_nd(
+                        bounds,
+                        safearray_vartype_for_element(&element),
+                    ) {
+                        Ok(array) => Variant::from_safearray(array.with_fixed_size(true)),
+                        Err(_) => return ST_FAULT,
+                    }
+                } else {
+                    let mut values = Vec::new();
+                    if values.try_reserve_exact(count).is_err() {
+                        return ST_FAULT;
+                    }
+                    values.resize_with(count, || default_array_element(&element));
+                    match redim_safearray_from_elements(bounds, &element, values, true) {
+                        Ok(array) => Variant::from_safearray(array),
+                        Err(_) => return rt_raise_type_mismatch(state),
+                    }
                 }
             }
             None if was_array => Variant::unallocated_array(erased_element_vartype),
@@ -16041,6 +16229,52 @@ unsafe extern "C" fn rt_jit_array_erase_variant_slot(
             return ST_FAULT;
         };
         *slot = replacement;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_array_get_i32_1d_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    array_area: u32,
+    array_index: u32,
+    index: i32,
+    dst_area: u32,
+    dst_index: u32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and the selected element is copied before the
+        // destination write.
+        let run_ref = unsafe { &*run };
+        let Some(array) = slot_ref(run_ref, array_area, array_index) else {
+            return ST_FAULT;
+        };
+        if array.vtype() != VarType::ArrayVariant {
+            return rt_raise_expected_array(state);
+        }
+        let flat = match jit_flat_index_1d(state, array, index) {
+            Ok(flat) => flat,
+            Err(status) => return status,
+        };
+        let value = match array.safearray_i32_element(flat) {
+            Some(Ok(Some(value))) => Variant::from_i32(value),
+            Some(Ok(None)) => match array.safearray_element(flat) {
+                Some(Ok(value)) => value,
+                Some(Err(_)) => return rt_raise_type_mismatch(state),
+                None => return rt_raise_expected_array(state),
+            },
+            Some(Err(_)) => return rt_raise_type_mismatch(state),
+            None => return rt_raise_expected_array(state),
+        };
+        // SAFETY: null was rejected and the element value no longer borrows from `run`.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_mut(run, dst_area, dst_index) else {
+            return ST_FAULT;
+        };
+        *slot = value;
         ST_OK
     })
 }
@@ -16099,6 +16333,21 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
             Ok(flat) => flat,
             Err(status) => return status,
         };
+        if let Some(result) = array.safearray_i32_element(flat) {
+            match result {
+                Ok(Some(value)) => {
+                    // SAFETY: null was rejected and the scalar element no longer borrows from `run`.
+                    let run = unsafe { &mut *run };
+                    let Some(slot) = slot_mut(run, dst_area, dst_index) else {
+                        return ST_FAULT;
+                    };
+                    *slot = Variant::from_i32(value);
+                    return ST_OK;
+                }
+                Ok(None) => {}
+                Err(_) => return rt_raise_type_mismatch(state),
+            }
+        }
         let value = match array.safearray_element(flat) {
             Some(Ok(value)) => value,
             Some(Err(_)) => return rt_raise_type_mismatch(state),
@@ -16111,6 +16360,58 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
         };
         *slot = value;
         ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_array_set_i32_1d_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    array_area: u32,
+    array_index: u32,
+    index: i32,
+    value: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and immutable reads finish before mutation.
+        let run_ref = unsafe { &*run };
+        let Some(array) = slot_ref(run_ref, array_area, array_index) else {
+            return ST_FAULT;
+        };
+        if array.vtype() != VarType::ArrayVariant {
+            return rt_raise_expected_array(state);
+        }
+        let flat = match jit_flat_index_1d(state, array, index) {
+            Ok(flat) => flat,
+            Err(status) => return status,
+        };
+        let Some(array_alias) = current_frame_slot(run_ref, array_area, array_index)
+            .and_then(|alias| resolve_slot_alias(run_ref, alias))
+        else {
+            return ST_FAULT;
+        };
+        // SAFETY: null was rejected and all immutable borrows ended before mutation.
+        let run = unsafe { &mut *run };
+        let Some(array) = slot_mut(run, array_area, array_index) else {
+            return ST_FAULT;
+        };
+        let value_variant = Variant::from_i32(value);
+        match array.set_safearray_i32_element(flat, value) {
+            Some(Ok(true)) => {}
+            Some(Ok(false)) => {
+                if array.set_safearray_element(flat, &value_variant).is_err() {
+                    return rt_raise_type_mismatch(state);
+                }
+            }
+            Some(Err(_)) => return rt_raise_type_mismatch(state),
+            None => return rt_raise_expected_array(state),
+        }
+        match mirror_param_array_element_write(state, run, array_alias, flat, &value_variant) {
+            Ok(()) => ST_OK,
+            Err(status) => status,
+        }
     })
 }
 
@@ -16186,6 +16487,26 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
         let Some(array) = slot_mut(run, array_area, array_index) else {
             return ST_FAULT;
         };
+        if let Some(value_i32) = value.as_i32()
+            && let Some(result) = array.set_safearray_i32_element(flat, value_i32)
+        {
+            match result {
+                Ok(true) => {
+                    return match mirror_param_array_element_write(
+                        state,
+                        run,
+                        array_alias,
+                        flat,
+                        &value,
+                    ) {
+                        Ok(()) => ST_OK,
+                        Err(status) => status,
+                    };
+                }
+                Ok(false) => {}
+                Err(_) => return rt_raise_type_mismatch(state),
+            }
+        }
         if array.set_safearray_element(flat, &value).is_err() {
             return rt_raise_type_mismatch(state);
         }

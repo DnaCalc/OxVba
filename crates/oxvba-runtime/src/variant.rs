@@ -730,6 +730,38 @@ impl Variant {
         }
     }
 
+    pub fn safearray_i32_element(&self, index: usize) -> Option<Result<Option<i32>, String>> {
+        if self.vtype() != VarType::ArrayVariant {
+            return None;
+        }
+        // SAFETY: vtype was checked to be ArrayVariant, so the payload is this
+        // Variant's owned raw OxVba descriptor. The raw helper borrows without
+        // taking ownership and returns `Ok(None)` for non-i32 element arrays.
+        Some(unsafe {
+            SafeArray::raw_safearray_i32_element(bytes_to_raw_safearray(self.data_bytes()), index)
+        })
+    }
+
+    pub fn set_safearray_i32_element(
+        &mut self,
+        index: usize,
+        value: i32,
+    ) -> Option<Result<bool, String>> {
+        if self.vtype() != VarType::ArrayVariant {
+            return None;
+        }
+        // SAFETY: `&mut self` proves exclusive access to this ArrayVariant's
+        // owned descriptor. The raw helper returns `Ok(false)` for non-i32
+        // element arrays so callers can keep the generic fallback.
+        Some(unsafe {
+            SafeArray::set_raw_safearray_i32_element(
+                bytes_to_raw_safearray(self.data_bytes()),
+                index,
+                value,
+            )
+        })
+    }
+
     /// Reads one SAFEARRAY element **without cloning the whole array** — O(1) in
     /// array length. `None` if this Variant does not hold an array. This is the
     /// O(1) element-read counterpart to [`Self::set_safearray_element`]; reading
