@@ -118,7 +118,7 @@ The baseline matrix owns direct API truth. The LSP matrix records projection/equ
 ### LS-0 — Authority reset, historical recovery and rollout
 
 Type: support
-Clauses: `DOC-*`, `CONF-MATRIX-001`
+Clauses: `DOC-AUTH-001`, `DOC-TRACE-001`, `CONF-MATRIX-001`
 
 Deliver workset/epic/bead graph; mark deleted-stack docs/specs/evidence historical; repair extension status; inventory historical APIs/tests by reusable behavior versus obsolete architecture; seed four matrices; freeze compiler/service/transport ownership and producer dependencies.
 
@@ -284,7 +284,7 @@ Close: COM column is green for every basic query without requiring COM runtime/s
 ### LS-13 — Terminal architecture and IDE-profile release
 
 Type: support/conformance
-Clauses: `CONF-DONE-001`, `DOC-*`
+Clauses: `CONF-DONE-001`, `DOC-AUTH-001`, `DOC-TRACE-001`
 
 Reconcile system/compiler/language-service contracts, architecture, code, extension, matrices and docs; remove deleted-stack claims; generate capability summary; document direct/LSP/single-root/deferred boundaries; run direct/protocol/editor/performance/COM/governance gates and final API/protocol/user-path fresh-eyes review.
 

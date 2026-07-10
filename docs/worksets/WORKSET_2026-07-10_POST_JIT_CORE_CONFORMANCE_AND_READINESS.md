@@ -102,7 +102,7 @@ Rows split whenever semantic subset, target, backend, evidence authority or resi
 ### CORE-0 — Authority, target ledger and rollout
 
 Type: support
-Clauses: `DOC-*`, `CONF-MATRIX-001`
+Clauses: `DOC-AUTH-001`, `DOC-TRACE-001`, `CONF-MATRIX-001`
 
 Deliver:
 
@@ -139,7 +139,7 @@ Close: Linux and Windows default-parallel/single-thread baselines agree and all 
 ### CORE-2 — Source, preprocessing and syntax realization
 
 Type: delivery
-Clauses: `SRC-*`, `SYN-CST-001`, `DEBUG-MAP-001`
+Clauses: `SRC-ID-001`, `SRC-CC-001`, `SYN-CST-001`, `DEBUG-MAP-001`
 
 Deliver:
 
@@ -159,7 +159,7 @@ Close: supported source never panics, malformed compile-time syntax cannot selec
 ### CORE-3 — Compiler AnalysisResult, types, calls and references
 
 Type: delivery
-Clauses: `PROJ-REF-001`, `COMP-*`, `IR-CORE-001`, `LS-FACT-001`
+Clauses: `PROJ-REF-001`, `COMP-ANALYSIS-001`, `COMP-BIND-001`, `COMP-DIAG-001`, `IR-CORE-001`, `LS-FACT-001`
 
 Deliver:
 
@@ -201,7 +201,7 @@ Close: every public member/overload has typed compiler, VM3/JIT, host-policy and
 ### CORE-4 — Verified OxIR and OxImage realization
 
 Type: delivery
-Clauses: `IR-*`, `IMAGE-*`, `SYS-ART-001`, `DEBUG-MAP-001`
+Clauses: `IR-CORE-001`, `IR-OXIR-001`, `IMAGE-VERIFY-001`, `IMAGE-ABI-001`, `SYS-ART-001`, `DEBUG-MAP-001`
 
 Deliver:
 
@@ -221,7 +221,7 @@ Close: no product path links, executes or compiles raw/unverified artifacts and 
 ### CORE-5 — Runtime, helper ABI and session ownership
 
 Type: delivery
-Clauses: `RUNTIME-*`, `HOST-SESSION-001`, `SEC-BOUNDARY-001`
+Clauses: `RUNTIME-VALUE-001`, `RUNTIME-EVAL-001`, `RUNTIME-ABI-001`, `HOST-SESSION-001`, `SEC-BOUNDARY-001`
 
 Deliver:
 
@@ -242,7 +242,7 @@ Close: runtime/helper/session ownership is sound, versioned and bounded with zer
 ### CORE-6 — VM3 complete reference realization
 
 Type: delivery
-Clauses: `VM3-*`, `SYS-DUAL-001`
+Clauses: `VM3-REF-001`, `VM3-SAFE-001`, `SYS-DUAL-001`
 
 Deliver:
 
@@ -304,7 +304,7 @@ Close: hosts select VM3 or JIT through equivalent persistent verified sessions a
 ### CORE-9 — Structural parity, safety and Excel/VBA certification
 
 Type: delivery/conformance
-Clauses: `CONF-*`, `SEC-BOUNDARY-001`
+Clauses: `CONF-MATRIX-001`, `CONF-DIFF-001`, `CONF-ORACLE-001`, `CONF-QUALITY-001`, `SEC-BOUNDARY-001`
 
 Deliver:
 
@@ -324,7 +324,7 @@ Close: no required row relies on tag/status equality, historical capture alone o
 ### CORE-10 — Terminal architecture and profile release
 
 Type: support/conformance
-Clauses: `CONF-DONE-001`, `DOC-*`
+Clauses: `CONF-DONE-001`, `DOC-AUTH-001`, `DOC-TRACE-001`
 
 Deliver:
 

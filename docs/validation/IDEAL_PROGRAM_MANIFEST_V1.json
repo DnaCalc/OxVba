@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "program_id": "ideal-2026-07",
+  "program_label": "ideal-2026-07",
+  "root_bead": "bd-59co",
+  "control_epic": "bd-59co.1",
+  "matrix_ownership": "docs/validation/IDEAL_MATRIX_OWNERSHIP_V1.csv",
+  "matrix_schema": "docs/validation/IDEAL_MATRIX_SCHEMA_V1.md",
+  "bead_traceability": "docs/validation/IDEAL_MATRIX_BEAD_TRACEABILITY_V1.csv",
+  "profiles": [
+    {
+      "profile": "core",
+      "profile_clause": "PROFILE-CORE-001",
+      "workset_root": "bd-59co.2",
+      "workset_doc": "docs/worksets/WORKSET_2026-07-10_POST_JIT_CORE_CONFORMANCE_AND_READINESS.md",
+      "expected_epics": [
+        { "code": "CORE-0", "bead": "bd-59co.2.1" },
+        { "code": "CORE-1", "bead": "bd-59co.2.2" },
+        { "code": "CORE-2", "bead": "bd-59co.2.3" },
+        { "code": "CORE-3", "bead": "bd-59co.2.4" },
+        { "code": "CORE-LIB", "bead": "bd-59co.2.5" },
+        { "code": "CORE-4", "bead": "bd-59co.2.6" },
+        { "code": "CORE-5", "bead": "bd-59co.2.7" },
+        { "code": "CORE-6", "bead": "bd-59co.2.8" },
+        { "code": "CORE-7", "bead": "bd-59co.2.9" },
+        { "code": "CORE-8", "bead": "bd-59co.2.10" },
+        { "code": "CORE-9", "bead": "bd-59co.2.11" },
+        { "code": "CORE-10", "bead": "bd-59co.2.12" }
+      ]
+    },
+    {
+      "profile": "windows-x64",
+      "profile_clause": "PROFILE-WIN-001",
+      "workset_root": "bd-59co.3",
+      "workset_doc": "docs/worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md",
+      "expected_epics": [
+        { "code": "WIN-0", "bead": "bd-59co.3.1" },
+        { "code": "WIN-1", "bead": "bd-59co.3.2" },
+        { "code": "WIN-2", "bead": "bd-59co.3.3" },
+        { "code": "WIN-3", "bead": "bd-59co.3.4" },
+        { "code": "WIN-4", "bead": "bd-59co.3.5" },
+        { "code": "WIN-5", "bead": "bd-59co.3.6" },
+        { "code": "WIN-6", "bead": "bd-59co.3.7" },
+        { "code": "WIN-7", "bead": "bd-59co.3.8" },
+        { "code": "WIN-8", "bead": "bd-59co.3.9" },
+        { "code": "WIN-9", "bead": "bd-59co.3.10" },
+        { "code": "WIN-10", "bead": "bd-59co.3.11" },
+        { "code": "WIN-11", "bead": "bd-59co.3.12" },
+        { "code": "WIN-12", "bead": "bd-59co.3.13" },
+        { "code": "WIN-13", "bead": "bd-59co.3.14" },
+        { "code": "WIN-14", "bead": "bd-59co.3.15" },
+        { "code": "WIN-15", "bead": "bd-59co.3.16" }
+      ]
+    },
+    {
+      "profile": "ide",
+      "profile_clause": "PROFILE-IDE-001",
+      "workset_root": "bd-59co.4",
+      "workset_doc": "docs/worksets/WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md",
+      "expected_epics": [
+        { "code": "LS-0", "bead": "bd-59co.4.1" },
+        { "code": "LS-1", "bead": "bd-59co.4.2" },
+        { "code": "LS-2", "bead": "bd-59co.4.3" },
+        { "code": "LS-3", "bead": "bd-59co.4.4" },
+        { "code": "LS-4", "bead": "bd-59co.4.5" },
+        { "code": "LS-5", "bead": "bd-59co.4.6" },
+        { "code": "LS-6", "bead": "bd-59co.4.7" },
+        { "code": "LS-7", "bead": "bd-59co.4.8" },
+        { "code": "LS-8", "bead": "bd-59co.4.9" },
+        { "code": "LS-9", "bead": "bd-59co.4.10" },
+        { "code": "LS-10", "bead": "bd-59co.4.11" },
+        { "code": "LS-11", "bead": "bd-59co.4.12" },
+        { "code": "LS-12", "bead": "bd-59co.4.13" },
+        { "code": "LS-13", "bead": "bd-59co.4.14" }
+      ]
+    }
+  ]
+}

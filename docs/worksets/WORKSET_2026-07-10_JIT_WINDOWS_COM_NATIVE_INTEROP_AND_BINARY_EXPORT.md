@@ -207,7 +207,7 @@ Clauses: `COM-SERVE-001`
 Deliver:
 
 - class exposure/instancing and stable CLSID/ProgID/version identity;
-- InprocServer32/LocalServer32, threading and registry views;
+- InprocServer32/LocalServer32, threading and the x64 registry view;
 - VM3/JIT-backed class factory/session activation;
 - stable IUnknown/IDispatch/type-info behavior;
 - methods, property groups, defaults, enumeration, Optional/named/ParamArray/ByRef;
@@ -308,7 +308,7 @@ Close: every mandatory row has its specified controlled and real external/Excel 
 ### WIN-15 — Terminal architecture and profile release
 
 Type: support/conformance
-Clauses: `CONF-DONE-001`, `DOC-*`
+Clauses: `CONF-DONE-001`, `DOC-AUTH-001`, `DOC-TRACE-001`
 
 Reconcile system/Windows/JIT/package contracts, current architecture, code, matrices, old COM ladders/blockers, output labels and derived compatibility/native-output reports. Run final security/deployment/user-path fresh-eyes review.
 

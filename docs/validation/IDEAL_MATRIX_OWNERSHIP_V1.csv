@@ -1,0 +1,16 @@
+matrix_id,profile,path,role,owner_epic,row_id_prefix,required_for_terminal,summary_group,predecessor_disposition,notes
+CORE-READINESS,core,docs/validation/CORE_COMPILER_VM_JIT_READINESS_MATRIX_V1.csv,primary,bd-59co.2.1,CORE,true,core,migrate,Compiler and dual-runtime profile truth
+VBA-LIBRARY,core,docs/validation/VBA_BASE_LIBRARY_PARITY_MATRIX_V1.csv,primary,bd-59co.2.5,LIB,true,core,migrate,Member and overload parity truth
+OXIR-BACKENDS,core,docs/validation/OXIR_BACKEND_SUPPORT_MATRIX_V1.csv,primary,bd-59co.2.6,OXIR,true,core,migrate,Verified operation disposition truth
+OXIMAGE-CONTRACT,core,docs/validation/OXIMAGE_PACKAGE_CONTRACT_MATRIX_V1.csv,primary,bd-59co.2.6,OXI,true,core,migrate,Artifact and consumer contract truth
+EXCEL-ORACLE,core,docs/validation/CURRENT_STACK_EXCEL_ORACLE_MATRIX_V1.csv,evidence,bd-59co.2.11,XOR,true,core,migrate,Current-stack Excel evidence projection
+WIN-COM-CLIENT,windows-x64,docs/validation/WINDOWS_JIT_COM_CLIENT_MATRIX_V1.csv,primary,bd-59co.3.4,WCC,true,windows-x64,migrate,Late and early x64 COM client truth
+WIN-COM-EVENTS,windows-x64,docs/validation/WINDOWS_JIT_COM_EVENTS_MATRIX_V1.csv,primary,bd-59co.3.6,WCE,true,windows-x64,migrate,Incoming and outgoing x64 COM event truth
+WIN-COM-SERVER,windows-x64,docs/validation/WINDOWS_JIT_COM_SERVER_MATRIX_V1.csv,primary,bd-59co.3.7,WCS,true,windows-x64,migrate,x64 COM serving truth
+WIN-NATIVE-IMPORT,windows-x64,docs/validation/WINDOWS_JIT_NATIVE_IMPORT_MATRIX_V1.csv,primary,bd-59co.3.10,WNI,true,windows-x64,migrate,x64 Declare pointer and callback truth
+WIN-NATIVE-EXPORT,windows-x64,docs/validation/WINDOWS_NATIVE_EXPORT_AND_PACKAGING_MATRIX_V1.csv,primary,bd-59co.3.13,WNE,true,windows-x64,migrate,x64 wrappers and genuine native output truth
+WIN-ABI-CARRIER,windows-x64,docs/validation/WINDOWS_ABI_CARRIER_MATRIX_V1.csv,quality,bd-59co.3.2,WAC,true,windows-x64,migrate,x64 carrier layout and lifecycle truth
+LS-BASELINE,ide,docs/validation/LANGUAGE_SERVICE_BASELINE_MATRIX_V2.csv,primary,bd-59co.4.1,LSB,true,ide,replace,Direct language-service feature truth
+LS-REFERENCES,ide,docs/validation/LANGUAGE_SERVICE_REFERENCE_KIND_MATRIX_V1.csv,primary,bd-59co.4.7,LSR,true,ide,replace,Reference-kind parity truth
+LSP-METHODS,ide,docs/validation/LSP_3_18_METHOD_MATRIX_V1.csv,projection,bd-59co.4.11,LSP,true,ide,replace,LSP to direct-result projection truth
+LS-PERFORMANCE,ide,docs/validation/LANGUAGE_SERVICE_PERFORMANCE_MATRIX_V1.csv,quality,bd-59co.4.10,LSPF,true,ide,replace,Performance cancellation and lifecycle truth
