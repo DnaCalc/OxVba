@@ -2,14 +2,14 @@
 
 Date: 2026-07-10
 Owner: unassigned
-Status: proposed; bead rollout not yet performed
+Status: accepted; directed bead rollout in progress under `bd-59co`
 Type: architecture, Windows capability and conformance delivery
 Profiles: `PROFILE-WIN-001`, Windows portion of `PROFILE-TOOL-001`
 Source review: [`../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
 
 ## 1. Outcome
 
-Realize one exact Windows interop architecture shared by VM3 and JIT: authoritative typelib/reference metadata, exact carriers, one verified interop call plan, late and early COM clients, connection-point events with synchronous ByRef writeback, late and early/dual COM serving, outgoing events, VBA7 Declare/pointers/callbacks, JIT-backed wrappers and genuine x86/x64 native DLL/EXE outputs.
+Realize one exact x64 Windows interop architecture shared by VM3 and JIT: authoritative typelib/reference metadata, exact carriers, one verified interop call plan, late and early COM clients, connection-point events with synchronous ByRef writeback, late and early/dual COM serving, outgoing events, VBA7 Declare/pointers/callbacks, JIT-backed wrappers and genuine x64 native DLL/EXE outputs.
 
 The result is full Windows VBA compatibility for the declared target plus a distinct standalone native-output extension. It is not complete when the JIT merely stops declining a fixture, when VM3 alone works, or when a wrapper is relabelled native.
 
@@ -24,16 +24,16 @@ Authority:
 ### VBA7 Windows compatibility gate
 
 - supported 64-bit Windows builds;
-- x64 and WOW64/x86 OxVba processes, fixtures and artifacts;
-- actual 64-bit Excel and actual 32-bit Excel for Excel-specific rows;
+- x64 OxVba processes, fixtures and artifacts;
+- actual 64-bit Excel for Excel-specific rows;
 - late/early COM client, events, serving, Declare, pointers/callbacks under both VM3 and JIT;
 - in-proc and out-of-proc/apartment rows required by the canonical ledger.
 
-A generic x86 VBA host may substitute only for non-Excel compile/runtime rows. ARM64 is explicit separate status, never implied.
+x86/32-bit Office, WOW64, ARM64 and other Windows architectures are outside the accepted profile. They have no active successor workset and carry no implied support.
 
 ### Standalone native-output gate
 
-- x64 and x86 wrapper artifacts;
+- x64 wrapper artifacts;
 - JIT-backed WrappedComServer;
 - genuine program-specific native DLL and EXE;
 - external clients, versioned ABI, loader/initialization and clean deployment evidence.
@@ -69,7 +69,7 @@ Language services own virtual content and query projection. Core owns source Dec
 | VM3 substrate, JIT whole-image decline | shared VM3/JIT late/early/native execution | `COM-CLIENT-001`, `NATIVE-IMPORT-001` |
 | queued event snapshots/no writeback | typed synchronous connection-point delivery | `COM-EVENT-001` |
 | bounded VM-backed serving | VM3/JIT late and generated early/dual serving | `COM-SERVE-001` |
-| bounded Declare/Ptr support | complete x86/x64 calls, helpers and callbacks | `NATIVE-IMPORT-001` |
+| bounded Declare/Ptr support | complete x64 calls, helpers and callbacks | `NATIVE-IMPORT-001` |
 | VM-backed wrappers, no native output | JIT wrappers plus genuine native artifacts | `BUILD-*` |
 
 ## 5. Binding invariants
@@ -97,9 +97,9 @@ Matrices:
 5. `WINDOWS_NATIVE_EXPORT_AND_PACKAGING_MATRIX_V1.csv`
 6. `WINDOWS_ABI_CARRIER_MATRIX_V1.csv`
 
-Each row records bitness, process/apartment shape, exact signature, compiler/package/VM3/JIT/build state, metadata source/revision, expected VBA compile/runtime result, transport proof, controlled fixture, artifact/environment hashes, lifecycle/error expectation and evidence owner.
+Each row records target architecture (fixed to x64), process/apartment shape, exact signature, compiler/package/VM3/JIT/build state, metadata source/revision, expected VBA compile/runtime result, transport proof, controlled fixture, artifact/environment hashes, lifecycle/error expectation and evidence owner.
 
-Controlled fixtures include x86/x64 native DLLs; Automation/dual/custom COM servers; in/out-of-proc activation; event sources with ByRef cancellation; typed interface-array and VT_RECORD shapes; error/IErrorInfo/EXCEPINFO; callback/reentry; native and VBA consumers.
+Controlled fixtures include x64 native DLLs; Automation/dual/custom COM servers; in/out-of-proc activation; event sources with ByRef cancellation; typed interface-array and VT_RECORD shapes; error/IErrorInfo/EXCEPINFO; callback/reentry; native and VBA consumers.
 
 ## 7. Execution epics
 
@@ -125,7 +125,7 @@ Deliver:
 - stable library/type/member/event identities and resolver digest;
 - inheritance/default/source interface, coclass activation and broken-reference facts;
 - package/provenance and language-service raw metadata handoff;
-- x86/x64 BSTR/VARIANT/SAFEARRAY/IUnknown/numeric layout proof;
+- x64 BSTR/VARIANT/SAFEARRAY/IUnknown/numeric layout proof;
 - nominal interface/object arrays and VT_DISPATCH/VT_UNKNOWN mapping;
 - nominal VT_RECORD descriptors and scalar/array behavior;
 - copy/drop/ByRef/writeback/identity lifecycle;
@@ -145,13 +145,13 @@ Deliver:
 - elaborate descriptors into one signature/marshal/cleanup/writeback/error/reentry plan;
 - migrate existing VM3 paths to the plan;
 - VM3/JIT execution adapters with exact observables;
-- persistent verified-image Windows JIT sessions for x64 and x86;
+- persistent verified-image Windows JIT sessions for x64;
 - Windows symbol/calling/unwind/executable-memory policy;
 - COM apartment and host policy in session ownership;
 - callback/reentry to the correct live session;
 - target/ABI/profile-aware cache and comhost backend selection.
 
-First beads: plan types/verifier; VM3 adapter; JIT adapter; x64 session; x86 session; apartment/reentry; comhost selection; plan differential.
+First beads: plan types/verifier; VM3 adapter; JIT adapter; x64 session; apartment/reentry; comhost selection; plan differential.
 
 Close: all later interop executes through the shared plan inside persistent correctly owned sessions.
 
@@ -248,9 +248,9 @@ Close: served classes are complete event sources for every mandatory row.
 Type: delivery
 Clauses: `NATIVE-IMPORT-001`
 
-Deliver compile/oracle legality for PtrSafe/LongPtr/LongLong/VBA7/Win64/conventions/aliases/As Any; verified external-call plan; secure DLL/entry/ordinal resolution; x64/x86 calls; scalar returns; ByVal/ByRef/writeback; ANSI/Wide/BSTR buffers; arrays/UDTs/As Any; immediate LastDllError capture; cleanup; exact missing/policy diagnostics.
+Deliver compile/oracle legality for PtrSafe/LongPtr/LongLong/VBA7/Win64/x64 convention/aliases/As Any; verified external-call plan; secure DLL/entry/ordinal resolution; x64 calls; scalar returns; ByVal/ByRef/writeback; ANSI/Wide/BSTR buffers; arrays/UDTs/As Any; immediate LastDllError capture; cleanup; exact missing/policy diagnostics.
 
-First beads: compile matrix; secure loader; x64 scalar; x86 conventions; returns/ByRef/error; strings/buffers; arrays/UDTs/As Any; policy/missing symbols.
+First beads: compile matrix; secure loader; x64 scalar; returns/ByRef/error; strings/buffers; arrays/UDTs/As Any; policy/missing symbols.
 
 Close: full mandatory import matrix is green under VM3/JIT/VBA/native fixtures.
 
@@ -259,7 +259,7 @@ Close: full mandatory import matrix is green under VM3/JIT/VBA/native fixtures.
 Type: delivery
 Clauses: `NATIVE-IMPORT-001`
 
-Deliver compile-time AddressOf eligibility; exact VarPtr/StrPtr/ObjPtr/addressability; typed callback thunks; owning-session/thread/apartment reentry; arguments/results/ByRef/errors; synchronous and retained registration/release lifetimes; nested native/COM/VBA cycles; x86/x64; UAF/stale-thunk safety.
+Deliver compile-time AddressOf eligibility; exact VarPtr/StrPtr/ObjPtr/addressability; typed callback thunks; owning-session/thread/apartment reentry; arguments/results/ByRef/errors; synchronous and retained registration/release lifetimes; nested native/COM/VBA cycles; x64; UAF/stale-thunk safety.
 
 First beads: pointer storage; compile matrix; synchronous scalar callback; signature breadth; nested reentry/errors; retained lifetime; stale/disposed safety.
 
@@ -281,11 +281,11 @@ Close: all wrapper classes run standalone through the selected backend without f
 Type: delivery
 Clauses: `BUILD-NATIVE-001`, `JIT-AOT-001`
 
-Deliver project export manifest/signature eligibility; versioned external ownership/error/concurrency ABI; Cranelift object/blob and PE/COFF relocation/import format; x64/x86 entries/names/ordinals; runtime/helper initialization outside loader lock; DLL/EXE global/session/unload rules; source/debug maps; ASLR/clean-machine/reproducible builds; native C/Rust clients.
+Deliver project export manifest/signature eligibility; versioned external ownership/error/concurrency ABI; Cranelift object/blob and PE/COFF relocation/import format; x64 entries/names/ordinals; runtime/helper initialization outside loader lock; DLL/EXE global/session/unload rules; source/debug maps; ASLR/clean-machine/reproducible builds; native C/Rust clients.
 
-First beads: ABI/export contract; object/blob prototype; scalar x64 DLL; x86 DLL/decorations; signature breadth; native EXE; reloc/import/ASLR; reproducibility/debug maps.
+First beads: ABI/export contract; object/blob prototype; scalar x64 DLL; signature breadth; native EXE; reloc/import/ASLR; reproducibility/debug maps.
 
-Close: mandatory x64/x86 native targets are real program-specific outputs, not wrappers.
+Close: mandatory x64 native targets are real program-specific outputs, not wrappers.
 
 ### WIN-13 — Native-boundary safety and lifecycle
 
@@ -301,7 +301,7 @@ Close: malformed metadata and hostile failures cannot corrupt state, leak resour
 Type: delivery/conformance
 Clauses: `CONF-ORACLE-001`, `CONF-DIFF-001`
 
-Deliver pinned Windows/Office builds; actual x64/x86 Excel; x64/x86 native runners; controlled COM fixtures; non-default locale; compiler diagnostics; VM3/JIT outputs; Excel clients of external and served objects; bidirectional events/ByRef cancellation; native clients of exports; registration/load/unload/restart; artifact/environment hashes; promoted named runners; archived UIA/VBE/cleanup evidence.
+Deliver pinned Windows/Office builds; actual 64-bit Excel; x64 native runners; controlled COM fixtures; non-default locale; compiler diagnostics; VM3/JIT outputs; Excel clients of external and served objects; bidirectional events/ByRef cancellation; native clients of exports; registration/load/unload/restart; artifact/environment hashes; promoted named runners; archived UIA/VBE/cleanup evidence.
 
 Close: every mandatory row has its specified controlled and real external/Excel authority; unavailable environments remain blockers.
 
@@ -341,12 +341,12 @@ Late COM client and scalar Declare can proceed in parallel after WIN-1/2. Servin
 
 Per bead: targeted VM3/JIT/compiler/build tests, exact transport/ABI proof, balance and fault neighbor, matrix/contract update, fresh-eyes review.
 
-Merge gate: strict workspace gates on Windows, x64/x86 controlled fixtures, default/single-thread stress, governance/truth checks and no stale ignored touched row.
+Merge gate: strict workspace gates on Windows, x64 controlled fixtures, default/single-thread stress, governance/truth checks and no stale ignored touched row.
 
-Release gate: actual both-bitness Excel, in/out-of-proc COM, x64/x86 native artifacts/clients, ASAN/fault injection, clean deployment/registration/unload, locale, performance/size and current docs/matrices.
+Release gate: actual 64-bit Excel, in/out-of-proc COM, x64 native artifacts/clients, ASAN/fault injection, clean deployment/registration/unload, locale, performance/size and current docs/matrices.
 
-This workset is complete only when every mandatory compatibility row works under both VM3 and JIT, both-bitness real evidence is green, wrappers and genuine native outputs pass their distinct gates, all unsafe/lifecycle checks are clean and documentation/artifacts/matrices tell the same truth.
+This workset is complete only when every mandatory x64 compatibility row works under both VM3 and JIT, 64-bit Excel evidence is green, wrappers and genuine native outputs pass their distinct gates, all unsafe/lifecycle checks are clean and documentation/artifacts/matrices tell the same truth.
 
 ## 10. Bead-preparation handoff
 
-Create WIN-0 through WIN-15 epics and rollout beads, then materialize the first candidates above. Every bead names contract clauses, target bitness/process/apartment, matrix rows, fixture/environment prerequisites, dependencies, exact evidence and blocker/residual behavior. Registry/fixture mutation is serialized. Capability epics cannot close on docs, matrices or fixture rollout alone.
+Create WIN-0 through WIN-15 epics and rollout beads, then materialize the first candidates above. Every bead names contract clauses, `target=x64`, process/apartment shape, matrix rows, fixture/environment prerequisites, dependencies, exact evidence and blocker/residual behavior. Registry/fixture mutation is serialized. Capability epics cannot close on docs, matrices or fixture rollout alone.

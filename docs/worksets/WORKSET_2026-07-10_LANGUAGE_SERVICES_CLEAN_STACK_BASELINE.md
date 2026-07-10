@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 Owner: unassigned
-Status: proposed; bead rollout not yet performed
+Status: accepted; directed bead rollout in progress under `bd-59co`
 Type: architecture and language-service capability delivery
 Profile: `PROFILE-IDE-001`
 Source review: [`../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
@@ -275,9 +275,9 @@ Type: delivery/conformance
 Clauses: `WIN-META-001`, `LS-WORKSPACE-001`, `LS-BASIC-001`
 Dependencies: WIN authoritative resolver/raw metadata handoff
 
-Deliver registered/file typelibs; reference version/order changes; stable virtual libraries/coclasses/interfaces/members/enums/records/events; early-bound and known-projection late-bound completion/signatures/hover; runtime activation distinction; x86/x64 target contexts; broken/unregistered references; Excel Object Browser/public metadata cross-check.
+Deliver registered/file typelibs; reference version/order changes; stable virtual libraries/coclasses/interfaces/members/enums/records/events; early-bound and known-projection late-bound completion/signatures/hover; runtime activation distinction; x64 target contexts; broken/unregistered references; Excel Object Browser/public metadata cross-check.
 
-First beads: resolver integration; virtual content; query matrix; revision invalidation; x86/x64; broken refs; Excel metadata cross-check.
+First beads: resolver integration; virtual content; query matrix; revision invalidation; x64; broken refs; Excel metadata cross-check.
 
 Close: COM column is green for every basic query without requiring COM runtime/serving completion.
 
@@ -315,7 +315,7 @@ Per feature bead: direct semantic test, reference-kind neighbor, transport equiv
 
 Merge gate: CORE-1 green workspace/governance baseline; direct suite; LSP transcripts/equivalence; deterministic Linux/Windows tests; no advertised method without a green direct row.
 
-Release gate: Linux/Windows, x86/x64 reference target contexts, VS Code and embedded host, Windows COM metadata, full producer-dependent reference rerun, performance/cancellation/memory, fuzz/no-panic and docs/matrix truth.
+Release gate: Linux/Windows x64 reference target contexts, VS Code and embedded host, Windows COM metadata, full producer-dependent reference rerun, performance/cancellation/memory, fuzz/no-panic and docs/matrix truth.
 
 This workset is complete only when compiler and editor facts share one pipeline; real workspaces/overlays/invalidation/cancellation work; every basic feature/reference kind is green; direct API and pinned LSP are equivalent; one host and editor pass; robustness/performance gates are green; and no current doc or extension claims the deleted stack.
 

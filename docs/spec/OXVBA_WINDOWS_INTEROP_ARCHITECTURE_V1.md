@@ -13,9 +13,9 @@ Windows COM and native interop use compiler/package descriptors, exact runtime c
 
 ## 2. Supported environment
 
-The required compatibility environment is supported 64-bit Windows with x64 and WOW64/x86 OxVba processes, fixtures and output artifacts. Actual 64-bit and actual 32-bit Excel run in separate owned environments for Excel-specific evidence. Native output supports x64 and x86 targets.
+The required compatibility environment is supported 64-bit Windows with x64 OxVba processes, fixtures and output artifacts. Excel-specific evidence uses actual 64-bit Excel in an owned environment. Native output targets x64 Windows.
 
-ARM64 is an explicit separate status row. Non-Windows targets may parse and bind Windows declarations and consume synthetic metadata, but portable projections are not native COM evidence.
+x86/32-bit Office, WOW64, ARM64 and other Windows architectures are outside the accepted profile. They have no active delivery workset and no implied support. Non-Windows targets may parse and bind Windows declarations and consume synthetic metadata, but portable projections are not native COM evidence.
 
 ## 3. Authoritative metadata and references
 
@@ -37,7 +37,7 @@ Compiler, OxImage, runtime, build and language-service consumers use this author
 
 COM and native boundaries operate on canonical BSTR, VARIANT, SAFEARRAY, object/interface and numeric carriers. Nominal interface/object arrays preserve VT_DISPATCH/VT_UNKNOWN and interface identity. Records carry GUID/typeinfo, size, alignment, field layout and VT_RECORD ownership information.
 
-x86/x64 layout probes and controlled native fixtures prove every boundary shape. Copy, clear, clone, preserve, ByRef, writeback and error cleanup rules are shared with the runtime rather than reimplemented per transport.
+x64 layout probes and controlled native fixtures prove every boundary shape. Copy, clear, clone, preserve, ByRef, writeback and error cleanup rules are shared with the runtime rather than reimplemented per transport.
 
 ## 5. Verified interop call plan
 
@@ -83,7 +83,7 @@ Exported OxVba classes expose stable CLSID/ProgID/version identity, class factor
 
 One object identity/state backs early and late interfaces. Errors map to HRESULT/IErrorInfo; arrays, records, interfaces and ByRef use the exact carrier plan. Class Initialize/Terminate and unload behavior match the owning project session.
 
-Registration records InprocServer32/LocalServer32, threading model and x86/x64 registry views. Out-of-process/custom interfaces use Automation marshaling or generated proxy/stub artifacts according to their signatures. Local servers define message-loop, lock, class-object and shutdown behavior.
+Registration records InprocServer32/LocalServer32, threading model and the x64 registry view. Out-of-process/custom interfaces use Automation marshaling or generated proxy/stub artifacts according to their signatures. Local servers define message-loop, lock, class-object and shutdown behavior.
 
 ## 10. Outgoing COM events
 
@@ -93,9 +93,9 @@ Both VM3- and JIT-backed served sessions implement the same source-interface pla
 
 ## 11. Declare and pointer helpers
 
-The compiler validates VBA7/Win64 conditional declarations, PtrSafe, LongPtr, LongLong legality, x86 conventions, aliases/ordinals, ByVal/ByRef, As Any and AddressOf eligibility. Those compile facts live in the compiler contract.
+The compiler validates VBA7/Win64 conditional declarations, PtrSafe, LongPtr, LongLong legality, the x64 convention, aliases/ordinals, ByVal/ByRef, As Any and AddressOf eligibility. Those compile facts live in the compiler contract.
 
-Runtime import resolves DLLs and entries under an explicit secure search policy. Calls implement scalar, string/buffer, array, UDT, pointer and ByRef behavior for x86/x64. LastDllError is captured immediately after the native call before cleanup can overwrite it.
+Runtime import resolves DLLs and entries under an explicit secure search policy. Calls implement scalar, string/buffer, array, UDT, pointer and ByRef behavior for x64. LastDllError is captured immediately after the native call before cleanup can overwrite it.
 
 VarPtr, StrPtr and ObjPtr expose exact addressable storage with bounded lifetime. AddressOf thunks reenter the owning project session, implement typed arguments/results/ByRef and have explicit synchronous or retained registration/release lifetimes. Stale thunks cannot call a disposed session.
 
@@ -113,8 +113,8 @@ All COM/native descriptors are verified before code generation or invocation. Un
 
 Completion evidence includes:
 
-- x64 and x86 controlled fixtures and artifacts;
-- actual 64-bit and 32-bit Excel/VBA;
+- x64 controlled fixtures and artifacts;
+- actual 64-bit Excel/VBA;
 - in-proc and out-of-proc COM;
 - transport counters and exact wire signatures;
 - synchronous cancellable ByRef events;

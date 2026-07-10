@@ -45,7 +45,9 @@ The core profile contains project/source ingestion, conditional compilation, syn
 
 ### Windows VBA compatibility — `PROFILE-WIN-001`
 
-The Windows profile adds native COM client, server and event behavior; authoritative typelib/reference resolution; `Declare`; pointers and callbacks; Windows ABI behavior; and real Excel/VBA evidence for both Office bitnesses. Windows-specific VM3 and JIT rows are both part of this profile.
+The Windows profile adds native COM client, server and event behavior; authoritative typelib/reference resolution; `Declare`; pointers and callbacks; x64 Windows ABI behavior; and real 64-bit Excel/VBA evidence. Windows-specific VM3 and JIT rows are both part of this profile.
+
+The accepted Windows profile is x64-only. x86/32-bit Office, WOW64, ARM64 and other Windows architectures are outside the active target and carry no implied support or active successor program.
 
 ### IDE foundation — `PROFILE-IDE-001`
 
@@ -246,11 +248,11 @@ OxVba consumes and emits COM connection-point events through typed source-interf
 
 ### COM serving — `COM-SERVE-001`
 
-Exported OxVba classes can be activated and consumed as late-bound and early/dual COM objects with stable IUnknown identity, type information, generated vtables, Implements, errors and outgoing events. Registration, class factories, apartments, proxy/marshalling strategy, local-server lifetime and unload behavior are explicit for x86 and x64.
+Exported OxVba classes can be activated and consumed as late-bound and early/dual COM objects with stable IUnknown identity, type information, generated vtables, Implements, errors and outgoing events. Registration, class factories, apartments, proxy/marshalling strategy, local-server lifetime and unload behavior are explicit for x64 Windows.
 
 ### Native import and callbacks — `NATIVE-IMPORT-001`
 
-VBA7 `Declare`, pointer helpers and AddressOf callbacks follow exact x86/x64 calling conventions, layout, string/buffer, array/record, ByRef, lifetime, loader-policy and LastDllError behavior. Compiler legality and runtime availability remain distinct phases.
+VBA7 `Declare`, pointer helpers and AddressOf callbacks follow the exact x64 Windows calling convention, layout, string/buffer, array/record, ByRef, lifetime, loader-policy and LastDllError behavior. Compiler legality and runtime availability remain distinct phases.
 
 Detailed Windows requirements live in [`OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md).
 

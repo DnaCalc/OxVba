@@ -29,7 +29,7 @@ Major open outcomes:
 - structural VM3/JIT and current Excel/VBA evidence;
 - green ordinary/safety/governance gates.
 
-Closure: all required core contract clauses and matrix rows are green for the declared Linux/Windows/x86/Excel target.
+Closure: all required core contract clauses and matrix rows are green for the declared Linux/Windows-x64/64-bit-Excel target.
 
 ### WINDOWS-INTEROP — Windows VBA/COM/native compatibility
 
@@ -45,7 +45,7 @@ Major open outcomes:
 - synchronous connection-point events;
 - VM3/JIT late and early/dual serving with outgoing events;
 - JIT Declare, pointers and callbacks;
-- x64/x86 and actual both-bitness Excel certification;
+- x64 and actual 64-bit Excel certification;
 - native-boundary safety/lifecycle.
 
 Closure: every mandatory Windows compatibility row works under both VM3 and JIT with controlled and real Excel/native evidence.
@@ -61,7 +61,7 @@ Major open outcomes:
 - JIT-backed wrapper EXE/library/COM server;
 - loader-lock-safe initialization;
 - explicit native export manifest and external ABI;
-- genuine x64/x86 DLL and EXE outputs;
+- genuine x64 DLL and EXE outputs;
 - native clients, relocation/ASLR, debug maps and clean deployment.
 
 Closure: wrapper and native output classes pass separate honest artifact gates.

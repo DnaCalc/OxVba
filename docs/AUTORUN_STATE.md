@@ -2,12 +2,15 @@
 
 Purpose: the sole volatile control surface for current execution mode, accepted worksets, terminal condition and resume context.
 
-Mode: Idle
+Mode: Directed
 AutoRun terminal gate: inactive
-Current task: none
+Current task: execute `bd-59co.1` (`PROGRAM-0`) to reconcile the x64-only active target, roll out and polish the three-workset bead graph, migrate legacy open beads and prove that the ready queue is safe for AutoRun.
+Terminal condition: `PROGRAM-0` is closed with current authority consistent, every execution epic rolled out, every legacy non-closed bead explicitly dispositioned, graph/validators green, and two consecutive polish passes finding no material change.
 Last completed task: establish the OxVba system contract/current architecture, deprecate misleading historical guidance, and rewrite the three 2026-07-10 readiness worksets around the ideal architecture.
 
-## Proposed worksets awaiting acceptance and bead rollout
+## Accepted umbrella and worksets under directed rollout
+
+- umbrella bead: `bd-59co`
 
 - `docs/worksets/WORKSET_2026-07-10_POST_JIT_CORE_CONFORMANCE_AND_READINESS.md`
 - `docs/worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md`
@@ -21,8 +24,8 @@ Last completed task: establish the OxVba system contract/current architecture, d
 - `docs/ARCHITECTURE.md`
 - `docs/OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`
 
-Historical ladders, IP-08/IP-08B plans, MACH-1000 profiles and earlier JIT/frontend/language-service worksets remain provenance only unless one of the current worksets explicitly imports a residual.
+Historical ladders, IP-08/IP-08B plans, MACH-1000 profiles and earlier JIT/frontend/language-service worksets remain provenance only unless PROGRAM-0 explicitly imports a residual into `bd-59co`.
 
 ## Resume rule
 
-Do not resume a historical ladder merely because an old workset or evidence file names it as active. Start execution only from the user's current instruction or an explicitly accepted workset recorded here.
+Read the current truth surfaces, inspect `bd-59co.1` and `br ready`, and continue the directed PROGRAM-0 terminal condition. Do not enable AutoRun or execute an unrelated ready bead until PROGRAM-0 has certified the new queue.

@@ -7,6 +7,8 @@ Authority: review evidence and work planning; this document does not itself clos
 
 Architecture follow-up: the destination and current realization are now governed by [`spec/OXVBA_SYSTEM_CONTRACT_V1.md`](spec/OXVBA_SYSTEM_CONTRACT_V1.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md). The three worksets linked below were subsequently rewritten around those contracts; this review remains their entry evidence rather than architecture authority.
 
+Post-review scope decision (2026-07-10): the accepted Windows profile is x64-only. References below to 32-bit Windows/Office record the original review boundary or then-proposed evidence plan; they are not active requirements or implied support.
+
 ## 1. Executive verdict
 
 OxVba now has a credible clean compiler and dual-runtime architecture:

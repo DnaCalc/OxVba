@@ -186,7 +186,7 @@ The JIT currently rejects images containing real external calls or COM interface
 - JIT-backed COM serving/vtable generation is absent;
 - exact nominal interface arrays and broad VT_RECORD shapes are incomplete;
 - JIT Declare, pointer helpers and AddressOf callbacks are absent;
-- x86/x64 artifact and both-Office-bitness certification is incomplete;
+- x64 artifact and 64-bit Office certification is incomplete;
 - JIT wrapper sessions and genuine native DLL/EXE exports do not exist.
 
 The destination is [`spec/OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](spec/OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md).
@@ -220,9 +220,9 @@ VM3 and much of the compiler/runtime are designed for portable hosts. Browser/WA
 
 Security currently appears mainly as host policy, artifact checks and unsafe-boundary discipline. A broader runtime security profile remains future work and must build on the same verified image and host capability model.
 
-## 13. Capability status and proposed delivery
+## 13. Capability status and accepted delivery
 
-| profile | current status | proposed workset |
+| profile | current status | accepted workset |
 |---|---|---|
 | Core VBA toolchain | broad, in-progress | [`worksets/WORKSET_2026-07-10_POST_JIT_CORE_CONFORMANCE_AND_READINESS.md`](worksets/WORKSET_2026-07-10_POST_JIT_CORE_CONFORMANCE_AND_READINESS.md) |
 | Windows VBA compatibility | VM3 substrate plus missing JIT/general parity, in-progress | [`worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md`](worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md) |
@@ -230,7 +230,7 @@ Security currently appears mainly as host policy, artifact checks and unsafe-bou
 | Standalone tooling | `.oxi` and bounded wrappers only, in-progress | core and Windows worksets |
 | Extended profiles | not assessed or not implemented as a unified profile | system contract plus future accepted worksets |
 
-The dated review and these three proposed worksets are the current program-planning entry. They do not become active execution merely by being indexed here. Older ladders, worksets and handoffs remain provenance unless an accepted workset explicitly consumes their residuals.
+The dated review and these three accepted worksets are the current umbrella-program entry under `bd-59co`. Older ladders, worksets and handoffs remain provenance unless PROGRAM-0 explicitly consumes their residuals.
 
 ## 14. Documentation authority
 

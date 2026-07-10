@@ -12,7 +12,7 @@ Read these documents in order:
 
 `AUTORUN_STATE.md` is the sole volatile execution-control surface. It is not architecture authority.
 
-## Proposed capability program
+## Accepted capability program
 
 | profile | destination clauses | current workset |
 |---|---|---|
@@ -20,7 +20,7 @@ Read these documents in order:
 | Windows VBA/COM/native compatibility and outputs | `PROFILE-WIN-001`, `WIN-*`, `COM-*`, `NATIVE-*`, `BUILD-*` | [`worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md`](worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md) |
 | IDE language-service foundation | `PROFILE-IDE-001`, `LS-*` | [`worksets/WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md`](worksets/WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md) |
 
-The three worksets are proposed and bead-ready; acceptance and rollout are separate execution steps. Older worksets and profile ladders are historical execution records unless an accepted current workset explicitly imports a residual.
+The three worksets are accepted under umbrella bead `bd-59co`; PROGRAM-0 is performing directed rollout before AutoRun begins. Older worksets and profile ladders are historical execution records unless PROGRAM-0 explicitly imports a residual.
 
 ## Current subsystem architecture contracts
 

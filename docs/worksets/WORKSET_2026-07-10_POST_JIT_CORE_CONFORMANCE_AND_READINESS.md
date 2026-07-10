@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 Owner: unassigned
-Status: proposed; bead rollout not yet performed
+Status: accepted; directed bead rollout in progress under `bd-59co`
 Type: architecture, capability and conformance delivery
 Profile: `PROFILE-CORE-001`
 Source review: [`../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
@@ -26,10 +26,12 @@ This is not a patch collection. The workset closes only when the current impleme
 
 - Linux x64 compiler, VM3 and JIT for platform-neutral behavior;
 - Windows x64 compiler, VM3 and JIT for the same core behavior;
-- Windows x86/x64 compile-time conditional and pointer-width semantics;
-- VM3 x86 core rows where pointer width affects execution;
-- actual 32-bit and 64-bit Excel/VBA evidence for width-sensitive VBA-observable rows;
-- Windows x86 JIT session/codegen admission supplied by the Windows workset.
+- Windows x64 compile-time conditional and pointer-width semantics;
+- VM3 and JIT x64 core rows where pointer width affects execution;
+- actual 64-bit Excel/VBA evidence for width-sensitive VBA-observable rows;
+- Windows x64 JIT session/codegen admission supplied by the Windows workset.
+
+x86/32-bit Office, WOW64, ARM64 and other Windows architectures are outside this accepted target. They have no active successor workset and carry no implied support.
 
 macOS, browser/WASM, forms, debugger and the broader security profile are explicit extended profiles, not implied green rows. Narrowing this target requires a user-approved scope split with a named open successor delivery owner.
 
@@ -108,7 +110,7 @@ Deliver:
 - seed all five matrices from the review and current tests;
 - map every row to system/subsystem contract clauses;
 - classify old worksets/ladders/blockers as imported residual, historical or superseded;
-- define the exact Linux/Windows/x86/Excel environment ledger;
+- define the exact Linux/Windows-x64/64-bit-Excel environment ledger;
 - establish a generated architecture/profile summary.
 
 First beads: rollout graph; matrix skeletons; residual migration; environment manifest.
@@ -312,10 +314,10 @@ Deliver:
 - complete fixture manifest tied to contract/matrix rows;
 - property/fuzz, sanitizer, Miri-appropriate and repeated-session lanes;
 - current-stack Excel compile/runtime oracle for every VBA-observable core/library row;
-- 32/64-bit, non-default locale and source-encoding rows;
+- Windows x64/64-bit Excel, non-default locale and source-encoding rows;
 - captured environment/source/result/modal/cleanup evidence.
 
-First beads: observable schema; structural carriers; side-effect/lifecycle axes; manifest generation; property/fuzz tranches; safety lanes; oracle harness; compiler diagnostics; runtime/library; locale/bitness/source encoding.
+First beads: observable schema; structural carriers; side-effect/lifecycle axes; manifest generation; property/fuzz tranches; safety lanes; oracle harness; compiler diagnostics; runtime/library; x64/locale/source encoding.
 
 Close: no required row relies on tag/status equality, historical capture alone or VM3-minted truth.
 
@@ -350,7 +352,7 @@ Close: all delivery epics are closed and the `PROFILE-CORE-001` claim is demonst
 | CORE-7 | CORE-3, CORE-4, CORE-5 | CORE-LIB |
 | CORE-8 | CORE-4, CORE-5, CORE-7 | none |
 | CORE-9 | CORE-1 scaffolding | closes after CORE-2/3/LIB/4/5/6/7/8 |
-| CORE-10 | every delivery epic | Windows x86 JIT prerequisite for final target summary |
+| CORE-10 | every delivery epic | Windows x64 JIT prerequisite for final target summary |
 
 Cross-workset producer edges:
 
@@ -369,7 +371,7 @@ Merge gate after CORE-1 canonicalizes it:
 - governance/meta/truth reconciliation;
 - matrix/schema validation.
 
-Release gate additionally includes declared Linux/Windows/x86 targets, current Excel/VBA, safety/fuzz, repeated sessions, cold/warm performance and source/debug-map checks.
+Release gate additionally includes declared Linux and Windows x64 targets, current 64-bit Excel/VBA, safety/fuzz, repeated sessions, cold/warm performance and source/debug-map checks.
 
 ## 9. Terminal condition
 

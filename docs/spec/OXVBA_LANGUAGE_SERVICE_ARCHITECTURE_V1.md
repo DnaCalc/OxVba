@@ -141,7 +141,7 @@ Language-service completion requires:
 - decoded-LSP/direct-result equivalence and negative capabilities;
 - virtual content/refresh, roots/watch/reload and cancellation races;
 - stale rename/edit rejection;
-- Windows x86/x64 COM-reference target contexts;
+- Windows x64 COM-reference target contexts;
 - embedded-host and editor smoke paths;
 - performance, cancellation and lifecycle evidence;
 - no active documentation or extension claim referring to deleted language-service crates.

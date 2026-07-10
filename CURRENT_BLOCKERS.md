@@ -55,14 +55,13 @@ Owner: Windows workset WIN-14 and core workset CORE-9
 
 Required:
 
-- supported Windows x64 environment with actual 64-bit Excel;
-- separate supported Windows x64 environment with actual 32-bit Excel;
-- x64 and WOW64/x86 native/COM fixture runners;
+- pinned supported Windows x64 environment with actual 64-bit Excel;
+- x64 native/COM fixture runners;
 - controlled in-proc/out-of-proc COM fixtures;
 - non-default locale profile;
 - owned-process UIA/VBE compile-oracle automation and cleanup.
 
-Unblocking outcome: checked-in environment manifest and reproducible current-stack runs with artifact/build/fixture hashes. A generic x86 VBA host may substitute only for non-Excel rows.
+Unblocking outcome: checked-in environment manifest and reproducible current-stack x64 runs with artifact/build/fixture hashes. Non-x64 Windows targets are outside the accepted profile and are not blockers.
 
 ## Historical blocker migration
 
