@@ -1,7 +1,7 @@
 //! Clean build target orchestration for OxVBA wrapper outputs.
 //!
 //! `WrappedComServer` builds are intentionally package-first: the compiler emits
-//! the canonical bundle package, derives COM descriptors from the symbol export
+//! the canonical OxImage (`.oxi`), derives COM descriptors from the symbol export
 //! surface, then wrapper-specific tooling consumes those artifacts.
 
 mod com_descriptor;

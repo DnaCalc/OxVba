@@ -1,5 +1,8 @@
 # OxIde Immediate Window Integration Guidance
 
+> [!CAUTION]
+> **Future/historical guidance.** No active language-service/debugger stack currently provides this surface.
+
 This note defines how OxIde should consume the current OxVba immediate and debugger surfaces.
 
 The goal is one coherent OxVba-owned execution model:

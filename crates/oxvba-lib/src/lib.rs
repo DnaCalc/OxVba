@@ -1,17 +1,15 @@
 //! `oxvba-lib` — the native bodies of the VBA base library.
 //!
-//! Every `oxvba_bundle::NativeImplId` is dispatched here to a Rust body, copied
-//! out of the legacy VM's intrinsic logic. Pure functions compute over
+//! Every currently cataloged `oxvba_bundle::NativeImplId` is dispatched here to
+//! a Rust body. Pure functions compute over
 //! `oxvba_runtime::Variant`; host-sensitive functions delegate to the
 //! `oxvba_hal::HostServices` facets. The interpreter calls [`invoke`] for every
 //! native built-in call (COM dispatch and `Declare` are handled by the VM via the
 //! host directly, not here).
 //!
-//! Completeness is structural: [`invoke`] is an exhaustive `match` over
-//! `NativeImplId`, so a missing built-in is a compile error. The remaining
-//! `// FIDELITY:` markers are features absent from the legacy VM as well: keyed
-//! `Collection` access (awaits the vm2 object model) and `StrConv`'s
-//! CJK/encoding modes.
+//! Exhaustive matching proves coverage of the current internal catalog, not
+//! completeness of the real VBA library. Member-level signature, VM3/JIT,
+//! host/locale and Excel evidence is governed by system clause `LIB-VBA-001`.
 
 mod format;
 mod host;

@@ -1,6 +1,9 @@
 # OxVBA Language-Service Platform Spec V2
 
-**Status:** active successor spec  
+> [!CAUTION]
+> **Superseded architecture over a deleted implementation.** Use [`OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md) and the current language-service workset.
+
+**Status:** superseded historical platform design
 **Date:** 2026-04-01  
 **Supersedes for first-class platform planning:** `docs/spec/LANGUAGE_SERVICE_SPEC_V1.md`  
 **Retains:** `docs/spec/LANGUAGE_SERVICE_SPEC_V1.md` as the design-locked authority for the current bounded internal surface tracked by `LSF-0001`

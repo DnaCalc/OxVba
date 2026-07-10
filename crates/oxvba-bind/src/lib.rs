@@ -3,8 +3,9 @@
 //! A single typed pass that walks the resolved `oxvba-syntax` CST, asks the
 //! `oxvba-symbol` resolution environment what each name means, infers types,
 //! inserts coercions, and emits the symbol-free `oxvba_bundle::coreir` Core IR
-//! that `linearize` turns into a runnable `Bundle`. This ties the clean path
-//! together: source → CST → symbol resolution → coreir → linearize → vm2/JIT.
+//! that `oxvba-oxir::elaborate` turns into typed OxIR for VM3 and the JIT. This
+//! ties the clean path together: source → preprocessing/CST → symbol resolution
+//! → Core IR → OxIR/OxImage → VM3/JIT.
 
 mod call;
 mod error;

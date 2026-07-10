@@ -5,6 +5,8 @@ Review state: complete
 Scope: compiler/binder, Core IR, OxIR/OxImage, runtime/VM3, Cranelift JIT, validation posture, and language services
 Authority: review evidence and work planning; this document does not itself close any capability lane
 
+Architecture follow-up: the destination and current realization are now governed by [`spec/OXVBA_SYSTEM_CONTRACT_V1.md`](spec/OXVBA_SYSTEM_CONTRACT_V1.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md). The three worksets linked below were subsequently rewritten around those contracts; this review remains their entry evidence rather than architecture authority.
+
 ## 1. Executive verdict
 
 OxVba now has a credible clean compiler and dual-runtime architecture:

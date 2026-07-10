@@ -1,582 +1,393 @@
-# Workset: Post-JIT Core Conformance and Readiness
+# Workset: Ideal Core Toolchain and Dual-Runtime Realization
 
 Date: 2026-07-10
 Owner: unassigned
 Status: proposed; bead rollout not yet performed
-Type: capability and conformance delivery
-Source review: [`OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
+Type: architecture, capability and conformance delivery
+Profile: `PROFILE-CORE-001`
+Source review: [`../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
 
 ## 1. Outcome
 
-Bring the clean OxVba compiler, shared executable package, VM3 and the non-Windows-dependent JIT surface to an evidence-backed VBA-conforming baseline suitable for:
+Realize the ideal OxVba core architecture: one compiler-owned semantic analysis pipeline, one sealed verified OxImage artifact, one exact runtime/value/host substrate, a complete VM3 reference interpreter and a complete platform-neutral Cranelift JIT with typed primary calls, dynamic adapters, persistent sessions and a product cache.
 
-- use as the trusted language/runtime base for DNA Calc;
-- execution through either VM3 or JIT without semantic qualification for the accepted core scope;
-- loading and executing a verified standalone `OxImage` artifact;
-- long-lived embedded/package sessions;
-- current-stack Excel/VBA validation on Windows;
-- handoff to the separate Windows COM/native and language-service worksets.
+The result is suitable as the trusted foundation for DNA Calc and standalone VB-universe tooling. It matches VBA compile-time and run-time behavior for the declared core target and exposes compiler/runtime contracts that the Windows and language-service profiles can consume without parallel models or architectural rework.
 
-This workset is not complete when individual defects, a bounded corpus, documentation, or an audit is complete. It closes only when the scoped compiler/package/VM/JIT behavior is parity-complete, required evidence is green, and every residual accepted gap has been delivered rather than merely recorded.
+This is not a patch collection. The workset closes only when the current implementation has been transformed into the architecture defined by:
 
-## 2. Scope
+- system clauses `SYS-*`, `SRC-*`, `SYN-*`, `PROJ-*`, `COMP-*`, `IR-*`, `IMAGE-*`, `RUNTIME-*`, `LIB-*`, `HOST-*`, `VM3-*`, `JIT-*`, `CONF-*`;
+- [`../spec/OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](../spec/OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md);
+- [`../spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](../spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md);
+- [`../spec/OXVBA_JIT_ARCHITECTURE_V1.md`](../spec/OXVBA_JIT_ARCHITECTURE_V1.md).
 
-### 2.1 In scope
+## 2. Target and boundaries
 
-- source ingestion, lexing, parsing and conditional compilation;
-- compiler diagnostics and source maps;
-- VBA declarations, typing, binding, calls, coercions and project-reference semantics;
-- VBA base-library behavior not intrinsically dependent on real Windows COM/native calls;
+### Required certification target
+
+- Linux x64 compiler, VM3 and JIT for platform-neutral behavior;
+- Windows x64 compiler, VM3 and JIT for the same core behavior;
+- Windows x86/x64 compile-time conditional and pointer-width semantics;
+- VM3 x86 core rows where pointer width affects execution;
+- actual 32-bit and 64-bit Excel/VBA evidence for width-sensitive VBA-observable rows;
+- Windows x86 JIT session/codegen admission supplied by the Windows workset.
+
+macOS, browser/WASM, forms, debugger and the broader security profile are explicit extended profiles, not implied green rows. Narrowing this target requires a user-approved scope split with a named open successor delivery owner.
+
+### Owned here
+
+- source decoding/provenance, preprocessing, syntax and compiler analysis;
+- typed binding, calls, diagnostics and project/reference public surfaces;
 - Core IR and Core IR-to-OxIR elaboration;
-- `OxProgram`/`OxImage` verification, versioning, loading, linking and provenance;
-- runtime carriers, shared evaluation semantics and rt-abi safety;
-- VM3 completeness and reference-runtime trust;
-- JIT support for the full accepted platform-neutral OxIR/language/runtime/library surface;
-- JIT error handling, recursion, sessions, cache and lifecycle;
-- VM3/JIT differential observability and corpus coverage;
-- test reliability, cross-platform line-ending behavior and safety lanes;
-- Windows and Excel/VBA oracle validation of core language/compiler/runtime behavior;
-- architecture, specs, matrices and status-truth reconciliation.
+- verified OxProgram/OxImage and package compatibility;
+- runtime carriers, semantic kernel, helper ABI and session ownership;
+- complete VBA base library and portable host behavior;
+- complete VM3 for verified platform-neutral OxIR;
+- ideal platform-neutral JIT architecture and semantics;
+- persistent backend-neutral sessions and JIT cache;
+- differential, safety and Excel/VBA core conformance;
+- architecture/spec/matrix truth.
 
-### 2.2 Explicitly out of scope
+### Owned elsewhere
 
-These are owned by [`WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md`](WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md):
+The Windows workset owns native COM, Windows Declare execution, pointers/callbacks, Windows JIT interop, Windows-specific VM3 parity and native outputs. The language-service workset owns semantic snapshots, indexing, query APIs and LSP over compiler facts.
 
-- real COM activation, `IUnknown`/`IDispatch` or native vtable calls in JIT code;
-- COM connection points and native event sinks;
-- VBA classes served as COM servers through the JIT;
-- Windows `Declare` execution and pointer/callback lowering in the JIT;
-- native DLL/EXE export and AOT PE packaging.
+This workset owns production of the compiler AnalysisResult facts consumed by the language service.
 
-These are owned by [`WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md`](WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md):
+## 3. Architectural transformation
 
-- editor workspace/session APIs;
-- semantic snapshot indexing/query APIs and editor caches;
-- LSP transport and editor integration.
+| current state | required state | clauses |
+|---|---|---|
+| preprocessing/parser can panic or fail open | decoded, provenance-aware, fail-closed source pipeline | `SRC-ID-001`, `SRC-CC-001`, `SYN-CST-001` |
+| compiler emits CoreProgram but not a complete fact result | one strict/tolerant AnalysisResult with use-site/type/diagnostic facts | `COMP-ANALYSIS-001`, `COMP-DIAG-001` |
+| provider routes erase types/public data | one exact typed signature/public-surface model | `PROJ-REF-001`, `COMP-BIND-001` |
+| raw OxProgram/OxImage reaches consumers | sealed VerifiedOxProgram/VerifiedOxImage boundary | `IMAGE-VERIFY-001` |
+| `.oxi` has weak identity/ABI/provenance | versioned digest/target/helper/carrier/source contract | `IMAGE-ABI-001` |
+| runtime semantics/metadata ownership is duplicated/leaked | shared semantic/helper/descriptor ownership with bounded sessions | `RUNTIME-*`, `HOST-SESSION-001` |
+| broad library catalog without member proof | complete typed member-by-member VBA library | `LIB-VBA-001` |
+| VM3 has accepted-operation and lifecycle gaps | complete reference interpreter for verified OxIR | `VM3-*` |
+| JIT directly lowers through one dynamic ABI | verified lowering plan, typed primary calls, universal thunk | `JIT-CORE-001` |
+| unversioned helpers, no JIT sessions/cache | versioned helper catalog, persistent sessions and bounded cache | `RUNTIME-ABI-001`, `JIT-CACHE-001` |
+| status/tag differential evidence | full structural observable and current Excel oracle | `CONF-DIFF-001`, `CONF-ORACLE-001` |
 
-This workset owns compiler analysis production: correctness, declaration/use-site bindings, expression/member/call facts, typed signatures, original/virtual source provenance and source-located diagnostics. It must expose an `AnalysisResult`-style fact sink that can retain diagnostics and partial/unknown facts when no valid CoreProgram can be emitted. The language-service workset consumes those facts into immutable snapshots, indices and queries. The two worksets may not create parallel binders.
-
-Also outside this basics workset are the forms runtime/designer, debugger/debug protocol, broader product security model, Office object-model implementation, polished IDE UX, and macOS/browser/WASM/Tauri certification. Their status is not changed or implied by this workset.
-
-### 2.3 Target boundary
-
-The target is VBA 7 language, runtime and base-library behavior as specified publicly and observed reproducibly in Excel/VBA. The certification targets for this workset are:
-
-- Linux x64 VM3 and JIT execution for platform-neutral behavior;
-- Windows x64 VM3 and JIT execution for the same core behavior;
-- Windows x86 and x64 compile-time/VBA conditional semantics, with VM3 runtime coverage where pointer width affects the core;
-- 32-bit and 64-bit Excel/VBA compile/runtime oracle evidence for width-sensitive core rows.
-
-Windows x86 JIT session/codegen certification is a prerequisite owned by the Windows workset. macOS and browser/WASM are explicit unassessed targets, not an implied green row. Any narrower certification target requires a user-approved workset amendment and an explicit successor owner; it may not be hidden as an unsupported test skip.
-
-## 3. Binding invariants
+## 4. Binding invariants
 
 1. Real VBA behavior is the compatibility target.
-2. VM3 remains the reference interpreter; the JIT is proven against it and Excel/VBA, not against historical OxVba behavior.
-3. Both backends consume the same verified `OxImage` and accepted OxIR vocabulary.
-4. No product JIT path silently falls back to VM3.
-5. Every accepted `OxInst` either executes in both backends or is rejected by the package verifier for the declared target.
-6. External images use bounded decoding with declared length/resource limits before large allocation, then sealed semantic verification before linking, code generation or execution.
-7. Panics, malformed artifacts and unsupported targets return stable diagnostics; they do not abort or silently mis-execute.
-8. Source locations remain traceable through preprocessing, project normalization, binding, elaboration and runtime errors.
-9. Old oracle captures remain target expectations until the current clean stack replays them.
-10. Support-only beads do not close capability epics.
-
-## 4. Current entry evidence
-
-The 2026-07-10 review established:
-
-- 843 focused syntax/symbol/bind/project tests pass;
-- 348 bundle/eval/OxIR/rt-abi/runtime/VM3 tests pass;
-- 164 JIT crate tests pass;
-- a single-thread differential run passes 1,138 tests and fails two deterministic gates;
-- the full workspace run is red;
-- Clippy is red;
-- the captured 56-case oracle replay is green but narrow;
-- live Excel/COM/native-JIT validation was not run;
-- architecture and validation truth are materially stale.
-
-The workset begins from `in-progress`, not from an assumed complete baseline.
+2. One compiler analysis pipeline serves strict compilation and editor consumers.
+3. Core IR owns resolved language meaning; OxIR owns executable meaning; backend lowering owns only physical/codegen decisions.
+4. Every product backend consumes sealed verified artifacts.
+5. Every verified operation has explicit VM3 and JIT dispositions.
+6. VM3 is the permanent reference interpreter, validated against VBA rather than self-authorizing.
+7. The JIT never silently falls back to VM3.
+8. Exact runtime carriers and source provenance survive the full pipeline.
+9. Host denial, unavailable capability and missing implementation remain distinct outcomes.
+10. Support/docs/audit beads do not close capability epics.
 
 ## 5. Canonical truth artifacts
 
-The rollout must create or designate:
+Rollout creates or designates:
 
 1. `docs/validation/CORE_COMPILER_VM_JIT_READINESS_MATRIX_V1.csv`
-   - independently closable rows split whenever backend, target, evidence authority or residual status differs;
-   - compiler, VM3, JIT, Windows/Excel oracle, formal/safety and test anchors;
-   - explicit subset and residual ownership.
 2. `docs/validation/VBA_BASE_LIBRARY_PARITY_MATRIX_V1.csv`
-   - one independently closable row per public member/overload and host profile;
-   - exact signature/return, compiler, VM3, JIT, side-effect/Err and Excel/spec evidence.
 3. `docs/validation/OXIR_BACKEND_SUPPORT_MATRIX_V1.csv`
-   - every instruction and terminator;
-   - verifier, elaborator, VM3, JIT, fault/lifecycle and test status.
 4. `docs/validation/OXIMAGE_PACKAGE_CONTRACT_MATRIX_V1.csv`
-   - format/header, verification, ABI/layout, capabilities, provenance, source map, linker and malformed-input rows.
 5. `docs/validation/CURRENT_STACK_EXCEL_ORACLE_MATRIX_V1.csv`
-   - compile and runtime rows tied to clean-stack source fixtures and captured results.
-6. a generated summary derived from those matrices; no competing hand-maintained completion summary.
+6. a generated profile summary derived from those matrices.
 
-Existing matrices should be migrated, superseded or archived rather than silently abandoned.
-
-Matrix and bead granularity is binding: split rows whenever target, backend, observable, evidence authority or residual owner differs. Broad candidates such as grammar completion, call legality, full verification, corpus coverage and oracle sweeps are epic seeds; rollout must split them into reviewable fixture/type/metadata/member tranches. Every prepared bead must state type, direct dependencies, matrix row IDs, touched truth surfaces, exact commands and residual behavior.
+Rows split whenever semantic subset, target, backend, evidence authority or residual owner differs. Broad “language,” “library,” “array” or “call” rows cannot hide partial subsets.
 
 ## 6. Execution epics
 
-### CORE-0 — Initiation, truth reset and bead rollout
+### CORE-0 — Authority, target ledger and rollout
 
 Type: support
+Clauses: `DOC-*`, `CONF-MATRIX-001`
 
-Why separate: every later closure claim depends on a trustworthy matrix and removal of deleted architecture from active status.
+Deliver:
 
-Required outcomes:
+- create workset/epic/rollout bead tree;
+- seed all five matrices from the review and current tests;
+- map every row to system/subsystem contract clauses;
+- classify old worksets/ladders/blockers as imported residual, historical or superseded;
+- define the exact Linux/Windows/x86/Excel environment ledger;
+- establish a generated architecture/profile summary.
 
-- create the workset root and one child epic per `CORE-*` lane;
-- create a rollout bead under each epic and a believable first delivery path;
-- inventory active/deleted/stale specs, worksets, blockers, matrices and test paths;
-- publish all canonical matrix skeletons, including the member-level library and current-stack oracle matrices;
-- identify every open `bd-aprs`/legacy-ladder item that must be rehomed, superseded or retained;
-- update `docs/ARCHITECTURE.md` to the current pipeline before implementation closure language is used.
+First beads: rollout graph; matrix skeletons; residual migration; environment manifest.
 
-First bead candidates:
+Close: every required clause has a matrix owner and a delivery-ready path.
 
-| candidate | type | outcome | close evidence |
-|---|---|---|---|
-| CORE-0.1 | support | roll out all workset epics and delivery beads | bead tree, dependencies and next ready delivery beads exist |
-| CORE-0.2 | support | replace active architecture with CoreProgram -> OxIR/OxImage -> VM3/JIT truth | architecture review plus governance check |
-| CORE-0.3 | support | reconcile obsolete front-end/JIT/VM/language matrix paths | explicit supersede/archive/rehoming map |
-| CORE-0.4 | support | seed canonical readiness/package/backend/oracle matrices | every review finding and current residual has an owner |
+### CORE-1 — Deterministic repository and evidence baseline
 
-Close condition: truth surfaces agree on current architecture and every required capability lane has an open delivery path.
+Type: delivery/support
+Clauses: `CONF-QUALITY-001`, `CONF-DONE-001`
 
-### CORE-1 — Restore deterministic repository gates
+Deliver:
 
-Type: delivery/support mix
+- cross-platform line-ending policy and stable snapshots;
+- fixture-addressable, process-isolated carrier/resource counters;
+- fix the policy-error BSTR imbalance;
+- repair stale host/JIT diagnostic expectations;
+- restore strict Clippy and ordinary workspace tests;
+- keep governance/meta checks green under the new authority model;
+- add one versioned cross-platform gate runner with exact commands, environments, timeouts and evidence paths.
 
-Why separate: semantic work cannot close against a red or platform-sensitive baseline.
+First beads: EOL/snapshot gate; balance isolation; policy-error leak; host expectations; Clippy; canonical runner.
 
-Required outcomes:
+Close: Linux and Windows default-parallel/single-thread baselines agree and all ordinary gates are green.
 
-- fix `jit_scope.snap` and related snapshots so line endings are platform-independent;
-- add a repository EOL policy;
-- make handle-balance tests isolated and fixture-addressable;
-- minimize and resolve the policy-error BSTR imbalance, distinguishing real leak from measurement lifetime;
-- remove parallel interference from process-global carrier counters;
-- update stale host tests to assert stable diagnostic codes rather than obsolete message text;
-- repair the stale `New Collection` unsupported test;
-- make Windows native-import tests pass while the JIT still honestly returns a stable unsupported diagnostic;
-- fix all Clippy failures and the dead-code warning;
-- repair the machine-readable AutoRun terminal-gate drift so governance and meta checks execute beyond gate sync;
-- add one canonical cross-platform gate runner with exact commands, filters, environment, timeout and evidence-output paths for default-parallel and single-thread execution;
-- require ordinary `cargo test --workspace` and strict Clippy to pass on Linux and Windows.
-
-First bead candidates:
-
-| candidate | type | outcome | close evidence |
-|---|---|---|---|
-| CORE-1.1 | delivery | cross-platform snapshot normalization and `.gitattributes` policy | Windows and Linux snapshot gates byte/line equivalent |
-| CORE-1.2 | delivery | carrier-balance harness isolation with fixture identity | parallel and serial differential runs agree |
-| CORE-1.3 | delivery | policy-error BSTR imbalance minimized and fixed | minimized regression plus zero balance |
-| CORE-1.4 | delivery | stale host/JIT unsupported assertions reconciled | host unit/native lanes green without weakening decline checks |
-| CORE-1.5 | delivery | strict Clippy and unsafe-contract ratchet restored | workspace all-target Clippy green |
-| CORE-1.6 | delivery | canonical core gate runner and CI entry | the same checked-in command surface runs on Linux and Windows and records artifacts |
-
-Close condition: format, strict Clippy, ordinary workspace tests and serial/parallel differential baseline are green on Linux and Windows.
-
-### CORE-2 — Source, lexer, parser and preprocessor hardening
+### CORE-2 — Source, preprocessing and syntax realization
 
 Type: delivery
+Clauses: `SRC-*`, `SYN-CST-001`, `DEBUG-MAP-001`
 
-Required outcomes:
+Deliver:
 
-- make all byte traversal UTF-8 safe and panic-free;
-- define supported VBA source encodings, code-page behavior and Unicode identifier policy;
-- support or deterministically diagnose exported Office module encodings;
-- require total expression parsing when used as a compile-time expression;
-- fail closed on malformed `#If`, `#ElseIf`, `#Else`, `#End If` and `#Const`;
-- preserve original source offsets through conditional blanking;
-- correct case-insensitive file extension and Attribute parsing;
-- verify class preamble, startup shim and top-level-mainline source mapping;
-- anchor every accepted grammar row to a fixture and route proof;
-- add parser/lexer fuzz and malformed-input no-panic gates.
+- explicit source encoding/code-page contract at the file boundary;
+- UTF-8-safe lexer and no-panic valid-text behavior;
+- total expression parsing where required;
+- fail-closed conditional directives and expressions;
+- case-insensitive project extension/attribute handling;
+- original/virtual provenance through class preambles, startup/mainline generation and normalization;
+- complete grammar fixture/route matrix;
+- decoding, lexer, parser and edit fuzz/property lanes.
 
-First bead candidates:
+First beads: decoding/encoding; lexer Unicode; total expression API; conditional negative matrix; source provenance; grammar fixture tranches.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-2.1 | UTF-8-safe lexer and invalid-text diagnostic | arbitrary valid UTF-8 lexer properties; arbitrary-byte/code-page cases at the file-decoding boundary |
-| CORE-2.2 | total expression API | trailing-token cases reject with source spans |
-| CORE-2.3 | fail-closed conditional compilation | negative directive matrix matches Excel compile behavior |
-| CORE-2.4 | source encoding and exported-module loader contract | Windows code-page fixtures plus documented supported set |
-| CORE-2.5 | project normalization source-map preservation | diagnostics point to original files/lines after every rewrite |
-| CORE-2.6 | grammar matrix fixture completion | no accepted row lacks a current clean-route test |
+Close: supported source never panics, malformed compile-time syntax cannot select code, and every diagnostic has original or virtual provenance.
 
-Close condition: accepted source forms never panic, malformed compile-time syntax cannot select code silently, and every compiler diagnostic maps to original source where applicable or carries explicit virtual/generated-source provenance.
-
-### CORE-3 — Typed binder, calls, diagnostics and project references
+### CORE-3 — Compiler AnalysisResult, types, calls and references
 
 Type: delivery
+Clauses: `PROJ-REF-001`, `COMP-*`, `IR-CORE-001`, `LS-FACT-001`
 
-Required outcomes:
+Deliver:
 
-- preserve declared return types through referenced-project, VBA-library, host, intrinsic and Declare bindings;
-- define a single typed callable signature contract used by compiler, package and language-service facts;
-- complete ByVal/ByRef, array, UDT, object/interface, Optional and ParamArray legality/coercion matrices;
-- validate Declare arity/type/call-site legality at the VBA compile-time boundary;
-- implement cross-project public module-variable and class-field access;
-- reject duplicate/ambiguous references deterministically;
-- make all syntax, symbol and bind diagnostics carry module/file/span and stable code;
-- publish compiler-owned declaration/use-site, expression/member/call, argument-mapping, accessor/default-member and provenance facts through one analysis result;
-- separate tolerant analysis from strict compilation: malformed/incomplete input may produce facts and diagnostics, but only an error-free result may expose a CoreProgram to code generation;
-- replace arbitrary default-member depth limits with cycle-aware behavior or oracle-backed limits;
-- implement `DefDec`; define `Option Compare Database` through an explicit host-supplied collation contract plus Access/VBA oracle evidence, or leave it open through an approved target amendment;
-- cover Option Private, broken references, diamonds, qualification, visibility and public-type leakage.
+- versioned AnalysisResult with declarations/use sites/types/calls/arguments/accessors/provenance/diagnostics and optional CoreProgram;
+- strict/editor fact identity and poison/unknown isolation;
+- one callable-signature model across project/library/host/COM/Declare providers;
+- declared return/parameter/array/UDT/object/interface type preservation;
+- complete ByVal/ByRef/Optional/named/omitted/ParamArray legality/coercion;
+- cross-project public data and equivalent source/OxImage export surfaces;
+- deterministic ambiguity/visibility/Option Private/diamond behavior;
+- source-located stable diagnostics;
+- cycle-aware default-member behavior;
+- DefDec and a host-collation contract for Option Compare Database.
 
-First bead candidates:
+First beads: AnalysisResult types/fact sink; use-site facts; strict/tolerant parity; typed provider signatures; argument matrix split by scalar/array/UDT/object; public data exports; diagnostic spans; default-member cycles; DefDec/database collation.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-3.1 | typed callable/return contract reaches Core IR | typed cross-project/library overflow and coercion differentials |
-| CORE-3.2 | full ordinary argument compatibility matrix | compiler/runtime timing matches current Excel oracle |
-| CORE-3.3 | Declare compile-time legality matrix | VM/JIT-independent compiler cases match VBA |
-| CORE-3.4 | cross-project public data import/export | source and serialized referenced-project tests |
-| CORE-3.5 | source-located compiler diagnostics | message/code/span snapshots and editor-ready DTOs |
-| CORE-3.6 | default-member cycle semantics | recursive graph terminates with VBA-compatible result/error |
-| CORE-3.7 | residual declaration/options completion | `DefDec` plus host-collation-backed `Option Compare Database` delivered and Access/VBA-proven, or an approved open target split |
-| CORE-3.8 | compiler analysis/fact sink | valid strict/editor facts are identical; malformed analysis cannot reach codegen |
+Close: every compiler matrix row is decided once, typed, source-provenanced and consumable by Core IR/language services.
 
-Close condition: the canonical language matrix has no accepted compiler row dependent on static-type erasure, missing project data or locationless diagnostics.
-
-### CORE-LIB — VBA base library and portable-host parity
+### CORE-LIB — Complete VBA library and portable host profile
 
 Type: delivery
+Clauses: `LIB-VBA-001`, `HOST-HAL-001`, `RUNTIME-EVAL-001`
 
-Why separate: library completeness cannot be inferred from language corpora or from a count of intrinsic tests. Every public member and overload needs an independently closable compile-time and runtime row.
+Deliver:
 
-Required outcomes:
+- authoritative typed inventory of every public VBA library member/overload;
+- exact Optional/named/ParamArray/ByRef compiler signatures;
+- shared pure semantics and VM3/JIT routes;
+- deterministic locale/calendar/code-page/time/random profiles;
+- complete file/settings/environment/interaction host families;
+- allowed/denied/error side-effect and Err matrices;
+- CCT-033 stateful file I/O completion;
+- current Excel/VBA or authoritative spec evidence per observable family.
 
-- inventory the declared VBA base-library modules, classes, constants, enums, members, overloads, defaults and aliases against public specifications and the selected Office/VBA oracle;
-- preserve exact typed signatures and return types through providers, binding, Core IR and both backends;
-- cover positional, named, omitted, Optional, ParamArray and ByRef behavior for every applicable member;
-- assign each member to shared evaluation, runtime, HAL/host policy, file/settings/environment, date/locale, interaction or explicitly Windows-owned implementation;
-- prove value, Err, side effect, state/lifecycle and host-call ordering under VM3 and JIT;
-- define locale, calendar, code-page, filesystem, environment, time, randomness and interaction test profiles;
-- complete the known open CCT-033 stateful file-I/O rows, including richer `Input #`, modes, encodings and error paths;
-- reject or route host-denied operations with VBA-compatible errors rather than backend-specific convenience behavior;
-- capture current Excel/VBA evidence for observable member families and public-spec evidence for non-oracleable host contracts;
-- derive the library status report from the canonical matrix rather than a hand-maintained “broad subset” claim.
+First beads: inventory/signatures; pure scalar/string/math; date/locale/random; collection/object/array; file I/O; settings/environment/UI; terminal library sweep.
 
-First bead candidates:
+Close: every public member/overload has typed compiler, VM3/JIT, host-policy and oracle/spec evidence.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-LIB.1 | authoritative member/signature inventory | every public member has independent compiler/VM3/JIT/oracle/host-policy rows |
-| CORE-LIB.2 | pure scalar/string/conversion/math families | typed call and structural differential tranches |
-| CORE-LIB.3 | date/time/locale/calendar/random families | deterministic profiles plus non-default-locale Excel evidence |
-| CORE-LIB.4 | collection/object/array and stateful families | state, identity, side-effect and cleanup evidence |
-| CORE-LIB.5 | file/settings/environment/interaction host families | allowed/denied/error matrices, including CCT-033 |
-| CORE-LIB.6 | library terminal sweep | no missing, inferred-only or VM3/JIT-subset member row |
-
-Each candidate above is an epic seed. Rollout must split it by coherent member family and observable; it is not one oversized delivery bead.
-
-Close condition: every in-scope VBA base-library member has exact typed compiler facts and green VM3/JIT/Excel or public-spec-backed behavior for the declared host profile.
-
-### CORE-4 — Verified OxImage and full OxIR contract
+### CORE-4 — Verified OxIR and OxImage realization
 
 Type: delivery
+Clauses: `IR-*`, `IMAGE-*`, `SYS-ART-001`, `DEBUG-MAP-001`
 
-Required outcomes:
+Deliver:
 
-- introduce opaque `VerifiedOxProgram` handles contained by `VerifiedOxImage`, or an equivalent sealed verified-state type hierarchy;
-- verify every program at deserialize, build, link, host-session and JIT entry;
-- prevent production VM3/JIT APIs from accepting raw `OxProgram`; keep any unchecked constructor test-only and visibly named;
-- bound lengths, nesting and allocation during decode before semantic verification;
-- honor the declared image entry rather than positional convention;
-- validate program entry/global initializer, CFG/block IDs, operands/results, types, ranks, arity/signatures, fault edges, records, classes, externals, events, imports and exports;
-- reject duplicate case-folded unit/export identities;
-- verify target/profile/capability compatibility before execution;
-- add content digest, helper ABI version, carrier/layout version, source maps and build/reference provenance;
-- make malformed/hostile images panic-free and resource-bounded;
-- define compatibility/migration behavior for older image versions;
-- separate synthetic VBA-library Bundle metadata from the product executable artifact in code/docs.
+- sealed VerifiedOxProgram/VerifiedOxImage product types;
+- bounded decoder and full program/image verifier;
+- explicit entry handling and unique link tables;
+- complete types/ranks/arity/effect/descriptor/import/export verification;
+- digest, schema, target/profile/capability, helper/carrier ABI and provenance;
+- source/debug maps and compatible version migration/rejection;
+- hostile artifact mutation/fuzz/resource gates;
+- removal of legacy Bundle/.oxb product terminology and migration of needed VBA-library metadata.
 
-First bead candidates:
+First beads: schema/compat decision; bounded decoder; verified handles/API closure; ID/CFG/type verifier tranches; descriptor/link verifier tranches; entry/link tables; ABI/provenance maps; hostile artifact fuzz; Bundle metadata migration.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-4.1 | package v3 contract and migration decision | reviewed spec and matrix rows |
-| CORE-4.2 | sealed verified program/image loader | raw programs/images cannot reach production VM3/JIT/host APIs |
-| CORE-4.3 | full instruction/type/metadata verification | mutation tests for every verifier family |
-| CORE-4.4 | declared entry and unique linker tables | non-last entry executes correctly; duplicates diagnose |
-| CORE-4.5 | ABI/layout/capability/source/provenance metadata | round-trip and incompatible-version tests |
-| CORE-4.6 | hostile artifact fuzzing | no panic, UAF or unbounded allocation on fuzz corpus |
+Close: no product path links, executes or compiles raw/unverified artifacts and every package clause has evidence.
 
-Close condition: no public path executes or compiles an unverified image, and the package matrix is complete for the accepted target.
-
-### CORE-5 — Runtime, VM3 ownership and ABI hardening
+### CORE-5 — Runtime, helper ABI and session ownership
 
 Type: delivery
+Clauses: `RUNTIME-*`, `HOST-SESSION-001`, `SEC-BOUNDARY-001`
 
-Required outcomes:
+Deliver:
 
-- make VM3 implement or verifier-reject every accepted OxIR instruction, including `AddRef`, `Release` and `DrainTerminations`;
-- generate backend-support exhaustiveness from the OxIR enum;
-- unify VM3/JIT runtime-class/interface descriptor projection;
-- replace process-lifetime `Box::leak` and leaked host/image ownership with session-owned arenas/Arc graphs;
-- make raw-pointer rt-abi functions explicitly unsafe with documented contracts or private behind safe typed wrappers;
-- use RAII for drain/reentrancy/bridge state;
-- seat deterministic internal faults when helper code panics;
-- complete shared semantic ownership for error, lifecycle, array, object and call operations where duplication risks drift;
-- stress repeated compile/load/activate/invoke/reset/drop;
-- validate Collection-selector and string-coercion risk cases against Excel.
+- shared class/interface/record descriptor arenas;
+- eliminate per-session Box::leak and leaked image/host ownership;
+- explicit unsafe rt-abi contracts behind typed wrappers;
+- versioned helper descriptor catalog;
+- RAII drain/reentrancy/panic/fault state;
+- deterministic internal fault seating;
+- shared semantic ownership for error, lifecycle, array, object and call operations;
+- backend-neutral verified project-session API;
+- repeated compile/load/initialize/invoke/reset/drop stability.
 
-First bead candidates:
+First beads: descriptor arena; session-owned metadata; unsafe API audit; helper catalog; RAII/panic injection; semantic-kernel extraction tranches; shared session facade; lifecycle stress.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-5.1 | generated OxIR backend/verifier support table | build fails when a new instruction lacks an explicit disposition |
-| CORE-5.2 | VM3 lifecycle instruction parity | direct OxIR and source-lowered tests |
-| CORE-5.3 | shared class/interface descriptor arena | VM3/JIT use one implementation |
-| CORE-5.4 | bounded session ownership | repeated-session memory/handle stress is flat |
-| CORE-5.5 | sound rt-abi boundary | safety docs, Miri-capable tests and Clippy green |
-| CORE-5.6 | panic/fault RAII hardening | injected panics leave stable Err and reusable session state |
-| CORE-5.7 | oracle-sensitive evaluation edges | Collection/Err/string cases match Excel |
+Close: runtime/helper/session ownership is sound, versioned and bounded with zero balance drift.
 
-Close condition: VM3 is complete for verified OxIR, runtime metadata is not leaked per session, and the ABI/safety gates are green.
-
-### CORE-6 — Complete platform-neutral JIT semantics
+### CORE-6 — VM3 complete reference realization
 
 Type: delivery
+Clauses: `VM3-*`, `SYS-DUAL-001`
 
-Required outcomes:
+Deliver:
 
-- require verified images at JIT compilation;
-- implement line-number tracking and exact `Erl` behavior;
-- implement writable Err fields and complete `Err.Raise`/`Error` source, description, help file/context and dynamic-number semantics;
-- implement safe deep recursion/error 28 without relying on native-stack survival;
-- generalize internal call/return coercion and ByRef copy-in/out from allowlists to the typed signature matrix;
-- make every accepted platform-neutral OxIR operation compile or return a target-level rejection before partial codegen;
-- version and validate the helper ABI;
-- decide and document direct OxIR-to-CLIF versus a real lowering IR;
-- split the monolithic JIT into reviewable lowering, compiler, ABI/runtime-helper, session/cache and test modules;
-- define supported host/architecture/layout policy explicitly;
-- remove milestone-number text from durable product diagnostics.
+- explicit VM3 disposition for every verified instruction/terminator;
+- implement lifecycle operations or reject them at verifier admission;
+- honor image/program entry and initializer/link rules;
+- complete error/Erl/source-map behavior;
+- preserve heap-frame safe recursion/error 28;
+- complete session state, lifecycle and portable host rows;
+- resolve Collection selector/string-coercion oracle risks;
+- replace VM3-minted-only evidence with VBA-backed current rows.
 
-First bead candidates:
+First beads: generated backend support table; lifecycle ops; entry/link behavior; error/source map; recursion; sessions; oracle-risk cases; golden migration.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-6.1 | verified-input JIT boundary | malformed image tests return stable diagnostics |
-| CORE-6.2 | line/Erl/Err field semantics | VM3/JIT/Excel error matrix green |
-| CORE-6.3 | complete dynamic `Err.Raise` metadata | nested handler and propagation corpus |
-| CORE-6.4 | non-native-stack recursion model | deep recursive source reaches VBA error 28 safely |
-| CORE-6.5 | typed call/coercion generalization | canonical signature matrix has no allowlist-only row |
-| CORE-6.6 | helper ABI version and panic diagnostics | incompatible helper version rejects deterministically |
-| CORE-6.7 | JIT architecture decision and module split | spec, code boundaries and dependency checks agree |
-| CORE-6.8 | explicit target/layout policy | Linux/Windows x64 gates and unsupported-target tests |
+Close: VM3 executes the complete verified core vocabulary and is VBA-validated reference evidence.
 
-Close condition: all accepted platform-neutral language/runtime/library rows execute under the JIT with VM3/Excel parity and no milestone-specific exception list.
-
-### CORE-7 — JIT sessions, cache and standalone package use
+### CORE-7 — Ideal JIT lowering, calls and semantics
 
 Type: delivery
+Clauses: `JIT-CORE-001`, `JIT-PARITY-001`, `RUNTIME-ABI-001`
 
-Required outcomes:
+Deliver:
 
-- add persistent JIT-backed project/package sessions;
-- load and compile a verified `.oxi` without recompiling source;
-- retain globals, objects, class singletons, events and Err state according to session rules;
-- support invoke/reset/reload/drop through the same host-facing session contract as VM3;
-- define cache keys over image digest, target ISA, helper ABI, carrier/layout version, host policy/profile and relevant compile settings;
-- make compiled code/session ownership thread/apartment safe for its declared target;
-- provide cache invalidation, bounded eviction and diagnostics;
-- measure cold load+compile+first call and warm repeated calls.
+- sealed verified input/admission;
+- inspectable procedure lowering plan for physical storage/calls/faults/cleanup/helpers;
+- typed primary entry family and direct typed static calls;
+- universal Variant invocation thunk for dynamic boundaries;
+- generalized ByRef/copyback and return coercion;
+- complete error/Erl/Err.Raise behavior;
+- native-stack-safe source recursion;
+- versioned generated helper registration;
+- explicit target/layout policy;
+- modularize admission/planning/codegen/helpers/sessions/interop/maps/tests.
 
-First bead candidates:
+First beads: verified admission; lowering-plan contract/prototype; typed scalar entry; typed ByRef/object/array entries; universal thunk; direct calls; error/Erl; recursion; helper generation; target policy; module extraction.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-7.1 | JIT `ProjectRuntimeSession` contract | repeated invokes preserve and reset state correctly |
-| CORE-7.2 | verified `.oxi` JIT load path | source-free package integration tests |
-| CORE-7.3 | deterministic cache key/invalidation | mutation and incompatible-ABI tests |
-| CORE-7.4 | bounded compiled-image cache | eviction and repeated-workspace stress |
-| CORE-7.5 | product performance evidence | cold/warm VM3/JIT benchmark report |
+Close: every platform-neutral verified core row compiles through the ideal calling/helper architecture with VM3/VBA parity.
 
-Close condition: embedded and standalone package consumers can select either backend with equivalent session semantics.
-
-### CORE-8 — Differential, conformance and safety evidence
+### CORE-8 — JIT sessions, cache and native continuity
 
 Type: delivery
+Clauses: `JIT-CACHE-001`, `JIT-AOT-001`, `HOST-SESSION-001`
 
-Required outcomes:
+Deliver:
 
-- replace status-only scope evidence with VM3/JIT semantic comparison;
-- compare structural arrays, records, objects, ProcRefs and object identity rather than tags alone;
-- capture the promised observables: results, full Err, side-effect journal, lifecycle ordering, carrier balance and host transport facts where applicable;
-- ensure every canonical corpus row is executed or has an explicit matrix-owned unsupported target;
-- generate scope/coverage summaries from test manifests;
-- make handle counters scoped or serialize every allocation-capable test process;
-- add property/fuzz generation for scalar, Variant, calls, control, arrays, records and error edges;
-- run ASAN and appropriate Miri/Kani lanes;
-- turn every divergence into a minimized permanent fixture;
-- establish release-size and performance regressions without weakening correctness.
+- JIT-backed ProjectRuntimeSession equivalent;
+- verified source-free `.oxi` load/compile/session path;
+- persistent globals, objects, events and Err state;
+- deterministic cache key over image/target/ABI/profile/settings;
+- bounded code/metadata ownership, invalidation and eviction;
+- thread/apartment declaration for portable sessions;
+- object/blob/source-map continuity for the Windows native-output workset;
+- cold and warm product performance evidence.
 
-First bead candidates:
+First beads: JIT session facade; `.oxi` load; state/reset parity; cache key; bounded cache; concurrency/lifetime; object/blob handoff; performance report.
 
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-8.1 | versioned full observable | VM3/JIT runner emits all required axes |
-| CORE-8.2 | structural carrier comparison | nested array/record/object differentials catch payload drift |
-| CORE-8.3 | complete corpus manifest | every accepted matrix row maps to a fixture and both backends |
-| CORE-8.4 | scoped balance/safety harness | parallel reproducibility plus ASAN/Miri evidence |
-| CORE-8.5 | property/fuzz tranche | shrinking and permanent regression workflow |
-| CORE-8.6 | derived support/performance report | no hand-maintained competing status |
+Close: hosts select VM3 or JIT through equivalent persistent verified sessions and reusable code.
 
-Close condition: no accepted core row is represented only by “compiled/raised,” tag equality or VM3-minted evidence.
-
-### CORE-9 — Windows and Excel/VBA core oracle certification
+### CORE-9 — Structural parity, safety and Excel/VBA certification
 
 Type: delivery/conformance
+Clauses: `CONF-*`, `SEC-BOUNDARY-001`
 
-Boundary: no real COM/native-JIT implementation; those rows route to the Windows workset.
+Deliver:
 
-Required outcomes:
+- versioned full differential observable;
+- structural arrays/records/objects/ProcRefs and identity comparison;
+- full Err, side-effect, lifecycle/event and balance axes;
+- complete fixture manifest tied to contract/matrix rows;
+- property/fuzz, sanitizer, Miri-appropriate and repeated-session lanes;
+- current-stack Excel compile/runtime oracle for every VBA-observable core/library row;
+- 32/64-bit, non-default locale and source-encoding rows;
+- captured environment/source/result/modal/cleanup evidence.
 
-- replay current clean compiler, VM3 and JIT against real Excel/VBA for all accepted core rows;
-- capture compile-time diagnostics, selected token/line and runtime value/error behavior;
-- cover malformed conditional compilation, declaration legality, argument typing, shadowing, default members, source encodings, line numbers, error/Erl, arrays/records/classes, project references and base-library edges;
-- test both 32-bit and 64-bit VBA conditional targets where behavior differs;
-- validate locale-sensitive date/string/number behavior under an explicit locale matrix;
-- preserve captured source, environment, Excel build/bitness, result and cleanup evidence;
-- fold every divergence into the canonical matrix and an owning delivery bead.
+First beads: observable schema; structural carriers; side-effect/lifecycle axes; manifest generation; property/fuzz tranches; safety lanes; oracle harness; compiler diagnostics; runtime/library; locale/bitness/source encoding.
 
-Oracle execution must follow the repository’s Excel/VBA modal protocol:
+Close: no required row relies on tag/status equality, historical capture alone or VM3-minted truth.
 
-- VBE visible for compile checks;
-- Debug -> Compile VBAProject;
-- UI Automation scoped to the owned Excel/VBE process;
-- capture dialog text, selected token and full selected line;
-- PID-scoped dialog dismissal and cleanup;
-- never treat `Application.Run` as a compile check.
-
-First bead candidates:
-
-| candidate | outcome | close evidence |
-|---|---|---|
-| CORE-9.1 | current-stack oracle harness/environment manifest | reproducible owned Excel run with modal interception |
-| CORE-9.2 | compiler diagnostic matrix | code/message/token/line parity |
-| CORE-9.3 | runtime/error/core-library matrix | VM3/JIT/Excel observable parity |
-| CORE-9.4 | project/reference/source-encoding matrix | real exported modules and multi-project fixtures |
-| CORE-9.5 | locale and 32/64-bit matrix | explicit environment coverage and residuals |
-
-Close condition: every VBA-observable semantic/library matrix row has current clean-stack Excel evidence or authoritative public-spec evidence. Package, IR, cache, safety and hostile-artifact rows close against their own specified engineering authorities, not a fictitious Excel observation.
-
-### CORE-10 — Terminal truth, documentation and release gate
+### CORE-10 — Terminal architecture and profile release
 
 Type: support/conformance
+Clauses: `CONF-DONE-001`, `DOC-*`
 
-Required outcomes:
+Deliver:
 
-- update architecture, package, frontend, VM3, JIT, testing, conformance and building docs;
-- archive/supersede stale reports and worksets;
-- reconcile blockers, implementation log, canonical matrices and bead state;
-- publish a derived readiness report;
-- run full Linux and Windows gates, current Excel oracle, safety and performance lanes;
-- perform fresh-eyes code, docs and runnable-path review;
-- file every discovered required residual as a delivery bead before any parent closes.
+- reconcile system/subsystem contracts, architecture, code comments, matrices and workset/bead truth;
+- remove or deprecate every residual competing architecture statement;
+- generate the core profile report from matrices;
+- run Linux/Windows/Excel/safety/performance gates;
+- perform final code/docs/runnable-path fresh-eyes review;
+- leave every uncovered required residual as an open delivery bead before parent closure.
 
-Close condition: all required child delivery beads are closed, matrices show the same truth as tests/docs, and the workset terminal gate is demonstrably green.
+Close: all delivery epics are closed and the `PROFILE-CORE-001` claim is demonstrably true.
 
 ## 7. Dependency graph
 
-| epic | hard prerequisites | closure dependencies/notes |
+| epic | hard prerequisites | closure dependencies |
 |---|---|---|
-| CORE-0 | none | establishes truth, target ledger, matrices and bead graph |
-| CORE-1 | CORE-0 | establishes the green/canonical runner prerequisite for every later merge gate |
-| CORE-2 | CORE-1 | may run in parallel with CORE-4 and CORE-8 scaffolding |
-| CORE-3 | CORE-2 | compiler analysis/fact contract also gates language-service LS-1/3/4/5 |
-| CORE-LIB | CORE-2, stable CORE-3 signature slices | member families may deliver incrementally; closes only after VM3/JIT/oracle completion |
-| CORE-4 | CORE-1 | package contract can begin before CORE-2/3; final metadata must consume typed compiler facts |
-| CORE-5 | CORE-4 | VM/runtime hardening consumes sealed verified programs |
-| CORE-6 | CORE-3, CORE-4, CORE-5 | JIT semantics consumes typed calls, verified input and hardened ABI/runtime |
-| CORE-7 | CORE-4, CORE-5, CORE-6 | persistent package sessions/cache require stable package/helper contracts |
-| CORE-8 | CORE-1 | harness scaffolding starts early; closure depends on CORE-2/3/LIB/4/5/6/7 |
-| CORE-9 | stable CORE-2/3/LIB/6 slices | oracle capture may proceed per stable row; closure depends on all VBA-observable core rows |
-| CORE-10 | CORE-1 through CORE-9 and CORE-LIB | terminal truth/release only after every required delivery lane closes |
+| CORE-0 | accepted workset | none |
+| CORE-1 | CORE-0 | none |
+| CORE-2 | CORE-1 | none |
+| CORE-3 | CORE-2 | gates LS compiler facts |
+| CORE-LIB | CORE-2 plus stable CORE-3 signatures | CORE-5/6/7/9 |
+| CORE-4 | CORE-1 | final metadata consumes CORE-3 |
+| CORE-5 | CORE-4 | none |
+| CORE-6 | CORE-3, CORE-4, CORE-5 | CORE-LIB |
+| CORE-7 | CORE-3, CORE-4, CORE-5 | CORE-LIB |
+| CORE-8 | CORE-4, CORE-5, CORE-7 | none |
+| CORE-9 | CORE-1 scaffolding | closes after CORE-2/3/LIB/4/5/6/7/8 |
+| CORE-10 | every delivery epic | Windows x86 JIT prerequisite for final target summary |
 
-Cross-workset edges:
+Cross-workset producer edges:
 
-- language-service LS-1/3/4/5 consume CORE-2.5, CORE-3.1, CORE-3.5 and CORE-3.8;
-- language-service referenced-source public data consumes CORE-3.4;
-- language-service compiled-artifact references consume CORE-3.4 and CORE-4.1/4.2/4.3/4.5;
-- language-service VBA-library and Declare rows consume stable CORE-LIB slices and CORE-3.3 respectively;
-- Windows interop cannot build external codegen before CORE-4/5/7 establish verified package, ABI and session contracts;
-- Windows x86 JIT certification feeds this workset's final declared-target summary.
+- language-service compiler facts: CORE-2 provenance plus CORE-3 AnalysisResult/diagnostics;
+- language-service source/OxImage/library/Declare references: CORE-3 public surfaces/Declare legality, CORE-LIB signatures, CORE-4 verified loading;
+- Windows interop: CORE-4 verified package, CORE-5 helper/carrier/session substrate, CORE-7 JIT plan/calls, CORE-8 sessions/cache.
 
-## 8. Required checks
+## 8. Checks and evidence
 
-### Fast per-bead
+Per bead: touched-crate format/strict Clippy/tests; relevant compiler/VM3/JIT/oracle row or explicit N/A; matrix update; fresh-eyes review.
 
-- format and strict Clippy for touched crates;
-- targeted unit/integration tests;
-- relevant matrix validation;
-- relevant VM3/JIT differential for executable semantics, or a matrix-recorded `N/A` with reason for compile-only/docs/tooling work;
-- fresh-eyes review.
+Merge gate after CORE-1 canonicalizes it:
 
-### Core merge gate
+- workspace format, strict Clippy and tests;
+- default-parallel and single-thread differentials;
+- governance/meta/truth reconciliation;
+- matrix/schema validation.
 
-- `cargo fmt --all -- --check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
-- `pwsh -File ./scripts/run-core-readiness.ps1 -Mode Differential -TestThreads Default`
-- `pwsh -File ./scripts/run-core-readiness.ps1 -Mode Differential -TestThreads 1`
-- `./scripts/check-governance.ps1`
-- `./scripts/meta-check.ps1 -Fast -NoArtifacts`
-- `pwsh -File ./scripts/run-core-readiness.ps1 -Mode Truth`
-
-`CORE-1.6` must deliver this runner before later epics use it. The script owns exact package filters, environment, timeouts and evidence paths so Linux and Windows invoke one versioned gate rather than prose approximations.
-
-### Scheduled/release gate
-
-- Linux x64 and Windows x64 core matrices, Windows x86 compiler/VM3 target rows, and the Windows-workset x86 JIT prerequisite;
-- current Excel/VBA oracle;
-- ASAN over carrier/ABI/differential paths;
-- Miri over suitable runtime/ABI units;
-- formal lanes where applicable, with unresolved non-blocking failures tracked;
-- cold/warm performance and artifact-size report;
-- repeated session/load/drop stress.
-
-No test may be weakened, skipped or re-blessed merely to pass a gate. A changed snapshot requires a reviewed semantic explanation or a cross-platform normalization proof.
+Release gate additionally includes declared Linux/Windows/x86 targets, current Excel/VBA, safety/fuzz, repeated sessions, cold/warm performance and source/debug-map checks.
 
 ## 9. Terminal condition
 
 This workset is complete only when:
 
-1. all `CORE-*` epics and required delivery beads are closed;
-2. ordinary workspace tests, strict Clippy, serial/parallel differentials and governance gates are green for the explicit Linux x64, Windows x64 and Windows x86 target rows above;
-3. accepted source never panics and malformed compile-time syntax fails closed;
-4. compiler typing, calls, diagnostics and project references are complete for the declared scope, and the compiler-owned analysis/fact result is shared with language services;
-5. every load/execution path consumes a verified image and honors its declared entry/profile;
-6. VM3 implements the complete verified OxIR vocabulary and passes zero-balance lifecycle stress;
-7. the JIT implements all accepted platform-neutral language/runtime/library semantics, including error/Erl and safe recursion;
-8. every in-scope VBA base-library/portable-host member has typed compiler, VM3/JIT and oracle/spec evidence;
-9. VM3 and JIT expose equivalent persistent package/session behavior;
-10. the full differential observable and current-stack Excel/VBA semantic oracle are green;
-11. architecture, specs, matrices, worksets, blockers and tests agree.
+1. every required epic and delivery bead is closed;
+2. compiler analysis is complete, typed, source-provenanced and shared with editor consumers;
+3. every product consumer accepts sealed verified artifacts;
+4. the runtime/helper/session substrate is sound, versioned and bounded;
+5. the complete VBA library is evidenced member by member;
+6. VM3 implements and VBA-validates the complete verified core vocabulary;
+7. the JIT realizes typed lowering/calls, dynamic thunk, full semantics, sessions and cache without fallback;
+8. structural VM3/JIT and current Excel/VBA evidence are green;
+9. all ordinary, safety and lifecycle gates are green;
+10. contracts, architecture, code, matrices, worksets and generated summaries agree.
 
-If any accepted row remains `implemented-subset`, `planned` or `in-progress`, this workset remains `in-progress` unless the residual is explicitly transferred to one of the other two worksets and is genuinely outside this workset’s boundary.
+Any required `implemented-subset`, `planned` or `in-progress` row keeps the profile in progress unless it is genuinely outside this profile through an approved scope split.
 
 ## 10. Bead-preparation handoff
 
-The next action after accepting this workset is bead preparation, not implementation:
-
-1. create the workset root;
-2. create epics `CORE-0` through `CORE-10` plus `CORE-LIB`;
-3. create one rollout bead beneath each epic;
-4. create the listed first delivery beads with explicit dependencies;
-5. attach the canonical matrix rows and touched truth surfaces to each bead;
-6. mark every bead as delivery or support;
-7. ensure at least one unblocked delivery bead exists after `CORE-0`;
-8. do not close a capability epic on rollout, audit or documentation beads alone.
-9. split every epic-sized candidate into beads that name type, dependencies, matrix rows, touched truth surfaces, exact commands and residual behavior before execution.
+Create the workset root, CORE-0 through CORE-10 plus CORE-LIB epics, one rollout bead under each, and the first bead candidates above. Every executable bead names type, parent, contract clauses, matrix rows, direct dependencies, touched truth surfaces, exact acceptance command/evidence and residual behavior. Capability epics cannot close on support beads alone.

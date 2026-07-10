@@ -1,5 +1,8 @@
 # Executable Semantic Package v1
 
+> [!CAUTION]
+> **Superseded Bundle/bytecode architecture.** Current executable artifact authority is [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md).
+
 Status: `working-draft`
 Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/JIT/native-readiness

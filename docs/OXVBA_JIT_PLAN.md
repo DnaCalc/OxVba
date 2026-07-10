@@ -1,5 +1,8 @@
 # OxVba — JIT Plan
 
+> [!CAUTION]
+> **Historical milestone ledger.** Current JIT architecture is [`spec/OXVBA_JIT_ARCHITECTURE_V1.md`](spec/OXVBA_JIT_ARCHITECTURE_V1.md); current delivery is owned by the 2026-07-10 core and Windows worksets.
+
 **Status:** Plan (design-verified 2026-07-02; two design passes + a fresh-eyes convention sweep folded in). M4-0 baseline implementation is complete; evidence is recorded in `docs/evidence/perf/JIT_M4_BASELINE_20260703.md`. M4-1 IR-prep implementation is complete; evidence is recorded in `docs/evidence/jit/JIT_M4_IR_PREP_20260703.md`. M4-2 runtime ABI implementation is complete; evidence is recorded in `docs/evidence/jit/JIT_M4_RT_ABI_20260703.md`.
 **Scope:** M4 — the Cranelift JIT backend: architecture, design, and implementation program, from IR-prep through full corpus parity, typed fast paths, JIT-generated COM vtables, and AOT PE export.
 **Companion documents:** `OXIR_VM3_ERROR_MODEL.md` (the normative error semantics this plan compiles), `spec/JIT_V2_RUN_PROTOCOL_V1.md` (the shared vm3/JIT activation and entry sequencing contract), `AOT_CRANELIFT_PE_EXPORT_DESIGN_2026-06-20.md` (the AOT packaging substrate §11 builds on), `VM3_COMPLETION_AND_VM2_RETIREMENT_PLAN.md` (the predecessor plan whose workset idiom this document follows).

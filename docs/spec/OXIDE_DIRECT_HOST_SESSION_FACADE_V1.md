@@ -1,5 +1,8 @@
 # OxIde Direct Host Session Facade V1
 
+> [!CAUTION]
+> **Historical deleted-stack design.** Current host/session and language-service targets are `HOST-SESSION-001` and [`OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md).
+
 This document defines the first bounded direct-host session facade that OxIde should consume from OxVba.
 
 The implemented V1 surface is intentionally thin:

@@ -1,276 +1,246 @@
-# Architecture
+# OxVba Architecture
 
-## Current Workspace
+Date: 2026-07-10
+Status: current implementation realization and gap map
+Destination authority: [`spec/OXVBA_SYSTEM_CONTRACT_V1.md`](spec/OXVBA_SYSTEM_CONTRACT_V1.md)
+Evidence review: [`OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
 
-Workspace crates and current roles:
-- `oxvba-diagnostics`: shared structured diagnostic model used by compiler,
-  project loading, host/CLI, runtime, HAL, and COM boundaries.
-- `oxvba-syntax`: lossless lexer/parser and green/red syntax-tree
-  infrastructure (CST).
-- `oxvba-runtime`: canonical runtime value substrate centered on `Variant`,
-  `BStr`, `ObjectRef`, `SAFEARRAY`, and related semantic carriers.
-- `oxvba-symbol`: uniform symbol model — providers (project modules, VBA base
-  library, COM type libraries, `Declare` descriptors, host primitives,
-  referenced-project surfaces), source-agnostic resolution, and the intrinsic
-  catalog.
-- `oxvba-bind`: the binder. Lowers resolved CST to Core IR (`CoreProgram`):
-  procedure bodies, places, coercions, call binding, imports/exports.
-- `oxvba-bundle`: Core IR definitions, the primitive instruction set, and
-  `linearize` — producing the `Bundle`, the executable bytecode + descriptor
-  package both runtimes consume.
-- `oxvba-vm2`: the interpreting VM; executes `Bundle`s (including multi-bundle
-  cross-project linking via `Vm::link`) and is the permanent reference
-  runtime.
-- `oxvba-lib`: native bodies of the VBA base library (strings, math, dates,
-  conversion, financial, file I/O dispatch).
-- `oxvba-jit`: placeholder crate boundary for the future Cranelift JIT;
-  current APIs report not implemented and do not fall back to VM execution.
-- `oxvba-hal`: host/profile/policy boundary plus shared adapter/bootstrap core.
-- `oxvba-com`: live Windows COM bridge crate; owns COM client bridge services,
-  COM wire translation (`VARIANT`, `BSTR`, `SAFEARRAY`, `IDispatch`), typelib
-  loading, and runtime state/metadata.
-- `oxvba-comhost`: reusable Windows `cdylib` for `WrappedComServer` outputs.
-  It exports the in-process COM DLL entrypoints once, then loads project
-  sidecars (`.oxb`, `.comserver.json`, `.tlb`) next to the copied DLL and runs
-  the package through the VM.
-- `oxvba-host`: engine orchestration — bind/linearize/execute pipeline, host
-  policy, snapshots, package-backed runtime sessions, error routing.
-- `oxvba-build`: clean wrapper build orchestration. The current
-  `WrappedComServer` slice validates `.basproj` target shape, emits a versioned
-  `.oxb` bundle package, projects deterministic COM descriptors from the export
-  surface, writes IDL and `.comserver.json`, compiles a generated type library
-  with MIDL, and copies the prebuilt `oxvba-comhost` DLL to the project DLL
-  name. It also carries a parallel Windows `OleAut32` type-library emitter built
-  on `CreateTypeLib2`/`ICreateTypeInfo`, tested against the MIDL output as an
-  oracle for dispatch, bounded dual, imported Automation, SAFEARRAY, ByRef, and
-  typed interface-pointer shapes; MIDL remains the default build path while that
-  emitter is refined. It no longer compiles a project-specific Rust shim.
-  Implemented COM
-  interfaces are represented in the descriptor as interface/method metadata
-  (name, IID, DISPIDs, vtable slots, VBA-facing parameter and return shapes,
-  COM wire shapes such as typed interface pointers and SAFEARRAY variants, and
-  mapped VBA member names). Non-profile `Implements` clauses can resolve
-  imported COM interfaces from referenced type libraries into the same
-  descriptor shape. The descriptor reports required native wire features by
-  shape rather than by interface-name allowlist. The reusable COM host composes
-  vtable data from precompiled slot+shape thunks for imported dual/Automation
-  interfaces resolved from referenced typelibs, including the Office
-  `IDTExtensibility2`, Office `IRibbonExtensibility`, Excel `IRtdServer`, and
-  Excel `IRTDUpdateEvent` shapes covered by the current tests. Descriptor and
-  IDL generation no longer carry hardcoded IDTE/RTD profile tables;
-  Office-specific behavior that remains is registration policy for Excel add-in
-  classes that implement `IDTExtensibility2`.
-- `oxvba-project`: `.basproj`/`.vbp` project formats, manifests, and
-  reference-closure loading.
-- `oxvba-cli`: CLI bootstrap/run/build surface.
+## 1. Role of this document
 
-## Current Execution Shape
+The system contract states what completed OxVba must become. This document states what the repository is now, how the active crates fit together and where implementation diverges from that destination.
 
-The clean pipeline is the sole execution path:
+Current code and executable tests are implementation truth. A green subset is not a completed capability claim. The canonical worksets and validation matrices own delivery/evidence status; historical plans and reports are not architecture authority.
 
-```
-source/project (oxvba-project, oxvba-cli, oxvba-host)
-  -> oxvba-syntax lossless CST          (parsed once, shared)
-  -> oxvba-symbol resolution environment
-  -> oxvba-bind                          binder -> Core IR (CoreProgram)
-  -> oxvba-bundle::linearize             -> Bundle (bytecode + descriptors)
-  -> oxvba-vm2                           interprets; one Bundle per project,
-                                         cross-project dispatch via Vm::link
+## 2. Current system summary
+
+The active production path is:
+
+```text
+.basproj/.vbp/source
+  -> oxvba-project project/reference closure
+  -> oxvba-symbol target-aware conditional preprocessing
+  -> oxvba-syntax lossless CST of the supplied active-source view
+  -> oxvba-symbol declarations/providers/resolution environment
+  -> oxvba-bind typed binding and CoreProgram
+  -> oxvba-oxir::elaborate typed CFG OxProgram
+  -> OxImage (.oxi project-closure artifact)
+       |-- oxvba-vm3 interpreter
+       \-- oxvba-jit Cranelift compiler
 ```
 
-- `oxvba-lib` provides base-library natives invoked from the VM;
-- `oxvba-hal` provides profile/policy-governed host services (filesystem,
-  console, dynamic linking for `Declare`, COM adapter, events);
-- `oxvba-com` translates runtime values to and from COM wire representations;
-- `oxvba-jit` is a stub pending the JIT v2 design and must not be used as
-  compatibility or performance evidence.
+This is the sole production compiler/execution stack. The legacy compiler, HIR/front-end fallback, source-rewrite compiler, VM2, CoreProgram-to-Bundle linearizer and `.oxb` product execution path have been removed or retired.
 
-The authoritative front-end and package contract is
-[`docs/spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md`](spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md).
+The architecture is broad and real but not complete. The compiler/binder is the most mature layer. VM3 and the JIT cover a large platform-neutral language/runtime/library surface. The JIT does not yet implement native COM/Declare/pointer execution, and there is no active clean-stack language-service implementation.
 
-The current repository does not have a direct native AOT compiler that emits PE
-or ELF objects. Native compilation is a planned later lane, after the Cranelift
-JIT consumes the same package.
+## 3. Workspace ownership
 
-## End-State Destination (North Star)
+### Compiler and project
 
-OxVba targets a state-of-the-art VBA compiler with **one compiler-owned
-front-end** feeding **one shared executable artifact** consumed by **two runtime
-targets**:
+- `oxvba-project` parses `.basproj`, the supported `.vbp` subset and convention projects, loads modules and constructs referenced-project closures.
+- `oxvba-syntax` provides the lossless lexer/parser and green/red CST.
+- `oxvba-symbol` owns conditional compilation, declaration scanning, scopes, symbols, signatures and providers for projects, referenced surfaces, the VBA library, host references, COM typelibs and Declare descriptors.
+- `oxvba-bind` performs typed binding and emits `oxvba_bundle::coreir::CoreProgram`.
+- `oxvba-diagnostics` provides the shared cross-layer diagnostic DTO; producing crates retain ownership of semantic error meaning.
 
+### Executable semantics and runtime
+
+- `oxvba-bundle` now primarily owns Core IR plus bounded legacy Bundle/Op types used by the synthetic VBA-library metadata path. It is not the current executable package producer.
+- `oxvba-oxir` elaborates Core IR into typed CFG OxIR, defines OxProgram/OxImage, normalization/analysis passes and the current program verifier.
+- `oxvba-runtime` owns Variant, BStr, SafeArray, ObjectRef, record and related value/lifecycle carriers.
+- `oxvba-eval` owns shared value-semantic kernels used by VM3 and JIT for the extracted operation families.
+- `oxvba-rt-abi` owns VM/JIT-neutral runtime cells and helper decisions used across the backend boundary.
+- `oxvba-lib` implements VBA base-library bodies over runtime values and HAL services.
+- `oxvba-vm3` is the sole typed-CFG interpreter and the JIT reference backend.
+- `oxvba-jit` directly lowers linked OxProgram sets to Cranelift native code with a hard no-fallback boundary.
+- `oxvba-differential` owns VM3 golden and VM3/JIT/oracle comparison harnesses.
+
+### Host, platform and outputs
+
+- `oxvba-hal` owns host capability/profile/policy and adapter contracts.
+- `oxvba-com` owns Windows-first COM metadata, invocation, dynamic-object and wire-boundary services.
+- `oxvba-host` orchestrates compiler/backend execution and VM3-backed package sessions.
+- `oxvba-build` emits OxImage and wrapper/COM-server artifacts.
+- `oxvba-comhost` is the reusable Windows in-process COM-server host, currently VM3-backed.
+- `oxvba-cli` exposes source/project run and build commands.
+
+No active `oxvba-languageservice`, `oxvba-lsp`, `oxvba-debug` or forms-runtime crate exists in the current workspace.
+
+## 4. Source and compiler realization
+
+### Current shape
+
+For each supplied module, `oxvba-symbol` applies target-aware conditional preprocessing and calls the shared parser. Length-preserving blanking keeps active token offsets relative to the supplied module text. Parsed modules are retained in one resolution environment and scanned into project/provider surfaces before binding.
+
+The binder walks resolved CST once, infers types, inserts coercions and emits Core IR with explicit places, assignment intent, calls, properties/default members, arrays, records, objects, events, errors and import/export descriptors.
+
+The provider architecture is the right target shape: the binder asks what a symbol means rather than branching on whether it came from source, the VBA library, a host or COM metadata.
+
+### Material gaps against the contract
+
+- identifier scanning can panic on valid non-ASCII UTF-8 input;
+- malformed conditional expressions/directives can fail open;
+- original file provenance is incomplete after some project normalization/generation;
+- referenced-project public data fields are not represented across compiled surfaces;
+- declared return types are erased on important referenced/library/native call routes;
+- ByVal/ByRef, arrays/UDTs and Declare legality checks are incomplete;
+- many symbol/bind diagnostics lack source locations;
+- grammar/language matrices do not yet provide current-route evidence for the full surface;
+- the compiler does not yet publish the complete AnalysisResult/use-site fact contract required by language services.
+
+The current detailed target is [`spec/OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](spec/OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md).
+
+## 5. Core IR, OxIR and OxImage realization
+
+Core IR is the resolved semantic tree emitted by the binder. `oxvba-oxir::elaborate` converts it into OxProgram: typed locals/places, basic blocks, instructions, terminators, fault edges, functions, globals, classes, records, external descriptors, COM interfaces, imports and exports.
+
+OxImage serializes a project closure as pretty JSON `.oxi` with a schema magic/version, program list and entry index. VM3-backed host/build paths can load it and create package sessions.
+
+### Material gaps against the contract
+
+- `OxImage::validate` checks only basic header/count/entry conditions and does not seal fully verified programs;
+- production VM3/JIT APIs can still receive raw OxProgram values;
+- VM3 linking follows a last-program convention instead of treating image entry as fully authoritative;
+- the verifier is incomplete for several ID, type, arity, descriptor, export, event and effect families;
+- duplicate/ambiguous case-folded link identities are not comprehensively rejected;
+- OxImage lacks content digest, helper/carrier ABI, target/capability requirements, full provenance and source/debug maps;
+- a few OxIR operations have divergent VM3/JIT dispositions;
+- product consumers do not yet share a sealed `VerifiedOxProgram`/`VerifiedOxImage` boundary.
+
+The current target is [`spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md).
+
+## 6. Runtime, library and host realization
+
+Variant is the canonical execution carrier. BStr uses BSTR-shaped UTF-16 storage; SafeArray represents typed/dynamic arrays; ObjectRef provides IUnknown-shaped identity; records use descriptor-backed storage. The representation direction is exact VBA/OLE carrier layout rather than boundary-only projections.
+
+`oxvba-eval` shares a meaningful value core across VM3 and JIT, while runtime, library, array/object/call/lifecycle/error behavior is still distributed among runtime, rt-abi, VM3, JIT, lib and host. `oxvba-lib` exposes a broad VBA-library implementation; host-sensitive operations delegate to HAL.
+
+### Material gaps against the contract
+
+- the shared semantic-kernel extraction is incomplete;
+- VM3 and rt-abi duplicate some class/interface descriptor projection;
+- descriptor and host/image session paths contain process-lifetime leaks;
+- some public rt-abi functions hide raw-pointer safety contracts behind safe Rust signatures;
+- panic/fault and manual drain/reentrancy state need RAII hardening;
+- the base library has no member-by-member typed/compiler/VM3/JIT/oracle completion matrix;
+- stateful file I/O, locale and several host-sensitive families remain bounded subsets;
+- host denial, unsupported implementation and VBA runtime failure are not consistently separated in all paths.
+
+The exact layout doctrine remains [`spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md`](spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md); library/host completion is governed by system clauses `RUNTIME-*`, `LIB-VBA-001` and `HOST-*`.
+
+## 7. VM3 realization
+
+VM3 interprets typed OxIR with heap-owned frames, typed places, ByRef aliases, error/Resume routing, class lifecycle, project events and broad library/runtime support. It is the sole product interpreter and the JIT reference backend.
+
+Focused VM/runtime suites are broad, and the VM3 golden contains hundreds of value/error rows. This is useful regression evidence, not automatic VBA authority.
+
+### Material gaps against the contract
+
+- the current golden gate has a reproducible BSTR-balance failure on a policy error path;
+- VM3 does not implement every verifier-accepted OxIR operation;
+- loader verification and explicit image-entry handling are incomplete;
+- class/interface descriptor ownership and repeated-session lifetime need hardening;
+- some value/error edges still need live Excel/VBA clarification;
+- the differential observable does not yet structurally compare every carrier/lifecycle family.
+
+VM3 destination behavior is specified with OxIR/OxImage in [`spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md).
+
+## 8. JIT realization
+
+The JIT is a real Cranelift backend. It directly lowers linked OxProgram blocks, compiles whole accepted program sets without VM fallback and supports broad control flow, calls, values, arrays, records, project classes, lifecycle and project events.
+
+Its current primary entry shape is a universal dynamic ABI:
+
+```text
+unsafe extern "C" fn(*mut JitRun, *mut RawExecState) -> i32
 ```
-source
-  -> oxvba-syntax lossless CST
-  -> binder (oxvba-bind) -> Core IR
-  -> linearize (oxvba-bundle)
-  -> bytecode + metadata  (the executable semantic package: Bundle)
-        |-- interpreting VM   reference oracle; runs anywhere, incl. browser (WASM) and desktop (Tauri)
-        \-- Cranelift JIT     optimizing fast path, lowering from the same package
-```
 
-Binding properties of the destination:
-- **One front-end, no source surgery.** VBA source enters exactly one pipeline;
-  the production compiler and the language service answer every
-  symbol/type/diagnostic question from the same HIR/SemanticModel facts. No
-  production path performs source-text rewriting or substring parsing.
-- **One shared package.** The bytecode-plus-metadata package is the single
-  source of truth (IL-style, in the CLR/JVM/Wasm sense). Any fact a JIT tracer
-  needs must live in the package and be visible to VM execution — no
-  source-to-JIT or side-channel reconstruction. There is no separate front-end
-  "lowering IR" between HIR and bytecode beyond what the package already is; the
-  only motivated lowering IR is the JIT's consumer-side `ProcLoweringIr`.
-- **VM is the permanent reference.** The interpreting VM stays the correctness
-  oracle even after the JIT lands; the JIT is a performance fast path validated
-  against the VM, never a replacement for it.
+Static calls can invoke local compiled functions, but Variant-backed frames and helpers still materialize much of the call state. Source/manifest invocation recompiles; `prepare_image_session` remains VM3-only.
 
-The destination is reached in **two strictly ordered phases**:
+### Material gaps against the contract
 
-1. **Phase 1 — full correctness on the VM.** The entire imaginable feature and
-   deployment matrix runs correctly through the interpreting VM:
-   - all COM scenarios (early/late-bound client and COM-server hosting);
-   - native interop (`Declare`, pointer helpers);
-   - execution in the browser (WASM) and on the desktop (Tauri);
-   - all build targets — `Bundle`, `WrapperExe`, `WrapperLibrary`, and
-     `WrappedComServer` (`BuildTarget` in `oxvba-project`); native-image
-     `NativeExe`/`NativeDll` are a later evolution.
-   The package must be designed JIT-ready during this phase so Phase 2 need
-   not reopen it.
-2. **Phase 2 — Cranelift JIT.** Only after Phase 1, build the Cranelift-based
-   JIT on the same bytecode + metadata, with deep optimization, while the VM
-   remains the stable reference. JIT activation is gated on Phase-1 correctness,
-   not on a schedule.
+- the public compiler does not require sealed verified image/program input;
+- no inspectable procedure-lowering plan currently separates semantic OxIR from physical/codegen decisions;
+- there is no typed-primary-entry family with a universal thunk as the dynamic adapter;
+- helper registration is not a versioned descriptor catalog;
+- line/Erl, writable Err fields and full dynamic Err.Raise metadata are incomplete;
+- deep source recursion relies on the native stack and is not safely proven;
+- persistent JIT package sessions and product cache do not exist;
+- COM interfaces, external/native calls and pointer operations cause decline;
+- the implementation is concentrated in a very large single source module;
+- differential evidence is often status/tag based rather than fully structural.
 
-## Next Execution-Layer Evolution
+The destination is [`spec/OXVBA_JIT_ARCHITECTURE_V1.md`](spec/OXVBA_JIT_ARCHITECTURE_V1.md). The older `JIT_V2_*` planning documents are historical design inputs, not current authority.
 
-The next architectural evolution is a complete executable semantic package:
-an IL-style bytecode-plus-metadata boundary that both the VM and JIT consume.
-The working draft is
-[`docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md).
-The declared type model for that package is
-[`docs/spec/VBA_TYPE_SYSTEM_V1.md`](spec/VBA_TYPE_SYSTEM_V1.md). The companion
-expression/call model is
-[`docs/spec/VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](spec/VBA_EXPRESSION_CALL_SEMANTICS_V1.md).
+## 9. Windows COM and native realization
 
-The current `Bundle` (`oxvba-bundle`) implements the core of this direction,
-but it is not yet the full contract. The target package must preserve the
-bytecode control stream,
-declared type/slot metadata, procedure/project metadata, UDT descriptors,
-array descriptors, COM/native descriptors, error/source maps, helper ABI
-requirements, host capability requirements, carrier/layout versioning,
-expression classification, Let/Set coercion, operator semantics, property
-accessor grouping, Optional/ParamArray binding, and ByRef/ByVal call-site
-descriptors.
+VM3, HAL, COM, host, build and comhost contain substantial Windows work: typelib loading, late/early bridge scaffolding, Declare execution, wrapper packaging, type-library emission and bounded COM serving.
 
-This package is the semantic input to execution engines:
-- the VM interprets it and remains the reference executable truth;
-- JIT v2 plans and lowers from it into `ProcLoweringIr`;
-- wrappers and future native lanes use the same descriptors and capability
-  facts rather than reconstructing semantics from side channels.
+The JIT currently rejects images containing real external calls or COM interface requirements and does not lower ComCallEarly, Declare/native calls or pointer operations. Project `WithEvents`/`RaiseEvent` proves internal event semantics, not native connection points.
 
-Direct source-to-JIT or parallel typed-JIT reconstruction is not an accepted
-layering path. If a JIT tracer needs a semantic fact, that fact belongs in the
-package first and must also be visible to VM execution or VM evidence.
+### Material gaps against the contract
 
-## Current Value Truth
+- authoritative registry/file typelib selection is not yet one stable metadata service for all consumers;
+- VM3/JIT do not consume one verified backend-neutral interop call plan;
+- real late/early COM JIT calls are absent;
+- synchronous COM-event ByRef writeback is absent;
+- JIT-backed COM serving/vtable generation is absent;
+- exact nominal interface arrays and broad VT_RECORD shapes are incomplete;
+- JIT Declare, pointer helpers and AddressOf callbacks are absent;
+- x86/x64 artifact and both-Office-bitness certification is incomplete;
+- JIT wrapper sessions and genuine native DLL/EXE exports do not exist.
 
-`Variant` is the canonical execution and snapshot carrier for VM/host
-coordination. `RuntimeValue` has been removed from active Rust source; any
-remaining mentions are historical docs/evidence or recovery notes, not active
-runtime architecture.
+The destination is [`spec/OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](spec/OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md).
 
-The current representation direction is exact Windows/VBA/COM storage for the
-runtime carrier families named in
-[`docs/spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md`](spec/OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md):
-`BSTR`, `VARIANT`, `SAFEARRAY`, `IUnknown`, and numeric primitives. These are no
-longer treated as boundary-only projections.
+## 10. Host sessions, builds and outputs
 
-Important boundaries:
-- retained `Variant` values are the runtime substrate and must remain faithful
-  `VARIANT`-compatible cells;
-- `BStr` owns a BSTR-shaped UTF-16 allocation, and string pointer helpers should
-  expose that storage when the expression is addressable;
-- canonical runtime object identity flows through `ObjectRef`, whose base object
-  exposes a runtime `IUnknown`-compatible vtable with `AddRef` and `Release`;
-- `SafeArray` is the runtime array carrier and must preserve descriptor and
-  typed element storage; VM `ReDim` now allocates typed scalar SAFEARRAY payloads
-  rather than normalizing declared scalar arrays to `VT_VARIANT`;
-- `BindingHandle` remains a typed semantic leaf for non-object binding identity;
-- raw integer identities remain only where they are explicit control-plane
-  tokens or debug compatibility data.
+`oxvba-host` compiles source/project closures for VM3 or one-shot JIT execution. `ProjectRuntimeSession` and `.oxi` session loading are VM3-backed. `oxvba-build` emits `.oxi` plus wrapper/COM metadata; `oxvba-comhost` loads the packaged image through VM3.
 
-Remaining named layout risks must be tracked explicitly. Scalar UDT values and
-UDT array elements now use native `VbaRecord` storage with descriptor-backed
-field offsets. Windows COM typelib metadata can carry record size/field
-offset/kind evidence, and native VBA record arrays can project to
-`SAFEARRAY(VT_RECORD)` only when descriptor proof matches the runtime scalar
-layout. Nested/fixed-array/object record-field COM conversion and broad foreign
-record writeback remain bounded parity work, not closed claims.
+Current wrapped output infrastructure is valuable, but output labels must remain exact:
 
-## Current IR Truth
+- `.oxi` is the current typed serialized artifact;
+- WrapperExe/WrapperLibrary are runtime-backed wrappers where implemented;
+- WrappedComServer is a reusable runtime-backed COM host;
+- native DLL/EXE program outputs do not yet exist.
 
-The single active IR is **Core IR** (`oxvba-bundle::coreir`): a resolved,
-source-agnostic tree (`CoreProgram` / `CoreProc` / `CoreStmt` / `CoreValue` /
-`CorePlace`) emitted by the binder (`oxvba-bind`) and consumed by `linearize`,
-which produces the `Bundle` instruction stream plus descriptors. Every
-desugaring is explicit in the binder; the contract is
-[`docs/spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md`](spec/OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md).
+The target adds a backend-neutral verified session, JIT cache, JIT-backed wrappers and distinct genuine native outputs without loader-lock work.
 
-There is **no** mid-level (HIR→MIR→CFG) *optimization* pipeline. The earlier
-`oxvba-ir` scaffold (`VbaHir`/`VbaMir`/`CfgIr`), the legacy string-rewriting
-front-end, and the transitional `oxvba-compiler` bound-HIR were all removed
-with the legacy stack; see git history.
+## 11. Language-service realization
 
-JIT v2 planning names the future procedure-lowering IR
-`ProcLoweringIr`. It may be introduced only as a real contract with:
-- basic blocks and typed terminators;
-- explicit slot/value effects;
-- structured helper/runtime calls;
-- error-state and control-flow semantics;
-- diagnostics and source/bytecode mapping;
-- lowering evidence from the executable semantic package.
+There is no active clean-stack language-service or LSP implementation. The former crates were removed from the workspace and later deleted. The VS Code extension and several older documents still describe the deleted surface and are deprecated by this architecture sweep.
 
-Until that exists, bytecode plus current VM behavior is the executable truth.
-As the executable semantic package matures, that package becomes the durable
-compiled artifact while VM behavior remains the reference execution oracle.
+Reusable foundations exist: lossless CST, symbols/scopes/signatures/declaration spans, providers, project closure loading, diagnostics, Core IR facts and historical tests/designs. Missing are the compiler AnalysisResult fact stream, semantic snapshots, overlays, indices, invalidation, direct query API, LSP transport and editor integration.
 
-## COM And Host Truth
+The destination is [`spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md).
 
-1. `oxvba-hal` is a real workspace crate and part of the active runtime
-   boundary.
-2. `oxvba-com` is the live Windows COM client bridge and no longer transitional
-   scaffolding.
-3. `StandardHostServices` is currently the shared Windows/Linux/macOS adapter
-   core.
-4. Windows COM support is active and tested; non-Windows COM remains explicitly
-   unsupported.
-   The cross-platform portable projection is a host-provided COM-like object
-   surface: registered portable objects and their retained object-valued returns
-   can execute through `ObjectRef` projection handles without implying native
-   COM availability on Linux/macOS.
-5. Host/runtime event ingress exists in two planes:
-   - project/runtime event routing in `oxvba-host`;
-   - COM callback transport through HAL/adapter state, including payload-based
-     polling support.
-6. The current COM blockers are behavioral/parity blockers rather than HAL
-   ownership blockers:
-   - late-bound `IDispatch` parity still remains below VBA/Excel behavior;
-   - richer COM value transport still needs broader object/interface/SAFEARRAY
-     coverage;
-   - those lanes proceed with `oxvba-com` as the live bridge.
+## 12. Debugging, forms, portability and security
 
-## Current Direction
+No active debugger or forms-runtime crate exists. Older debugger/direct-host documents are design history rather than current capability. The system contract retains semantic debugger, forms runtime/designer and security as explicit extended profiles so their absence cannot be confused with either completion or permanent exclusion.
 
-Phase 1 (full correctness on the VM) is the active phase. Near-term work is
-ordered:
-- conformance and robustness of the clean pipeline (the `.bas` conformance
-  corpus under `conformance/`, the differential oracle against real Office
-  VBA, and hardening of the unsafe FFI/COM marshalling core);
-- language-surface completion on the existing `Bundle` contract (no ISA growth
-  without contract review);
-- only then Phase 2: the Cranelift JIT consuming the same package, followed by
-  native-image lanes.
+VM3 and much of the compiler/runtime are designed for portable hosts. Browser/WASM and desktop-shell documents describe earlier integration programs, but those targets were not certified in the 2026-07-10 review. Portable COM-shaped objects are not native Windows COM evidence.
 
-Historical worksets, gate apparatus, and the MACH-1000 material under
-`docs/archive/` and `docs/worksets/` are synthesis and vision context, not
-implementation authority where they conflict with this snapshot or the spec
-contracts under `docs/spec/`.
+Security currently appears mainly as host policy, artifact checks and unsafe-boundary discipline. A broader runtime security profile remains future work and must build on the same verified image and host capability model.
+
+## 13. Capability status and proposed delivery
+
+| profile | current status | proposed workset |
+|---|---|---|
+| Core VBA toolchain | broad, in-progress | [`worksets/WORKSET_2026-07-10_POST_JIT_CORE_CONFORMANCE_AND_READINESS.md`](worksets/WORKSET_2026-07-10_POST_JIT_CORE_CONFORMANCE_AND_READINESS.md) |
+| Windows VBA compatibility | VM3 substrate plus missing JIT/general parity, in-progress | [`worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md`](worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md) |
+| IDE foundation | not implemented on clean stack | [`worksets/WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md`](worksets/WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md) |
+| Standalone tooling | `.oxi` and bounded wrappers only, in-progress | core and Windows worksets |
+| Extended profiles | not assessed or not implemented as a unified profile | system contract plus future accepted worksets |
+
+The dated review and these three proposed worksets are the current program-planning entry. They do not become active execution merely by being indexed here. Older ladders, worksets and handoffs remain provenance unless an accepted workset explicitly consumes their residuals.
+
+## 14. Documentation authority
+
+The current hierarchy is:
+
+1. `CHARTER.md` — mission and scope;
+2. `OPERATIONS.md` — execution and evidence doctrine;
+3. `docs/spec/OXVBA_SYSTEM_CONTRACT_V1.md` — destination architecture and capability clauses;
+4. this document — current realization and gaps;
+5. current subsystem specifications;
+6. accepted active worksets and canonical validation/evidence artifacts.
+
+Superseded designs and guidance are classified in [`spec/DEPRECATION_LEDGER_2026-07-10.md`](spec/DEPRECATION_LEDGER_2026-07-10.md). A historical document remains useful for provenance but cannot override this hierarchy.

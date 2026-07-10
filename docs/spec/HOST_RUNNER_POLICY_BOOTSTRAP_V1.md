@@ -1,5 +1,8 @@
 # Host Runner Policy Bootstrap V1
 
+> [!NOTE]
+> **Supporting historical design.** Examples using `.oxb`/`oxvba-run` predate the current `.oxi` and backend-neutral session architecture; use `HOST-SESSION-001` and current CLI/build documentation.
+
 Status: `design-draft`  
 Step: `v195`  
 Date: 2026-03-02

@@ -1,8 +1,9 @@
 # Project Module Reference Spec v1
 
-Status: `working-draft`
+Status: working VBA semantic reference; implementation/evidence incomplete
 Date: 2026-03-02
 Scope: OxVba compiler/host project graph semantics (Project, Module, Reference)
+System clauses: `AUTH-SPEC-001`, `PROJ-REF-001`, `LS-WORKSPACE-001`
 
 ## 1. Purpose
 

@@ -1,5 +1,8 @@
 # JIT v2 ProcLoweringIr v1
 
+> [!CAUTION]
+> **Historical proposed IR.** It was not implemented as described. Current physical-lowering requirements are in [`OXVBA_JIT_ARCHITECTURE_V1.md`](OXVBA_JIT_ARCHITECTURE_V1.md) §3.
+
 Status: `planning-ir`
 Date: 2026-05-26
 Owning workset:

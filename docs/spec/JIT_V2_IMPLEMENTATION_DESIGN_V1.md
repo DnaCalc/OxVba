@@ -1,5 +1,8 @@
 # JIT v2 Implementation Design v1
 
+> [!CAUTION]
+> **Superseded planning design.** Current JIT destination authority is [`OXVBA_JIT_ARCHITECTURE_V1.md`](OXVBA_JIT_ARCHITECTURE_V1.md).
+
 Status: `planning-design`
 Date: 2026-05-26
 Scope owner: OxVBA JIT/native-readiness

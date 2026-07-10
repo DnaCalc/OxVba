@@ -1,5 +1,8 @@
 # JIT v2 Semantic Contract And Fact Pack v1
 
+> [!CAUTION]
+> **Superseded planning contract.** Current semantic facts live in verified OxIR/OxImage and the current JIT architecture.
+
 Status: `planning-contract`
 Date: 2026-05-26
 Owning workset:

@@ -20,6 +20,16 @@ if (-not (Test-Path $autorunAbs)) {
 $agents = Get-Content $agentsAbs -Raw
 $autorun = Get-Content $autorunAbs -Raw
 
+$modeMatch = [regex]::Match($autorun, 'Mode:\s*([^\r\n]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+if (-not $modeMatch.Success) {
+    throw "active-ladder-sync: unable to parse mode from docs/AUTORUN_STATE.md"
+}
+$mode = $modeMatch.Groups[1].Value.Trim()
+if ($mode -ne 'AutoRun') {
+    Write-Host "active-ladder-sync: inactive (mode=$mode)"
+    exit 0
+}
+
 function Parse-Gate([string]$Text, [string]$Pattern, [string]$Owner) {
     $m = [regex]::Match($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     if (-not $m.Success) {

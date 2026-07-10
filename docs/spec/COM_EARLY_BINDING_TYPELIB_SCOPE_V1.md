@@ -1,5 +1,8 @@
 # COM Early Binding and Type Library Support V1
 
+> [!NOTE]
+> **Supporting historical scope.** Current authoritative metadata and early-vtable architecture are in [`OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md) §§3, 7.
+
 Status: `working-draft`
 Date: 2026-03-05
 Primary scope: Windows (`HalProfileId::Windows`) for native COM early binding; deterministic unsupported behavior on non-Windows profiles.

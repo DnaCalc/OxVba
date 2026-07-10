@@ -1,7 +1,10 @@
 # OxVBA Front-End & Core IR Contract — V1
 
+> [!CAUTION]
+> **Superseded architecture.** Retained for historical design provenance. Current authority is [`OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md); Core IR is not the product bytecode/package.
+
 - **Date:** 2026-06-04
-- **Status:** authoritative design contract. **Supersedes and absorbs** `HIR_RESOLUTION_ENVIRONMENT_V1.md` (resolution environment + base-library shape) and **extends it down into the Core IR / bytecode contract.**
+- **Status:** superseded historical design contract. It formerly superseded and absorbed `HIR_RESOLUTION_ENVIRONMENT_V1.md`; current authority is the compiler contract V2 and OxIR/Image contract.
 - **Builds on:** `docs/ARCHITECTURE.md` §End-State Destination, `docs/HIR_COVERAGE_GAPS_AND_WIDENING_PLAN_2026-06-03.md`, `docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`, `docs/spec/VBA_TYPE_SYSTEM_V1.md`. Authority for VBA semantics: **MS-VBAL** (the VBA language spec) + the real `VBA` type library.
 - **Purpose:** define, from compiler-construction first principles, the front-end pipeline *and* the shape of the Core IR (the bytecode + metadata package) so that the implementation is a matter of satisfying a contract rather than inventing direction per step.
 

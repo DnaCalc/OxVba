@@ -52,15 +52,19 @@ Out of scope:
 Top-level guidance precedence for OxVBA:
 1. `CHARTER.md`
 2. `OPERATIONS.md`
-3. `docs/ARCHITECTURE.md`
-4. Active worksets, status files, and evidence artifacts
+3. `docs/spec/OXVBA_SYSTEM_CONTRACT_V1.md`
+4. `docs/ARCHITECTURE.md`
+5. Current subsystem specifications
+6. Accepted active worksets, status files, validation matrices, and evidence artifacts
 
-This charter defines mission, values, and scope boundaries. Current
-implementation truth lives in `docs/ARCHITECTURE.md` and active execution truth
-lives in worksets, status files, and evidence artifacts.
+This charter defines mission, values, and scope boundaries. The system contract
+defines the durable destination and capability profiles. Current implementation
+truth lives in `docs/ARCHITECTURE.md`; active execution and proof live in
+worksets, canonical validation matrices, status files, and evidence artifacts.
 
 ## 6. Relationship to Architecture And Worksets
-`docs/ARCHITECTURE.md` contains the current architecture snapshot and
-near-term implementation direction. Active worksets contain scoped execution
-plans and gates. If details in those documents drift from this charter, this
-charter is authoritative and the downstream documents must be updated.
+`docs/spec/OXVBA_SYSTEM_CONTRACT_V1.md` states what completed OxVba must be.
+`docs/ARCHITECTURE.md` contains the current realization and gap map. Active
+worksets contain scoped execution plans and gates. If downstream documents drift
+from this charter or claim a different destination without amending the system
+contract, the higher authority wins and the drift must be corrected.

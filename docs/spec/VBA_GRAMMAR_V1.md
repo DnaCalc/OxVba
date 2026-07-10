@@ -1,13 +1,14 @@
 # VBA Grammar V1
 
 Date: 2026-06-01
-Status: draft scaffold for frontend v2
-Workset: `docs/worksets/WORKSET_2026-05-31_FRONTEND_TOKENIZER_PARSER_BINDER_AST_REFACTOR.md`
-Bead: `bd-aprs.2.1`
+Status: working VBA semantic reference; implementation/evidence incomplete
+System clauses: `AUTH-SPEC-001`, `SRC-CC-001`, `SYN-CST-001`
+Current compiler contract: [`OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md)
+Historical origin: frontend-v2 workset/bead `bd-aprs.2.1`
 
 ## Purpose
 
-This document is the in-repo grammar anchor for OxVba's frontend v2 work. It is a clean-room
+This document is the in-repo grammar anchor for OxVba's current compiler. It is a clean-room
 grammar scaffold derived from implementation knowledge, existing OxVba fixtures, and public
 authority references. It is not a copied extract of any third-party grammar.
 
@@ -44,7 +45,7 @@ Clean-room rule:
 
 ## Dialect Target
 
-Target dialect for frontend v2:
+Target dialect for the current compiler:
 
 - VBA 7.x as hosted by modern Windows Office, with Excel as the primary executable oracle.
 - Existing OxVba executable language subset remains a regression baseline, not the authority.

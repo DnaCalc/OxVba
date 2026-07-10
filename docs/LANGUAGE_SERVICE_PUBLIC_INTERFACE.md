@@ -1,5 +1,8 @@
 # Language Service Public Interface
 
+> [!CAUTION]
+> **Historical deleted-stack interface.** Current language-service architecture is [`spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md); no active clean-stack service API exists yet.
+
 This document defines the intended public OxVba-side interface for editor hosts.
 
 The key split is:

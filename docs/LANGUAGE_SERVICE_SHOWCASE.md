@@ -1,5 +1,8 @@
 # Language Service Showcase
 
+> [!CAUTION]
+> **Historical and not runnable on the clean stack.** Current editor smoke requirements are in the language-service architecture and 2026-07-10 workset.
+
 This document is the user/developer-facing status note for OxVba language services.
 
 It is intentionally narrower than the platform specs:

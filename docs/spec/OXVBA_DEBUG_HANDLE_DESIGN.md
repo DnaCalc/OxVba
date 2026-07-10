@@ -1,5 +1,8 @@
 # OxVba Debug Handle Design
 
+> [!CAUTION]
+> **Future/historical design over a non-active crate.** Current system status is in `docs/ARCHITECTURE.md` §12; any debugger revival must conform to system clause `DEBUG-CORE-001`.
+
 Status: B00 binding design for `docs/worksets/WORKSET_2026-05-23_OXVBA_DEBUG_HANDLE_ARCHITECTURE.md`.
 Owner bead: `bd-00fz.1`.
 

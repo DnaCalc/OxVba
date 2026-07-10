@@ -1,5 +1,8 @@
 # Executable Semantic Package Completion Map v1
 
+> [!CAUTION]
+> **Historical completion map.** It targets retired package/VM stages. Use [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md) and the current core workset/matrices.
+
 Status: `working-draft`
 Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/runtime/JIT/native-readiness

@@ -1,5 +1,8 @@
 # Bytecode And VM Semantic Contract v1
 
+> [!CAUTION]
+> **Superseded bytecode/VM contract.** VM3 now executes OxIR; use [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md).
+
 Status: `working-draft`
 Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/native-readiness

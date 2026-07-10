@@ -9,6 +9,16 @@ $agents = Get-Content $agentsPath -Raw
 $autorun = Get-Content $autorunPath -Raw
 $docsReadme = Get-Content $docsReadmePath -Raw
 
+$modeMatch = [regex]::Match($autorun, 'Mode:\s*([^\r\n]+)')
+if (-not $modeMatch.Success) {
+    throw "gate-sync: unable to parse mode from docs/AUTORUN_STATE.md"
+}
+$mode = $modeMatch.Groups[1].Value.Trim()
+if ($mode -ne 'AutoRun') {
+    Write-Host "gate-sync: inactive (mode=$mode)"
+    exit 0
+}
+
 $agentsGate = [regex]::Match($agents, 'Current required terminal gate:\s*`?(v\d+)`?').Groups[1].Value
 $autorunGate = [regex]::Match($autorun, 'Terminal gate:\s*`?(v\d+)`?').Groups[1].Value
 $docsGate = [regex]::Match($docsReadme, 'Current target is .* gate `?(v\d+)`?', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase).Groups[1].Value

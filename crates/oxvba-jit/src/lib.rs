@@ -1,8 +1,10 @@
-//! oxvba-jit: Cranelift backend boundary.
+//! `oxvba-jit` — the Cranelift backend for typed OxIR.
 //!
-//! M4-3 lands the first real JIT slice: a deliberately narrow Cranelift compiler that
-//! runs straight-line Long arithmetic and cleanly declines everything else. The decline
-//! path is explicit and whole-program; there is no VM fallback in this crate.
+//! The backend compiles linked `OxProgram` sets with an explicit whole-program
+//! decline boundary and no VM fallback. It currently covers a broad
+//! platform-neutral language/runtime surface while Windows COM/native calls,
+//! persistent package sessions, typed-primary entries and the product cache
+//! remain open architecture work. See `docs/spec/OXVBA_JIT_ARCHITECTURE_V1.md`.
 
 use cranelift_codegen::ir::{
     self, AbiParam, InstBuilder, StackSlotData, StackSlotKind, UserFuncName, Value,

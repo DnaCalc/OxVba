@@ -1,5 +1,8 @@
 # VMR-06 Descriptor Driven Behavior Selection v1
 
+> [!CAUTION]
+> **Historical delivery slice.** Current VM/artifact architecture is [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md).
+
 Status: `working-draft`
 Date: 2026-05-27
 Scope owner: OxVBA compiler/VM/runtime/native-readiness

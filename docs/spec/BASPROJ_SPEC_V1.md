@@ -45,7 +45,7 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 | Property | Type | Values | Default | Required | Purpose |
 |----------|------|--------|---------|----------|---------|
 | `OutputType` | enum | `HostModule`, `Library`, `Exe`, `Addin`, `ComServer`, `ComExe` | — | **yes** | Semantic project/output kind |
-| `BuildTarget` | enum | `Bundle`, `WrapperExe`, `WrapperLibrary`, `WrappedComServer` | `Bundle` | no | Physical packaging/build shape |
+| `BuildTarget` | enum | `Bundle`, `WrapperExe`, `WrapperLibrary`, `WrappedComServer` | `Bundle` | no | Physical packaging/build shape; the retained `Bundle` spelling now means the canonical OxImage (`.oxi`) package target, not retired `.oxb` bytecode |
 | `ProjectName` | identifier | any valid VBA identifier | directory name | no | Maps to `ProjectManifest.project_name` |
 | `EntryPoint` | string | `Module.Procedure` | — | no | Explicit startup procedure override for execution |
 | `RuntimeFlavor` | enum | `Lite`, `Jit` | `Lite` | no | VM-only vs VM+JIT |
@@ -58,7 +58,7 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 
 | OutputType | ProjectKind | Produces | Entry point |
 |-----------|------------|---------|------------|
-| `HostModule` | `Host` | `.oxb` bundle | not required |
+| `HostModule` | `Host` | `.oxi` OxImage package | not required |
 | `Library` | `Library` | library-style project semantics | not required |
 | `Exe` | `Source` | executable/program-style semantics | required via explicit `EntryPoint`, unique top-level mainline, or unique `Sub Main` |
 | `Addin` | `Library` | XLL add-in package via `oxvba build` | optional; top-level mainline rejected |
@@ -67,9 +67,9 @@ All properties are optional unless noted. A project may contain multiple `<Prope
 
 **OxVBA extension note:** top-level executable statements are an OxVBA hosting/project extension, not an Office-VBA parity claim. In `.basproj` program-style execution (`OutputType=Exe`), a module containing top-level executable statements may supply the startup mainline when no explicit `EntryPoint` is configured. In the current bounded lane, top-level executable statements are rejected for `Library`, `Addin`, `ComServer`, and `ComExe`.
 
-**Packaging note:** `OutputType` is primarily the semantic project kind. For the current Addin lane, `OutputType=Addin` also selects the XLL package handoff for `oxvba build` and defaults the output to `<ProjectName>.xll`. For other project kinds, `BuildTarget` controls the physical packaging lane. `Bundle` emits the canonical `.oxb` artifact. `WrapperExe`, `WrapperLibrary`, and `WrappedComServer` are wrapper/native-hosting lanes over that canonical bundle, not a second compiler path.
+**Packaging note:** `OutputType` is primarily the semantic project kind. `BuildTarget` controls the physical packaging lane. The compatibility spelling `Bundle` designates the canonical OxImage `.oxi` package; it does not revive the retired `.oxb`/Op execution artifact. `WrapperExe`, `WrapperLibrary`, and `WrappedComServer` are runtime-backed packaging lanes over verified OxImage. Genuine native targets remain distinct future output classes under system clauses `BUILD-*`.
 
-**COM server packaging note:** `OutputType=ComServer` means the project has COM server semantics: exposed/creatable class modules, COM-facing class metadata, and no top-level executable startup. It does not by itself claim that the current build emits a registered, loadable in-process COM DLL. `BuildTarget=WrappedComServer` is the physical Windows in-process COM DLL wrapper lane over the canonical `.oxb` payload. The compatibility-only spelling `WrapperComServer`, if accepted by a parser or host surface, must normalize to `WrappedComServer` and must not appear in canonical generated project files.
+**COM server packaging note:** `OutputType=ComServer` means the project has COM server semantics: exposed/creatable class modules, COM-facing class metadata, and no top-level executable startup. It does not by itself claim that the current build emits a registered, loadable in-process COM DLL. `BuildTarget=WrappedComServer` is the physical Windows in-process COM DLL wrapper lane over verified `.oxi`. The compatibility-only spelling `WrapperComServer`, if accepted by a parser or host surface, must normalize to `WrappedComServer` and must not appear in canonical generated project files.
 
 **Planned extension:** a future `WinExe` `OutputType` is expected for windowed executable semantics distinct from console/program-style `Exe`. That future lane is intentionally separate from the physical build-target choice.
 
@@ -477,7 +477,7 @@ Referenced from `.basproj`:
 
 No `<NativeExport>` items are needed. Class registration metadata is driven by the `<ClassModule>` items with `VBCreatable=True`, and the WrappedComServer packaging lane is responsible for producing the standard COM entry points (`DllGetClassObject`, `DllCanUnloadNow`, `DllRegisterServer`, and `DllUnregisterServer`) when that physical target is implemented.
 
-In the current WrappedComServer delivery lane, `OutputType=ComServer` supplies the semantic class/interface surface and `BuildTarget=WrappedComServer` selects the physical in-process DLL wrapper. The required artifact set for that lane is the canonical `.oxb`, the generated/compiled DLL, generated type library when enabled, registration plan or manifest material, and build logs/debug outputs where available. Existing generated-source COM skeletons are not a completion claim until the wrapped DLL can be built, loaded, registered or activated through the declared path, and verified by the relevant COM evidence rows.
+In the current WrappedComServer delivery lane, `OutputType=ComServer` supplies the semantic class/interface surface and `BuildTarget=WrappedComServer` selects the physical in-process DLL wrapper. The required artifact set is the canonical `.oxi`, reusable host DLL, COM descriptor/manifest, generated type library when enabled, registration material and build/debug outputs. A produced wrapper is not a JIT-backed or native-output completion claim until those distinct paths pass their own workset rows.
 
 ---
 

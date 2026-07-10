@@ -1,5 +1,8 @@
 # OxIde Direct Host Showcase Boundary
 
+> [!CAUTION]
+> **Historical deleted-stack guidance.** Use the current system/session and language-service architecture contracts.
+
 This note records the current honest OxVba-side showcase boundary for OxIde as a direct-embed host.
 
 It does not claim that OxIde has already consumed every surface below.

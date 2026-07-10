@@ -1,5 +1,8 @@
 # JIT v2 Helper ABI Catalog v1
 
+> [!CAUTION]
+> **Historical planning catalog.** Current helper-ABI requirements are in [`OXVBA_JIT_ARCHITECTURE_V1.md`](OXVBA_JIT_ARCHITECTURE_V1.md) §7 and system clause `RUNTIME-ABI-001`.
+
 Status: `planning-abi`
 Date: 2026-05-26
 Owning workset:

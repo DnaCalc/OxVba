@@ -1,5 +1,8 @@
 # Language Service Host Boundaries
 
+> [!CAUTION]
+> **Historical deleted-stack guidance.** Use [`spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md) and the current language-service workset.
+
 This document describes how OxVba language services should be consumed by different host classes.
 
 The governing rule is:

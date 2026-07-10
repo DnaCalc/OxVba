@@ -1,40 +1,15 @@
-//! `oxvba-vm3` — the typed-CFG interpreter of OxIR.
+//! `oxvba-vm3` — the typed-CFG reference interpreter for OxIR.
 //!
-//! vm3 is a fresh **executor core** (typed register file + place model,
-//! block-threaded dispatch, frame/linkage + ByRef-aliasing, error/Resume routing,
-//! object-lifecycle / Terminate-drain timing, RaiseEvent/WithEvents, COM-event pump)
-//! re-expressed against OxIR's typed basic-block CFG. It does **not** re-implement
-//! VBA: it reuses the value/interop/lib substrate (`oxvba-runtime`, `oxvba-lib`,
-//! `oxvba-hal`, `oxvba-com`/`oxvba-comhost`) and the shared `oxvba-eval` semantic
-//! kernel — refactoring upstream where that improves the whole.
+//! VM3 is the sole product interpreter and the JIT parity reference. It uses a
+//! typed register/place model, heap frame stack, ByRef aliases, error/Resume
+//! routing, arrays/records/objects/classes, project events and shared
+//! runtime/evaluation/library/host substrates. The retired Op/Bundle VM2 path is
+//! not an execution fallback.
 //!
-//! vm3 is OxIR's **executable specification**: its observable behaviour defines what
-//! OxIR means, and the Cranelift JIT must match it. vm3 is now the sole runtime and the
-//! oracle for the JIT — the legacy `Op`-bundle interpreter has been retired, its role
-//! replaced by the vm3 GOLDEN SNAPSHOT (`oxvba-differential::tests::vm3_golden_snapshot`).
-//!
-//! # Status (M2 bring-up)
-//!
-//! This cut runs the **scalar / string / Boolean value core + control flow + calls**:
-//! `Assign`, all arithmetic (`Arith`/`Div`/`Pow`/`Neg`), `Concat`, `Compare`,
-//! `Logical`/`Not`, `Coerce`, the `Jump`/`Branch`/`Return` terminators and the
-//! statement-boundary marker, plus (M2-b) compiled procedure calls (`CallProc`) with
-//! **true ByRef aliasing** and base-library built-ins (`CallNative` → the shared
-//! `oxvba_lib::invoke`). The value semantics go through the shared [`oxvba_eval::arith`]
-//! kernel — the *same* functions vm2 calls — so a successful run is vm2-identical by
-//! construction.
-//!
-//! Dispatch is an explicit **block-threaded loop over a heap frame stack** (no native
-//! recursion), so a `CallProc` pushes a callee and the loop continues with it, `Return`
-//! pops back, and deep recursion is bounded by the frame ceiling (error 28) rather than
-//! overflowing the host stack — the iterative model vm2 uses.
-//!
-//! The frame holds its values as `Variant`s (the shareable slot layout the JIT
-//! side-exits into); the **typed unboxed lanes** + per-site type profiler are the M6
-//! speculation tier, an addition over this layout rather than a retrofit. The full
-//! error/`Resume` model (M2-c), and objects, COM, arrays, records, `Declare`, and
-//! cross-bundle calls (M3) return [`Vm3Error::Unimplemented`] for now — never a silent
-//! mis-execution.
+//! VM3 is broad but remains in progress for the complete verified OxIR and
+//! Windows interop profiles. Its golden snapshot is regression evidence; public
+//! VBA specifications and reproducible Excel/VBA behavior remain semantic
+//! authority. See `docs/spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`.
 
 use std::borrow::Cow;
 use std::collections::HashMap;

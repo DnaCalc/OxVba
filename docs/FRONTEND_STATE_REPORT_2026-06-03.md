@@ -1,5 +1,8 @@
 # OxVBA Front-End State Report — Compiler & Runtime
 
+> [!CAUTION]
+> **Historical pre-clean-stack report.** Current compiler architecture and status are in `docs/ARCHITECTURE.md`, the 2026-07-10 review and compiler contract V2.
+
 - **Report date:** 2026-06-03
 - **Branch surveyed:** `single-package-descriptor-vm`
 - **Scope:** Current state of the VBA **front-end** (lexer → parser → binder → HIR → lowering) and how far the migration *away from the legacy string-replacement front-end toward a new HIR* has progressed. The back-end/VM and COM/host areas are touched only where they bound the front-end.

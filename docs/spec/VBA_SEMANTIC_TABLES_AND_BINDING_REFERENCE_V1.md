@@ -1,8 +1,9 @@
 # VBA Semantic Tables And Binding Reference v1
 
-Status: `working-draft`
+Status: working VBA semantic/evidence reference; implementation incomplete
 Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/runtime/COM/native-readiness
+System clauses: `AUTH-SPEC-001`, `COMP-BIND-001`, `CONF-MATRIX-001`
 Companion semantics:
 [`VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md),
 [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md)
@@ -10,7 +11,7 @@ Companion semantics:
 ## Purpose
 
 Define the machine-readable semantic tables and binding audits needed to make
-bytecode plus metadata executable enough for the VM and future JIT. This single
+OxIR plus metadata executable enough for VM3 and the JIT. This single
 reference covers the narrower topics that would otherwise become several small
 docs: coercion/operator truth tables, call-site descriptor audit, slot lifecycle
 and cleanup, and object/member binding.
@@ -189,7 +190,9 @@ Required rows:
 - early-bound COM dispatch/vtable strategy;
 - event source and `WithEvents` handler binding.
 
-## Seed Table Targets For VM Rework
+## Historical Seed Table Targets (Superseded Implementation Snapshot)
+
+The semantic row shapes remain useful, but implementation references from this point to `OxBundle`, old VM package versions and VMR beads describe the 2026-05-26 stack. Current rows must be migrated to the canonical compiler/OxIR/VM3/JIT matrices before they support a completion claim.
 
 The first extraction pass should produce small, runnable seed sets rather than
 attempting full table coverage at once:
@@ -364,6 +367,6 @@ markdown table or embedded fixture manifest. The minimum useful row fields are:
 
 ## Output Rule
 
-These tables are package inputs, not test decorations. A bytecode or JIT path
-may use a fast typed operation only when the corresponding row exists, is
-descriptor-backed, and has VM evidence or an explicit oracle/deferred status.
+These tables are semantic inputs, not test decorations. A VM3 or JIT path may
+use a fast typed operation only when the corresponding current canonical row
+exists, is descriptor-backed, and has VM3 plus oracle/deferred evidence.

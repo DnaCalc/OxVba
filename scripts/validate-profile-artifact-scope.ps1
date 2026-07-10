@@ -38,18 +38,32 @@ try {
         throw "profile-artifact-scope: not inside a git worktree"
     }
 
-    $agentsPath = "AGENTS.md"
-    if (-not (Test-Path $agentsPath)) {
-        throw "profile-artifact-scope: missing AGENTS.md"
-    }
-    $agentsText = Get-Content $agentsPath -Raw
-    $activeRange = Parse-ActiveRange -AgentsText $agentsText
-
     $allowed = @()
     if ($AllowVersions.Count -gt 0) {
         $allowed = @($AllowVersions | Sort-Object -Unique)
     }
     else {
+        $autorunPath = "docs/AUTORUN_STATE.md"
+        if (-not (Test-Path $autorunPath)) {
+            throw "profile-artifact-scope: missing docs/AUTORUN_STATE.md"
+        }
+        $autorunText = Get-Content $autorunPath -Raw
+        $modeMatch = [regex]::Match($autorunText, 'Mode:\s*([^\r\n]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $modeMatch.Success) {
+            throw "profile-artifact-scope: unable to parse mode from docs/AUTORUN_STATE.md"
+        }
+        $executionMode = $modeMatch.Groups[1].Value.Trim()
+        if ($executionMode -ne "AutoRun") {
+            Write-Host "profile-artifact-scope: inactive (mode=$executionMode)"
+            return
+        }
+
+        $agentsPath = "AGENTS.md"
+        if (-not (Test-Path $agentsPath)) {
+            throw "profile-artifact-scope: missing AGENTS.md"
+        }
+        $agentsText = Get-Content $agentsPath -Raw
+        $activeRange = Parse-ActiveRange -AgentsText $agentsText
         $allowed = Expand-AllowedVersions -Range $activeRange
     }
 

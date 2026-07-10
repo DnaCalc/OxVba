@@ -12,7 +12,9 @@ This document defines how OxVBA work is executed day-to-day: fast iteration, cle
 - Keep durable guidance short and stable. Put volatile execution state in active worksets, bead records, `docs/AUTORUN_STATE.md`, and `CURRENT_BLOCKERS.md`.
 
 ## 3. Execution Model
-OxVBA follows current architecture and active workset sequencing.
+OxVBA follows the destination clauses in
+`docs/spec/OXVBA_SYSTEM_CONTRACT_V1.md`, the current realization in
+`docs/ARCHITECTURE.md`, and accepted active workset sequencing.
 Execution doctrine details and run hygiene are captured in `docs/LOCAL_EXECUTION_DOCTRINE.md`.
 
 Execution defaults:

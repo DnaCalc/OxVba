@@ -1,5 +1,8 @@
 # Build Target And Wrapper Boundary v1
 
+> [!NOTE]
+> **Supporting historical design.** Current output architecture is system clauses `BUILD-*`, `docs/ARCHITECTURE.md` §10 and the Windows interop architecture. Any `.oxb`/Bundle assumption is superseded by verified `.oxi`.
+
 Status: `draft`
 Date: 2026-04-03
 Scope owner: OxVBA project/build system

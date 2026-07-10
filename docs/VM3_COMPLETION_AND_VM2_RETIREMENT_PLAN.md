@@ -1,5 +1,8 @@
 # vm3 Completion & vm2 Retirement — Workset Plan
 
+> [!CAUTION]
+> **Historical retirement plan.** VM3 is now the sole interpreter. Current VM3/OxIR authority is [`spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](spec/OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md).
+
 **Status:** Plan (design-verified 2026-06-29, two adversarial verifier passes folded in). Not yet started.
 **Goal:** Finish vm3 to a **strict superset of vm2**, make vm3 the **one and only running VM** in OxVba, then **delete vm2**, refactor to a clean vm3-only codebase, and verify.
 **Hard requirement:** before deletion, **no scenario where vm2 covers wider functional scope than vm3** (`vm3 ⊇ vm2`). The parity matrix below must have an empty "still vm2-wider" set.

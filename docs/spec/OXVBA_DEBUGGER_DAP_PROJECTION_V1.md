@@ -1,5 +1,8 @@
 # OxVba Debugger DAP Projection V1
 
+> [!CAUTION]
+> **Future/historical design, not current capability.** Any debugger revival must conform to `DEBUG-CORE-001` and use the current project/runtime session architecture.
+
 This note defines the intended Debug Adapter Protocol projection over the OxVba semantic debugger core.
 
 It does not introduce a second debugger.

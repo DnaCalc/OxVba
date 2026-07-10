@@ -1,5 +1,8 @@
 # OxVBA Hosting, Project, Packaging, and Tooling Proposal v2
 
+> [!NOTE]
+> **Historical proposal.** Current project/session/package/output authority is the system contract, current architecture and current subsystem contracts.
+
 Status: `design-draft`
 Date: 2026-03-07
 Scope owner: OxVBA runtime/host/tooling

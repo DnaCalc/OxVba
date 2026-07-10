@@ -1,7 +1,10 @@
 # HIR Resolution Environment — Design V1
 
+> [!CAUTION]
+> **Superseded HIR-era design.** Current compiler authority is [`OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md).
+
 - **Date:** 2026-06-04
-- **Status:** SUPERSEDED by [`OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md`](OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md), which absorbs the resolution environment + base-library model and extends it down into the Core IR / bytecode contract. Kept for the detailed resolution-environment derivation; the contract is authoritative.
+- **Status:** historical. It was first superseded by `OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md`; both are now superseded by the compiler contract V2. Kept only for the detailed resolution-environment derivation.
 - **Owner:** DNA Kode
 - **Supersedes framing of:** the staged "Option A" single-module-binder + flattening approach, and the interim in-compiler table ("Stage B") of `WORKSET_2026-05-30_DEFAULT_HOST_PROJECT_VBA_LIBRARY.md`.
 - **Builds on:** [`docs/HIR_COVERAGE_GAPS_AND_WIDENING_PLAN_2026-06-03.md`](../HIR_COVERAGE_GAPS_AND_WIDENING_PLAN_2026-06-03.md), [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) §End-State Destination, the `DEFAULT_HOST_PROJECT_VBA_LIBRARY` workset, [`docs/spec/EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md), [`docs/spec/VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md).

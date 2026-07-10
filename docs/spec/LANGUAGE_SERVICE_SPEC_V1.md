@@ -1,6 +1,9 @@
 # OxVBA Language Service Spec V1
 
-**Status:** Design-locked current bounded internal surface
+> [!CAUTION]
+> **Superseded and not currently implemented.** The described service was removed from the clean stack. Use [`OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md).
+
+**Status:** superseded historical design for the deleted language-service stack
 **Date:** 2026-03-23
 **Implements:** §3.1.6, §4.8 of `HOSTING_PROJECT_TOOLING_PROPOSAL.md`
 

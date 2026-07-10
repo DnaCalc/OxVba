@@ -3,6 +3,7 @@
 Date: 2026-06-22
 Status: accepted direction, in-progress implementation
 Owner: Codex
+System clauses: `RUNTIME-VALUE-001`, `RUNTIME-ABI-001`, `WIN-PLAN-001`
 
 ## Decision
 

@@ -1,15 +1,16 @@
 # VBA Type System v1
 
-Status: `working-draft` authoritative reference for new package, VM, JIT, and
-interop type work
+Status: working VBA semantic reference; implementation/evidence incomplete
 Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/runtime/COM/native-readiness
+System clauses: `AUTH-SPEC-001`, `COMP-BIND-001`, `RUNTIME-VALUE-001`, `IR-OXIR-001`
+Current architecture: [`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md), [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md)
 
 ## Purpose
 
-Define the target OxVba type model for full VBA compatibility and future JIT
-work. This document is the development authority for type-system shape: new
-compiler metadata, VM package metadata, `ProcLoweringIr`, COM/native
+Define the target OxVba type model for full VBA compatibility and current/future backend
+work. This document is the semantic authority for type-system shape: compiler
+metadata, OxIR/OxImage metadata, backend lowering plans, COM/native
 descriptors, and differential harness evidence should align to this model.
 
 Current code remains executable truth where implementation and this draft are
@@ -581,7 +582,10 @@ and must be treated as unsupported by JIT/native entry gates. `CallerProvided`
 is the initial state for parameter slots before call-binding descriptors define
 the exact argument source, aliasing, and writeback behavior.
 
-## Current Code Anchors And Gaps
+## Historical Code Anchors And Gaps (Superseded Snapshot)
+
+> [!CAUTION]
+> This implementation inventory records the removed compiler/Bundle/VM generation from 2026-05-26. It is retained only to explain the semantic draft's origin. Current implementation and gaps are in `docs/ARCHITECTURE.md`; current type/artifact ownership is defined by the compiler and OxIR/Image contracts.
 
 Current implementation anchors:
 
@@ -706,15 +710,11 @@ Known development gaps:
   `WithEvents` as binding rows, but those rows are not a package-owned member
   registry yet.
 
-## Implementation Direction
+## Current Type-System Direction
 
-1. Add a compiler/package type registry with stable `VbaTypeId` values.
-2. Populate slot descriptors for parameters, locals, return values, temporaries,
-   and compiler-generated slots.
-3. Serialize descriptors through `OxBundle` or its executable semantic package
-   successor.
-4. Teach VM package execution and snapshot evidence to expose declared slot
-   metadata without changing current retained-`Variant` execution.
-5. Use the same descriptors as the input to `ProcLoweringIr`.
-6. Gate any non-VBA extension types, including declared Decimal storage, behind
-   explicit diagnostics and support-matrix rows.
+1. Preserve declared types and callable signatures in compiler AnalysisResult, Core IR and OxIR.
+2. Give OxIR/OxImage stable nominal type/record/interface identities and verified descriptors.
+3. Keep exact runtime carriers distinct from declared VBA type meaning.
+4. Make VM3 and JIT consume the same verified type/storage/call descriptors.
+5. Use backend lowering plans only for physical representation and calling convention.
+6. Gate non-VBA extension types behind explicit diagnostics and separate capability rows.

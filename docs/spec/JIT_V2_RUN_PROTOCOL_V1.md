@@ -1,6 +1,9 @@
 # JIT V2 Run Protocol V1
 
-Status: active contract for M4-2 and later JIT driver work.
+> [!CAUTION]
+> **Historical run protocol.** Last-program entry and leaked descriptor rules are current gaps, not destination requirements. Use the OxIR/Image and JIT architecture contracts.
+
+Status: superseded historical M4 planning contract.
 
 This document fixes the shared driver sequence that vm3 already implements and the JIT driver must match. It is intentionally about image/session sequencing, not instruction dispatch.
 

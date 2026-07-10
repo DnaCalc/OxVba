@@ -1,5 +1,8 @@
 # OxVba Debugger Contract V1
 
+> [!CAUTION]
+> **Future design input, not current capability.** The active workspace has no debugger crate. System clause `DEBUG-CORE-001` owns the destination.
+
 This spec defines the first bounded OxVba-side debugger contract for direct hosts.
 
 The design target is a semantic debugger for OxVba code:

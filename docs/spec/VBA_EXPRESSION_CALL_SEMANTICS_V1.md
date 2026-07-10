@@ -1,8 +1,9 @@
 # VBA Expression And Call Semantics v1
 
-Status: `working-draft`
+Status: working VBA semantic reference; implementation/evidence incomplete
 Date: 2026-05-26
 Scope owner: OxVBA compiler/VM/runtime/JIT/native-readiness
+System clauses: `AUTH-SPEC-001`, `COMP-BIND-001`, `RUNTIME-EVAL-001`
 
 ## Purpose
 
@@ -12,13 +13,12 @@ that sit beside the declared type model in
 
 The type-system reference answers "what type is declared here?" This document
 answers "what happens when values, expressions, properties, and calls are
-evaluated?" Both documents are required inputs to the executable semantic
-package, VM evidence, `ProcLoweringIr`, COM/native descriptors, and future JIT
-lowering.
+evaluated?" Both documents are required inputs to compiler analysis, OxIR/OxImage,
+VM3/JIT evidence, backend lowering plans and COM/native descriptors.
 
 This is not a JIT-only contract. If a JIT needs a coercion, operator, call-site,
 default-member, or ByRef fact, that fact belongs in the executable semantic
-package first and must be observable by the VM or VM evidence.
+artifact first and must be observable by VM3 or VM3 evidence.
 
 ## Source References
 
@@ -331,9 +331,9 @@ resolved call target, not as an untracked runtime fallback. Late-bound COM
 default members must carry the same named/default argument facts used by the
 COM descriptor.
 
-## Package And VM/JIT Requirements
+## OxIR/OxImage And VM3/JIT Requirements
 
-The executable semantic package must carry:
+The verified OxIR/OxImage artifact must carry:
 
 - expression descriptors for coercion-sensitive expression nodes;
 - operator descriptors or helper IDs for every lowered operator;
@@ -345,9 +345,9 @@ The executable semantic package must carry:
 - boundary projection descriptors for COM, native Declare, and exported
   callables.
 
-The VM should consume these descriptors where they affect execution, and VM
-snapshot evidence should report enough call/coercion metadata to prove the JIT
-used the same semantic package.
+VM3 consumes these descriptors where they affect execution, and differential
+evidence reports enough call/coercion metadata to prove the JIT used the same
+verified facts.
 
 The JIT may specialize only when:
 
@@ -359,6 +359,8 @@ The JIT may specialize only when:
   fallback.
 
 ## Spec Cross-Reference Review
+
+The semantic anchors and required facts remain current. References below to `OxBundle` v15 and old VM/package gaps are a historical 2026-05-26 implementation snapshot, not current architecture or status.
 
 Review result for this draft:
 
@@ -390,13 +392,9 @@ Open follow-up:
 - extend VM-runnable fixtures beyond the VMR-04 seed, which now covers ByRef
   alias versus ByRef expression temp, Optional default metadata, Optional
   `Variant` missing-policy metadata, and empty/non-empty ParamArray shape;
-- use the VMR-04 call-gap ledger in
-  `EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md` before changing call
-  execution. That ledger currently classifies ByRef expression no-writeback as
-  oracle/test work, the first direct `Long` to declared-`Double ByVal`
-  call-entry coercion as package-backed VMR-06 behavior with broader coercion
-  metadata still missing, and omitted Optional `Variant` as a VM/runtime
-  value-state limitation;
+- migrate useful VMR-04 call-gap rows into the current compiler/OxIR readiness
+  matrices before changing call execution; the superseded completion map is
+  historical provenance only;
 - broaden fixtures beyond the v15 selected `Property Let` value-param and
   default-member metadata rows to cover `Property Set`, object default-member
   execution, and unsupported/member-ambiguity diagnostics.

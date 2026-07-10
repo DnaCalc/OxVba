@@ -1,58 +1,81 @@
-# OxVba Spec Drafts
+# OxVba Specifications
 
-This directory contains early-stage OxVba internal design drafts.
+## Authority model
 
-Normative external specification sources are maintained in `../Foundation/reference`
-(see `docs/FOUNDATION_SPEC_REFERENCE.md`).
+Specifications in this directory have one of four roles:
 
-Status model:
-- `design-draft`: directional, incomplete, expected to change quickly.
-- `working-draft`: structured and testable, still open for significant revision.
-- `stable-draft`: implementation-linked and evidence-backed; still not final normative text.
+- **system contract** — durable destination and capability clauses;
+- **current architecture contract** — current accepted subsystem design;
+- **semantic reference** — clean-room VBA semantics refined by evidence;
+- **historical/supporting** — prior design, planning, conformance mechanics or provenance that cannot override current contracts.
 
-Current draft set:
-- [`VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md) (`working-draft`, authoritative reference): declared types, runtime value states, carriers, object/class/interface/COM descriptors, Decimal-as-Variant-subtype policy, and package slot descriptor target.
-- [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md) (`working-draft`): expression classification, Let/Set coercion, operator semantics, assignment/property behavior, call binding, Optional/ParamArray, and ByRef/ByVal package descriptors.
-- [`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md) (`working-draft`): shared bytecode-plus-metadata execution package target for VM, JIT, wrappers, and future native lanes.
-- [`EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_COMPLETION_MAP_V1.md) (`working-draft`): package fact-to-implementation map and gap taxonomy across bytecode, metadata, VM, runtime, COM/native, and evidence surfaces.
-- [`BYTECODE_VM_SEMANTIC_CONTRACT_V1.md`](BYTECODE_VM_SEMANTIC_CONTRACT_V1.md) (`working-draft`): bytecode family semantic catalog shape, VM package consumption contract, and VM evidence schema.
-- [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md) (`working-draft`): machine-readable coercion/operator/call binding, slot lifecycle/cleanup, and object/member binding table plan.
-- [`VMR06_DESCRIPTOR_DRIVEN_BEHAVIOR_SELECTION_V1.md`](VMR06_DESCRIPTOR_DRIVEN_BEHAVIOR_SELECTION_V1.md) (`working-draft`): selected VMR-06 behavior-affecting VM slices, currently descriptor-driven ByVal call-entry coercion and rank-1 fixed/static array bound lookup.
-- [`NATIVE_READY_VALUE_SUBSTRATE_V1.md`](NATIVE_READY_VALUE_SUBSTRATE_V1.md) (`working-draft`): canonical native-ready value/type substrate target for `Variant`, exact numeric carriers, UDT descriptors, and ABI materialization boundaries.
-- [`NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md`](NATIVE_READY_RUNNER_AND_BENCHMARK_SCHEMA_V1.md) (`working-draft`): shared correctness/performance result schema for VM, JIT, wrapper, and future native runners.
-- [`HAL_DESIGN_DRAFT.md`](HAL_DESIGN_DRAFT.md) (`design-draft`): scope, principles, profile targets, and staged design plan for the Host Abstraction Layer.
-- [`HAL_INTERFACE_DRAFT.md`](HAL_INTERFACE_DRAFT.md) (`design-draft`): proposed HAL contracts, capability schema, and maturity model.
-- [`HAL_CONFORMANCE_DRAFT.md`](HAL_CONFORMANCE_DRAFT.md) (`design-draft`): proposed conformance classes, test obligations, and evidence model.
-- [`HAL_SPEC_WORKING_DRAFT.md`](HAL_SPEC_WORKING_DRAFT.md) (`working-draft`): implementation-linked HAL contract, deterministic error model, unsupported-mode semantics, and Windows-only COM decision.
-- [`HAL_SPEC_CROSSWALK.md`](HAL_SPEC_CROSSWALK.md) (`working-draft`): capability/intrinsic to Foundation anchor mapping plus known extraction gaps.
-- [`HAL_CONFORMANCE_SUITE.md`](HAL_CONFORMANCE_SUITE.md) (`working-draft`): runnable HAL harness layers, commands, artifact schema, and expectations.
-- [`HAL_FORMALIZATION_PROGRAM.md`](HAL_FORMALIZATION_PROGRAM.md) (`working-draft`): charter-driven HAL formalization program with 5-step execution ladder and H1/H2/H3 tracks.
-- [`HAL_CONTRACT_CLAUSE_CATALOG_V1.md`](HAL_CONTRACT_CLAUSE_CATALOG_V1.md) (`working-draft`): explicit clause ID catalog with pre/postconditions, failure obligations, and verification mapping.
-- [`HAL_CONTRACT_CLAUSE_CATALOG_V1.csv`](HAL_CONTRACT_CLAUSE_CATALOG_V1.csv) (`working-draft`): machine-readable clause schema for coverage computation and drift-guard checks.
-- [`HAL_POLICY_PRESETS.md`](HAL_POLICY_PRESETS.md) (`working-draft`): named host-policy preset table (`strict-ci`, deterministic modes, interactive-dev) and intended usage.
-- [`HAL_CONTRACT_ASSERTION_HARDENING.md`](HAL_CONTRACT_ASSERTION_HARDENING.md) (`working-draft`): debug/checked build assertion scaffold and staged hardening path for in-code contract checks.
-- [`HAL_OPERATING_ENVELOPE_V1.md`](HAL_OPERATING_ENVELOPE_V1.md) (`working-draft`): explicit v1 host-boundary guarantees, non-guarantees, and optimization-safe operating constraints.
-- [`HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md`](HAL_RUNTIME_PROFILE_BOOTSTRAP_IMPLEMENTATION_V2.md) (`working-draft`): implemented runtime bootstrap resolver and CLI integration snapshot (`v198..v201`).
-- [`HAL_UI_PLATFORM_IMPLEMENTATION_V2.md`](HAL_UI_PLATFORM_IMPLEMENTATION_V2.md) (`working-draft`): implemented Windows GUI/Linux stdio UI + DoEvents runtime-class behavior snapshot (`v207..v211`).
-- [`HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md`](HAL_DECLARE_EXECUTION_IMPLEMENTATION_V2.md) (`working-draft`): implemented Declare metadata/lowering/VM/HAL dynamic-link subset snapshot (`v212..v218`).
-- [`HAL_DECLARE_ABI_SPEC_V1.md`](HAL_DECLARE_ABI_SPEC_V1.md) (`working-draft`): formalized external declaration + marshaling contract with source-anchor mapping and implementation-defined boundaries.
-- [`HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md`](HAL_DECLARE_MARSHAL_CONFORMANCE_V1.md) (`working-draft`): clause-mapped conformance lanes for declaration parsing, runtime gating, marshaling, and deferred oracle checks.
-- [`PROJECT_MODULE_REFERENCE_SPEC_V1.md`](PROJECT_MODULE_REFERENCE_SPEC_V1.md) (`working-draft`): formal state model, invariants, pre/postconditions, and deterministic error semantics for project/module/reference behavior.
-- [`PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md`](PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md) (`working-draft`): clause IDs and verification mappings for PMR semantics.
-- [`PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.csv`](PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.csv) (`working-draft`): machine-readable PMR clause coverage map.
-- [`PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md`](PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md) (`working-draft`): executable lane design for PMR static semantics, multi-module resolution, references, and storage.
-- [`PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md`](PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md) (`working-draft`): HAL-adjacent contract and capability planning for host projects, references, and storage.
-- [`PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md`](PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md) (`working-draft`): deterministic importlib/type-library binding contract draft and HAL interaction shape for PMR reference resolution.
-- [`PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md`](PROJECT_MODULE_REFERENCE_SOURCE_CROSSWALK_V1.md) (`working-draft`): PMR source-anchor crosswalk across MS-VBAL, MS-OAUT, and MS-OVBA extraction status.
-- [`VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md`](VBP_SUBSET_AND_PROJECT_ARTIFACT_STRATEGY_DISCUSSION_V1.md) (`design-draft`): `.vbp` subset support strategy, wrapper EXE/DLL packaging model, and lateral artifact options for loose vs compiled project execution.
-- [`HOSTING_PROJECT_TOOLING_PROPOSAL.md`](HOSTING_PROJECT_TOOLING_PROPOSAL.md) (`design-draft`, v2 content): canonical hosting/project/packaging/tooling proposal with full DNA VbCalc pathfinder host design, `oxvba.toml` schema, complete CLI help text, WASM comparison, top-level code extension, and phased execution plan.
-- [`archive/HOSTING_PROJECT_TOOLING_PROPOSAL_V1.md`](archive/HOSTING_PROJECT_TOOLING_PROPOSAL_V1.md) (`archived`): original v1 proposal retained for historical traceability; superseded by the canonical proposal above.
-- [`CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`](CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md) (`working-draft`): staged class-module/COM alignment plan with explicit near-term semantic steps and deferred interop boundaries.
-- [`COM_CLIENT_SERVER_SCOPE_V1.md`](COM_CLIENT_SERVER_SCOPE_V1.md) (`working-draft`): Windows COM client/server support scope, contract boundaries, tier model, apartment policy stance, and C2 late-bound client runway.
-- [`COM_CLIENT_SERVER_CONFORMANCE_V1.md`](COM_CLIENT_SERVER_CONFORMANCE_V1.md) (`working-draft`): COM-specific conformance lane architecture, artifact model, and C2 late-bound client lane planning with formal/deferred-oracle integration.
-- [`COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md`](COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md) (`working-draft`): comprehensive design for COM early binding and type-library consumption across PMR, HAL, binder, IR/runtime, caching, diagnostics, and formalized verification planning.
-- [`COM_EARLY_BINDING_TYPELIB_CONFORMANCE_V1.md`](COM_EARLY_BINDING_TYPELIB_CONFORMANCE_V1.md) (`working-draft`): executable lane plan (`E0..E6`) for early-binding/type-library conformance, formal lanes, and deferred-oracle tracking.
-- [`HAL_COM_BRIDGE_SCOPE_V1.md`](HAL_COM_BRIDGE_SCOPE_V1.md) (`working-draft`): HAL-owned COM boundary scope and C1->C2 transition contract for tokenized/native late-bound client behavior.
-- [`COM_CLIENT_LATEBOUND_BRIDGE_V1.md`](COM_CLIENT_LATEBOUND_BRIDGE_V1.md) (`working-draft`): explicit cross-layer bridge contract (VBA semantics -> compiler/VM transport -> HAL COM transport -> native adapter).
+File location does not grant authority. A document not listed as current below is supporting or historical unless a current contract explicitly adopts it.
 
-These files intentionally optimize for design velocity and clarity of open decisions rather than immediate lock-in.
+Normative external authorities are public specifications, the real VBA type library and reproducible Office/VBA observations under the clean-room rule. See [`../FOUNDATION_SPEC_REFERENCE.md`](../FOUNDATION_SPEC_REFERENCE.md).
+
+## System destination
+
+- [`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md) — authoritative OxVba destination, capability profiles, ownership and completion clauses.
+
+## Current subsystem architecture
+
+- [`OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md)
+- [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md)
+- [`OXVBA_JIT_ARCHITECTURE_V1.md`](OXVBA_JIT_ARCHITECTURE_V1.md)
+- [`OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md)
+- [`OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md)
+- [`OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md`](OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md)
+
+These contracts describe the intended architecture. Current implementation truth and gaps remain in [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+
+## Current VBA semantic references
+
+- [`VBA_GRAMMAR_V1.md`](VBA_GRAMMAR_V1.md) — grammar and recovery anchor.
+- [`VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md) — declared/runtime type model.
+- [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md) — expressions, coercion, assignment and calls.
+- [`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md) — machine-readable semantic-table targets.
+- [`PROJECT_MODULE_REFERENCE_SPEC_V1.md`](PROJECT_MODULE_REFERENCE_SPEC_V1.md) — project/module/reference semantics.
+- [`PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md`](PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md) — stable PMR clauses.
+- [`BASPROJ_SPEC_V1.md`](BASPROJ_SPEC_V1.md) — `.basproj` format.
+- [`OXVBA_POINTER_HELPERS_CONTRACT_V1.md`](OXVBA_POINTER_HELPERS_CONTRACT_V1.md) — pointer-helper semantic target, subordinate to Windows interop architecture.
+- [`DEBUG_PRINT_HOST_OWNERSHIP_V1.md`](DEBUG_PRINT_HOST_OWNERSHIP_V1.md) — accepted Debug.Print ownership rule.
+
+These references do not use `implemented` language unless current matrices/tests prove the complete scoped behavior.
+
+## Retained supporting specifications
+
+The following families remain useful subordinate detail but are not system/current-status authority:
+
+- COM scope/conformance and reference-selection documents, where consistent with `OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`;
+- HAL clause, conformance, runtime-profile and host-policy documents, where consistent with `HOST-HAL-001`;
+- project/reference conformance and source-crosswalk documents;
+- build/wrapper/BASPROJ documents, where consistent with `BUILD-*` and current `.oxi` architecture;
+- browser/web-host documents as extended-profile design inputs only;
+- debugger, immediate-evaluator and embedded-host documents as future design inputs only.
+
+Their implementation snapshots and historical workset/gate references are not current capability claims.
+
+## Superseded architecture families
+
+The following are explicitly superseded for current architecture:
+
+- `OXVBA_FRONTEND_AND_CORE_IR_CONTRACT_V1.md` and `HIR_RESOLUTION_ENVIRONMENT_V1.md`;
+- `EXECUTABLE_SEMANTIC_PACKAGE_V1.md`, its completion map, bytecode/VM contract and VMR-06 plan;
+- the `JIT_V2_*` planning/design family and `docs/OXVBA_JIT_PLAN.md`;
+- `LANGUAGE_SERVICE_SPEC_V1.md`, `LANGUAGE_SERVICE_PLATFORM_SPEC_V2.md` and root language-service guidance;
+- VM2/Bundle-era execution plans and handoffs;
+- debugger/direct-host documents that claim deleted active crates or implemented surfaces.
+
+They remain provenance and may contain reusable tests or design insights. They cannot override the system contract, current architecture or successor subsystem contracts.
+
+The exact successor map and handling rule is in [`DEPRECATION_LEDGER_2026-07-10.md`](DEPRECATION_LEDGER_2026-07-10.md).
+
+## Status vocabulary
+
+- `normative destination contract` — accepted target; not an implementation claim.
+- `current architecture contract` — accepted subsystem design; status still comes from architecture/matrices.
+- `working semantic reference` — authoritative semantic organization with open evidence/revision.
+- `supporting` — useful detail subordinate to current contracts.
+- `historical/superseded` — provenance only.
+
+Avoid labels such as `active`, `implemented`, `complete` or `design-locked` when they conflate document maturity with current product capability.

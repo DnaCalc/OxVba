@@ -1,5 +1,8 @@
 # COM Client/Server Scope V1
 
+> [!NOTE]
+> **Supporting historical scope.** Current Windows COM destination and mandatory target rules are in [`OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md).
+
 Status: `working-draft`  
 Date: 2026-03-04  
 Primary scope: Windows (`HalProfileId::Windows`)  

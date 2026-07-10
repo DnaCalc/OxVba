@@ -1,5 +1,8 @@
 # JIT v2 Tracer Bullet Test Plan v1
 
+> [!CAUTION]
+> **Historical tracer plan.** Retained for test provenance; it is not current JIT scope or completion authority.
+
 Status: `planning-test-design`
 Date: 2026-05-26
 Owning workset:

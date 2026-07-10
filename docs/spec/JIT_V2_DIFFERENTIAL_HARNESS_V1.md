@@ -1,5 +1,8 @@
 # JIT v2 Differential Harness v1
 
+> [!CAUTION]
+> **Historical harness plan.** Current parity requirements are system clause `CONF-DIFF-001` and the 2026-07-10 core workset.
+
 Status: `planning-harness`
 Date: 2026-05-26
 Owning workset:

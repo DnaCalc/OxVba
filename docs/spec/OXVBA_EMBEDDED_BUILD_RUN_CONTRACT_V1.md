@@ -1,5 +1,8 @@
 # OxVba Embedded Build/Run Contract v1
 
+> [!CAUTION]
+> **Historical design with deleted service assumptions.** Current authority is `HOST-SESSION-001`, `BUILD-*`, the current architecture and language-service contract.
+
 This document defines the intended typed build/run contract for direct-embed hosts such as OxIde.
 
 It is a design target, not a claim of completed implementation.

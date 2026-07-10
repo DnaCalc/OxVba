@@ -1,5 +1,8 @@
 # OxIde Embedded Build/Run Integration Guidance
 
+> [!CAUTION]
+> **Historical integration guidance.** It does not prove a current direct-host surface; use the current architecture and `HOST-SESSION-001`.
+
 This note defines how OxIde should consume the current direct embedded build/run surface from OxVba.
 
 The goal is one coherent OxVba-owned execution model:

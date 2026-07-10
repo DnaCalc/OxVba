@@ -1,5 +1,8 @@
 # Windows Fixed-Export Hosts v1
 
+> [!NOTE]
+> **Supporting historical design.** Current wrapper/native-output architecture is [`OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md) §§12-13.
+
 Status: `design-draft`
 Date: 2026-04-14
 Scope owner: OxVBA runtime/host/tooling

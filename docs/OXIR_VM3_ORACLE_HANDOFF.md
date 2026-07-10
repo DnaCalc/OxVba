@@ -1,5 +1,8 @@
 # OxIR / vm3 — Oracle Handoff (M3 complete)
 
+> [!CAUTION]
+> **Historical handoff snapshot.** It is not current completion authority; use the 2026-07-10 review, architecture and core workset.
+
 **Status: M3 complete.** vm3 (the typed-CFG interpreter of OxIR, crate `oxvba-vm3`) is now
 OxVBA's **differential oracle** — the executable specification the Cranelift JIT (M4+) is
 differentialed against. The legacy `oxvba-vm2` bundle interpreter is **frozen**: kept buildable
