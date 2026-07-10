@@ -20,7 +20,10 @@
 - COM early-binding perf baseline: `./scripts/run-com-early-perf.ps1 -Iterations 3`
 - Integration fixture lint: `./scripts/lint-integration-fixtures.ps1`
 - Staged commit scope guard: `./scripts/check-staged-commit-scope.ps1`
-- Profile artifact scope guard: `./scripts/validate-profile-artifact-scope.ps1 -Mode staged`
+- Named program artifact scope guard: `./scripts/validate-profile-artifact-scope.ps1 -Mode staged`
+- Ideal program state/graph gate: `./scripts/validate-active-program-sync.ps1`; `./scripts/validate-workset-rollout.ps1`
+- Ideal validation truth gate: `./scripts/run-truth-reconciliation.ps1`
+- Ideal legacy reconciliation gate: `./scripts/validate-ideal-legacy-migration.ps1`
 - Evidence retention prune (keep latest + N runs): `./scripts/prune-evidence-artifacts.ps1 -KeepCount 5`
 
 ## Async long-running formal steps

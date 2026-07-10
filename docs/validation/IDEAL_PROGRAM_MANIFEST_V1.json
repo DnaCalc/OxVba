@@ -7,6 +7,7 @@
   "matrix_ownership": "docs/validation/IDEAL_MATRIX_OWNERSHIP_V1.csv",
   "matrix_schema": "docs/validation/IDEAL_MATRIX_SCHEMA_V1.md",
   "bead_traceability": "docs/validation/IDEAL_MATRIX_BEAD_TRACEABILITY_V1.csv",
+  "legacy_migration": "docs/validation/IDEAL_LEGACY_BEAD_MIGRATION_V1.csv",
   "profiles": [
     {
       "profile": "core",

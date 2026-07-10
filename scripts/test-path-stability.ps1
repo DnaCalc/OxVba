@@ -31,4 +31,13 @@ Invoke-InDirectory -Path (Join-Path $repoRoot "crates/oxvba-host") -Script {
     cargo test -q -p oxvba-host formal_v18_divergence_index_is_present | Out-Null
 }
 
+Invoke-InDirectory -Path (Join-Path $repoRoot "crates/oxvba-host") -Script {
+    & (Join-Path $repoRoot "scripts/validate-active-program-sync.ps1") | Out-Null
+    & (Join-Path $repoRoot "scripts/validate-validation-ownership.ps1") | Out-Null
+    & (Join-Path $repoRoot "scripts/validate-ideal-legacy-migration.ps1") | Out-Null
+    & (Join-Path $repoRoot "scripts/validate-closure-taxonomy.ps1") | Out-Null
+    & (Join-Path $repoRoot "scripts/validate-bead-traceability.ps1") | Out-Null
+    & (Join-Path $repoRoot "scripts/validate-workset-rollout.ps1") -SkipReadyQueue | Out-Null
+}
+
 Write-Host "path-stability: ok"

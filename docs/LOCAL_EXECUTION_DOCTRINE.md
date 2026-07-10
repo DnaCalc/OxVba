@@ -10,7 +10,8 @@ Capture execution-process rules that reduce avoidable operator errors during hig
 This doctrine complements:
 - `CHARTER.md`
 - `OPERATIONS.md`
-- `MACH1000_PLAN.md`
+- `docs/spec/OXVBA_SYSTEM_CONTRACT_V1.md`
+- the active program manifest named by `docs/AUTORUN_STATE.md`
 
 ## Lessons Applied
 
@@ -44,9 +45,9 @@ Completion discipline:
 - a workset is not considered properly rolled out until its necessary epics exist explicitly, even if some later child beads are still to be created by epic rollout beads.
 - do not mutate the bead graph concurrently; serialize `br` mutations through `scripts/invoke-br-serialized.ps1`.
 
-## 1) Scaffold determinism is a gate, not a convenience
+## 1) Historical vNNN scaffold determinism
 
-Generated profile artifacts (`workset`/`profile-status`/`integrated_gate`) must follow strict naming and multiline structure.
+The retired vNNN `workset`/`profile-status`/`integrated_gate` generator remains available only for explicit historical maintenance. Its artifacts must still follow strict naming and multiline structure when an allow-listed backfill is performed; it is not the current program execution model.
 
 Failure mode observed:
 - malformed names (`WORKSET_...__V...`) and collapsed one-line files.
@@ -142,13 +143,14 @@ Policy:
 - keep `LATEST` pointers plus a bounded number of timestamped runs,
 - use `./scripts/prune-evidence-artifacts.ps1 -KeepCount <N>` as housekeeping.
 
-## 12) Guard profile artifact scope before commit
+## 12) Guard program artifact scope before commit
 
-Do not unintentionally mutate historical profile artifacts when closing a newer gate.
+Do not unintentionally mutate historical vNNN artifacts while executing a named program.
 
 Policy:
 - run `./scripts/validate-profile-artifact-scope.ps1 -Mode staged` before commit,
-- if historical backfill is intentional, pass explicit allow-list versions.
+- place new evidence under `docs/evidence/programs/<program-id>/<profile>/` and status under `docs/program-status/<program-id>/<profile>/`,
+- if historical backfill is intentional, pass explicit `-AllowVersions` values.
 
 ## 13) Validation truth must carry subset boundaries
 
@@ -168,18 +170,19 @@ Additional practice:
 - generated summaries should come from canonical matrices, not independent status prose,
 - recurring reconciliation should be run with `scripts/run-truth-reconciliation.ps1`.
 
-## Required Local Checks (Doc-Heavy Ladder Runs)
+## Required Local Checks (Program/Truth Changes)
 
-1. Validate profile scaffold integrity:
+1. Validate active program state and strict truth reconciliation:
 
 ```powershell
-./scripts/validate-profile-scaffold.ps1 -FromVersion <start> -ToVersion <end>
+./scripts/validate-active-program-sync.ps1
+./scripts/run-truth-reconciliation.ps1
 ```
 
-2. Validate active ladder gate coherence before or during runs:
+2. For directed PROGRAM-0 diagnosis before legacy ready work is fully migrated, isolate graph structure without waiving the final queue gate:
 
 ```powershell
-./scripts/validate-active-ladder-sync.ps1
+./scripts/validate-workset-rollout.ps1 -SkipReadyQueue
 ```
 
 3. Validate HAL clause/doc drift when HAL spec surface is touched:
@@ -204,9 +207,10 @@ Additional practice:
 ./scripts/validate-profile-artifact-scope.ps1 -Mode staged
 ```
 
-8. Prefer scaffold generation for large profile slices:
+Historical vNNN backfill only:
 
 ```powershell
+./scripts/validate-profile-scaffold.ps1 -FromVersion <start> -ToVersion <end>
 ./scripts/new-profile-slice.ps1 -FromVersion <start> -ToVersion <end> -LadderPath <ladder> -WorksetPath <workset>
 ```
 
@@ -224,8 +228,8 @@ For active workset execution:
 8. close the bead only when the stated outcome is actually complete,
 9. commit bead-state and code-state together.
 
-## Commit Discipline for Ladder Docs
+## Commit Discipline for Program Docs
 
-- Commit only after scaffold checks pass.
-- Keep one coherent commit for a ladder block when practical.
+- Commit only after applicable active-program, graph, traceability, and truth checks pass.
+- Keep one coherent commit for a program bead when practical.
 - If generation errors occur, fix names/content before adding more steps.

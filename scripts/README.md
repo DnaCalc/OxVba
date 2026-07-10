@@ -1,8 +1,8 @@
 # scripts/
 
 - `meta-check.ps1`: one-command readiness check for this repository.
-- `check-governance.ps1`: single governance pass for doctrine/registry checks (doc presence, gate sync, deferred-gate schema, PMR follow-up links, integration catalog integrity, PMR diagnostic manifest sync).
-- `docs-check.ps1`: verifies required top-level docs exist.
+- `check-governance.ps1`: single governance pass for current-program structure/truth plus the retained doctrine, deferred-gate, PMR, and integration checks.
+- `docs-check.ps1`: verifies the current authority documents and Ideal program manifest exist; historical MACH/vNNN plans are not required.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI and prints retained value output.
 - `run-conformance.ps1`: runs the manifest-selected conformance corpus and checks retained `VALUES:` output against golden expectations.
 - `stage-xll-scalar-addin.ps1`: builds and stages the deterministic XLL scalar Addin fixture, copying source inputs, build transcript, artifact, and manifest under `target/xll-host-validation/` for later Excel-host validation.
@@ -34,12 +34,14 @@
 - `run-com-early-perf.ps1`: COM early perf lane with shared run-id and optional no-artifact mode.
 - `run-com-early-oracle-template.ps1`: oracle capture template scaffold with shared run-id and optional no-artifact mode.
 - `invoke-br-serialized.ps1`: serialized wrapper for `br` graph mutations; use for `create`/`update`/`close` to avoid concurrent bead DB races.
-- `validate-validation-ownership.ps1`: checks canonical validation ownership artifacts and required derived summary presence.
-- `validate-workset-rollout.ps1`: checks the active validation-reset workset rollout against the current bead graph.
-- `validate-closure-taxonomy.ps1`: ensures canonical validation matrices use only the allowed truth-state taxonomy.
-- `validate-bead-traceability.ps1`: checks bead-to-matrix traceability mappings.
-- `generate-validation-derived-summaries.ps1`: generates or checks the derived validation summary from canonical matrices.
-- `run-truth-reconciliation.ps1`: one-shot reconciliation pass over ownership, rollout, taxonomy, traceability, and derived-summary drift.
+- `validate-active-program-sync.ps1`: validates `docs/AUTORUN_STATE.md` against the manifest-owned Ideal program, workset roots, and umbrella terminal gate; AutoRun additionally requires an explicit queue certification.
+- `validate-validation-ownership.ps1`: validates the 15 manifest-owned matrices, their common envelope, owner epics, schema, and traceability header.
+- `validate-ideal-legacy-migration.ps1`: validates the exact 42-item legacy reconciliation ledger against `br`, successor owners/rollouts, imported traces, retired/deferred status, labels, and the global ready queue.
+- `validate-workset-rollout.ps1`: strictly validates the Ideal umbrella graph (three roots/42 epics/one rollout each), executable-leaf quality, cycles, and current-only ready queue; `-SkipReadyQueue` is for bounded directed-rollout diagnosis only.
+- `validate-closure-taxonomy.ps1`: validates all manifest-owned matrix rows, exact clauses, x64 target policy, active residual owners, and terminal truth-state rules.
+- `validate-bead-traceability.ps1`: validates current-program leaf/matrix/row relationships and rejects untraced executable work or matrix rows.
+- `generate-validation-derived-summaries.ps1`: generates or checks `IDEAL_PROGRAM_DERIVED_SUMMARY_LATEST.md` from manifest-owned matrices and traceability.
+- `run-truth-reconciliation.ps1`: one-shot strict reconciliation over active-program state, ownership, rollout, taxonomy, traceability, and derived-summary drift.
 - `run-project-integration-suite.ps1`: runs tracked multi-project integration fixtures (`conformance/integration/`) and emits run artifacts under `docs/evidence/conformance/project_integration/`.
 - `lint-integration-fixtures.ps1`: lightweight guardrail for integration fixture source shapes known to stress unsupported backend forms.
 - `run-pmr-project-model-oracle.ps1`: executable Excel oracle runner for PMR topics `CCT-037..CCT-041`, with built-in dialog guardian support for macro/add-in trust prompts.
@@ -64,14 +66,14 @@
 - `test-path-stability.ps1`: validates scripts/tests behave correctly when executed from non-root working directories.
 - `prune-evidence-artifacts.ps1`: retention housekeeping (`LATEST + N` timestamped run artifacts) for conformance/perf evidence directories.
 - `check-staged-commit-scope.ps1`: guardrail to keep code/spec commits separate from evidence refresh commits.
-- `validate-profile-artifact-scope.ps1`: guardrail that blocks accidental edits to profile artifacts outside the active ladder range.
+- `validate-profile-artifact-scope.ps1`: guardrail for named `docs/evidence/programs/<program-id>/<profile>/` and `docs/program-status/<program-id>/<profile>/` artifacts; historical vNNN edits require `-AllowVersions`.
 - `validate-divergences.ps1`: validates structural fields required in divergence records.
 - `validate-pmr-followup-sync.ps1`: enforces PMR follow-up/oracle/divergence synchronization (`PMR-FUP-004/006`, `ODG-038/039`, `DIV-0003/0004`, tolerance-matrix anchors).
 - `generate-pmr-event-diagnostic-snippets.ps1`: generates/validates PMR event diagnostic snippets from the canonical manifest (`docs/evidence/diagnostics/PMR_EVENT_DIAGNOSTICS_V1.csv`).
 - `validate-pmr-event-diagnostic-sync.ps1`: enforces canonical PMR/event diagnostic IDs across active docs/integration surfaces while treating historical oracle captures as excluded.
 - `validate-project-integration-catalog.ps1`: validates the tracked project integration catalog schema, fixture presence for active cases, and deferred-case linkage hygiene.
 - `validate-kani-obligation-policy.ps1`: validates `KANI_OBLIGATION_POLICY_V1.csv` against active `cargo kani` obligations (coverage, no duplicates, profile sync, tier vocabulary).
-- `validate-active-ladder-sync.ps1`: validates active ladder coherence across `AGENTS.md`, the minimal control file `docs/AUTORUN_STATE.md`, ladder header gates/range, matching workset pattern, and terminal profile/evidence presence.
+- `validate-gate-sync.ps1` / `validate-active-ladder-sync.ps1`: historical compatibility entry points that delegate to `validate-active-program-sync.ps1`; they no longer parse vNNN ladders.
 - `validate-language-coverage.ps1`: validates language coverage index structure/status vocabulary and duplicate keys.
 - `validate-intrinsic-surface.ps1`: validates intrinsic surface classification coverage and host-sensitive partition.
 - `validate-profile-scaffold.ps1`: validates profile ladder scaffold integrity (naming, multiline structure, and referenced artifact existence) for selected version ranges.

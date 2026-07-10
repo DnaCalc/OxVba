@@ -1,0 +1,43 @@
+legacy_id,disposition,status_after,successor_owner_ids,successor_rollout_ids,terminal_effect,notes
+bd-2cjy,imported-in-place,open,bd-59co.2.2,bd-59co.2.2.1,delivery,Strict Clippy unsafe audit retained as precise current residual
+bd-h4oh.8,imported-in-place,open,bd-59co.2.11,bd-59co.2.11.1,delivery,Structural differential fuzzer retained and updated
+bd-9sed.17,imported-in-place,open,bd-59co.3.11,bd-59co.3.11.1,delivery,x64 callback lifetime residual retained; no non-x64 scope
+bd-aprs.8.8.9,imported-in-place,open,bd-59co.3.6,bd-59co.3.6.1,delivery,Synchronous cancellable ByRef event proof retained
+bd-h4oh.17,imported-in-place,open,bd-59co.2.4,bd-59co.2.4.1,delivery,NumericMode typing audit retained with VBA evidence gate
+bd-9sed,superseded-split,closed,bd-59co.2.8|bd-59co.2.11|bd-59co.3.11,bd-59co.2.8.1|bd-59co.2.11.1|bd-59co.3.11.1,none,VM2 retirement historical; current VM oracle and callback residuals split
+bd-9sed.11,superseded-split,closed,bd-59co.2.11,bd-59co.2.11.1,none,Historical oracle evidence may seed provenance only
+bd-aprs,superseded-split,closed,bd-59co.2.3|bd-59co.2.4|bd-59co.2.6|bd-59co.4.2|bd-59co.4.3,bd-59co.2.3.1|bd-59co.2.4.1|bd-59co.2.6.1|bd-59co.4.2.1|bd-59co.4.3.1,none,Obsolete HIR architecture replaced by compiler facts artifact and snapshot owners
+bd-aprs.10,superseded-split,closed,bd-59co.2.4|bd-59co.4.1|bd-59co.4.2|bd-59co.4.3,bd-59co.2.4.1|bd-59co.4.1.1|bd-59co.4.2.1|bd-59co.4.3.1,none,Deleted IDE substrate replaced by AnalysisResult and snapshot lanes
+bd-aprs.10.5,superseded-split,closed,bd-59co.2.2|bd-59co.2.11|bd-59co.2.12|bd-59co.4.14,bd-59co.2.2.1|bd-59co.2.11.1|bd-59co.2.12.1|bd-59co.4.14.1,none,Historical terminal evidence cannot certify current profiles
+bd-aprs.10.7,superseded-split,closed,bd-59co.2.3|bd-59co.2.4|bd-59co.2.11|bd-59co.4.1|bd-59co.4.4,bd-59co.2.3.1|bd-59co.2.4.1|bd-59co.2.11.1|bd-59co.4.1.1|bd-59co.4.4.1,none,Grammar binding oracle and LS corpus residuals split
+bd-aprs.8,superseded-split,closed,bd-59co.2.3|bd-59co.2.4,bd-59co.2.3.1|bd-59co.2.4.1,none,Source rewriting retired; provenance and reference semantics retained
+bd-aprs.8.6,superseded-split,closed,bd-59co.2.4|bd-59co.3.2|bd-59co.3.4|bd-59co.3.5|bd-59co.3.10|bd-59co.4.7|bd-59co.4.13,bd-59co.2.4.1|bd-59co.3.2.1|bd-59co.3.4.1|bd-59co.3.5.1|bd-59co.3.10.1|bd-59co.4.7.1|bd-59co.4.13.1,none,External reference scope split across producers and consumers
+bd-aprs.8.8,superseded-split,closed,bd-59co.2.4|bd-59co.3.2|bd-59co.3.4|bd-59co.3.5|bd-59co.3.6|bd-59co.4.7|bd-59co.4.13,bd-59co.2.4.1|bd-59co.3.2.1|bd-59co.3.4.1|bd-59co.3.5.1|bd-59co.3.6.1|bd-59co.4.7.1|bd-59co.4.13.1,none,COM binding activation events and LS metadata split
+bd-h4oh,superseded-split,closed,bd-59co.2.9|bd-59co.2.10|bd-59co.2.11|bd-59co.3.3|bd-59co.3.4|bd-59co.3.5|bd-59co.3.6|bd-59co.3.7|bd-59co.3.8|bd-59co.3.9|bd-59co.3.10|bd-59co.3.11|bd-59co.3.12|bd-59co.3.13|bd-59co.3.14|bd-59co.3.15,bd-59co.2.9.1|bd-59co.2.10.1|bd-59co.2.11.1|bd-59co.3.3.1|bd-59co.3.4.1|bd-59co.3.5.1|bd-59co.3.6.1|bd-59co.3.7.1|bd-59co.3.8.1|bd-59co.3.9.1|bd-59co.3.10.1|bd-59co.3.11.1|bd-59co.3.12.1|bd-59co.3.13.1|bd-59co.3.14.1|bd-59co.3.15.1,none,Old JIT umbrella split into Core and Windows x64 architecture
+bd-h4oh.5,superseded-split,closed,bd-59co.2.9,bd-59co.2.9.1,none,Lowering plan calls ByRef thunk and recursion now owned by CORE-7
+bd-h4oh.6,superseded-split,closed,bd-59co.2.9|bd-59co.2.11,bd-59co.2.9.1|bd-59co.2.11.1,none,Error semantics and structural evidence split
+bd-h4oh.7,superseded-split,closed,bd-59co.2.5|bd-59co.2.7|bd-59co.2.9|bd-59co.2.11,bd-59co.2.5.1|bd-59co.2.7.1|bd-59co.2.9.1|bd-59co.2.11.1,none,String ownership library semantics lowering and evidence split
+bd-h4oh.9,superseded-split,closed,bd-59co.2.7|bd-59co.2.8|bd-59co.2.9|bd-59co.2.11,bd-59co.2.7.1|bd-59co.2.8.1|bd-59co.2.9.1|bd-59co.2.11.1,none,Array and record semantics split across runtime and both backends
+bd-h4oh.9.5,superseded-split,closed,bd-59co.2.4|bd-59co.2.6|bd-59co.2.8|bd-59co.2.9|bd-59co.4.7,bd-59co.2.4.1|bd-59co.2.6.1|bd-59co.2.8.1|bd-59co.2.9.1|bd-59co.4.7.1,none,Public metadata artifact loading runtimes and LS queries split
+bd-h4oh.11,superseded-split,closed,bd-59co.3.3|bd-59co.3.4|bd-59co.3.5|bd-59co.3.10|bd-59co.3.11,bd-59co.3.3.1|bd-59co.3.4.1|bd-59co.3.5.1|bd-59co.3.10.1|bd-59co.3.11.1,none,COM client Declare pointer and callback work split
+bd-h4oh.12,superseded-split,closed,bd-59co.2.10|bd-59co.3.3|bd-59co.3.6|bd-59co.3.12,bd-59co.2.10.1|bd-59co.3.3.1|bd-59co.3.6.1|bd-59co.3.12.1,none,Sessions events CLI and wrapped output split
+bd-h4oh.13,superseded-split,closed,bd-59co.2.11|bd-59co.3.14|bd-59co.3.15,bd-59co.2.11.1|bd-59co.3.14.1|bd-59co.3.15.1,none,Golden parity replaced by structural safety and external certification
+bd-h4oh.14,superseded-split,closed,bd-59co.2.9|bd-59co.2.10|bd-59co.3.5|bd-59co.3.10,bd-59co.2.9.1|bd-59co.2.10.1|bd-59co.3.5.1|bd-59co.3.10.1,none,Portable fast paths separated from Windows direct calls
+bd-h4oh.15,superseded-split,closed,bd-59co.2.10|bd-59co.3.8|bd-59co.3.13,bd-59co.2.10.1|bd-59co.3.8.1|bd-59co.3.13.1,none,Object handoff serving vtables and native output split
+bd-h4oh.16,superseded-split,closed,bd-59co.3.12|bd-59co.3.13,bd-59co.3.12.1|bd-59co.3.13.1,none,Wrapped and genuine x64 outputs split; no x86 successor
+bd-oxi1,superseded-split,closed,bd-59co.4.3|bd-59co.4.11|bd-59co.4.12,bd-59co.4.3.1|bd-59co.4.11.1|bd-59co.4.12.1,none,IDE foundation imported; debugger and Immediate Window deferred
+bd-py78,superseded-split,closed,bd-59co.2.5|bd-59co.2.7,bd-59co.2.5.1|bd-59co.2.7.1,none,Parity library and ownership retained; VBA-source-body refactor is optional
+bd-xkyq,superseded-split,closed,bd-59co.2.7|bd-59co.2.8|bd-59co.2.9|bd-59co.2.11|bd-59co.3.2,bd-59co.2.7.1|bd-59co.2.8.1|bd-59co.2.9.1|bd-59co.2.11.1|bd-59co.3.2.1,none,Fixed-array Erase carrier lifecycle runtimes and evidence split
+bd-aprs.10.2,already-satisfied,closed,,,none,Legacy parser and rewriter production route retired
+bd-aprs.10.6,already-satisfied,closed,,,none,HIR-era route audit obsolete under sole current pipeline
+bd-aprs.10.8,already-satisfied,closed,,,none,Duplicate retirement finalization already represented
+bd-aprs.9,already-satisfied,closed,,,none,Historical typed-operation epic children complete
+bd-h4oh.10,already-satisfied,closed,,,none,Historical bounded non-COM object subset complete
+bd-h4oh.15.1,already-satisfied,closed,bd-59co.3.8|bd-59co.3.13,bd-59co.3.8.1|bd-59co.3.13.1,none,Support handoff superseded by current delivery paths
+bd-5zoz,tombstoned-tracker,closed,,,none,Tracker test fixture with no product work
+bd-7hr7,tombstoned-tracker,closed,,,none,Tracker test fixture with no product work
+bd-crc5,tombstoned-tracker,closed,,,none,Tracker test fixture with no product work
+bd-eza2,tombstoned-tracker,closed,,,none,Tracker test fixture with no product work
+bd-gbid,tombstoned-tracker,closed,,,none,Tracker test fixture with no product work
+bd-oxi1.6,deferred-profile-ext,deferred,PROFILE-EXT-001,,outside-umbrella,OxIde showcase and advanced direct-host scope
+bd-oxi1.6.2,deferred-profile-ext,deferred,PROFILE-EXT-001,,outside-umbrella,Cross-repository debugger and Immediate Window evidence

@@ -17,7 +17,9 @@ Bare `implemented` is invalid. A required terminal row closes only at `verified`
 
 Projection and evidence rows name their primary `source_claim_key`. Contract fields contain exact clause IDs rather than wildcard families. Test/evidence anchors must resolve to current files or named external environments; deleted-stack and historical captures may seed provenance but cannot establish current verification.
 
-`producer_dependencies` uses a semicolon delimiter. Validators trim each dependency and do not treat commas as dependency separators because CSV quoting must remain unambiguous.
+Test/evidence fields use `;` or `|` between references. A plain reference is a repository file path (an optional `#anchor` or Rust `::test_name` suffix is ignored for the existence check). Typed `matrix:`, `workset:`, and `file:` references also resolve their repository path. Named assertions use a nonempty `br:`, `command:`, `cargo:`, `test:`, `oracle:`, `environment:`, `excel:`, `spec:`, `external:`, or `transcript:` value; a raw command without one of these prefixes is invalid.
+
+`producer_dependencies` uses a semicolon delimiter and each item names a current-program epic or executable bead. Validators trim each dependency and do not treat commas as dependency separators because CSV quoting must remain unambiguous.
 
 ## Target policy
 
@@ -31,6 +33,10 @@ Allowed trace relationships are `owns`, `owns-planned-row`, `advances`, `evidenc
 
 The trace `profile` is the bead's execution profile. Cross-profile producer/consumer mappings are valid (for example, the Windows oracle-environment lane can advance the Core-owned Excel oracle matrix); matrix ownership remains authoritative for the row's profile.
 
+Every trace clause must occur in the bead's own contract text. A row-level trace must cover every clause on its matrix row; it may additionally carry bead-level boundary clauses that do not belong to the narrower row.
+
 ## Named program artifacts
 
-New generated evidence and status belong under `docs/evidence/programs/<program-id>/` and `docs/program-status/<program-id>/`. The historical `docs/evidence/profiles/vNNN/` and `docs/profile-status/PROFILE_STATUS_VNNN.md` trees are read-only provenance unless a command supplies an explicit historical version allow-list.
+New generated evidence and status belong under `docs/evidence/programs/<program-id>/<profile>/` and `docs/program-status/<program-id>/<profile>/`, where the profile is `core`, `windows-x64`, or `ide` for this manifest. The historical `docs/evidence/profiles/vNNN/` and `docs/profile-status/PROFILE_STATUS_VNNN.md` trees are read-only provenance unless a command supplies an explicit historical version allow-list.
+
+The legacy migration ledger's `status_after` records migration-time state. During directed PROGRAM-0 it must match `br` exactly. After PROGRAM-0 closes, imported delivery rows may advance monotonically from recorded `open` through `in_progress`/`blocked` to `closed`; retired and PROFILE-EXT rows retain their exact recorded terminal/deferred state.

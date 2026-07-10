@@ -6,11 +6,8 @@ try {
     Write-Host "[governance] docs-check"
     & "$PSScriptRoot/docs-check.ps1"
 
-    Write-Host "[governance] gate-sync"
-    & "$PSScriptRoot/validate-gate-sync.ps1"
-
-    Write-Host "[governance] active-ladder-sync"
-    & "$PSScriptRoot/validate-active-ladder-sync.ps1"
+    Write-Host "[governance] active-program-sync"
+    & "$PSScriptRoot/validate-active-program-sync.ps1"
 
     Write-Host "[governance] divergences"
     & "$PSScriptRoot/validate-divergences.ps1"
@@ -33,14 +30,17 @@ try {
     Write-Host "[governance] validation-ownership"
     & "$PSScriptRoot/validate-validation-ownership.ps1"
 
-    Write-Host "[governance] workset-rollout"
-    & "$PSScriptRoot/validate-workset-rollout.ps1"
+    Write-Host "[governance] legacy-migration"
+    & "$PSScriptRoot/validate-ideal-legacy-migration.ps1"
 
     Write-Host "[governance] closure-taxonomy"
     & "$PSScriptRoot/validate-closure-taxonomy.ps1"
 
     Write-Host "[governance] bead-traceability"
     & "$PSScriptRoot/validate-bead-traceability.ps1"
+
+    Write-Host "[governance] workset-rollout"
+    & "$PSScriptRoot/validate-workset-rollout.ps1"
 
     Write-Host "[governance] validation-derived-summary"
     & "$PSScriptRoot/generate-validation-derived-summaries.ps1" -Check

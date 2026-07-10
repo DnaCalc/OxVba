@@ -6,7 +6,11 @@ try {
     $required = @(
         "CHARTER.md",
         "OPERATIONS.md",
-        "MACH1000_PLAN.md",
+        "docs/spec/OXVBA_SYSTEM_CONTRACT_V1.md",
+        "docs/ARCHITECTURE.md",
+        "docs/AUTORUN_STATE.md",
+        "docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json",
+        "docs/validation/IDEAL_LEGACY_BEAD_MIGRATION_V1.csv",
         "README.md",
         "Cargo.toml"
     )

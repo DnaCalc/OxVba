@@ -2,82 +2,59 @@ param(
     [ValidateSet("staged", "working")]
     [string]$Mode = "staged",
     [int[]]$AllowVersions = @(),
+    [string[]]$AllowProgramIds = @(),
+    [string]$ManifestPath = "docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json",
+    [string]$AutorunPath = "docs/AUTORUN_STATE.md",
     [switch]$IncludeUntracked
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
-function Parse-ActiveRange {
-    param([string]$AgentsText)
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot "lib-ideal-program-validation.ps1")
 
-    $match = [regex]::Match($AgentsText, '`\s*v(\d+)\.\.v(\d+)\s*`', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    if (-not $match.Success) {
-        throw "profile-artifact-scope: unable to parse active ladder range from AGENTS.md"
-    }
-    return @{
-        From = [int]$match.Groups[1].Value
-        To = [int]$match.Groups[2].Value
-    }
-}
-
-function Expand-AllowedVersions {
-    param([hashtable]$Range)
-
-    $versions = @()
-    for ($v = $Range.From; $v -le $Range.To; $v++) {
-        $versions += $v
-    }
-    return $versions
-}
-
-Push-Location (Join-Path $PSScriptRoot "..")
+Push-Location $repoRoot
 try {
     $gitTop = (& git rev-parse --show-toplevel 2>$null)
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitTop)) {
         throw "profile-artifact-scope: not inside a git worktree"
     }
 
-    $allowed = @()
-    if ($AllowVersions.Count -gt 0) {
-        $allowed = @($AllowVersions | Sort-Object -Unique)
-    }
-    else {
-        $autorunPath = "docs/AUTORUN_STATE.md"
-        if (-not (Test-Path $autorunPath)) {
-            throw "profile-artifact-scope: missing docs/AUTORUN_STATE.md"
+    $manifestContext = Read-IdealProgramManifest -RepoRoot $repoRoot -ManifestPath $ManifestPath
+    $activeProgramId = [string]$manifestContext.Manifest.program_id
+    $activeProfiles = @($manifestContext.Manifest.profiles | ForEach-Object { [string]$_.profile })
+    $allowedVersions = @($AllowVersions | Sort-Object -Unique)
+    $allowedProgramIds = @($AllowProgramIds | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    if ($allowedProgramIds.Count -eq 0) {
+        $autorunAbs = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path $AutorunPath
+        if (-not (Test-Path -LiteralPath $autorunAbs -PathType Leaf)) {
+            throw "profile-artifact-scope: missing $AutorunPath"
         }
-        $autorunText = Get-Content $autorunPath -Raw
-        $modeMatch = [regex]::Match($autorunText, 'Mode:\s*([^\r\n]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $autorunText = Get-Content -LiteralPath $autorunAbs -Raw
+        $modeMatch = [regex]::Match($autorunText, '(?im)^Mode:\s*([^\r\n]+)$')
         if (-not $modeMatch.Success) {
-            throw "profile-artifact-scope: unable to parse mode from docs/AUTORUN_STATE.md"
+            throw "profile-artifact-scope: unable to parse mode from $AutorunPath"
         }
         $executionMode = $modeMatch.Groups[1].Value.Trim()
-        if ($executionMode -ne "AutoRun") {
+        if ($executionMode -notin @("Directed", "AutoRun")) {
             Write-Host "profile-artifact-scope: inactive (mode=$executionMode)"
             return
         }
-
-        $agentsPath = "AGENTS.md"
-        if (-not (Test-Path $agentsPath)) {
-            throw "profile-artifact-scope: missing AGENTS.md"
-        }
-        $agentsText = Get-Content $agentsPath -Raw
-        $activeRange = Parse-ActiveRange -AgentsText $agentsText
-        $allowed = Expand-AllowedVersions -Range $activeRange
+        $allowedProgramIds = @($activeProgramId)
     }
 
     $changed = @()
     if ($Mode -eq "staged") {
-        $changed += @(git diff --cached --name-only --diff-filter=ACMR)
+        $changed += @(git diff --cached --name-only --no-renames --diff-filter=ACMRD)
     }
     else {
-        $changed += @(git diff --name-only --diff-filter=ACMR)
+        $changed += @(git diff HEAD --name-only --no-renames --diff-filter=ACMRD)
     }
     if ($IncludeUntracked) {
         $changed += @(git ls-files --others --exclude-standard)
     }
-
     $changed = @($changed | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
     if ($changed.Count -eq 0) {
         Write-Host "profile-artifact-scope: ok (no changed files)"
@@ -87,39 +64,65 @@ try {
     $violations = @()
     foreach ($path in $changed) {
         $normalized = $path.Replace('\', '/')
-        $version = $null
 
-        $mProfile = [regex]::Match($normalized, '^docs/evidence/profiles/v(\d+)/', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        if ($mProfile.Success) {
-            $version = [int]$mProfile.Groups[1].Value
+        $legacyVersion = $null
+        $legacyEvidence = [regex]::Match($normalized, '^docs/evidence/profiles/v(\d+)/', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $legacyStatus = [regex]::Match($normalized, '^docs/profile-status/PROFILE_STATUS_V(\d+)\.md$', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($legacyEvidence.Success) {
+            $legacyVersion = [int]$legacyEvidence.Groups[1].Value
         }
-        else {
-            $mStatus = [regex]::Match($normalized, '^docs/profile-status/PROFILE_STATUS_V(\d+)\.md$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            if ($mStatus.Success) {
-                $version = [int]$mStatus.Groups[1].Value
+        elseif ($legacyStatus.Success) {
+            $legacyVersion = [int]$legacyStatus.Groups[1].Value
+        }
+        if ($null -ne $legacyVersion) {
+            if ($allowedVersions -notcontains $legacyVersion) {
+                $violations += [pscustomobject]@{
+                    path = $normalized
+                    reason = "legacy v$legacyVersion artifact is outside the explicit historical allow-list"
+                }
             }
-        }
-
-        if ($null -eq $version) {
             continue
         }
 
-        if ($allowed -notcontains $version) {
-            $violations += [PSCustomObject]@{
+        $programId = ""
+        $profileName = ""
+        $programEvidence = [regex]::Match($normalized, '^docs/evidence/programs/([^/]+)/([^/]+)/', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $programStatus = [regex]::Match($normalized, '^docs/program-status/([^/]+)/([^/]+)/', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($programEvidence.Success) {
+            $programId = $programEvidence.Groups[1].Value
+            $profileName = $programEvidence.Groups[2].Value
+        }
+        elseif ($programStatus.Success) {
+            $programId = $programStatus.Groups[1].Value
+            $profileName = $programStatus.Groups[2].Value
+        }
+        if (-not [string]::IsNullOrWhiteSpace($programId) -and $allowedProgramIds -notcontains $programId) {
+            $violations += [pscustomobject]@{
                 path = $normalized
-                version = $version
+                reason = "program artifact belongs to '$programId', allowed program(s): $($allowedProgramIds -join ',')"
+            }
+        }
+        elseif ($programId -eq $activeProgramId -and $profileName -notin $activeProfiles) {
+            $violations += [pscustomobject]@{
+                path = $normalized
+                reason = "active program artifact profile '$profileName' is not one of $($activeProfiles -join ',')"
+            }
+        }
+        elseif ($normalized -match '^docs/(evidence/programs|program-status)/' -and [string]::IsNullOrWhiteSpace($programId)) {
+            $violations += [pscustomobject]@{
+                path = $normalized
+                reason = "named program artifacts require <program-id>/<profile>/ path segments"
             }
         }
     }
 
     if ($violations.Count -gt 0) {
-        $allowedText = ($allowed | Sort-Object) -join ","
-        $examples = $violations | Select-Object -First 20 | ForEach-Object { "$($_.path) (v$($_.version))" }
-        $details = $examples -join "; "
-        throw "profile-artifact-scope: changed profile artifacts outside allowed set [$allowedText]. examples: $details"
+        $details = @($violations | Select-Object -First 20 | ForEach-Object { "$($_.path) ($($_.reason))" }) -join "; "
+        throw "profile-artifact-scope: changed artifacts are outside the active named program scope. $details"
     }
 
-    Write-Host "profile-artifact-scope: ok (allowed_versions=$($allowed -join ',') checked_files=$($changed.Count))"
+    $historicalText = if ($allowedVersions.Count -gt 0) { $allowedVersions -join "," } else { "none" }
+    Write-Host "profile-artifact-scope: ok (program_ids=$($allowedProgramIds -join ',') historical_versions=$historicalText checked_files=$($changed.Count))"
 }
 finally {
     Pop-Location
