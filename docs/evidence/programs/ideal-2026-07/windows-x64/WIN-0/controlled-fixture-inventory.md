@@ -85,7 +85,11 @@ Direct binaries are parsed by .NET's portable `PEReader`, then subjected to
 bounded PE32+ mapping checks: AMD64 machine, DLL-versus-EXE class, file/section
 alignment, header and image sizes, raw and virtual section bounds and
 non-overlap, aggregate sizes, executable entry mapping and contained data
-directories. On Windows, admission additionally requires both
+directories. Portable policy also rejects reserved/obsolete low
+`DllCharacteristics` bits, `FORCE_INTEGRITY` because this lane does not verify
+Authenticode, AppContainer/WDM-driver roles, and Native/EFI/other non-desktop
+subsystems. Controlled DLLs require `WindowsGui`; controlled EXEs require
+`WindowsGui` or `WindowsCui`. On Windows, admission additionally requires both
 `LoadLibraryExW(DONT_RESOLVE_DLL_REFERENCES)` and an
 `SEC_IMAGE_NO_EXECUTE` mapping to accept the image. These checks do not invoke
 the entry point or resolve dependencies.
@@ -99,22 +103,48 @@ to `matrix_id`, `row_id`, `fixture_id`, `built_artifact_id`, x64 and the bundle
 class. Ordered components retain immutable IDs, exact controlled paths and
 raw-byte SHA-256 values.
 
-`msft-tlb-v1` components receive a bounded MSFT parser check before any OS
-call: file envelope, format version, `SYS_WIN64`, conditional segment-directory
-layout, aligned non-overlapping segments, TypeInfo records and references,
-GUID/name/string tables, exact LIBID
-`47C202E7-AD2A-49D3-9289-45B68A62499D`, library name
-`OxVbaFixtureAdmissionLib`, version 1.0 and the controlled enum identity. On
-Windows, `LoadTypeLibEx(REGKIND_NONE)` must then accept the library without
-registration. The top-level artifact hash is recomputed only after all content
-validation.
+`msft-tlb-v1` components receive a bounded, identity-agnostic MSFT parser check
+before any OS call. It admits bounded TypeInfo/name/import counts, the exact
+conditional directory shape, aligned non-overlapping declared segments, and
+complete fixed or variable records in their owning segments. GUID/name/string
+hash links, imports, hreftypes, TypeDesc/ArrayDesc trees, custom data and
+coclass reference chains must resolve to complete record starts. Every
+func/var member block must live after declared segments, remain inside
+`fileLength`, contain the declared records exactly, and carry complete
+auxiliary member-name and record-offset arrays; member blocks may not overlap.
+The parser no longer assumes one TypeInfo, the old probe LIBID/library name,
+version 1.0 or an enum. On Windows, `LoadTypeLibEx(REGKIND_NONE)` must then
+accept the library without registration; failure HRESULTs are rendered from
+the explicit unsigned 32-bit bit pattern.
+
+The bundle's own `component.sha256` is not treated as an independent identity
+claim. `Get-WindowsFixtureArtifactContractMap` is the controller-owned source
+of ordered component constraints. Its exact `WIN-ABI-CARRIER|WAC-TYPELIB-METADATA`
+source row now carries
+`component_constraints=n/a|sha256:9bdbc6a597d233296bd39adba69db9765552fdcce0261c6102b2e19d4d4c1a12`.
+That non-serialized expected value is passed separately to generic bundle
+admission and binds the TLB bytes even if an attacker rewrites both the
+component and its self-reported hash. No WAC-specific identity exists inside
+the generic MSFT parser, and no new canonical manifest column was introduced.
+A later real-current transition must still set the canonical matrix
+`fixture_hash` to the raw hash of the complete controlled bundle; deterministic
+sync then supplies the same whole-bundle value as `built_artifact_hash`.
 
 The genuine admission positives are test-only assets under
-`scripts/testdata/windows-fixture-toolchain/`: an MSVC-linked x64 DLL/EXE and a
-MIDL `/env x64` typelib generated from fixed adjacent sources. Their text
-manifest pins producer, lengths, hashes and base64 bytes. They do not occupy a
-canonical artifact root, do not replace any matrix hash and grant no capability
-credit.
+`scripts/testdata/windows-fixture-toolchain/`: the existing MSVC-linked x64
+DLL/EXE and a 6,628-byte, 10-TypeInfo x64 `OxVba.TestEventServer` typelib
+produced by .NET Framework 4.8.1 x64 TlbExp. The former 1,468-byte,
+one-TypeInfo MIDL output remains `msft-tlb-probe-v1` for generic parser breadth
+only and cannot satisfy the WAC bundle constraint. The asset manifest pins
+producer, canonical source hashes, output lengths, hashes and base64 bytes.
+These assets do not occupy a canonical artifact root, do not replace any
+matrix hash and grant no capability credit.
+
+Repository-scoped text provenance uses UTF-8 with BOM removal and newline
+normalization to the repository's canonical LF bytes. This keeps source hashes
+stable in a CRLF checkout while preserving the existing LF integration policy;
+this bead does not alter `.gitattributes` or canonical EOLs. Binary asset and
+bundle hashes remain raw-byte hashes.
 
 ### Environments
 
@@ -176,10 +206,12 @@ The deterministic sync and validator enforce:
   identities, with x86/WOW64/ARM64 and mutable `latest/current/head` identities
   rejected;
 - exact per-row artifact classes, roots, names, types and ordered bundle
-  component contracts, with portable bounded PE32+/AMD64 mapping, Windows
+  component contracts, with controller-owned component digest constraints,
+  portable bounded PE32+/AMD64 mapping and role/flag policy, Windows
   non-executing image-loader admission and duplicate-aware exact JSON;
-- complete bounded controlled-MSFT structure/identity plus Windows
-  `LoadTypeLibEx(REGKIND_NONE)` acceptance for typelib components;
+- complete bounded generic-MSFT segments, references, member blocks and
+  auxiliary arrays plus Windows `LoadTypeLibEx(REGKIND_NONE)` acceptance for
+  typelib components;
 - exact versioned environment capture roots, names and schema, bound field by
   field to the canonical Windows x64/Office64 environment and its authority
   role, image and reset policy;
@@ -194,16 +226,18 @@ The deterministic sync and validator enforce:
 `scripts/test-windows-fixture-manifest.ps1` proves the clean generated copy, a
 legal pending-with-owner population, CRLF checkout stability and successful
 full-validator admission of genuine toolchain-built x64 DLL and EXE images, an
-exact bundle, a genuine MIDL-generated MSFT typelib bundle and a canonical
-environment capture. Its 47 Windows fail-closed mutations (46 on non-Windows,
-where the loader-only case is explicitly skipped) cover the original guards
-plus source text and the former synthetic PE blob, mutable/historical/escaping
-paths, x86 and wrong-class images, PE truncation, alignment, overlap, image-size
-corruption and a structurally plausible image rejected by Windows. JSON cases
-cover duplicate and mis-cased bundle-root, component and environment fields.
-Typelib cases make the former eight-byte MSFT stub, truncation and segment
-corruption negative. Environment binding mutations continue to cover identity,
-target, Office bitness, role, image, reset policy and authority flags.
+exact bundle, the genuine 6,628-byte TestEventServer MSFT bundle, the tiny
+parser-only probe and a canonical environment capture. Its 53 fail-closed
+mutations run without a platform skip. Portable PE cases cover reserved flags,
+unsigned `FORCE_INTEGRITY`, WDM-driver role and Native subsystem in addition to
+x86/class/truncation/alignment/overlap/image-size checks; valid positives retain
+the Windows image-loader gates. JSON cases cover duplicate and mis-cased
+bundle-root, component and environment fields. Direct portable typelib cases
+cover the eight-byte stub, segment truncation/corruption, member offset at the
+file tail and a `fileLength` truncation of the member auxiliary data; a separate
+full-validator case proves the controller digest rejects the otherwise-valid
+tiny probe in the WAC row. Environment binding mutations continue to cover
+identity, target, Office bitness, role, image, reset policy and authority flags.
 
 ## Acceptance record
 
@@ -213,11 +247,16 @@ The focused acceptance commands pass:
   20 current source recipes and 37 pending source recipes;
 - `./scripts/validate-windows-fixture-manifest.ps1` — exact six-matrix/57-row x64
   inventory, 57 pending built artifacts, 57 pending environments and no credit;
-- `./scripts/test-windows-fixture-manifest.ps1` — seven positive observations
-  and 47 Windows negative mutations, including real toolchain/loader `current`
-  admission probes;
+- `./scripts/test-windows-fixture-manifest.ps1` — eight positive observations
+  and 53 cross-platform negative mutations, including real
+  toolchain/Windows-loader `current` admission probes;
 - `./scripts/run-truth-reconciliation.ps1` — full check-only reconciliation,
   including the new sync and validator, with no generated/controller rewrite.
+
+The final exact-code mutation run reported
+`positive=8 negative=53 windows_loader_positive_minimum=3 rows=57 capability_credit=none`.
+AST parsing, canonical provenance recomputation, stale probe-hardcode search and
+`git diff --check` also passed. Implementation commit: `56a1fe20`.
 
 The sync check and positive validator are wired into governance and truth
 reconciliation. The mutation suite remains a focused validator-maintenance
