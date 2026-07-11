@@ -112,6 +112,12 @@ coclass reference chains must resolve to complete record starts. Every
 func/var member block must live after declared segments, remain inside
 `fileLength`, contain the declared records exactly, and carry complete
 auxiliary member-name and record-offset arrays; member blocks may not overlap.
+Segment 11 custom-data values are first parsed as a complete sequence of
+4-byte-aligned, nonoverlapping VARTYPE records whose aligned intervals cover
+the segment without gaps or trailing partial bytes. Segment-12 `Data` fields
+and non-inline `VAR_CONST.offsValue`—the only direct segment-11 consumers—must
+then equal one of those recorded starts; merely landing inside a payload is
+not admitted.
 The parser no longer assumes one TypeInfo, the old probe LIBID/library name,
 version 1.0 or an enum. On Windows, `LoadTypeLibEx(REGKIND_NONE)` must then
 accept the library without registration; failure HRESULTs are rendered from
@@ -227,16 +233,19 @@ The deterministic sync and validator enforce:
 legal pending-with-owner population, CRLF checkout stability and successful
 full-validator admission of genuine toolchain-built x64 DLL and EXE images, an
 exact bundle, the genuine 6,628-byte TestEventServer MSFT bundle, the tiny
-parser-only probe and a canonical environment capture. Its 53 fail-closed
+parser-only probe and a canonical environment capture. Its 54 fail-closed
 mutations run without a platform skip. Portable PE cases cover reserved flags,
 unsigned `FORCE_INTEGRITY`, WDM-driver role and Native subsystem in addition to
 x86/class/truncation/alignment/overlap/image-size checks; valid positives retain
 the Windows image-loader gates. JSON cases cover duplicate and mis-cased
 bundle-root, component and environment fields. Direct portable typelib cases
 cover the eight-byte stub, segment truncation/corruption, member offset at the
-file tail and a `fileLength` truncation of the member auxiliary data; a separate
-full-validator case proves the controller digest rejects the otherwise-valid
-tiny probe in the WAC row. Environment binding mutations continue to cover
+file tail, a `fileLength` truncation of the member auxiliary data, and a first
+segment-12 `Data` reference mutated from record start 0 to interior offset 6.
+The last mutation is accepted by `LoadTypeLibEx` but rejected portably for not
+targeting an exact segment-11 record start. A separate full-validator case
+proves the controller digest rejects the otherwise-valid tiny probe in the WAC
+row. Environment binding mutations continue to cover
 identity, target, Office bitness, role, image, reset policy and authority flags.
 
 ## Acceptance record
@@ -248,15 +257,15 @@ The focused acceptance commands pass:
 - `./scripts/validate-windows-fixture-manifest.ps1` — exact six-matrix/57-row x64
   inventory, 57 pending built artifacts, 57 pending environments and no credit;
 - `./scripts/test-windows-fixture-manifest.ps1` — eight positive observations
-  and 53 cross-platform negative mutations, including real
+  and 54 cross-platform negative mutations, including real
   toolchain/Windows-loader `current` admission probes;
 - `./scripts/run-truth-reconciliation.ps1` — full check-only reconciliation,
   including the new sync and validator, with no generated/controller rewrite.
 
 The final exact-code mutation run reported
-`positive=8 negative=53 windows_loader_positive_minimum=3 rows=57 capability_credit=none`.
+`positive=8 negative=54 windows_loader_positive_minimum=3 rows=57 capability_credit=none`.
 AST parsing, canonical provenance recomputation, stale probe-hardcode search and
-`git diff --check` also passed. Implementation commit: `56a1fe20`.
+`git diff --check` also passed. Implementation commits: `56a1fe20`, `c8831fb5`.
 
 The sync check and positive validator are wired into governance and truth
 reconciliation. The mutation suite remains a focused validator-maintenance
