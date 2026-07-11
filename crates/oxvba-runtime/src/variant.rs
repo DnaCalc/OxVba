@@ -1,6 +1,6 @@
 use crate::{
     Decimal96,
-    bstr::{BStr, OwnedBStrCore},
+    bstr::{BStr, OwnedBStrCore, borrow_raw_bstr},
     com_record::ComRecord,
     object_ref::{ObjectRef, RawRuntimeIUnknown},
     safe_array::{SafeArray, SafeArrayBound, VT_VARIANT_VALUE},
@@ -403,20 +403,6 @@ fn bytes_to_raw_record_payload(bytes: [u8; 8]) -> *const RecordPayload {
     core::ptr::with_exposed_provenance(exposed_pointer_address(bytes))
 }
 
-fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
-    text.clone_raw_bstr()
-}
-
-unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
-    // SAFETY: per this fn's contract, `ptr` is null or a live BSTR; the wrapper exists
-    // only to borrow it for the deep clone below and is then forgotten, so ownership
-    // never actually leaves the caller.
-    let text = unsafe { BStr::from_raw_bstr(ptr) };
-    let cloned = text.clone();
-    core::mem::forget(text);
-    cloned
-}
-
 /// Owning runtime Variant.
 ///
 /// Runtime values retain their historical single-thread ownership boundary.
@@ -536,12 +522,10 @@ impl Variant {
             VarType::String => {
                 let ptr = bytes_to_raw_bstr(core.data_bytes());
                 // SAFETY: guaranteed by this unsafe fn's caller.
-                let text = unsafe { raw_bstr_to_bstr(ptr) };
-                let cloned = text.raw_bstr();
-                core::mem::forget(text);
+                let cloned = unsafe { borrow_raw_bstr(ptr) }.try_to_owned()?;
                 Ok(Self::from_core(VariantCore::from_bytes(
                     VarType::String,
-                    raw_bstr_ptr_to_bytes(cloned),
+                    raw_bstr_ptr_to_bytes(cloned.into_raw_bstr()),
                 )))
             }
             VarType::Object => {
@@ -556,7 +540,7 @@ impl Variant {
             VarType::ArrayVariant => {
                 let ptr = bytes_to_raw_safearray(core.data_bytes());
                 // SAFETY: guaranteed by this unsafe fn's caller.
-                let Some(array) = (unsafe { SafeArray::clone_from_raw_safearray(ptr) }) else {
+                let Some(array) = (unsafe { SafeArray::try_clone_from_raw_safearray(ptr) })? else {
                     return Ok(Self::from_core(core));
                 };
                 Ok(Self::from_safearray(array))
@@ -824,7 +808,7 @@ impl Variant {
 
     pub fn from_string(value: impl Into<BStr>) -> Self {
         let text = value.into();
-        let raw = alloc_raw_bstr_from_bstr(&text).expect("raw BSTR allocation should succeed");
+        let raw = text.into_raw_bstr();
         Self::from_core(VariantCore::from_bytes(
             VarType::String,
             raw_bstr_ptr_to_bytes(raw),
@@ -860,13 +844,20 @@ impl Variant {
     }
 
     pub fn as_bstr(&self) -> Option<BStr> {
+        self.try_as_bstr()
+            .expect("String Variant BSTR clone should succeed")
+    }
+
+    pub(crate) fn try_as_bstr(&self) -> Result<Option<BStr>, String> {
         if self.vtype() != VarType::String {
-            return None;
+            return Ok(None);
         }
         // SAFETY: vtype was checked to be String above, so the payload is null or the BSTR
-        // pointer this Variant owns until drop (a VARIANT owns its BSTR payload until
-        // cleared); `raw_bstr_to_bstr` deep-clones without taking that ownership.
-        Some(unsafe { raw_bstr_to_bstr(bytes_to_raw_bstr(self.data_bytes())) })
+        // pointer this Variant owns until drop. BorrowedBStr has no destructor, so
+        // error or unwind while cloning cannot take the source allocation with it.
+        Ok(Some(
+            unsafe { borrow_raw_bstr(bytes_to_raw_bstr(self.data_bytes())) }.try_to_owned()?,
+        ))
     }
 
     pub fn string_core(&self) -> Option<OwnedBStrCore> {
@@ -874,8 +865,7 @@ impl Variant {
     }
 
     pub fn from_object_ref(value: ObjectRef) -> Self {
-        let raw = value.raw_iunknown();
-        core::mem::forget(value);
+        let raw = value.into_raw_iunknown();
         Self::from_core(VariantCore::from_bytes(
             VarType::Object,
             raw_iunknown_ptr_to_bytes(raw),
@@ -898,8 +888,7 @@ impl Variant {
     }
 
     pub fn from_safearray(value: SafeArray) -> Self {
-        let raw = value.raw_safearray_ptr();
-        core::mem::forget(value);
+        let raw = value.into_raw_safearray_ptr();
         Self::from_core(VariantCore::from_bytes(
             VarType::ArrayVariant,
             raw_safearray_ptr_to_bytes(raw),
@@ -907,14 +896,21 @@ impl Variant {
     }
 
     pub fn as_safearray(&self) -> Option<SafeArray> {
+        self.try_as_safearray()
+            .expect("Array Variant SAFEARRAY clone should succeed")
+    }
+
+    pub(crate) fn try_as_safearray(&self) -> Result<Option<SafeArray>, String> {
         if self.vtype() != VarType::ArrayVariant {
-            return None;
+            return Ok(None);
         }
         // SAFETY: vtype was checked to be ArrayVariant above, so the payload is null or
         // the OxVba SAFEARRAY descriptor this Variant owns until drop (set by
         // `from_safearray`/clone); `clone_from_raw_safearray` verifies the provenance
         // prefix and deep-clones, leaving ownership with this Variant.
-        unsafe { SafeArray::clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes())) }
+        unsafe {
+            SafeArray::try_clone_from_raw_safearray(bytes_to_raw_safearray(self.data_bytes()))
+        }
     }
 
     pub fn array_element_vartype(&self) -> Option<u16> {
@@ -1163,16 +1159,11 @@ impl Variant {
             VarType::String => {
                 crate::vba_record::owning_boundary("variant-bstr-clone")?;
                 let source = bytes_to_raw_bstr(self.data_bytes());
-                // SAFETY: a String Variant owns `source` (null or a live BSTR) for
-                // this borrow. Forgetting the temporary before propagating the
-                // clone result keeps source ownership with this Variant.
-                let borrowed = unsafe { BStr::from_raw_bstr(source) };
-                let cloned = borrowed.clone_raw_bstr();
-                core::mem::forget(borrowed);
-                let raw = cloned?;
+                // SAFETY: this String Variant keeps `source` live for the borrow.
+                let cloned = unsafe { borrow_raw_bstr(source) }.try_to_owned()?;
                 Ok(Self::from_core(VariantCore::from_bytes(
                     VarType::String,
-                    raw_bstr_ptr_to_bytes(raw),
+                    raw_bstr_ptr_to_bytes(cloned.into_raw_bstr()),
                 )))
             }
             VarType::Object => {
@@ -1184,12 +1175,7 @@ impl Variant {
             }
             VarType::ArrayVariant => {
                 crate::vba_record::owning_boundary("variant-safearray-clone")?;
-                // The boundary above represents the current infallible public
-                // SAFEARRAY Clone adapter. Test injection does not enter its raw
-                // borrowed wrapper; that unwind contract remains bd-59co.2.2.17.
-                let array =
-                    crate::vba_record::without_nested_owning_boundaries(|| self.as_safearray());
-                Ok(match array {
+                Ok(match self.try_as_safearray()? {
                     Some(array) => Self::from_safearray(array),
                     None => Self::from_core(self.core),
                 })
@@ -1323,10 +1309,17 @@ impl Eq for Variant {}
 #[cfg(test)]
 mod tests {
     use core::ffi::c_void;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
+    use crate::live_counters::thread_live_handle_counts;
+    use crate::vba_record::{
+        OwningFailureMode, clear_owning_boundary_failure, inject_owning_boundary_failure,
+        take_owning_boundary_trace,
+    };
     use crate::{
-        Decimal96, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec, VbaRecordLayout, bstr::BStr,
-        safe_array::VT_I4_VALUE,
+        Decimal96, ObjectRef, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec, VbaRecordLayout,
+        bstr::BStr,
+        safe_array::{SafeArray, VT_I4_VALUE},
     };
 
     use super::{VarType, Variant, VariantCore, VariantData};
@@ -1388,6 +1381,202 @@ mod tests {
         assert_eq!(cloned.string_byte_len(), Some(3));
         assert_eq!(cloned.string_bytes(), Some(vec![0x00, 0x43, 0x00]));
         assert_eq!(cloned.string_units(), Some(vec![0x4300]));
+    }
+
+    #[test]
+    fn borrowed_carrier_unwind_safety_variant_bstr_and_safearray_projections() {
+        let handles_before = thread_live_handle_counts();
+        {
+            let source_bytes = vec![0x41, 0x00, 0x00, 0x42, 0x7f];
+            let source = Variant::from_bstr_bytes(&source_bytes);
+            let source_carrier = source.data_bytes();
+            let source_wire = source.to_wire_bytes();
+
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| source.try_as_bstr()));
+                clear_owning_boundary_failure();
+                assert_eq!(take_owning_boundary_trace(), vec!["borrowed-bstr-clone"]);
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected Variant BSTR projection error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible Variant BSTR projection unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected Variant BSTR projection error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected Variant BSTR projection panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(source.data_bytes(), source_carrier);
+                assert_eq!(source.string_bytes(), Some(source_bytes.clone()));
+
+                // The first clone boundary is Variant-level admission; failing at
+                // the second reaches the destructor-free raw BSTR view itself.
+                inject_owning_boundary_failure(1, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| source.try_clone()));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec!["variant-bstr-clone", "borrowed-bstr-clone"]
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected Variant BSTR clone error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible Variant BSTR clone unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected Variant BSTR clone error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected Variant BSTR clone panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(source.data_bytes(), source_carrier);
+                assert_eq!(source.string_bytes(), Some(source_bytes.clone()));
+
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    // SAFETY: `source_wire` was produced from `source`, which
+                    // remains live for this complete trusted reconstruction.
+                    unsafe { Variant::from_trusted_wire_bytes(source_wire) }
+                }));
+                clear_owning_boundary_failure();
+                assert_eq!(take_owning_boundary_trace(), vec!["borrowed-bstr-clone"]);
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected trusted BSTR reconstruction error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible trusted BSTR reconstruction unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected trusted BSTR reconstruction unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected trusted BSTR reconstruction did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(source.data_bytes(), source_carrier);
+                assert_eq!(source.string_bytes(), Some(source_bytes.clone()));
+            }
+
+            let array_source = Variant::from_safearray(SafeArray::from_variants(vec![
+                Variant::from_string("array text"),
+                Variant::from_object_ref(ObjectRef::from_compat_identity(411)),
+            ]));
+            let array_carrier = array_source.data_bytes();
+            let array_wire = array_source.to_wire_bytes();
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| array_source.try_as_safearray()));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec!["borrowed-safearray-clone"]
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected Variant SAFEARRAY projection error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible Variant SAFEARRAY projection unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected Variant SAFEARRAY projection error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!(
+                            "injected Variant SAFEARRAY projection panic did not unwind: {result:?}"
+                        )
+                    }
+                }
+                assert_eq!(array_source.data_bytes(), array_carrier);
+                assert_eq!(
+                    array_source
+                        .safearray_element(0)
+                        .expect("array carrier")
+                        .expect("readable source element")
+                        .as_bstr()
+                        .expect("String element")
+                        .as_str(),
+                    "array text"
+                );
+                assert_eq!(
+                    array_source
+                        .safearray_element(1)
+                        .expect("array carrier")
+                        .expect("readable source element")
+                        .as_object_ref()
+                        .expect("Object element")
+                        .compat_identity(),
+                    411
+                );
+                take_owning_boundary_trace();
+
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    // SAFETY: `array_wire` was produced from the still-live
+                    // `array_source` and is consumed within this call only.
+                    unsafe { Variant::from_trusted_wire_bytes(array_wire) }
+                }));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec!["borrowed-safearray-clone"]
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected trusted SAFEARRAY reconstruction error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible trusted SAFEARRAY reconstruction unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected trusted SAFEARRAY reconstruction unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!(
+                            "injected trusted SAFEARRAY reconstruction did not unwind: {result:?}"
+                        )
+                    }
+                }
+                assert_eq!(array_source.data_bytes(), array_carrier);
+                assert_eq!(
+                    array_source
+                        .safearray_element(0)
+                        .expect("array carrier")
+                        .expect("source remains readable")
+                        .as_bstr()
+                        .expect("String element")
+                        .as_str(),
+                    "array text"
+                );
+                take_owning_boundary_trace();
+            }
+        }
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
+        assert_eq!(
+            thread_live_handle_counts(),
+            handles_before,
+            "Variant BSTR/SAFEARRAY projections and final source drops must balance"
+        );
     }
 
     #[test]

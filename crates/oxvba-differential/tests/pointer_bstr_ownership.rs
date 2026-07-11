@@ -5,7 +5,8 @@ use oxvba_runtime::{
     bstr::BStr,
     live_handle_counts,
     pointer_helpers::{
-        free_pins, lookup_pointer, register_string_variant_pointer, register_utf16_string,
+        free_pins, lookup_pointer, read_back_string_payload_variant,
+        register_string_variant_pointer, register_utf16_string,
     },
 };
 use windows_sys::{
@@ -13,26 +14,52 @@ use windows_sys::{
     core::BSTR,
 };
 
+fn assert_zero_carrier_drift(before: oxvba_runtime::LiveHandleCounts, label: &str) {
+    let drift = before.balance_to(live_handle_counts());
+    assert_eq!(drift.bstrs, 0, "{label} must have zero BSTR drift");
+    assert!(
+        drift.is_zero(),
+        "{label} must have zero total carrier drift, got {drift:?}"
+    );
+}
+
+fn assert_string_value(value: &Variant, expected: &str, label: &str) {
+    assert_eq!(
+        value.string_units(),
+        Some(expected.encode_utf16().collect()),
+        "{label} must preserve the exact UTF-16 value"
+    );
+}
+
 #[test]
 fn bstr_pin_owners_balance_unchanged_null_and_native_replacement_paths() {
+    let test_before = live_handle_counts();
+
     let ordinary_before = live_handle_counts();
     let ordinary = register_utf16_string("normal-pin").expect("ordinary BSTR pin");
     assert_eq!(ordinary_before.balance_to(live_handle_counts()).bstrs, 1);
+    let ordinary_value =
+        read_back_string_payload_variant(ordinary).expect("ordinary BSTR pin readback");
+    assert_string_value(&ordinary_value, "normal-pin", "ordinary BSTR pin");
+    drop(ordinary_value);
     free_pins(&[ordinary]);
-    assert!(
-        ordinary_before.balance_to(live_handle_counts()).is_zero(),
-        "ordinary BSTR pin release must balance through the canonical owner"
+    free_pins(&[ordinary]);
+    assert_zero_carrier_drift(
+        ordinary_before,
+        "ordinary BSTR pin release through the canonical owner",
     );
 
     let source = Variant::from_string(BStr::from("unchanged"));
     let unchanged_before = live_handle_counts();
     let unchanged = register_string_variant_pointer(&source).expect("unchanged BSTR cell");
     assert_eq!(unchanged_before.balance_to(live_handle_counts()).bstrs, 1);
+    let unchanged_value =
+        read_back_string_payload_variant(unchanged).expect("unchanged BSTR cell readback");
+    assert_string_value(&unchanged_value, "unchanged", "unchanged BSTR cell");
+    drop(unchanged_value);
     free_pins(&[unchanged]);
-    assert!(
-        unchanged_before.balance_to(live_handle_counts()).is_zero(),
-        "unchanged BSTR cell must drop its original canonical owner"
-    );
+    free_pins(&[unchanged]);
+    assert_zero_carrier_drift(unchanged_before, "unchanged BSTR cell canonical-owner drop");
 
     let null_before = live_handle_counts();
     let nulled = register_string_variant_pointer(&source).expect("nulled BSTR cell");
@@ -49,11 +76,13 @@ fn bstr_pin_owners_balance_unchanged_null_and_native_replacement_paths() {
         SysFreeString(consumed);
         *nulled_cell = std::ptr::null_mut();
     }
+    let null_value =
+        read_back_string_payload_variant(nulled).expect("native-consumed null-cell readback");
+    assert_string_value(&null_value, "", "native-consumed null BSTR cell");
+    drop(null_value);
     free_pins(&[nulled]);
-    assert!(
-        null_before.balance_to(live_handle_counts()).is_zero(),
-        "native consumption followed by a null cell must debit only the original"
-    );
+    free_pins(&[nulled]);
+    assert_zero_carrier_drift(null_before, "native consumption followed by a null cell");
 
     let replacement_before = live_handle_counts();
     let replaced = register_string_variant_pointer(&source).expect("replaced BSTR cell");
@@ -77,11 +106,18 @@ fn bstr_pin_owners_balance_unchanged_null_and_native_replacement_paths() {
     // SAFETY: The cell entry remains live and writable until `free_pins`; the
     // preceding allocation stored either a valid BSTR or null in that cell.
     assert!(!unsafe { *replaced_cell }.is_null());
+    let replacement_value =
+        read_back_string_payload_variant(replaced).expect("native replacement readback");
+    assert_string_value(&replacement_value, "native", "native replacement BSTR cell");
+    drop(replacement_value);
     free_pins(&[replaced]);
-    assert!(
-        replacement_before
-            .balance_to(live_handle_counts())
-            .is_zero(),
-        "native replacement must reconcile the consumed original without falsely debiting the untracked replacement"
+    free_pins(&[replaced]);
+    assert_zero_carrier_drift(
+        replacement_before,
+        "native replacement reconciliation without an untracked replacement debit",
     );
+
+    assert_string_value(&source, "unchanged", "source after all pin releases");
+    drop(source);
+    assert_zero_carrier_drift(test_before, "complete isolated pointer-helper test");
 }

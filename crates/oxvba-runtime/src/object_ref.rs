@@ -1115,6 +1115,11 @@ impl ObjectRef {
         self.0.as_ptr()
     }
 
+    pub(crate) fn into_raw_iunknown(self) -> *mut RawRuntimeIUnknown {
+        let owner = core::mem::ManuallyDrop::new(self);
+        owner.0.as_ptr()
+    }
+
     /// True when this `ObjectRef` wraps one of our `CompatObjectBase` boxes (a project-class or
     /// internal object), as opposed to a foreign COM interface obtained via
     /// `from_raw_iunknown_addref`. Reading the vtbl pointer is safe for any IUnknown (every COM

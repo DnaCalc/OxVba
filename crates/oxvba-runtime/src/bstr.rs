@@ -14,6 +14,44 @@ pub struct BStr {
     raw: Option<NonNull<u16>>,
 }
 
+/// Shared view of a raw BSTR whose allocation remains owned elsewhere.
+///
+/// This type has no destructor and therefore cannot free `raw`, including when
+/// cloning the payload returns an error or unwinds. Construction is unsafe so
+/// the caller must tie `'a` to the lifetime of the actual source owner.
+pub(crate) struct BorrowedBStr<'a> {
+    raw: *mut u16,
+    _source: core::marker::PhantomData<&'a BStr>,
+}
+
+impl BorrowedBStr<'_> {
+    pub(crate) fn clone_raw_bstr(&self) -> Result<*mut u16, String> {
+        crate::vba_record::owning_boundary("borrowed-bstr-clone")?;
+        // SAFETY: BorrowedBStr construction requires `raw` to remain null or a
+        // live BSTR for this view's lifetime; cloning does not consume it.
+        unsafe { clone_raw_bstr(self.raw) }
+    }
+
+    pub(crate) fn try_to_owned(&self) -> Result<BStr, String> {
+        let raw = self.clone_raw_bstr()?;
+        // SAFETY: `clone_raw_bstr` returns null or one fresh allocation whose
+        // ownership transfers directly into the returned BStr.
+        Ok(unsafe { BStr::from_raw_bstr(raw) })
+    }
+}
+
+/// Construct a destructor-free shared view over a raw BSTR carrier.
+///
+/// # Safety
+/// `raw` must be null or point to a live BSTR that remains owned and allocated
+/// for the complete returned lifetime `'a`.
+pub(crate) unsafe fn borrow_raw_bstr<'a>(raw: *mut u16) -> BorrowedBStr<'a> {
+    BorrowedBStr {
+        raw,
+        _source: core::marker::PhantomData,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnedBStrCore {
     len_bytes: u32,
@@ -92,6 +130,13 @@ impl BStr {
 
     pub fn raw_bstr(&self) -> *mut u16 {
         self.raw
+            .map(NonNull::as_ptr)
+            .unwrap_or(core::ptr::null_mut())
+    }
+
+    pub(crate) fn into_raw_bstr(mut self) -> *mut u16 {
+        self.raw
+            .take()
             .map(NonNull::as_ptr)
             .unwrap_or(core::ptr::null_mut())
     }
@@ -410,7 +455,13 @@ unsafe fn free_raw_bstr(ptr: *mut u16) {
 // Test-support code exercising the documented production BSTR prefix-layout paths.
 #[allow(clippy::undocumented_unsafe_blocks)]
 mod tests {
-    use super::{BStr, OwnedBStrCore};
+    use super::{BStr, OwnedBStrCore, borrow_raw_bstr};
+    use crate::live_counters::thread_live_handle_counts;
+    use crate::vba_record::{
+        OwningFailureMode, clear_owning_boundary_failure, inject_owning_boundary_failure,
+        take_owning_boundary_trace,
+    };
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     #[test]
     fn owned_bstr_core_from_utf8_tracks_utf16_payload_and_nul() {
@@ -460,6 +511,66 @@ mod tests {
         let clone = value.clone();
         assert_eq!(value, clone);
         assert_ne!(value.raw_bstr(), clone.raw_bstr());
+    }
+
+    #[test]
+    fn borrowed_carrier_unwind_safety_bstr_view_never_claims_source() {
+        let handles_before = thread_live_handle_counts();
+        {
+            let source =
+                BStr::from_bytes(&[0x41, 0x00, 0x00, 0x42, 0x7f]).expect("odd-byte source BSTR");
+            let source_raw = source.raw_bstr();
+            let source_bytes = source.payload_bytes().to_vec();
+            // SAFETY: `source` owns this live BSTR throughout every use of the
+            // destructor-free view below.
+            let borrowed = unsafe { borrow_raw_bstr(source_raw) };
+
+            take_owning_boundary_trace();
+            let cloned = borrowed.try_to_owned().expect("uninjected borrowed clone");
+            assert_eq!(take_owning_boundary_trace(), vec!["borrowed-bstr-clone"]);
+            assert_eq!(cloned.payload_bytes(), source_bytes);
+            assert_ne!(cloned.raw_bstr(), source_raw);
+            drop(cloned);
+
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| borrowed.try_to_owned()));
+                clear_owning_boundary_failure();
+                assert_eq!(take_owning_boundary_trace(), vec!["borrowed-bstr-clone"]);
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected borrowed BSTR error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible borrowed BSTR clone unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected borrowed BSTR error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected borrowed BSTR panic did not unwind: {result:?}")
+                    }
+                }
+
+                assert_eq!(source.raw_bstr(), source_raw);
+                assert_eq!(source.payload_bytes(), source_bytes);
+                assert_eq!(
+                    usize::try_from(source.byte_len()).expect("test BSTR length fits usize"),
+                    source_bytes.len()
+                );
+                let post_failure_clone = source.clone();
+                assert_eq!(post_failure_clone.payload_bytes(), source_bytes);
+            }
+        }
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
+        assert_eq!(
+            thread_live_handle_counts(),
+            handles_before,
+            "borrowed BSTR success, error, unwind, and final source drop must balance"
+        );
     }
 
     #[test]

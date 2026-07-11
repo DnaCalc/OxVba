@@ -1,6 +1,6 @@
 use crate::{
     Decimal96, VarType, Variant, VbaRecord, VbaRecordLayout,
-    bstr::BStr,
+    bstr::{BStr, borrow_raw_bstr},
     object_ref::{ObjectRef, RawRuntimeIUnknown},
 };
 use core::ptr::NonNull;
@@ -257,27 +257,12 @@ unsafe impl Send for SafeArray {}
 // are cloned out — data-race-free.
 unsafe impl Sync for SafeArray {}
 
-fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
-    text.clone_raw_bstr()
-}
-
 unsafe fn free_raw_bstr(ptr: *mut u16) {
     // SAFETY: the caller transfers ownership of `ptr` (null or the raw BSTR a
     // SAFEARRAY slot owned, written there by `encode_element_variant`), which
     // is exactly `BStr::from_raw_bstr`'s contract; dropping the wrapper frees
     // the allocation exactly once.
     let _ = unsafe { BStr::from_raw_bstr(ptr) };
-}
-
-unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
-    // SAFETY: the caller passes a live raw BSTR whose ownership stays with the
-    // SAFEARRAY slot; the wrapper adopts it only long enough to deep-copy the
-    // UTF-16 payload and is `mem::forget`-ten below, so the slot's allocation
-    // is never freed here.
-    let text = unsafe { BStr::from_raw_bstr(ptr) };
-    let cloned = text.clone();
-    core::mem::forget(text);
-    cloned
 }
 
 fn bounds_layout(dimensions: usize) -> Result<std::alloc::Layout, String> {
@@ -466,7 +451,7 @@ unsafe fn decode_element_variant(
     Ok(match kind {
         // SAFETY: kind == Variant, so this slot was initialized as a `Variant`
         // at encode time; it is only borrowed here long enough to clone.
-        SafeArrayElementKind::Variant => unsafe { &*ptr.cast::<Variant>() }.clone(),
+        SafeArrayElementKind::Variant => unsafe { &*ptr.cast::<Variant>() }.try_clone()?,
         // SAFETY: kind == I1, so encode initialized this slot as an i8.
         SafeArrayElementKind::I1 => Variant::from_i16(i16::from(unsafe { *ptr.cast::<i8>() })),
         // SAFETY: kind == Ui1, so encode initialized this slot as a u8.
@@ -507,9 +492,11 @@ unsafe fn decode_element_variant(
         SafeArrayElementKind::Bool => Variant::from_bool(unsafe { *ptr.cast::<i16>() } != 0),
         SafeArrayElementKind::BStr => {
             // SAFETY: kind == BStr, so this slot holds the raw BSTR pointer the
-            // array owns (written at encode time); `raw_bstr_to_bstr` borrows it
-            // only long enough to deep-copy, leaving ownership in the slot.
-            Variant::from_string(unsafe { raw_bstr_to_bstr(*ptr.cast::<*mut u16>()) })
+            // array owns. BorrowedBStr has no destructor, so cloning cannot
+            // consume the slot's allocation on error or unwind.
+            Variant::from_string(
+                unsafe { borrow_raw_bstr(*ptr.cast::<*mut u16>()) }.try_to_owned()?,
+            )
         }
         SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => {
             // SAFETY: kind == Dispatch/Unknown, so encode stored the 8
@@ -663,22 +650,20 @@ unsafe fn encode_element_variant(
         // of the freshly allocated raw BSTR transfers into the slot, to be
         // freed exactly once by `drop_element`.
         SafeArrayElementKind::BStr => unsafe {
-            ptr.cast::<*mut u16>().write(alloc_raw_bstr_from_bstr(
-                &value
-                    .as_bstr()
-                    .ok_or_else(|| format!("expected String SAFEARRAY element, got {value:?}"))?,
-            )?);
+            let text = value
+                .try_as_bstr()?
+                .ok_or_else(|| format!("expected String SAFEARRAY element, got {value:?}"))?;
+            ptr.cast::<*mut u16>().write(text.into_raw_bstr());
         },
         // SAFETY: kind == Dispatch/Unknown sized/aligned the slot for the
-        // 8 pointer bytes; `mem::forget` transfers the ObjectRef's retained
+        // 8 pointer bytes; `into_raw_iunknown` transfers the ObjectRef's retained
         // reference into the slot, so the array owns exactly one IUnknown
         // reference, released by `drop_element`.
         SafeArrayElementKind::Dispatch | SafeArrayElementKind::Unknown => unsafe {
             let object = value
                 .as_object_ref()
                 .ok_or_else(|| format!("expected Object SAFEARRAY element, got {value:?}"))?;
-            let raw = object.raw_iunknown();
-            core::mem::forget(object);
+            let raw = object.into_raw_iunknown();
             ptr.cast::<[u8; 8]>().write(raw_iunknown_ptr_to_bytes(raw));
         },
         // SAFETY: kind == Decimal sized/aligned the slot for the plain-data
@@ -788,12 +773,10 @@ unsafe fn replace_element_variant(
         // SAFETY: kind == BStr, so the slot owns a BSTR carrier pointer; replace it
         // with the freshly allocated BSTR and free the previous one.
         SafeArrayElementKind::BStr => unsafe {
-            let new = alloc_raw_bstr_from_bstr(
-                &value
-                    .as_bstr()
-                    .ok_or_else(|| format!("expected String SAFEARRAY element, got {value:?}"))?,
-            )?;
-            let old = ptr.cast::<*mut u16>().replace(new);
+            let text = value
+                .try_as_bstr()?
+                .ok_or_else(|| format!("expected String SAFEARRAY element, got {value:?}"))?;
+            let old = ptr.cast::<*mut u16>().replace(text.into_raw_bstr());
             free_raw_bstr(old);
         },
         // SAFETY: kind == Dispatch/Unknown, so the slot owns a raw IUnknown pointer
@@ -802,8 +785,7 @@ unsafe fn replace_element_variant(
             let object = value
                 .as_object_ref()
                 .ok_or_else(|| format!("expected Object SAFEARRAY element, got {value:?}"))?;
-            let raw = object.raw_iunknown();
-            core::mem::forget(object);
+            let raw = object.into_raw_iunknown();
             let old = ptr
                 .cast::<[u8; 8]>()
                 .replace(raw_iunknown_ptr_to_bytes(raw));
@@ -1401,11 +1383,16 @@ impl SafeArray {
     }
 
     pub fn variant_elements(&self) -> Option<Vec<Variant>> {
+        self.try_variant_elements()
+            .expect("SAFEARRAY payload should decode into canonical Variants")
+    }
+
+    pub(crate) fn try_variant_elements(&self) -> Result<Option<Vec<Variant>>, String> {
         // SAFETY: `self.0` is this value's live descriptor, so reading
         // `pv_data` is valid; the null (shape-only) case is handled just below.
         let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
         if data.is_null() {
-            return None;
+            return Ok(None);
         }
         let len = self.len();
         if let Some(layout) = self.vba_record_layout() {
@@ -1418,12 +1405,11 @@ impl SafeArray {
                 values.push(Variant::from_vba_record(
                     // SAFETY: `ptr` references the live `index`-th record payload laid
                     // out by `layout`; `clone_from_raw` deep-copies without consuming it.
-                    unsafe { VbaRecord::clone_from_raw(ptr, layout.clone()) }
-                        .expect("SAFEARRAY record payload should clone into VbaRecord"),
+                    unsafe { VbaRecord::clone_from_raw(ptr, layout.clone()) }?,
                 ));
                 index += 1;
             }
-            return Some(values);
+            return Ok(Some(values));
         }
         let kind = self.element_kind();
         let mut values = Vec::with_capacity(len);
@@ -1432,13 +1418,10 @@ impl SafeArray {
             // SAFETY: `data` is the non-null payload built by
             // `prepare_payload_from_variants` for exactly `self.len()` initialized
             // elements of this descriptor's `kind`, and `index < self.len()`.
-            values.push(
-                unsafe { decode_element_variant(kind, data, index) }
-                    .expect("SAFEARRAY intrinsic payload should decode into Variant"),
-            );
+            values.push(unsafe { decode_element_variant(kind, data, index) }?);
             index += 1;
         }
-        Some(values)
+        Ok(Some(values))
     }
 
     pub fn variant_element(&self, index: usize) -> Result<Variant, String> {
@@ -1567,11 +1550,41 @@ impl SafeArray {
         self.0.as_ptr().cast()
     }
 
+    pub(crate) fn into_raw_safearray_ptr(self) -> *mut core::ffi::c_void {
+        let owner = core::mem::ManuallyDrop::new(self);
+        owner.0.as_ptr().cast()
+    }
+
     pub fn clone_raw_safearray_ptr(&self) -> *mut core::ffi::c_void {
-        let cloned = self.clone();
-        let raw = cloned.raw_safearray_ptr();
-        core::mem::forget(cloned);
-        raw
+        self.clone().into_raw_safearray_ptr()
+    }
+
+    /// Construct an immediately destructor-suppressed view of a raw descriptor.
+    ///
+    /// # Safety
+    /// `raw` must remain a live OxVba-owned descriptor for the complete returned
+    /// view lifetime, with shared or exclusive access appropriate to its use.
+    unsafe fn borrow_raw_safearray(
+        raw: *mut core::ffi::c_void,
+    ) -> Option<core::mem::ManuallyDrop<Self>> {
+        // SAFETY: forwards this function's live OxVba descriptor contract.
+        unsafe { Self::borrow_raw_safearray_result(raw) }.ok()
+    }
+
+    /// Result-returning counterpart that preserves the public raw-helper
+    /// distinction between a null pointer and a non-OxVba descriptor.
+    ///
+    /// # Safety
+    /// Same as [`Self::borrow_raw_safearray`].
+    unsafe fn borrow_raw_safearray_result(
+        raw: *mut core::ffi::c_void,
+    ) -> Result<core::mem::ManuallyDrop<Self>, String> {
+        let header = NonNull::new(raw.cast::<RawSafeArray>())
+            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
+        // SAFETY: forwards this function's live OxVba descriptor contract.
+        unsafe { validated_header_prefix(header.as_ptr()) }
+            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
+        Ok(core::mem::ManuallyDrop::new(Self(header)))
     }
 
     /// Takes ownership of a raw SAFEARRAY descriptor produced by this runtime.
@@ -1600,16 +1613,21 @@ impl SafeArray {
     /// `raw` must point at a live OxVba-owned descriptor. The clone receives
     /// independent descriptor/payload storage; ownership of `raw` is unchanged.
     pub unsafe fn clone_from_raw_safearray(raw: *mut core::ffi::c_void) -> Option<Self> {
-        let header = NonNull::new(raw.cast::<RawSafeArray>())?;
-        // SAFETY: this function's contract requires `raw` to point at a live
-        // OxVba-owned descriptor, so the owner prefix preceding the header is
-        // present, initialized, and readable; the temporary `Self` wrapper
-        // below is forgotten, leaving ownership of `raw` untouched.
-        unsafe { validated_header_prefix(header.as_ptr()) }?;
-        let borrowed = Self(header);
-        let cloned = borrowed.clone();
-        core::mem::forget(borrowed);
-        Some(cloned)
+        // SAFETY: forwards this public helper's raw descriptor contract.
+        unsafe { Self::try_clone_from_raw_safearray(raw) }
+            .expect("cloning a live canonical SAFEARRAY should succeed")
+    }
+
+    pub(crate) unsafe fn try_clone_from_raw_safearray(
+        raw: *mut core::ffi::c_void,
+    ) -> Result<Option<Self>, String> {
+        // SAFETY: forwards this function's raw descriptor contract; the returned
+        // ManuallyDrop view cannot claim source ownership during error or unwind.
+        let Some(borrowed) = (unsafe { Self::borrow_raw_safearray(raw) }) else {
+            return Ok(None);
+        };
+        crate::vba_record::owning_boundary("borrowed-safearray-clone")?;
+        Ok(Some(borrowed.try_clone()?))
     }
 
     /// Mutates one element of a raw SAFEARRAY descriptor produced by this runtime.
@@ -1623,17 +1641,10 @@ impl SafeArray {
         index: usize,
         value: &Variant,
     ) -> Result<(), String> {
-        let header = NonNull::new(raw.cast::<RawSafeArray>())
-            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
-        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor, so the
-        // owner prefix precedes the header; the temporary `Self` wrapper is forgotten
-        // below, leaving ownership of `raw` with the caller's Variant.
-        unsafe { validated_header_prefix(header.as_ptr()) }
-            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
-        let mut borrowed = Self(header);
-        let result = borrowed.set_variant_element(index, value);
-        core::mem::forget(borrowed);
-        result
+        // SAFETY: forwards this function's exclusive raw descriptor contract.
+        let mut borrowed = unsafe { Self::borrow_raw_safearray_result(raw) }?;
+        crate::vba_record::owning_boundary("borrowed-safearray-variant-set")?;
+        borrowed.set_variant_element(index, value)
     }
 
     /// Reads one element of a raw SAFEARRAY descriptor produced by this runtime
@@ -1650,17 +1661,10 @@ impl SafeArray {
         raw: *mut core::ffi::c_void,
         index: usize,
     ) -> Result<Variant, String> {
-        let header = NonNull::new(raw.cast::<RawSafeArray>())
-            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
-        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor, so
-        // the owner prefix precedes the header; the temporary `Self` wrapper is
-        // forgotten below, leaving ownership of `raw` with the caller's Variant.
-        unsafe { validated_header_prefix(header.as_ptr()) }
-            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
-        let borrowed = Self(header);
-        let result = borrowed.variant_element(index);
-        core::mem::forget(borrowed);
-        result
+        // SAFETY: forwards this function's shared raw descriptor contract.
+        let borrowed = unsafe { Self::borrow_raw_safearray_result(raw) }?;
+        crate::vba_record::owning_boundary("borrowed-safearray-variant-read")?;
+        borrowed.variant_element(index)
     }
 
     /// Reads an I4/Int element from a raw SAFEARRAY descriptor produced by this runtime.
@@ -1674,15 +1678,10 @@ impl SafeArray {
         raw: *mut core::ffi::c_void,
         index: usize,
     ) -> Result<Option<i32>, String> {
-        let header = NonNull::new(raw.cast::<RawSafeArray>())
-            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
-        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor.
-        unsafe { validated_header_prefix(header.as_ptr()) }
-            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
-        let borrowed = Self(header);
-        let result = borrowed.i32_element(index);
-        core::mem::forget(borrowed);
-        result
+        // SAFETY: forwards this function's shared raw descriptor contract.
+        let borrowed = unsafe { Self::borrow_raw_safearray_result(raw) }?;
+        crate::vba_record::owning_boundary("borrowed-safearray-i32-read")?;
+        borrowed.i32_element(index)
     }
 
     /// Mutates an I4/Int element of a raw SAFEARRAY descriptor produced by this runtime.
@@ -1697,15 +1696,10 @@ impl SafeArray {
         index: usize,
         value: i32,
     ) -> Result<bool, String> {
-        let header = NonNull::new(raw.cast::<RawSafeArray>())
-            .ok_or_else(|| "SAFEARRAY raw pointer is null".to_string())?;
-        // SAFETY: contract requires `raw` to be a live OxVba-owned descriptor.
-        unsafe { validated_header_prefix(header.as_ptr()) }
-            .ok_or_else(|| "SAFEARRAY raw pointer is not OxVba-owned".to_string())?;
-        let mut borrowed = Self(header);
-        let result = borrowed.set_i32_element(index, value);
-        core::mem::forget(borrowed);
-        result
+        // SAFETY: forwards this function's exclusive raw descriptor contract.
+        let mut borrowed = unsafe { Self::borrow_raw_safearray_result(raw) }?;
+        crate::vba_record::owning_boundary("borrowed-safearray-i32-set")?;
+        borrowed.set_i32_element(index, value)
     }
 
     /// Reads the bounds and element count of a raw SAFEARRAY descriptor **without
@@ -1719,54 +1713,57 @@ impl SafeArray {
     pub unsafe fn raw_safearray_bounds_len(
         raw: *mut core::ffi::c_void,
     ) -> Option<(Vec<SafeArrayBound>, usize)> {
-        let header = NonNull::new(raw.cast::<RawSafeArray>())?;
-        // SAFETY: as above — borrow the descriptor without taking ownership.
-        unsafe { validated_header_prefix(header.as_ptr()) }?;
-        let borrowed = Self(header);
+        // SAFETY: forwards this function's shared raw descriptor contract.
+        let borrowed = unsafe { Self::borrow_raw_safearray(raw) }?;
+        crate::vba_record::owning_boundary("borrowed-safearray-bounds").ok()?;
         let bounds = borrowed.raw_bounds();
         let len = bounds_total_len(&bounds).ok()?;
-        core::mem::forget(borrowed);
         if bounds.is_empty() {
             None
         } else {
             Some((bounds, len))
         }
     }
+
+    pub(crate) fn try_clone(&self) -> Result<Self, String> {
+        // Rebuild from bounds + element vartype + values, deriving canonical
+        // feature flags and then restoring the descriptor's fixed-size bit.
+        let fixed = self.is_fixed_size();
+        let bounds = self.bounds_for_shape();
+        if let Some(layout) = self.vba_record_layout() {
+            let len = self.len();
+            // SAFETY: this descriptor is live for the shared borrow.
+            let data = unsafe { (*self.0.as_ptr()).pv_data.cast::<u8>() };
+            if data.is_null() && len != 0 {
+                return Err("record SAFEARRAY has no materialized element payload".to_string());
+            }
+            let mut values = Vec::with_capacity(len);
+            for index in 0..len {
+                // SAFETY: non-null `data` holds `len` records with this layout;
+                // `index < len` selects one live record copied without consuming it.
+                values.push(unsafe {
+                    VbaRecord::clone_from_raw(
+                        data.add(record_payload_offset(&layout, index)),
+                        Arc::clone(&layout),
+                    )
+                }?);
+            }
+            return Ok(Self::from_vba_records_nd(bounds, layout, values)?.with_fixed_size(fixed));
+        }
+        Ok(match self.try_variant_elements()? {
+            Some(values) => {
+                Self::from_bounds_and_variants(bounds, self.element_vartype(), Some(values))?
+            }
+            None => Self::from_bounds_and_variants(bounds, self.element_vartype(), None)?,
+        }
+        .with_fixed_size(fixed))
+    }
 }
 
 impl Clone for SafeArray {
     fn clone(&self) -> Self {
-        // The clone is rebuilt from bounds + element vartype + values, which
-        // derives `f_features` afresh from the element type — so the
-        // `FADF_FIXEDSIZE` storage property must be re-applied explicitly to
-        // travel with the copy (matching VBA, where the descriptor's fixed-ness
-        // moves with the array value).
-        let fixed = self.is_fixed_size();
-        let bounds = self.bounds_for_shape();
-        if let Some(layout) = self.vba_record_layout() {
-            let values = self
-                .variant_elements()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|value| {
-                    value
-                        .as_vba_record()
-                        .expect("record SAFEARRAY elements should decode to VbaRecord")
-                })
-                .collect();
-            return Self::from_vba_records_nd(bounds, layout, values)
-                .expect("cloning native record SAFEARRAY should succeed")
-                .with_fixed_size(fixed);
-        }
-        match self.variant_elements() {
-            Some(values) => {
-                Self::from_bounds_and_variants(bounds, self.element_vartype(), Some(values))
-                    .expect("cloning canonical SAFEARRAY with values should succeed")
-            }
-            None => Self::from_bounds_and_variants(bounds, self.element_vartype(), None)
-                .expect("cloning shape-only SAFEARRAY should succeed"),
-        }
-        .with_fixed_size(fixed)
+        self.try_clone()
+            .expect("cloning canonical SAFEARRAY should succeed")
     }
 }
 
@@ -2059,6 +2056,22 @@ mod tests {
         )
     }
 
+    fn assert_borrowed_bstr_array_source(
+        array: &SafeArray,
+        descriptor: &(usize, u16, u16, u32, u32, usize, Vec<SafeArrayBound>),
+        expected: &[u8],
+    ) {
+        assert_eq!(&descriptor_fingerprint(array), descriptor);
+        assert_eq!(
+            array
+                .variant_element(0)
+                .expect("borrowed BSTR source remains readable")
+                .string_bytes(),
+            Some(expected.to_vec())
+        );
+        take_owning_boundary_trace();
+    }
+
     fn assert_payload_event_balance(before: (usize, usize), label: &str) {
         let after = payload_allocation_events();
         assert_eq!(
@@ -2083,13 +2096,14 @@ mod tests {
         let success_trace = take_owning_boundary_trace();
         assert_eq!(successful.len(), expected_elements);
         assert_eq!(success_trace.last(), Some(&"safearray-header-adoption"));
-        assert_eq!(
-            success_trace
-                .iter()
-                .filter(|boundary| **boundary == element_boundary)
-                .count(),
-            expected_elements,
-            "{label} trace must include every element-clone boundary"
+        let element_boundaries = success_trace
+            .iter()
+            .filter(|boundary| **boundary == element_boundary)
+            .count();
+        assert!(
+            element_boundaries >= expected_elements,
+            "{label} trace must include every top-level element-clone boundary; \
+             nested carrier clones may add more ({element_boundaries} observed)"
         );
         drop(successful);
         assert_eq!(
@@ -2593,6 +2607,353 @@ mod tests {
             after_buffers.0 - before_buffers.0,
             after_buffers.1 - before_buffers.1,
             "record SAFEARRAY success, error, and unwind paths must balance record owners"
+        );
+    }
+
+    #[test]
+    fn borrowed_carrier_unwind_safety_safearray_bstr_clone_read_and_set_helpers() {
+        let handles_before = thread_live_handle_counts();
+        {
+            let original_bytes = vec![0x41, 0x00, 0x00, 0x42, 0x7f];
+            let replacement_bytes = vec![0x52, 0x00, 0x00, 0x53, 0x7e];
+            let mut source = SafeArray::from_typed_variants(
+                VT_BSTR_VALUE,
+                vec![Variant::from_bstr_bytes(&original_bytes)],
+            )
+            .expect("typed BSTR SAFEARRAY");
+            let descriptor = descriptor_fingerprint(&source);
+            let raw = source.raw_safearray_ptr();
+
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| source.variant_element(0)));
+                clear_owning_boundary_failure();
+                assert_eq!(take_owning_boundary_trace(), vec!["borrowed-bstr-clone"]);
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected typed BSTR read error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible typed BSTR read unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected typed BSTR read unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected typed BSTR read panic did not unwind: {result:?}")
+                    }
+                }
+                assert_borrowed_bstr_array_source(&source, &descriptor, &original_bytes);
+
+                // Failure zero happens after the ManuallyDrop raw-descriptor view
+                // exists; failure one reaches the nested destructor-free BSTR view.
+                for nth in 0..=1 {
+                    inject_owning_boundary_failure(nth, mode);
+                    let outcome = catch_unwind(AssertUnwindSafe(|| {
+                        // SAFETY: `raw` is the live descriptor owned by `source`.
+                        unsafe { SafeArray::raw_safearray_variant_element(raw, 0) }
+                    }));
+                    clear_owning_boundary_failure();
+                    let expected_trace = if nth == 0 {
+                        vec!["borrowed-safearray-variant-read"]
+                    } else {
+                        vec!["borrowed-safearray-variant-read", "borrowed-bstr-clone"]
+                    };
+                    assert_eq!(take_owning_boundary_trace(), expected_trace);
+                    match (mode, outcome) {
+                        (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                            error.contains("injected owning clone/allocation failure"),
+                            "unexpected raw typed BSTR read error: {error}"
+                        ),
+                        (OwningFailureMode::Panic, Err(_)) => {}
+                        (OwningFailureMode::Error, Err(_)) => {
+                            panic!("fallible raw typed BSTR read unexpectedly unwound")
+                        }
+                        (OwningFailureMode::Error, Ok(Ok(_))) => {
+                            panic!("injected raw typed BSTR read unexpectedly succeeded")
+                        }
+                        (OwningFailureMode::Panic, Ok(result)) => {
+                            panic!("injected raw typed BSTR read panic did not unwind: {result:?}")
+                        }
+                    }
+                    assert_borrowed_bstr_array_source(&source, &descriptor, &original_bytes);
+                }
+
+                for nth in 0..=1 {
+                    inject_owning_boundary_failure(nth, mode);
+                    let outcome = catch_unwind(AssertUnwindSafe(|| {
+                        // SAFETY: `raw` remains a live shared descriptor for this clone.
+                        unsafe { SafeArray::try_clone_from_raw_safearray(raw) }
+                    }));
+                    clear_owning_boundary_failure();
+                    let expected_trace = if nth == 0 {
+                        vec!["borrowed-safearray-clone"]
+                    } else {
+                        vec!["borrowed-safearray-clone", "borrowed-bstr-clone"]
+                    };
+                    assert_eq!(take_owning_boundary_trace(), expected_trace);
+                    match (mode, outcome) {
+                        (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                            error.contains("injected owning clone/allocation failure"),
+                            "unexpected raw SAFEARRAY clone error: {error}"
+                        ),
+                        (OwningFailureMode::Panic, Err(_)) => {}
+                        (OwningFailureMode::Error, Err(_)) => {
+                            panic!("fallible raw SAFEARRAY clone unexpectedly unwound")
+                        }
+                        (OwningFailureMode::Error, Ok(Ok(_))) => {
+                            panic!("injected raw SAFEARRAY clone unexpectedly succeeded")
+                        }
+                        (OwningFailureMode::Panic, Ok(result)) => {
+                            panic!("injected raw SAFEARRAY clone panic did not unwind: {result:?}")
+                        }
+                    }
+                    assert_borrowed_bstr_array_source(&source, &descriptor, &original_bytes);
+                }
+
+                let replacement = Variant::from_bstr_bytes(&replacement_bytes);
+                for nth in 0..=1 {
+                    inject_owning_boundary_failure(nth, mode);
+                    let outcome = catch_unwind(AssertUnwindSafe(|| {
+                        // SAFETY: `raw` is the live, exclusively borrowed descriptor
+                        // owned by `source` throughout this mutation attempt.
+                        unsafe {
+                            SafeArray::set_raw_safearray_variant_element(raw, 0, &replacement)
+                        }
+                    }));
+                    clear_owning_boundary_failure();
+                    let expected_trace = if nth == 0 {
+                        vec!["borrowed-safearray-variant-set"]
+                    } else {
+                        vec!["borrowed-safearray-variant-set", "borrowed-bstr-clone"]
+                    };
+                    assert_eq!(take_owning_boundary_trace(), expected_trace);
+                    match (mode, outcome) {
+                        (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                            error.contains("injected owning clone/allocation failure"),
+                            "unexpected raw SAFEARRAY set error: {error}"
+                        ),
+                        (OwningFailureMode::Panic, Err(_)) => {}
+                        (OwningFailureMode::Error, Err(_)) => {
+                            panic!("fallible raw SAFEARRAY set unexpectedly unwound")
+                        }
+                        (OwningFailureMode::Error, Ok(Ok(()))) => {
+                            panic!("injected raw SAFEARRAY set unexpectedly committed")
+                        }
+                        (OwningFailureMode::Panic, Ok(result)) => {
+                            panic!("injected raw SAFEARRAY set panic did not unwind: {result:?}")
+                        }
+                    }
+                    assert_borrowed_bstr_array_source(&source, &descriptor, &original_bytes);
+                    assert_eq!(replacement.string_bytes(), Some(replacement_bytes.clone()));
+                    take_owning_boundary_trace();
+                }
+            }
+
+            source
+                .set_variant_element(0, &Variant::from_bstr_bytes(&replacement_bytes))
+                .expect("source remains mutable after injected failures");
+            assert_eq!(
+                source
+                    .variant_element(0)
+                    .expect("replacement read")
+                    .string_bytes(),
+                Some(replacement_bytes)
+            );
+            take_owning_boundary_trace();
+        }
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
+        assert_eq!(
+            thread_live_handle_counts(),
+            handles_before,
+            "SAFEARRAY BSTR clone/read/set failures and final drops must balance"
+        );
+    }
+
+    #[test]
+    fn borrowed_carrier_unwind_safety_safearray_scalar_and_composite_raw_helpers() {
+        let handles_before = thread_live_handle_counts();
+        {
+            let mut scalars = SafeArray::from_typed_variants(
+                VT_I4_VALUE,
+                vec![Variant::from_i32(17), Variant::from_i32(29)],
+            )
+            .expect("typed I4 SAFEARRAY");
+            let scalar_descriptor = descriptor_fingerprint(&scalars);
+            let scalar_raw = scalars.raw_safearray_ptr();
+
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                inject_owning_boundary_failure(0, mode);
+                let read = catch_unwind(AssertUnwindSafe(|| {
+                    // SAFETY: the descriptor remains live and shared for this read.
+                    unsafe { SafeArray::raw_safearray_i32_element(scalar_raw, 1) }
+                }));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec!["borrowed-safearray-i32-read"]
+                );
+                match (mode, read) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected raw I4 read error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible raw I4 read unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected raw I4 read unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected raw I4 read panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(descriptor_fingerprint(&scalars), scalar_descriptor);
+                assert_eq!(scalars.i32_element(1), Ok(Some(29)));
+
+                inject_owning_boundary_failure(0, mode);
+                let set = catch_unwind(AssertUnwindSafe(|| {
+                    // SAFETY: the descriptor is exclusively borrowed through
+                    // `scalars` for this attempted mutation.
+                    unsafe { SafeArray::set_raw_safearray_i32_element(scalar_raw, 1, 99) }
+                }));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec!["borrowed-safearray-i32-set"]
+                );
+                match (mode, set) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected raw I4 set error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible raw I4 set unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected raw I4 set unexpectedly committed")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected raw I4 set panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(descriptor_fingerprint(&scalars), scalar_descriptor);
+                assert_eq!(scalars.i32_element(1), Ok(Some(29)));
+
+                inject_owning_boundary_failure(0, mode);
+                let bounds = catch_unwind(AssertUnwindSafe(|| {
+                    // SAFETY: the descriptor remains live and shared for this query.
+                    unsafe { SafeArray::raw_safearray_bounds_len(scalar_raw) }
+                }));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec!["borrowed-safearray-bounds"]
+                );
+                match (mode, bounds) {
+                    (OwningFailureMode::Error, Ok(None)) => {}
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible raw bounds query unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Some(result))) => {
+                        panic!("injected raw bounds error returned a value: {result:?}")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected raw bounds panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(descriptor_fingerprint(&scalars), scalar_descriptor);
+                assert_eq!(scalars.i32_element(1), Ok(Some(29)));
+            }
+            scalars
+                .set_i32_element(1, 31)
+                .expect("post-failure scalar mutation");
+            assert_eq!(scalars.i32_element(1), Ok(Some(31)));
+
+            let (inner_layout, outer_layout) = transactional_record_layouts();
+            let composite = SafeArray::from_variants(vec![
+                Variant::from_string("composite text"),
+                Variant::from_object_ref(ObjectRef::from_compat_identity(631)),
+                Variant::from_safearray(SafeArray::from_variants(vec![Variant::from_string(
+                    "nested array text",
+                )])),
+                Variant::from_vba_record(transactional_record(
+                    &inner_layout,
+                    &outer_layout,
+                    "composite record",
+                    632,
+                )),
+            ]);
+            let composite_descriptor = descriptor_fingerprint(&composite);
+            let composite_raw = composite.raw_safearray_ptr();
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    // SAFETY: `composite` owns this live descriptor throughout.
+                    unsafe { SafeArray::try_clone_from_raw_safearray(composite_raw) }
+                }));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec!["borrowed-safearray-clone"]
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected composite raw-clone error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible composite raw clone unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected composite raw clone unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected composite raw-clone panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(descriptor_fingerprint(&composite), composite_descriptor);
+                let values = composite
+                    .variant_elements()
+                    .expect("composite source remains readable");
+                assert_eq!(
+                    values[0].as_bstr().expect("String value").as_str(),
+                    "composite text"
+                );
+                assert_eq!(
+                    values[1]
+                        .as_object_ref()
+                        .expect("Object value")
+                        .compat_identity(),
+                    631
+                );
+                assert_eq!(
+                    values[2]
+                        .safearray_element(0)
+                        .expect("nested SAFEARRAY")
+                        .expect("nested element")
+                        .as_bstr()
+                        .expect("nested String")
+                        .as_str(),
+                    "nested array text"
+                );
+                assert_transactional_record(&values[3], "composite record", 632);
+                take_owning_boundary_trace();
+            }
+        }
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
+        assert_eq!(
+            thread_live_handle_counts(),
+            handles_before,
+            "scalar/composite raw-helper failures and final drops must balance every carrier"
         );
     }
 

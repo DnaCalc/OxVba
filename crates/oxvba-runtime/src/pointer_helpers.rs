@@ -66,12 +66,10 @@ impl OwnedBstr {
     }
 
     fn into_raw(mut self) -> BSTR {
-        let Some(value) = self.0.take() else {
-            return std::ptr::null_mut();
-        };
-        let raw = value.raw_bstr();
-        std::mem::forget(value);
-        raw
+        self.0
+            .take()
+            .map(BStr::into_raw_bstr)
+            .unwrap_or(std::ptr::null_mut())
     }
 }
 
@@ -126,7 +124,10 @@ impl Drop for OwnedBstrCell {
         // it twice. The replacement was allocated by native code, so it must be
         // freed below without debiting the OxVba BSTR counter.
         crate::live_counters::bstr_freed();
-        std::mem::forget(original);
+        // Native code already consumed/freed this allocation. Taking its raw
+        // address only disarms the stale Rust owner; the dangling value must
+        // never be dereferenced or freed again.
+        let _consumed_raw = original.into_raw_bstr();
         if !current.is_null() {
             // SAFETY: `current` is the native replacement now solely owned by
             // this cell, and the consuming native call has completed.
@@ -192,10 +193,7 @@ unsafe impl Send for OwnedVariant {}
 
 #[cfg(target_os = "windows")]
 fn retained_iunknown_pointer(object: &crate::ObjectRef) -> *mut c_void {
-    let retained = object.query_iunknown();
-    let raw = retained.raw_iunknown().cast::<c_void>();
-    std::mem::forget(retained);
-    raw
+    object.query_iunknown().into_raw_iunknown().cast::<c_void>()
 }
 
 #[cfg(target_os = "windows")]

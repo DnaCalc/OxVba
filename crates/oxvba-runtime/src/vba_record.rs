@@ -1,6 +1,6 @@
 use crate::{
     Variant, VariantCore,
-    bstr::BStr,
+    bstr::{BStr, borrow_raw_bstr},
     safe_array::{SafeArray, SafeArrayBound},
 };
 use core::{ptr, slice};
@@ -37,7 +37,6 @@ std::thread_local! {
     static LAYOUT_FIELD_TABLE_RESERVATIONS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
     static OWNING_BOUNDARY_FAILURE: core::cell::Cell<Option<(usize, OwningFailureMode)>> = const { core::cell::Cell::new(None) };
     static OWNING_BOUNDARY_TRACE: core::cell::RefCell<Vec<&'static str>> = const { core::cell::RefCell::new(Vec::new()) };
-    static OWNING_BOUNDARY_SUPPRESSION: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -65,9 +64,6 @@ pub(crate) fn take_owning_boundary_trace() -> Vec<&'static str> {
 
 #[cfg(test)]
 pub(crate) fn owning_boundary(name: &'static str) -> Result<(), String> {
-    if OWNING_BOUNDARY_SUPPRESSION.with(core::cell::Cell::get) != 0 {
-        return Ok(());
-    }
     OWNING_BOUNDARY_TRACE.with(|trace| trace.borrow_mut().push(name));
     let failure = OWNING_BOUNDARY_FAILURE.with(|state| match state.get() {
         Some((0, mode)) => {
@@ -89,29 +85,6 @@ pub(crate) fn owning_boundary(name: &'static str) -> Result<(), String> {
         }
         None => Ok(()),
     }
-}
-
-#[cfg(test)]
-pub(crate) fn without_nested_owning_boundaries<T>(operation: impl FnOnce() -> T) -> T {
-    struct Restore;
-
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            OWNING_BOUNDARY_SUPPRESSION.with(|depth| depth.set(depth.get() - 1));
-        }
-    }
-
-    OWNING_BOUNDARY_SUPPRESSION.with(|depth| depth.set(depth.get() + 1));
-    let restore = Restore;
-    let result = operation();
-    drop(restore);
-    result
-}
-
-#[cfg(not(test))]
-#[inline]
-pub(crate) fn without_nested_owning_boundaries<T>(operation: impl FnOnce() -> T) -> T {
-    operation()
 }
 
 #[cfg(not(test))]
@@ -1175,7 +1148,7 @@ unsafe fn read_field_variant_at(
     // `ptr` holds a value of exactly this `kind`, aligned for its storage type.
     let value = match kind {
         // SAFETY: slot holds a live `Variant`; shared-borrow + clone leaves it intact.
-        VbaRecordFieldKind::Variant => unsafe { (&*ptr.cast::<Variant>()).clone() },
+        VbaRecordFieldKind::Variant => unsafe { &*ptr.cast::<Variant>() }.try_clone()?,
         // SAFETY: slot is an aligned `i16`.
         VbaRecordFieldKind::Integer => Variant::from_i16(unsafe { *ptr.cast::<i16>() }),
         // SAFETY: slot is an aligned `i32`.
@@ -1200,13 +1173,9 @@ unsafe fn read_field_variant_at(
             if raw.is_null() {
                 Variant::from_string(BStr::empty())
             } else {
-                // SAFETY: `raw` is the live BSTR owned by the record slot; we borrow
-                // it without taking ownership and `forget` the wrapper so the slot
-                // keeps its pointer (see `borrow_bstr_raw`).
-                let text = unsafe { borrow_bstr_raw(raw) };
-                let value = Variant::from_string(text.clone());
-                core::mem::forget(text);
-                value
+                // SAFETY: the record keeps this raw BSTR live for the duration
+                // of the destructor-free borrowed view and owned clone.
+                Variant::from_string(unsafe { borrow_raw_bstr(raw) }.try_to_owned()?)
             }
         }
         VbaRecordFieldKind::FixedString { len } => {
@@ -1336,10 +1305,9 @@ unsafe fn write_field_variant_at(
             }
             owning_boundary("string-assignment-clone")?;
             let text = value
-                .as_bstr()
+                .try_as_bstr()?
                 .expect("String Variant must retain its BSTR payload");
-            let raw = text.raw_bstr();
-            core::mem::forget(text);
+            let raw = text.into_raw_bstr();
             // SAFETY: the replacement BSTR is fully owned before mutation and `ptr`
             // is a live pointer carrier. Replace keeps the slot initialized.
             let previous = unsafe { ptr.cast::<*mut u16>().replace(raw) };
@@ -1352,7 +1320,7 @@ unsafe fn write_field_variant_at(
             if value.vtype() == crate::VarType::Null {
                 return Err("Invalid use of Null".to_string());
             }
-            let Some(text) = value.as_bstr() else {
+            let Some(text) = value.try_as_bstr()? else {
                 return Err("FixedString record field requires String value".to_string());
             };
             let mut units = text.to_utf16_units();
@@ -1395,21 +1363,16 @@ unsafe fn write_field_variant_at(
                 return Err("fixed-array record field assignment requires an array value".into());
             }
             owning_boundary("fixed-array-source-clone")?;
-            // The pre-boundary represents this infallible compatibility clone as
-            // one owning operation. Nested record hooks are exercised through the
-            // fallible record APIs themselves, without injecting inside a borrowed
-            // SAFEARRAY wrapper (owned borrowing is a separate contract lane).
-            let Some(array) = without_nested_owning_boundaries(|| value.as_safearray()) else {
+            let Some(array) = value.try_as_safearray()? else {
                 return Err(
                     "fixed-array record field assignment requires an allocated array".into(),
                 );
             };
             owning_boundary("fixed-array-elements-clone")?;
-            let values =
-                without_nested_owning_boundaries(|| array.variant_elements()).ok_or_else(|| {
-                    "fixed-array record field assignment requires materialized array elements"
-                        .to_string()
-                })?;
+            let values = array.try_variant_elements()?.ok_or_else(|| {
+                "fixed-array record field assignment requires materialized array elements"
+                    .to_string()
+            })?;
             if values.len() != len {
                 return Err(format!(
                     "fixed-array record field assignment requires {len} elements, got {}",
@@ -1456,24 +1419,14 @@ unsafe fn clone_record_from_ptr(
     Ok(record)
 }
 
-unsafe fn borrow_bstr_raw(raw: *mut u16) -> BStr {
-    // SAFETY: the caller guarantees `raw` is a live BSTR owned elsewhere. The
-    // wrapper must be forgotten before it would drop.
-    unsafe { BStr::from_raw_bstr(raw) }
-}
-
 fn clone_bstr_raw(raw: *mut u16) -> Result<*mut u16, String> {
     if raw.is_null() {
         return Ok(ptr::null_mut());
     }
     owning_boundary("bstr-clone")?;
-    // SAFETY: `raw` is non-null (checked above) and is the live BSTR owned by the
-    // record slot; we only borrow it to clone, then `forget` the borrowed wrapper
-    // below so ownership stays with the original slot.
-    let text = unsafe { borrow_bstr_raw(raw) };
-    let cloned = text.clone_raw_bstr();
-    core::mem::forget(text);
-    cloned
+    // SAFETY: `raw` is the live BSTR owned by the record slot for this call;
+    // BorrowedBStr has no destructor and cannot consume it on error or unwind.
+    unsafe { borrow_raw_bstr(raw) }.clone_raw_bstr()
 }
 
 fn validate_record_shape(fields: &[VbaRecordFieldSpec]) -> Result<(usize, usize, usize), String> {
@@ -1689,6 +1642,7 @@ mod tests {
         clear_owning_boundary_failure, inject_owning_boundary_failure, take_owning_boundary_trace,
         validate_field_kind_graph,
     };
+    use crate::live_counters::thread_live_handle_counts;
     use crate::safe_array::{SafeArray, SafeArrayBound};
     use crate::{ObjectRef, Variant, bstr::BStr};
     use std::{
@@ -2973,6 +2927,150 @@ mod tests {
                 .as_bstr()
                 .map(|text| text.as_str()),
             Some("payload".to_string())
+        );
+    }
+
+    #[test]
+    fn borrowed_carrier_unwind_safety_record_read_and_raw_clone_preserve_source() {
+        let handles_before = thread_live_handle_counts();
+        {
+            let layout = Arc::new(
+                VbaRecordLayout::new(vec![
+                    Field::named("Text", Kind::String),
+                    Field::named("Value", Kind::Variant),
+                ])
+                .expect("borrowed-carrier record layout"),
+            );
+            let source_bytes = vec![0x41, 0x00, 0x00, 0x42, 0x7f];
+            let mut source = VbaRecord::new_default(Arc::clone(&layout)).expect("source record");
+            source
+                .write_field_variant(0, &Variant::from_bstr_bytes(&source_bytes))
+                .expect("odd-byte String field");
+            source
+                .write_field_variant(
+                    1,
+                    &Variant::from_safearray(SafeArray::from_variants(vec![
+                        Variant::from_string("nested text"),
+                        Variant::from_object_ref(ObjectRef::from_compat_identity(521)),
+                    ])),
+                )
+                .expect("owning Variant field");
+            let source_image = record_bytes(&source);
+
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                inject_owning_boundary_failure(0, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| source.read_field_variant(0)));
+                clear_owning_boundary_failure();
+                assert_eq!(take_owning_boundary_trace(), vec!["borrowed-bstr-clone"]);
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected record String-read error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible record String read unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected record String-read error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected record String-read panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(record_bytes(&source), source_image);
+                assert_eq!(
+                    source
+                        .read_field_variant(0)
+                        .expect("String source remains readable")
+                        .string_bytes(),
+                    Some(source_bytes.clone())
+                );
+                take_owning_boundary_trace();
+
+                // Allocation is followed by the record field's logical clone
+                // boundary; the third boundary is inside the destructor-free view.
+                inject_owning_boundary_failure(2, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| source.try_clone()));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec![
+                        "record-buffer-allocation",
+                        "bstr-clone",
+                        "borrowed-bstr-clone"
+                    ]
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected record clone error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible record clone unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected record clone error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected record clone panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(record_bytes(&source), source_image);
+
+                inject_owning_boundary_failure(2, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    // SAFETY: `source` is live and `layout` is its exact sealed layout.
+                    unsafe { VbaRecord::clone_from_raw(source.data_ptr(), Arc::clone(&layout)) }
+                }));
+                clear_owning_boundary_failure();
+                assert_eq!(
+                    take_owning_boundary_trace(),
+                    vec![
+                        "record-buffer-allocation",
+                        "bstr-clone",
+                        "borrowed-bstr-clone"
+                    ]
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected raw record clone error: {error}"
+                    ),
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible raw record clone unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected raw record clone error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected raw record clone panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(record_bytes(&source), source_image);
+                assert_eq!(
+                    source
+                        .read_field_variant(1)
+                        .expect("Variant source remains readable")
+                        .safearray_element(1)
+                        .expect("SAFEARRAY carrier")
+                        .expect("Object element remains readable")
+                        .as_object_ref()
+                        .expect("Object element")
+                        .compat_identity(),
+                    521
+                );
+                take_owning_boundary_trace();
+            }
+        }
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
+        assert_eq!(
+            thread_live_handle_counts(),
+            handles_before,
+            "record read/raw-clone failures and final source drop must balance all handles"
         );
     }
 }
