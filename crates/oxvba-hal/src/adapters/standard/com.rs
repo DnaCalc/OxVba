@@ -17,10 +17,13 @@ use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComObjectTransportKind, ComSubscriptionToken, DynamicCallKind, DynamicCallRequest,
-    DynamicMemberSelector, build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    DynamicMemberSelector, known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
-    member_token_and_spec_from_typelib_metadata_name,
     platform::portable::{PortableDispatch, PortableObjectResult},
+};
+#[cfg(not(target_os = "windows"))]
+use oxvba_com::{
+    build_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
     resolve_typelib_identity_for_prog_id_name,
 };
 use oxvba_runtime::{ObjectRef, VarType, Variant, variant_to_vba_string};
@@ -132,6 +135,7 @@ fn portable_dispatch_for_object(
     Ok(state.portable_objects_by_handle.get(&object.raw()).cloned())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn projection_member_token_by_name(
     host: &StandardHostServices,
     object: &ObjectRef,
