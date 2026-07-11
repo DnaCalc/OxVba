@@ -78,15 +78,20 @@ pub struct CoreProgram {
     pub imports: Vec<crate::BundleImport>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CoreLongPtrWidth {
     Bits32,
+    #[default]
     Bits64,
 }
 
-impl Default for CoreLongPtrWidth {
-    fn default() -> Self {
-        Self::Bits64
+#[cfg(test)]
+mod core_long_ptr_width_tests {
+    use super::CoreLongPtrWidth;
+
+    #[test]
+    fn core_long_ptr_width_default() {
+        assert_eq!(CoreLongPtrWidth::default(), CoreLongPtrWidth::Bits64);
     }
 }
 
