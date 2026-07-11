@@ -19,7 +19,7 @@ decoded project modules and reference closure
   -> lossless CST of each active-source view
   -> declaration scan and provider composition
   -> scope/name/type/call binding
-  -> AnalysisResult
+  -> AnalysisResultV1
        - semantic facts
        - diagnostics
        - source/virtual provenance
@@ -63,6 +63,27 @@ Ambiguous case-insensitive identities, duplicate exports, reference diamonds, mi
 
 ## 6. Analysis result and identities
 
+The public analysis mode is a closed enum with exactly `AnalysisMode::Strict` and `AnalysisMode::Editor`. Strict mode diagnoses any source that cannot produce executable semantics. Editor mode permits bounded recovery and poison/unknown facts for incomplete source, but it does not introduce a second grammar, binder or identity model.
+
+Every project analysis entry point returns one immutable, schema-versioned `AnalysisResultV1`. Its required logical shape is:
+
+```text
+AnalysisResultV1
+  schema/mode/target identity
+  project, module, document and provider identities plus versions/digests
+  lossless syntax/CST and preprocessing context
+  explicit scope tree
+  declarations, signatures and use-site bindings
+  expression, place, member, call and result types
+  argument mapping and ByVal/ByRef/Optional/named/omitted/ParamArray facts
+  accessor, property, default-member and invoke-kind decisions
+  diagnostics with primary/related locations
+  original, normalized and generated/virtual provenance maps
+  Option<CoreProgram>
+```
+
+The version suffix is part of the public compatibility contract: adding or changing required fact meaning creates a new version or an explicit compatible extension. Consumers cannot mutate facts, substitute their own identities or retain result-local handles as if they belonged to another result.
+
 The compiler-owned analysis result contains:
 
 - syntax trees and preprocessing context;
@@ -77,9 +98,9 @@ The compiler-owned analysis result contains:
 - diagnostics with primary and related locations;
 - optional CoreProgram.
 
-Compiler symbol IDs are stable within the analysis result. Consumers create snapshot-bound handles and deterministic logical keys for cross-snapshot equivalence; name alone is never identity.
+Project, module, document and provider IDs are collision-checked stable identities within the supplied closure and carry the version or digest needed to distinguish changed inputs. Compiler symbol IDs are stable within the analysis result. Consumers create snapshot-bound handles and deterministic logical keys for cross-snapshot equivalence; name alone is never identity.
 
-Valid-source strict compilation and editor analysis produce identical semantic facts. Poison/unknown facts never enter Core IR.
+Valid-source Strict and Editor analysis of the same closure and target produce identical syntax identities and semantic facts. `CoreProgram` is present only when the result contains no executable-blocking diagnostic or poison/unknown semantic fact. The executable pipeline accepts that `CoreProgram` from `AnalysisResultV1`; it never bypasses the result through a second analysis route.
 
 ## 7. Types, calls and coercion
 
@@ -113,6 +134,8 @@ Core IR remains backend-neutral. `oxvba-oxir::elaborate` owns conversion into ty
 
 Each syntax, symbol and binding diagnostic has a stable code, phase, severity, primary span and related spans. Diagnostics point to original module text when possible and to an explicit virtual/generated document otherwise.
 
+Every compiler span is a half-open UTF-8 byte range in its identified, versioned supplied active-view document. A span boundary must be a valid UTF-8 boundary. Versioned maps relate active-view bytes to the original document or to an explicit normalized/generated virtual document; line/column or client-position encodings are projections and never replace compiler byte offsets.
+
 Preprocessing, startup/mainline generation, class preamble handling and line-ending normalization cannot leave a runtime or compiler location with ambiguous provenance. Runtime source maps extend the same identity chain into OxIR/OxImage.
 
 ## 10. Completion evidence
@@ -123,6 +146,7 @@ Compiler completion requires:
 - typed call/coercion and project/reference matrices;
 - no-panic/fuzz coverage for decoded text and valid UTF-8 lexer/parser input;
 - source/virtual provenance snapshots;
-- strict/editor fact equality for valid source;
+- `AnalysisMode::Strict`/`AnalysisMode::Editor` fact equality for valid source;
+- Unicode, CRLF, astral-character and generated-source tests for half-open UTF-8 spans and source-map round trips;
 - current Excel/VBA compile diagnostics and runtime timing where behavior is observable;
 - no accepted route through legacy source surgery, deleted HIR or a second semantic model.

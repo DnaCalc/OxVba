@@ -83,7 +83,7 @@ Class initialize/terminate, object identity, AddRef/Release, termination drains,
 
 ## 7. Runtime helper ABI
 
-Every helper has a stable descriptor containing:
+`oxvba-rt-abi` owns one versioned helper descriptor catalog. The JIT consumes it and generates symbol registration from it; the JIT does not define a private catalog. Every helper descriptor contains:
 
 - helper identity and ABI version;
 - typed arguments and results;
@@ -95,7 +95,7 @@ Every helper has a stable descriptor containing:
 - host/apartment requirements;
 - source/debug observability.
 
-Symbol registration is derived from this catalog. Generated signatures and runtime entry points are checked for agreement. Incompatible helpers reject a cached/image compilation before invocation.
+VM3 and Windows adapters derive their registrations from the same catalog. Generated signatures and runtime entry points are checked for agreement. Incompatible catalog identity, digest or helper signatures reject a cached/image compilation before invocation.
 
 ## 8. Backend structure
 
@@ -121,8 +121,8 @@ The cache key includes:
 
 - verified OxImage digest;
 - target triple, pointer width and CPU features;
-- helper ABI version;
-- carrier/layout ABI version;
+- helper-catalog identity, digest and ABI version;
+- carrier/layout identity, digest and ABI version;
 - host capability/profile and apartment facts;
 - codegen settings that affect behavior or code shape.
 

@@ -2,14 +2,14 @@
 
 Date: 2026-07-10
 Owner: unassigned
-Status: accepted; directed bead rollout in progress under `bd-59co`
+Status: accepted; active under AutoRun `bd-59co`
 Type: architecture and language-service capability delivery
 Profile: `PROFILE-IDE-001`
 Source review: [`../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
 
 ## 1. Outcome
 
-Build the clean-stack language-service foundation in its ideal architecture: compiler-owned strict/tolerant analysis facts, immutable semantic snapshots, real project/reference workspaces, complete basic semantic queries, consistent source/OxImage/VBA-library/host/COM/Declare/generated reference coverage, a stable direct Rust API and a thin standards-aligned LSP projection.
+Build the clean-stack language-service foundation in its ideal architecture: compiler-owned `AnalysisMode::{Strict, Editor}`/`AnalysisResultV1` facts, immutable semantic snapshots, real project/reference workspaces, complete basic semantic queries, consistent source/OxImage/VBA-library/host/COM/Declare/generated reference coverage, a stable direct Rust API and a thin standards-aligned LSP projection.
 
 The language service must be an index and query product over the real compiler, not a revived second compiler. The profile is complete only when one embedded host and one editor client use the same facts end to end and every advertised transport feature is equivalent to its direct result.
 
@@ -23,7 +23,7 @@ Authority:
 
 No active `oxvba-languageservice` or `oxvba-lsp` crate exists. The previous implementation was removed from the clean build and deleted; the VS Code extension and older docs still reference that deleted surface and are now explicitly deprecated.
 
-Reusable foundations are the lossless CST, declaration/scope/signature infrastructure, project/reference closure, providers, diagnostics DTO, Core IR facts and historical test/design corpus. Missing are the complete compiler AnalysisResult, semantic snapshots, overlays, indices, invalidation, query API, LSP server and runnable editor path.
+Reusable foundations are the lossless CST, declaration/scope/signature infrastructure, project/reference closure, providers, diagnostics DTO, Core IR facts and historical test/design corpus. Missing are the complete compiler `AnalysisResultV1`, semantic snapshots, overlays, indices, invalidation, query API, LSP server and runnable editor path.
 
 Historical language-service code/tests may be recovered only through explicit port beads that adopt current compiler/project/artifact contracts. They are not current capability evidence.
 
@@ -67,8 +67,8 @@ Deferred features do not block the basic profile. A missing basic reference kind
 
 | consumer need | producer gate |
 |---|---|
-| source/provenance and original/virtual maps | CORE-2 |
-| compiler AnalysisResult/use sites/types/diagnostics | CORE-3 |
+| UTF-8 compiler spans, source/provenance and original/virtual maps | CORE-2 |
+| immutable AnalysisResultV1 syntax, stable identities, scopes, use sites, types, calls, arguments and diagnostics | CORE-3 |
 | referenced-source public data and source/OxImage equivalent surface | CORE-3 public-surface delivery |
 | Declare identity/signature/call legality | CORE-3 Declare compiler rows |
 | complete VBA library metadata | stable CORE-LIB inventory/signature slices |
@@ -82,7 +82,7 @@ The service can develop against stable slices, but its terminal reference matrix
 | current state | required state | clauses |
 |---|---|---|
 | deleted service and stale docs | new clean-stack direct service and honest indexes | `LS-BASIC-001`, `DOC-*` |
-| compiler lacks complete fact output | versioned strict/tolerant AnalysisResult producer | `COMP-ANALYSIS-001` |
+| compiler lacks complete fact output | immutable `AnalysisResultV1` producer with closed `AnalysisMode::{Strict, Editor}` modes | `COMP-ANALYSIS-001` |
 | no semantic snapshot identity | immutable snapshots, opaque handles and logical keys | `LS-FACT-001` |
 | no overlay/invalidation service | real project closure and dependency-aware workspace | `LS-WORKSPACE-001` |
 | metadata/reference gaps | parity across all production reference kinds | `PROJ-REF-001`, `LS-WORKSPACE-001` |
@@ -92,7 +92,7 @@ The service can develop against stable slices, but its terminal reference matrix
 ## 6. Binding invariants
 
 1. Production compiler facts are semantic authority.
-2. Valid strict/editor facts are identical.
+2. Valid `AnalysisMode::Strict`/`AnalysisMode::Editor` facts are identical.
 3. Incomplete text may produce poison/unknown facts but never executable Core IR.
 4. Source is parsed once per snapshot/version.
 5. No substring parser, editor binder or duplicate project model exists.
@@ -103,6 +103,7 @@ The service can develop against stable slices, but its terminal reference matrix
 10. Stale requests and edits cannot affect newer versions.
 11. Read-only metadata is never renamed or edited.
 12. LSP advertises only green direct features and contains no VBA/project policy.
+13. Compiler facts retain UTF-8 byte-offset spans unchanged; only the LSP projection converts them to or from the negotiated client position encoding.
 
 ## 7. Canonical artifacts
 
@@ -130,19 +131,19 @@ Close: current absence is honest and every basic feature/reference kind has a de
 
 Type: delivery
 Clauses: `COMP-ANALYSIS-001`, `LS-FACT-001`
-Dependencies: CORE-2 provenance; CORE-3 AnalysisResult/diagnostics
+Dependencies: CORE-2 UTF-8 spans/provenance; CORE-3 AnalysisResultV1 syntax/identity/scope/semantic/diagnostic facts
 
 Deliver:
 
-- accept/version compiler AnalysisResult mapping;
-- ingest declaration/use-site/expression/member/call/argument/accessor/provenance facts without rebinding;
+- accept/version the immutable compiler `AnalysisResultV1` mapping;
+- ingest and index its lossless syntax/CST payload, stable project/module/document/provider identities, explicit scope tree, declarations/use sites, expression/member/call types, argument/accessor decisions, diagnostics, UTF-8 spans and provenance without parsing, rebinding or reconstructing identities;
 - snapshot-bound handles and deterministic logical SymbolKeys;
 - poison/unknown facts for incomplete input;
-- strict/editor valid-source equality;
-- diagnostic/source-provenance index;
+- `AnalysisMode::Strict`/`AnalysisMode::Editor` valid-source equality;
+- diagnostic/UTF-8-span/source-provenance index;
 - instrumentation proving one analysis operation.
 
-First beads: contract mapping; snapshot IDs/handles/keys; declaration/use index; typed call/member index; incomplete facts; diagnostic/provenance index; one-analysis proof.
+First beads: contract mapping; snapshot IDs/handles/keys; syntax/scope/identity index; declaration/use index; typed call/member index; incomplete facts; diagnostic/UTF-8-span/provenance index; one-analysis proof.
 
 Close: every source-queryable compiler fact is indexed without a second semantic model.
 
@@ -202,13 +203,13 @@ Deliver separate tranches:
 - referenced source projects after CORE public-data delivery;
 - verified OxImage references after CORE schema/loader/verifier/provenance;
 - VBA library after CORE-LIB inventory/signatures;
-- versioned/digested host providers;
+- versioned/digested compiler-visible host-provider DTOs from CORE-3; live host objects are never queried, and CORE-5 participates only if a versioned runtime capability-profile fact is consumed;
 - COM metadata after WIN resolver/handoff;
 - Declare after CORE compile legality, with runtime DLL/export absence not a compiler error;
 - generated-source mapping/virtual provenance;
 - collision/precedence matrix.
 
-First beads correspond one-to-one to those tranches.
+First beads correspond one-to-one to those tranches: Declare and generated/normalized provenance are distinct leaves, and cross-provider collision/precedence certification is a delivery leaf rather than rollout support.
 
 Close: no basic query silently omits a supported production reference kind and the full matrix is rerun after producers stabilize.
 
@@ -252,9 +253,9 @@ Close: measured responsiveness never weakens semantic correctness.
 Type: delivery
 Clauses: `LS-LSP-001`
 
-Pin exact LSP 3.18.x meta-model/spec revision. Deliver lifecycle, one-root/root precedence, versioned text sync, UTF-16/negotiated positions, diagnostic pull/push policy, every direct query projection, semantic full/delta, virtual textDocumentContent/refresh/fallback, diagnostic/token refresh, watched/reload, versioned WorkspaceEdit, progress/partial results, exactly-one-response cancellation semantics, URI/path normalization, clean framing/stdout, shutdown/exit and MethodNotFound/negative capabilities.
+Pin exact LSP 3.18.x meta-model/spec revision. Deliver lifecycle, one-root/root precedence, versioned text sync, explicit UTF-8 compiler-span to/from negotiated LSP position conversion, diagnostic pull/push policy, every direct query projection, semantic full/delta, virtual textDocumentContent/refresh/fallback, diagnostic/token refresh, watched/reload, versioned WorkspaceEdit, progress/partial results, exactly-one-response cancellation semantics, URI/path normalization, clean framing/stdout, shutdown/exit and MethodNotFound/negative capabilities. Conversion tests cover Unicode, CRLF, astral code points, incremental edits and stale document versions in every negotiated position mode.
 
-First beads: server shell/framing; capabilities/root policy; sync/positions; diagnostics; query projection tranches; semantic delta; virtual content/refresh; watches/reload; edits; cancellation/progress/errors.
+First beads: server shell/framing; capabilities/root policy; sync plus UTF-8/negotiated-position conversion matrix; diagnostics; query projection tranches; semantic delta; virtual content/refresh; watches/reload; edits/stale-version rejection; cancellation/progress/errors.
 
 Close: every advertised method has direct-result/decoded-LSP equivalence and all unimplemented capabilities are absent.
 
@@ -295,17 +296,17 @@ Close: every required delivery epic is closed and runnable behavior matches adve
 | epic | hard prerequisites |
 |---|---|
 | LS-0 | accepted workset and CORE-1 green authority/gate baseline |
-| LS-1 | CORE-2 provenance, CORE-3 AnalysisResult/diagnostics |
+| LS-1 | CORE-2 provenance, CORE-3 AnalysisResultV1/diagnostics |
 | LS-2 | LS-0 plus compiler/project identity contracts |
 | LS-3 | LS-1, LS-2 |
 | LS-4 | LS-1, LS-2 |
-| LS-5 | LS-1, LS-2, LS-4 |
-| LS-6 | LS-1/2/4/5 plus the producer gates in §4 |
-| LS-7 | LS-1, LS-2, LS-4, LS-6 |
+| LS-5 | LS-1 and LS-2; develops as a sibling consumer of compiler facts rather than waiting for all LS-4 features |
+| LS-6 | provider/workspace scaffolding starts after LS-1/2; each reference tranche waits for the matching LS-4/5 query capability and producer gate in §4 |
+| LS-7 | local/module work starts after LS-1/2/4; external, read-only, property and Implements children wait only for their relevant LS-6 tranches |
 | LS-8 | LS-2 and shared CST |
-| LS-9 | starts after LS-2; closes after all feature lanes |
-| LS-10 | shell after LS-2; each method after its direct feature |
-| LS-11 | LS-10 plus all smoke-path features |
+| LS-9 | starts after LS-2; final protocol/performance certification follows LS-10 and all required feature lanes |
+| LS-10 | shell after LS-2; each method after its direct feature; closure is independent of LS-9's later terminal performance rerun |
+| LS-11 | embedded-host shell starts after LS-1/2; editor shell waits for the minimal LS-10 server/sync slice and each smoke method waits for its matching direct and LSP leaves |
 | LS-12 | LS-4/5/6 plus WIN raw metadata handoff |
 | LS-13 | every required delivery epic and producer rerun |
 
@@ -322,3 +323,24 @@ This workset is complete only when compiler and editor facts share one pipeline;
 ## 11. Bead-preparation handoff
 
 Create LS-0 through LS-13 epics and rollout beads, then materialize the first candidates above. Every bead names contract clauses, producer dependencies, reference kinds, matrix rows, direct/transport evidence, target context, performance/lifecycle impact and residual behavior. Historical code/tests enter only through explicit port beads. An LSP shell, docs or editor packaging cannot close a semantic capability epic.
+
+## 12. Exact routed contract responsibility
+
+The clause lists in the epic sections state each outcome's primary contract. The complete producer, consumer and matrix-boundary responsibility exercised by its executable leaves is:
+
+- LS-0: `CONF-MATRIX-001|DOC-AUTH-001|DOC-TRACE-001`
+- LS-1: `COMP-ANALYSIS-001|DEBUG-MAP-001|LS-FACT-001|SRC-ID-001|SYN-CST-001|SYS-OWN-001|SYS-PIPE-001`
+- LS-2: `LS-WORKSPACE-001|PROJ-REF-001|SRC-ID-001`
+- LS-3: `COMP-DIAG-001|LS-BASIC-001|SRC-CC-001`
+- LS-4: `LS-BASIC-001|LS-FACT-001`
+- LS-5: `COMP-BIND-001|LS-BASIC-001`
+- LS-6: `COMP-BIND-001|CONF-MATRIX-001|IMAGE-ABI-001|IMAGE-VERIFY-001|LIB-VBA-001|LS-BASIC-001|LS-WORKSPACE-001|PROJ-REF-001|SRC-ID-001|SYS-ART-001|WIN-META-001`
+- LS-7: `LS-BASIC-001`
+- LS-8: `LS-BASIC-001|SYN-CST-001`
+- LS-9: `CONF-MATRIX-001|CONF-QUALITY-001|LS-WORKSPACE-001|PORT-CORE-001|SEC-BOUNDARY-001`
+- LS-10: `CONF-MATRIX-001|DEBUG-MAP-001|LS-LSP-001|SEC-BOUNDARY-001|SRC-ID-001`
+- LS-11: `LS-BASIC-001|LS-LSP-001`
+- LS-12: `AUTH-VBA-001|CONF-ORACLE-001|LS-BASIC-001|LS-WORKSPACE-001|PROJ-REF-001|WIN-META-001`
+- LS-13: `AUTH-CLEAN-001|AUTH-SPEC-001|CONF-DONE-001|DOC-AUTH-001|DOC-TRACE-001|PROFILE-IDE-001`
+
+The canonical disposition and trace ledgers remain machine authority for these routes; any change updates this appendix, the epic contract and those ledgers together.

@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 Owner: unassigned
-Status: accepted; directed bead rollout in progress under `bd-59co`
+Status: accepted; active under AutoRun `bd-59co`
 Type: architecture, Windows capability and conformance delivery
 Profiles: `PROFILE-WIN-001`, Windows portion of `PROFILE-TOOL-001`
 Source review: [`../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
@@ -65,7 +65,7 @@ Language services own virtual content and query projection. Core owns source Dec
 |---|---|---|
 | COM/native behavior split across compiler/HAL/COM/VM paths | exact compiler descriptors and one COM/native ownership boundary | `SYS-OWN-001`, `WIN-META-001` |
 | fixture/bounded metadata routes | authoritative registry/file resolver for all consumers | `WIN-META-001` |
-| backend-specific marshalling | verified backend-neutral interop call plan | `WIN-PLAN-001` |
+| backend-specific marshalling | one verifier-checked backend-neutral interop plan carrying transport, signatures, ownership, provenance, writeback, cleanup, errors, reentry and apartment policy | `WIN-PLAN-001` |
 | VM3 substrate, JIT whole-image decline | shared VM3/JIT late/early/native execution | `COM-CLIENT-001`, `NATIVE-IMPORT-001` |
 | queued event snapshots/no writeback | typed synchronous connection-point delivery | `COM-EVENT-001` |
 | bounded VM-backed serving | VM3/JIT late and generated early/dual serving | `COM-SERVE-001` |
@@ -78,7 +78,7 @@ Language services own virtual content and query projection. Core owns source Dec
 2. `oxvba-com` owns COM metadata, activation, invocation, events, serving and wire conversion.
 3. HAL owns policy/capability/delegation, not COM or native ABI semantics.
 4. Every interop call is driven by verified compiler/package descriptors.
-5. VM3 and JIT consume the same interop plan and observable contract.
+5. VM3 and JIT consume the same verifier-checked interop plan unchanged and differ only in execution adapter mechanics.
 6. Early binding does not silently become IDispatch.
 7. ByRef writeback occurs before the native caller observes return.
 8. Every reference, pin, temporary, callback and registration has explicit cleanup.
@@ -106,7 +106,7 @@ Controlled fixtures include x64 native DLLs; Automation/dual/custom COM servers;
 ### WIN-0 — Target ledger, authority and rollout
 
 Type: support
-Clauses: `PROFILE-WIN-001`, `PROFILE-TOOL-001`, `CONF-MATRIX-001`
+Clauses: `PROFILE-WIN-001`, `CONF-MATRIX-001`
 
 Deliver workset/epic/bead graph, six matrices, environment/fixture manifest, old IP-08/COM/native residual classification, registry/process/apartment cleanup policy and explicit compatibility/native-output gates.
 
@@ -135,23 +135,33 @@ First beads: resolver; identity/digest; metadata handoff; layout probes; interfa
 
 Close: every later wire/metadata shape is authoritative, representable, verified and lifecycle-safe.
 
-### WIN-2 — Shared interop plan and Windows JIT session substrate
+### WIN-2 — Shared interop plan and Windows session attachment
 
 Type: delivery
 Clauses: `WIN-PLAN-001`, `HOST-SESSION-001`, `RUNTIME-ABI-001`
 
 Deliver:
 
-- elaborate descriptors into one signature/marshal/cleanup/writeback/error/reentry plan;
+- elaborate descriptors into one verifier-checked plan containing exact transport and signatures, marshalling temporaries and ownership, ByRef writeback order, cleanup, error mapping, metadata/source provenance, reentry and apartment policy;
 - migrate existing VM3 paths to the plan;
-- VM3/JIT execution adapters with exact observables;
-- persistent verified-image Windows JIT sessions for x64;
+- VM3/JIT execution adapters that consume the same verified plan unchanged and expose exact observables;
+- Windows target admission and interop services attached to the common verified-image project session for x64;
 - Windows symbol/calling/unwind/executable-memory policy;
 - COM apartment and host policy in session ownership;
 - callback/reentry to the correct live session;
-- target/ABI/profile-aware cache and comhost backend selection.
+- target/ABI/profile-aware admission and comhost backend selection using the CORE-8 cache rather than a private Windows cache.
 
-First beads: plan types/verifier; VM3 adapter; JIT adapter; x64 session; apartment/reentry; comhost selection; plan differential.
+WIN-2 defines no second project-session type, mutable VBA-state owner, helper registry or cache. It attaches apartment/reentry services and unchanged-plan VM3/JIT adapters to the CORE-5/CORE-8 session contract. Every Windows adapter/helper symbol is generated from the CORE-5 versioned catalog.
+
+The exact shared-plan anchors are late and early COM calls, incoming and
+outgoing events, late and dual COM serving, `Declare`, and callbacks. Their rows
+must prove one plan identity across VM3 and JIT; the dual-serving anchor also
+proves that its vtable route does not fall back to dispatch. Verified OxImage
+descriptors are inputs to planning, while the completed plan consumes the common
+Core runtime ABI, evaluation, ownership, session, JIT and cache boundaries.
+WIN-2 owns that boundary; later Windows epics only consume the plan.
+
+First beads: complete plan types/provenance/verifier; VM3 unchanged-plan adapter; JIT unchanged-plan adapter after the bounded CORE-7 typed-entry/lowering handoff; x64 session attachment after the CORE-8 session/cache handoff; apartment/reentry; comhost selection; plan-identity differential.
 
 Close: all later interop executes through the shared plan inside persistent correctly owned sessions.
 
@@ -319,8 +329,8 @@ Close: both internal claim gates and every required delivery epic are green.
 | epic | hard prerequisites |
 |---|---|
 | WIN-0 | accepted workset and CORE-0 truth shape |
-| WIN-1 | CORE-3 typed facts, CORE-4 package metadata, CORE-5 carriers |
-| WIN-2 | CORE-4/5/7/8 plus WIN-1 |
+| WIN-1 | starts after CORE-1 and WIN-0; compiler/package/carrier consumers wait for the exact CORE-3/4/5 producer slices |
+| WIN-2 | schema/rollout work starts after the WIN-1 metadata handoff; plan verification waits for exact CORE-4/5 descriptor/catalog slices, the JIT adapter waits for a bounded CORE-7 slice, and session attachment waits for a bounded CORE-8 slice |
 | WIN-3 | WIN-1, WIN-2 |
 | WIN-4 | WIN-1, WIN-2 |
 | WIN-5 | WIN-1 event metadata, WIN-2, WIN-3 and applicable WIN-4 transport |
@@ -331,11 +341,11 @@ Close: both internal claim gates and every required delivery epic are green.
 | WIN-10 | WIN-2, WIN-9 |
 | WIN-11 | CORE-4/8, WIN-2; WrappedComServer also WIN-6/7/8 |
 | WIN-12 | CORE-4/5/7/8, WIN-1/2 and relevant WIN-11 loader work |
-| WIN-13 | starts after WIN-1; closes after WIN-3 through WIN-12 |
-| WIN-14 | every applicable WIN-1 through WIN-13 row |
+| WIN-13 | safety scaffolding starts after CORE-1 and WIN-0; closes after WIN-3 through WIN-12 |
+| WIN-14 | clean certification-VM provisioning starts after CORE-0; final certification waits for WIN-0 through WIN-13 |
 | WIN-15 | WIN-14 and both claim gates |
 
-Late COM client and scalar Declare can proceed in parallel after WIN-1/2. Serving and events share metadata/session/transport prerequisites. Safety and fixtures run continuously.
+Late COM client and scalar Declare can proceed in parallel after their WIN-1/2 slices. Serving and events share metadata/session/transport prerequisites. Safety, fixture construction and clean-VM provisioning run continuously instead of waiting for capability completion. Coarse Core-3/4/5/7/8 epic dependencies must not be restored where an exact producer leaf can express the handoff.
 
 ## 9. Checks and terminal condition
 
@@ -350,3 +360,26 @@ This workset is complete only when every mandatory x64 compatibility row works u
 ## 10. Bead-preparation handoff
 
 Create WIN-0 through WIN-15 epics and rollout beads, then materialize the first candidates above. Every bead names contract clauses, `target=x64`, process/apartment shape, matrix rows, fixture/environment prerequisites, dependencies, exact evidence and blocker/residual behavior. Registry/fixture mutation is serialized. Capability epics cannot close on docs, matrices or fixture rollout alone.
+
+## 11. Exact routed contract responsibility
+
+The clause lists in the epic sections state each outcome's primary contract. The complete producer, consumer and matrix-boundary responsibility exercised by its executable leaves is:
+
+- WIN-0: `CONF-MATRIX-001|CONF-ORACLE-001|DOC-AUTH-001|DOC-TRACE-001|PROFILE-WIN-001`
+- WIN-1: `COMP-BIND-001|IMAGE-ABI-001|PROJ-REF-001|RUNTIME-VALUE-001|WIN-META-001`
+- WIN-2: `HOST-SESSION-001|IMAGE-VERIFY-001|JIT-CACHE-001|JIT-CORE-001|RUNTIME-ABI-001|RUNTIME-EVAL-001|SYS-OWN-001|WIN-PLAN-001`
+- WIN-3: `COM-CLIENT-001|WIN-PLAN-001`
+- WIN-4: `COM-CLIENT-001|COMP-BIND-001|PROJ-REF-001|WIN-META-001|WIN-PLAN-001`
+- WIN-5: `COM-EVENT-001|CONF-ORACLE-001|CONF-QUALITY-001|JIT-PARITY-001|SEC-BOUNDARY-001|WIN-PLAN-001`
+- WIN-6: `COM-SERVE-001|WIN-PLAN-001`
+- WIN-7: `COM-SERVE-001|WIN-PLAN-001`
+- WIN-8: `COM-EVENT-001|COM-SERVE-001|WIN-PLAN-001`
+- WIN-9: `COMP-BIND-001|COMP-DIAG-001|NATIVE-IMPORT-001|WIN-PLAN-001`
+- WIN-10: `CONF-ORACLE-001|CONF-QUALITY-001|NATIVE-IMPORT-001|RUNTIME-ABI-001|SEC-BOUNDARY-001|WIN-PLAN-001`
+- WIN-11: `BUILD-CLASS-001|BUILD-PACKAGE-001|HOST-SESSION-001|PROFILE-TOOL-001|SYS-ART-001`
+- WIN-12: `BUILD-CLASS-001|BUILD-NATIVE-001|DEBUG-MAP-001|HOST-SESSION-001|IMAGE-VERIFY-001|JIT-AOT-001|JIT-CACHE-001|PROFILE-TOOL-001|SYS-ART-001`
+- WIN-13: `CONF-QUALITY-001|HOST-HAL-001|SEC-BOUNDARY-001|VM3-SAFE-001`
+- WIN-14: `AUTH-CLEAN-001|AUTH-SPEC-001|AUTH-VBA-001|CONF-DIFF-001|CONF-ORACLE-001|CONF-QUALITY-001|JIT-PARITY-001|PROFILE-WIN-001|SYS-DUAL-001|VM3-REF-001`
+- WIN-15: `CONF-DONE-001|DOC-AUTH-001|DOC-TRACE-001|PROFILE-TOOL-001|PROFILE-WIN-001`
+
+The canonical disposition and trace ledgers remain machine authority for these routes; any change updates this appendix, the epic contract and those ledgers together.

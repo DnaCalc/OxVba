@@ -1,13 +1,20 @@
 param(
     [string]$ManifestPath = "docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json",
-    [string]$IssuesPath = ".beads/issues.jsonl"
+    [string]$IssuesPath = ".beads/issues.jsonl",
+    [string]$AutorunPath = "docs/AUTORUN_STATE.md",
+    [string]$RepositoryRoot = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repoRoot = if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
+    (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+}
+else {
+    (Resolve-Path $RepositoryRoot).Path
+}
 . (Join-Path $PSScriptRoot "lib-ideal-program-validation.ps1")
 
 Push-Location $repoRoot
@@ -17,6 +24,7 @@ try {
     $issueContext = Read-IdealIssues -RepoRoot $repoRoot -IssuesPath $IssuesPath
     $issueById = $issueContext.IssueById
     $childrenByParent = New-IdealChildrenMap -Issues @($issueContext.Issues)
+    $executionMode = Get-IdealExecutionMode -RepoRoot $repoRoot -AutorunPath $AutorunPath
     $programDescendants = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($id in @(Get-IdealDescendantIds -RootId ([string]$manifest.root_bead) -ChildrenByParent $childrenByParent)) {
         [void]$programDescendants.Add($id)
@@ -30,19 +38,54 @@ try {
 
     $ownershipAbs = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$manifest.matrix_ownership)
     $ownershipRows = @(Import-Csv -LiteralPath $ownershipAbs)
+    $environmentRows = @(Import-Csv -LiteralPath (Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$manifest.environment_manifest)))
+    $environmentById = @{}
+    foreach ($environment in $environmentRows) {
+        $environmentById[[string]$environment.environment_id] = $environment
+    }
+    $traceRows = @(Import-Csv -LiteralPath (Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$manifest.bead_traceability)))
     $truthStates = @("planned", "in-progress", "implemented-subset", "implemented-full", "verified", "archived")
     $componentStates = @("n/a", "planned", "in-progress", "implemented-subset", "implemented-full", "verified")
     $residualDispositions = @("remaining-accepted-scope", "intentional-boundary", "external-boundary")
     $seenRowIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $primaryClaimKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $totalRows = 0
+    $matrixRowsById = @{}
+    $matrixRowByKey = @{}
+    $directRowsById = @{}
+
+    foreach ($owner in $ownershipRows) {
+        $matrixId = [string]$owner.matrix_id
+        $matrixAbs = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$owner.path)
+        $matrixRows = @(Import-Csv -LiteralPath $matrixAbs)
+        $matrixRowsById[$matrixId] = $matrixRows
+        if ($executionMode -eq "AutoRun") {
+            if ($matrixRows.Count -eq 0) {
+                throw "validate-closure-taxonomy: AutoRun cannot start with empty matrix '$matrixId'"
+            }
+            $requiredRows = @($matrixRows | Where-Object {
+                ConvertFrom-IdealBoolean -Value ([string]$_.required) -Owner "$matrixId/$($_.row_id) required"
+            })
+            if ($requiredRows.Count -eq 0) {
+                throw "validate-closure-taxonomy: AutoRun requires at least one required row in '$matrixId'"
+            }
+        }
+        foreach ($matrixRow in $matrixRows) {
+            $key = "$matrixId|$([string]$matrixRow.row_id)"
+            $matrixRowByKey[$key] = $matrixRow
+            if ([string]$owner.role -eq "primary" -and
+                ($matrixRow.PSObject.Properties.Name -contains "direct_state" -or
+                    $matrixRow.PSObject.Properties.Name -contains "direct_query_state")) {
+                $directRowsById[[string]$matrixRow.row_id] = $matrixRow
+            }
+        }
+    }
 
     foreach ($owner in $ownershipRows) {
         if ([string]$owner.role -ne "primary") {
             continue
         }
-        $matrixAbs = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$owner.path)
-        foreach ($row in @(Import-Csv -LiteralPath $matrixAbs)) {
+        foreach ($row in @($matrixRowsById[[string]$owner.matrix_id])) {
             $claimKey = [string]$row.claim_key
             if ([string]::IsNullOrWhiteSpace($claimKey) -or -not $primaryClaimKeys.Add($claimKey)) {
                 throw "validate-closure-taxonomy: blank or duplicate primary claim_key '$claimKey' in $($owner.matrix_id)"
@@ -52,8 +95,7 @@ try {
 
     foreach ($owner in $ownershipRows) {
         $matrixId = [string]$owner.matrix_id
-        $matrixAbs = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$owner.path)
-        $rows = @(Import-Csv -LiteralPath $matrixAbs)
+        $rows = @($matrixRowsById[$matrixId])
         $matrixClaimKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($row in $rows) {
             $totalRows++
@@ -143,6 +185,11 @@ try {
                 if ($anchorText.Count -eq 0 -or -not (Test-IdealEvidenceReferences -RepoRoot $repoRoot -Text ($anchorText -join ';'))) {
                     throw "validate-closure-taxonomy: verified row $matrixId/$rowId lacks resolvable test/evidence references"
                 }
+                Assert-IdealVerifiedEvidenceGrammar `
+                    -RepoRoot $repoRoot `
+                    -EvidenceRefs ([string]$row.evidence_refs) `
+                    -Owner "$matrixId/$rowId" `
+                    -EnvironmentById $environmentById
             }
 
             $residualDisposition = [string]$row.residual_disposition
@@ -192,7 +239,10 @@ try {
             }
 
             if ([string]$owner.profile -eq "windows-x64") {
-                if ($row.PSObject.Properties.Name -contains "target_arch" -and [string]$row.target_arch -ne "x64") {
+                if ($row.PSObject.Properties.Name -notcontains "target_arch") {
+                    throw "validate-closure-taxonomy: $matrixId/$rowId must carry target_arch for the Windows profile"
+                }
+                if ([string]$row.target_arch -ne "x64") {
                     throw "validate-closure-taxonomy: $matrixId/$rowId target_arch must be x64"
                 }
                 if ($row.PSObject.Properties.Name -contains "office_bitness" -and [string]$row.office_bitness -notin @("64", "n/a")) {
@@ -201,6 +251,91 @@ try {
                 $targetText = "$($row.target_context) $($row.target_arch) $($row.office_bitness)"
                 if ($targetText -match '(?i)(\bx86\b|\bi686\b|\bWOW64\b|\bARM64\b|32-bit Office)') {
                     throw "validate-closure-taxonomy: $matrixId/$rowId contains an excluded non-x64 target"
+                }
+            }
+            if ($matrixId -eq "LSP-METHODS") {
+                Assert-IdealLspAdvertisement `
+                    -Row $row `
+                    -DirectRowsById $directRowsById `
+                    -Owner "$matrixId/$rowId"
+                if ((ConvertFrom-IdealBoolean -Value ([string]$row.capability_advertised) -Owner "$matrixId/$rowId capability_advertised")) {
+                    $transcriptRef = [string]$row.transcript_ref
+                    if ($transcriptRef -match '(?i)^transcript:') {
+                        $transcriptRef = $transcriptRef.Substring($transcriptRef.IndexOf(':') + 1)
+                    }
+                    $transcriptPath = ($transcriptRef.Trim().Trim('`') -split '#', 2)[0]
+                    Assert-IdealRelativePath -Path $transcriptPath -Owner "$matrixId/$rowId transcript_ref"
+                    if (-not (Test-Path -LiteralPath (Resolve-IdealRepoPath -RepoRoot $repoRoot -Path $transcriptPath) -PathType Leaf)) {
+                        throw "validate-closure-taxonomy: advertised $matrixId/$rowId transcript_ref does not resolve"
+                    }
+                }
+            }
+        }
+    }
+
+    $exactTraceKeysByEpic = @{}
+    foreach ($epic in $expectedEpics) {
+        $exactTraceKeysByEpic[$epic.EpicId] = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    }
+    foreach ($trace in $traceRows) {
+        $parentEpic = [string]$trace.parent_epic
+        $rowId = [string]$trace.row_id
+        if ($exactTraceKeysByEpic.ContainsKey($parentEpic) -and -not [string]::IsNullOrWhiteSpace($rowId)) {
+            [void]$exactTraceKeysByEpic[$parentEpic].Add("$([string]$trace.matrix_id)|$rowId")
+        }
+    }
+
+    foreach ($epic in $expectedEpics) {
+        $epicId = [string]$epic.EpicId
+        if ([string]$issueById[$epicId].status -ne "closed") {
+            continue
+        }
+        $connectedKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $requiredKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($owner in $ownershipRows) {
+            $matrixId = [string]$owner.matrix_id
+            foreach ($row in @($matrixRowsById[$matrixId])) {
+                $key = "$matrixId|$([string]$row.row_id)"
+                $required = ConvertFrom-IdealBoolean -Value ([string]$row.required) -Owner "$key required"
+                if ([string]$row.owner_epic -eq $epicId -or $exactTraceKeysByEpic[$epicId].Contains($key)) {
+                    [void]$connectedKeys.Add($key)
+                    if ($required) {
+                        [void]$requiredKeys.Add($key)
+                    }
+                }
+            }
+        }
+        if ($requiredKeys.Count -eq 0) {
+            throw "validate-closure-taxonomy: closed epic $epicId has no explicit required matrix row"
+        }
+        foreach ($key in @($requiredKeys)) {
+            $row = $matrixRowByKey[$key]
+            if ([string]$row.truth_state -ne "verified") {
+                throw "validate-closure-taxonomy: closed epic $epicId retains non-verified required row $key"
+            }
+            if ([string]$row.residual_disposition -eq "remaining-accepted-scope" -or
+                -not [string]::IsNullOrWhiteSpace([string]$row.residual_owner_bead)) {
+                throw "validate-closure-taxonomy: closed epic $epicId retains accepted residual on $key"
+            }
+        }
+        foreach ($key in @($connectedKeys)) {
+            $row = $matrixRowByKey[$key]
+            if ([string]$row.residual_disposition -eq "remaining-accepted-scope") {
+                throw "validate-closure-taxonomy: closed epic $epicId retains accepted residual on connected row $key"
+            }
+        }
+
+        $epicScopeIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        [void]$epicScopeIds.Add($epicId)
+        foreach ($id in @(Get-IdealDescendantIds -RootId $epicId -ChildrenByParent $childrenByParent)) {
+            [void]$epicScopeIds.Add($id)
+        }
+        foreach ($owner in $ownershipRows) {
+            $matrixId = [string]$owner.matrix_id
+            foreach ($row in @($matrixRowsById[$matrixId])) {
+                if ([string]$row.residual_disposition -eq "remaining-accepted-scope" -and
+                    $epicScopeIds.Contains([string]$row.residual_owner_bead)) {
+                    throw "validate-closure-taxonomy: closed epic $epicId still owns accepted residual $matrixId/$($row.row_id)"
                 }
             }
         }
@@ -212,8 +347,7 @@ try {
             if (-not (ConvertFrom-IdealBoolean -Value ([string]$owner.required_for_terminal) -Owner "$($owner.matrix_id) required_for_terminal")) {
                 continue
             }
-            $matrixAbs = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$owner.path)
-            $terminalRows = @(Import-Csv -LiteralPath $matrixAbs)
+            $terminalRows = @($matrixRowsById[[string]$owner.matrix_id])
             if ($terminalRows.Count -eq 0) {
                 throw "validate-closure-taxonomy: closed program has no rows in required matrix '$($owner.matrix_id)'"
             }

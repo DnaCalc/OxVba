@@ -40,10 +40,22 @@ Required hierarchy:
 
 Completion discipline:
 - a bead is only complete when its stated outcome exists and its completion evidence has been verified,
+- each current executable bead and execution epic states a typed `command:`, a concrete `expected-observable:`, and an `artifact:`/`transcript:`/`oracle:`/`environment:` evidence destination,
 - a workset is not complete while required beads remain open,
 - narrative progress text is never a substitute for bead state.
 - a workset is not considered properly rolled out until its necessary epics exist explicitly, even if some later child beads are still to be created by epic rollout beads.
+- a rollout cannot close while it still owns matrix scaffolds or planned rows; exact delivery-leaf row traces replace that temporary ownership,
+- an execution epic cannot close until delivery work exists, all required rows it owns or advances are verified, and no accepted residual remains in its subtree,
 - do not mutate the bead graph concurrently; serialize `br` mutations through `scripts/invoke-br-serialized.ps1`.
+
+Ideal-program scheduling discipline:
+
+- the only executable claim queue is `br ready -l ideal-2026-07 -t task`; `bv` is used for scoped topology and capacity analysis, never as the source of a claim,
+- every executable leaf carries explicit `resource-*` scheduling metadata; `resource-none` means that no serialized machine lane is required and cannot be combined with another resource label,
+- admit at most two `resource-rust-writer` leaves concurrently,
+- admit at most one leaf at a time for each of `resource-cargo-workspace`, `resource-excel-vbe`, `resource-registry`, and `resource-vm-provision`,
+- admit at most one aggregate writer across `resource-large-jit`, `resource-large-vm3`, `resource-large-differential`, and `resource-large-rt-abi`,
+- rollout beads must assign the narrowest accurate resource labels to every successor; resource locks are controller admission rules, not false dependency edges.
 
 ## 1) Historical vNNN scaffold determinism
 

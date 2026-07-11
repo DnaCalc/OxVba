@@ -85,7 +85,7 @@ The provider architecture is the right target shape: the binder asks what a symb
 - ByVal/ByRef, arrays/UDTs and Declare legality checks are incomplete;
 - many symbol/bind diagnostics lack source locations;
 - grammar/language matrices do not yet provide current-route evidence for the full surface;
-- the compiler does not yet publish the complete AnalysisResult/use-site fact contract required by language services.
+- the compiler does not yet publish the immutable `AnalysisResultV1`/`AnalysisMode::{Strict, Editor}` fact contract, stable identities or half-open UTF-8 span/provenance maps required by language services.
 
 The current detailed target is [`spec/OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](spec/OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md).
 
@@ -102,7 +102,7 @@ OxImage serializes a project closure as pretty JSON `.oxi` with a schema magic/v
 - VM3 linking follows a last-program convention instead of treating image entry as fully authoritative;
 - the verifier is incomplete for several ID, type, arity, descriptor, export, event and effect families;
 - duplicate/ambiguous case-folded link identities are not comprehensively rejected;
-- OxImage lacks content digest, helper/carrier ABI, target/capability requirements, full provenance and source/debug maps;
+- OxImage lacks content digest, required helper-catalog/carrier ABI identities and digests, target/capability requirements, full provenance and source/debug maps;
 - a few OxIR operations have divergent VM3/JIT dispositions;
 - product consumers do not yet share a sealed `VerifiedOxProgram`/`VerifiedOxImage` boundary.
 
@@ -118,7 +118,7 @@ Variant is the canonical execution carrier. BStr uses BSTR-shaped UTF-16 storage
 
 - the shared semantic-kernel extraction is incomplete;
 - VM3 and rt-abi duplicate some class/interface descriptor projection;
-- descriptor and host/image session paths contain process-lifetime leaks;
+- descriptor and host/image session paths contain process-lifetime leaks, and helper registration is not yet generated everywhere from one versioned `oxvba-rt-abi` catalog;
 - some public rt-abi functions hide raw-pointer safety contracts behind safe Rust signatures;
 - panic/fault and manual drain/reentrancy state need RAII hardening;
 - the base library has no member-by-member typed/compiler/VM3/JIT/oracle completion matrix;
@@ -208,7 +208,7 @@ The target adds a backend-neutral verified session, JIT cache, JIT-backed wrappe
 
 There is no active clean-stack language-service or LSP implementation. The former crates were removed from the workspace and later deleted. The VS Code extension and several older documents still describe the deleted surface and are deprecated by this architecture sweep.
 
-Reusable foundations exist: lossless CST, symbols/scopes/signatures/declaration spans, providers, project closure loading, diagnostics, Core IR facts and historical tests/designs. Missing are the compiler AnalysisResult fact stream, semantic snapshots, overlays, indices, invalidation, direct query API, LSP transport and editor integration.
+Reusable foundations exist: lossless CST, symbols/scopes/signatures/declaration spans, providers, project closure loading, diagnostics, Core IR facts and historical tests/designs. Missing are the compiler `AnalysisResultV1` fact stream and fixed UTF-8 span boundary, semantic snapshots, overlays, indices, invalidation, direct query API, LSP transport and editor integration.
 
 The destination is [`spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](spec/OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md).
 

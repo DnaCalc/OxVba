@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 Owner: unassigned
-Status: accepted; directed bead rollout in progress under `bd-59co`
+Status: accepted; active under AutoRun `bd-59co`
 Type: architecture, capability and conformance delivery
 Profile: `PROFILE-CORE-001`
 Source review: [`../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md`](../OXVBA_POST_JIT_STATUS_REVIEW_2026-07-10.md)
@@ -29,7 +29,9 @@ This is not a patch collection. The workset closes only when the current impleme
 - Windows x64 compile-time conditional and pointer-width semantics;
 - VM3 and JIT x64 core rows where pointer width affects execution;
 - actual 64-bit Excel/VBA evidence for width-sensitive VBA-observable rows;
-- Windows x64 JIT session/codegen admission supplied by the Windows workset.
+- Windows runs of the portable core JIT path as Core conformance evidence.
+
+Windows-native interop, Windows JIT adapter/session admission and native output are `PROFILE-WIN-001` consumer responsibilities. They consume Core contracts but are not prerequisites for closing the platform-neutral Core profile.
 
 x86/32-bit Office, WOW64, ARM64 and other Windows architectures are outside this accepted target. They have no active successor workset and carry no implied support.
 
@@ -53,14 +55,14 @@ macOS, browser/WASM, forms, debugger and the broader security profile are explic
 
 The Windows workset owns native COM, Windows Declare execution, pointers/callbacks, Windows JIT interop, Windows-specific VM3 parity and native outputs. The language-service workset owns semantic snapshots, indexing, query APIs and LSP over compiler facts.
 
-This workset owns production of the compiler AnalysisResult facts consumed by the language service.
+This workset owns production of the compiler `AnalysisResultV1` facts consumed by the language service.
 
 ## 3. Architectural transformation
 
 | current state | required state | clauses |
 |---|---|---|
 | preprocessing/parser can panic or fail open | decoded, provenance-aware, fail-closed source pipeline | `SRC-ID-001`, `SRC-CC-001`, `SYN-CST-001` |
-| compiler emits CoreProgram but not a complete fact result | one strict/tolerant AnalysisResult with use-site/type/diagnostic facts | `COMP-ANALYSIS-001`, `COMP-DIAG-001` |
+| compiler emits CoreProgram but not a complete fact result | one immutable `AnalysisResultV1` selected by the closed `AnalysisMode::{Strict, Editor}` enum, with lossless syntax, stable identities, scopes, use-site/type/call and diagnostic facts | `COMP-ANALYSIS-001`, `COMP-DIAG-001` |
 | provider routes erase types/public data | one exact typed signature/public-surface model | `PROJ-REF-001`, `COMP-BIND-001` |
 | raw OxProgram/OxImage reaches consumers | sealed VerifiedOxProgram/VerifiedOxImage boundary | `IMAGE-VERIFY-001` |
 | `.oxi` has weak identity/ABI/provenance | versioned digest/target/helper/carrier/source contract | `IMAGE-ABI-001` |
@@ -83,6 +85,7 @@ This workset owns production of the compiler AnalysisResult facts consumed by th
 8. Exact runtime carriers and source provenance survive the full pipeline.
 9. Host denial, unavailable capability and missing implementation remain distinct outcomes.
 10. Support/docs/audit beads do not close capability epics.
+11. Compiler spans are UTF-8 byte offsets; original-file, normalized and virtual-source maps preserve the coordinates needed by compiler, runtime and editor consumers.
 
 ## 5. Canonical truth artifacts
 
@@ -149,22 +152,23 @@ Deliver:
 - fail-closed conditional directives and expressions;
 - case-insensitive project extension/attribute handling;
 - original/virtual provenance through class preambles, startup/mainline generation and normalization;
+- UTF-8 byte-offset spans for every compiler fact and diagnostic, with explicit original-file and virtual/generated-source maps;
 - complete grammar fixture/route matrix;
 - decoding, lexer, parser and edit fuzz/property lanes.
 
-First beads: decoding/encoding; lexer Unicode; total expression API; conditional negative matrix; source provenance; grammar fixture tranches.
+First beads: decoding/encoding; lexer Unicode; total expression API; conditional negative matrix; UTF-8 span and source-provenance maps; grammar fixture tranches.
 
 Close: supported source never panics, malformed compile-time syntax cannot select code, and every diagnostic has original or virtual provenance.
 
-### CORE-3 — Compiler AnalysisResult, types, calls and references
+### CORE-3 — Compiler AnalysisResultV1, types, calls and references
 
 Type: delivery
 Clauses: `PROJ-REF-001`, `COMP-ANALYSIS-001`, `COMP-BIND-001`, `COMP-DIAG-001`, `IR-CORE-001`, `LS-FACT-001`
 
 Deliver:
 
-- versioned AnalysisResult with declarations/use sites/types/calls/arguments/accessors/provenance/diagnostics and optional CoreProgram;
-- strict/editor fact identity and poison/unknown isolation;
+- immutable, versioned `AnalysisResultV1` with the lossless syntax/CST payload, stable project/module/document/provider identities, an explicit scope tree, declarations/use sites, expression/member/call types, argument mapping, accessor/default-member decisions, diagnostics, UTF-8 spans, provenance and `Option<CoreProgram>`;
+- `AnalysisMode::Strict`/`AnalysisMode::Editor` fact identity and poison/unknown isolation;
 - one callable-signature model across project/library/host/COM/Declare providers;
 - declared return/parameter/array/UDT/object/interface type preservation;
 - complete ByVal/ByRef/Optional/named/omitted/ParamArray legality/coercion;
@@ -174,7 +178,7 @@ Deliver:
 - cycle-aware default-member behavior;
 - DefDec and a host-collation contract for Option Compare Database.
 
-First beads: AnalysisResult types/fact sink; use-site facts; strict/tolerant parity; typed provider signatures; argument matrix split by scalar/array/UDT/object; public data exports; diagnostic spans; default-member cycles; DefDec/database collation.
+First beads: AnalysisResultV1 schema/identity/syntax/scope fact sink; declaration/use-site and typed call facts; `AnalysisMode::Strict`/`AnalysisMode::Editor` parity; typed provider signatures; argument matrix split by scalar/array/UDT/object; public data exports; diagnostic spans; default-member cycles; DefDec/database collation.
 
 Close: every compiler matrix row is decided once, typed, source-provenanced and consumable by Core IR/language services.
 
@@ -194,6 +198,12 @@ Deliver:
 - CCT-033 stateful file I/O completion;
 - current Excel/VBA or authoritative spec evidence per observable family.
 
+The current Excel/VBA library tranche is an early CORE-9 delivery leaf. During
+CORE-LIB rollout, exact library implementation leaves add blockers to that leaf;
+the tranche never waits on CORE-LIB terminal closure. This keeps oracle evidence
+close to the implementation that needs it without creating a CORE-LIB/CORE-9
+certification cycle.
+
 First beads: inventory/signatures; pure scalar/string/math; date/locale/random; collection/object/array; file I/O; settings/environment/UI; terminal library sweep.
 
 Close: every public member/overload has typed compiler, VM3/JIT, host-policy and oracle/spec evidence.
@@ -201,7 +211,7 @@ Close: every public member/overload has typed compiler, VM3/JIT, host-policy and
 ### CORE-4 — Verified OxIR and OxImage realization
 
 Type: delivery
-Clauses: `IR-CORE-001`, `IR-OXIR-001`, `IMAGE-VERIFY-001`, `IMAGE-ABI-001`, `SYS-ART-001`, `DEBUG-MAP-001`
+Clauses: `IR-CORE-001`, `IR-OXIR-001`, `IMAGE-VERIFY-001`, `IMAGE-ABI-001`, `SYS-ART-001`, `DEBUG-MAP-001`, `PROFILE-TOOL-001`
 
 Deliver:
 
@@ -209,12 +219,18 @@ Deliver:
 - bounded decoder and full program/image verifier;
 - explicit entry handling and unique link tables;
 - complete types/ranks/arity/effect/descriptor/import/export verification;
-- digest, schema, target/profile/capability, helper/carrier ABI and provenance;
+- digest, schema, target/profile/capability, required helper-catalog/carrier ABI identity and provenance; the image records and verifies those identities but does not own runtime helper semantics;
 - source/debug maps and compatible version migration/rejection;
 - hostile artifact mutation/fuzz/resource gates;
 - removal of legacy Bundle/.oxb product terminology and migration of needed VBA-library metadata.
 
-First beads: schema/compat decision; bounded decoder; verified handles/API closure; ID/CFG/type verifier tranches; descriptor/link verifier tranches; entry/link tables; ABI/provenance maps; hostile artifact fuzz; Bundle metadata migration.
+CORE-4 also owns the portable standalone-tooling claim: a deterministic,
+distributable `.oxi` package and manifest that decode only to a verified,
+source-free image with stable ABI, provenance and incompatibility handling. That
+claim is deliberately distinct from Windows wrappers, COM-server artifacts and
+genuine native DLL/EXE outputs.
+
+First beads: early schema/compat envelope; owning sealed handles; bounded decoder; base ID/CFG/type verification; later descriptor/link verification; entry/link tables; helper/carrier compatibility after the CORE-5 catalog slice; provenance maps after CORE-2; public-surface closure after CORE-3; hostile artifact fuzz; Bundle metadata migration.
 
 Close: no product path links, executes or compiles raw/unverified artifacts and every package clause has evidence.
 
@@ -228,14 +244,14 @@ Deliver:
 - shared class/interface/record descriptor arenas;
 - eliminate per-session Box::leak and leaked image/host ownership;
 - explicit unsafe rt-abi contracts behind typed wrappers;
-- versioned helper descriptor catalog;
+- the sole versioned helper descriptor catalog used to generate VM3, JIT and Windows registration;
 - RAII drain/reentrancy/panic/fault state;
 - deterministic internal fault seating;
 - shared semantic ownership for error, lifecycle, array, object and call operations;
 - backend-neutral verified project-session API;
 - repeated compile/load/initialize/invoke/reset/drop stability.
 
-First beads: descriptor arena; session-owned metadata; unsafe API audit; helper catalog; RAII/panic injection; semantic-kernel extraction tranches; shared session facade; lifecycle stress.
+First beads: carrier ABI identity; helper catalog; descriptor arena; session-owned metadata; unsafe API audit; RAII/panic injection; semantic-kernel extraction tranches; shared session facade after the CORE-4 sealed-handle slice; lifecycle stress.
 
 Close: runtime/helper/session ownership is sound, versioned and bounded with zero balance drift.
 
@@ -317,6 +333,12 @@ Deliver:
 - Windows x64/64-bit Excel, non-default locale and source-encoding rows;
 - captured environment/source/result/modal/cleanup evidence.
 
+CORE-9 produces the pre-terminal `core.cert.portable` claim. It certifies the
+portable Core implementation and evidence but does not carry `CONF-DONE-001`;
+CORE-10 alone owns Core profile completion. Its early library-oracle leaf is
+blocked by exact CORE-LIB implementation leaves as they are rolled out, never by
+CORE-LIB closure itself.
+
 First beads: observable schema; structural carriers; side-effect/lifecycle axes; manifest generation; property/fuzz tranches; safety lanes; oracle harness; compiler diagnostics; runtime/library; x64/locale/source encoding.
 
 Close: no required row relies on tag/status equality, historical capture alone or VM3-minted truth.
@@ -347,18 +369,18 @@ Close: all delivery epics are closed and the `PROFILE-CORE-001` claim is demonst
 | CORE-3 | CORE-2 | gates LS compiler facts |
 | CORE-LIB | CORE-2 plus stable CORE-3 signatures | CORE-5/6/7/9 |
 | CORE-4 | CORE-1 | final metadata consumes CORE-3 |
-| CORE-5 | CORE-4 | none |
+| CORE-5 | CORE-1; catalog/carrier work starts in parallel with CORE-4 | session children consume the early CORE-4 sealed-handle slice; later CORE-4 ABI compatibility consumes the CORE-5 catalog slice |
 | CORE-6 | CORE-3, CORE-4, CORE-5 | CORE-LIB |
 | CORE-7 | CORE-3, CORE-4, CORE-5 | CORE-LIB |
 | CORE-8 | CORE-4, CORE-5, CORE-7 | none |
 | CORE-9 | CORE-1 scaffolding | closes after CORE-2/3/LIB/4/5/6/7/8 |
-| CORE-10 | every delivery epic | Windows x64 JIT prerequisite for final target summary |
+| CORE-10 | every Core delivery epic | none outside `PROFILE-CORE-001` |
 
 Cross-workset producer edges:
 
-- language-service compiler facts: CORE-2 provenance plus CORE-3 AnalysisResult/diagnostics;
+- language-service compiler facts: CORE-2 UTF-8 spans and original/virtual provenance plus CORE-3 immutable AnalysisResultV1 syntax, identities, scopes and diagnostics;
 - language-service source/OxImage/library/Declare references: CORE-3 public surfaces/Declare legality, CORE-LIB signatures, CORE-4 verified loading;
-- Windows interop: CORE-4 verified package, CORE-5 helper/carrier/session substrate, CORE-7 JIT plan/calls, CORE-8 sessions/cache.
+- Windows interop: CORE-4 verified package and CORE-5 helper/carrier/session contracts start the shared-plan work; bounded CORE-7 typed-entry/lowering and CORE-8 persistent-session/cache handoffs gate only the Windows children that consume those slices.
 
 ## 8. Checks and evidence
 
@@ -393,3 +415,22 @@ Any required `implemented-subset`, `planned` or `in-progress` row keeps the prof
 ## 10. Bead-preparation handoff
 
 Create the workset root, CORE-0 through CORE-10 plus CORE-LIB epics, one rollout bead under each, and the first bead candidates above. Every executable bead names type, parent, contract clauses, matrix rows, direct dependencies, touched truth surfaces, exact acceptance command/evidence and residual behavior. Capability epics cannot close on support beads alone.
+
+## 11. Exact routed contract responsibility
+
+The clause lists in the epic sections state each outcome's primary contract. The complete producer, consumer and matrix-boundary responsibility exercised by its executable leaves is:
+
+- CORE-0: `AUTH-CLEAN-001|AUTH-SPEC-001|AUTH-VBA-001|CONF-MATRIX-001|DOC-AUTH-001|DOC-TRACE-001`
+- CORE-1: `CONF-DONE-001|CONF-QUALITY-001|RUNTIME-VALUE-001|SEC-BOUNDARY-001`
+- CORE-2: `COMP-ANALYSIS-001|DEBUG-MAP-001|SRC-CC-001|SRC-ID-001|SYN-CST-001`
+- CORE-3: `AUTH-VBA-001|COMP-ANALYSIS-001|COMP-BIND-001|COMP-DIAG-001|CONF-DIFF-001|CONF-ORACLE-001|IR-CORE-001|LS-FACT-001|PROJ-REF-001|RUNTIME-EVAL-001|SYS-PIPE-001`
+- CORE-LIB: `COMP-BIND-001|CONF-DIFF-001|CONF-MATRIX-001|HOST-HAL-001|LIB-VBA-001|PROFILE-CORE-001|RUNTIME-EVAL-001|SYS-DUAL-001`
+- CORE-4: `BUILD-PACKAGE-001|COMP-BIND-001|CONF-MATRIX-001|CONF-QUALITY-001|DEBUG-MAP-001|HOST-HAL-001|HOST-SESSION-001|IMAGE-ABI-001|IMAGE-VERIFY-001|IR-CORE-001|IR-OXIR-001|LIB-VBA-001|PROFILE-CORE-001|PROFILE-TOOL-001|PROJ-REF-001|RUNTIME-EVAL-001|RUNTIME-VALUE-001|SEC-BOUNDARY-001|SRC-ID-001|SYS-ART-001|SYS-PIPE-001`
+- CORE-5: `HOST-HAL-001|HOST-SESSION-001|IR-OXIR-001|RUNTIME-ABI-001|RUNTIME-EVAL-001|RUNTIME-VALUE-001|SEC-BOUNDARY-001|SYS-OWN-001`
+- CORE-6: `IR-OXIR-001|SYS-DUAL-001|VM3-REF-001|VM3-SAFE-001`
+- CORE-7: `IR-OXIR-001|JIT-CORE-001|JIT-PARITY-001|RUNTIME-ABI-001|SYS-DUAL-001`
+- CORE-8: `CONF-QUALITY-001|HOST-SESSION-001|JIT-AOT-001|JIT-CACHE-001`
+- CORE-9: `AUTH-CLEAN-001|AUTH-SPEC-001|AUTH-VBA-001|COMP-ANALYSIS-001|CONF-DIFF-001|CONF-MATRIX-001|CONF-ORACLE-001|CONF-QUALITY-001|HOST-HAL-001|HOST-SESSION-001|JIT-PARITY-001|LIB-VBA-001|PORT-CORE-001|PROFILE-CORE-001|RUNTIME-EVAL-001|SEC-BOUNDARY-001|SYS-DUAL-001|VM3-REF-001|VM3-SAFE-001`
+- CORE-10: `CONF-DONE-001|DOC-AUTH-001|DOC-TRACE-001|PORT-CORE-001|PROFILE-CORE-001`
+
+The canonical disposition and trace ledgers remain machine authority for these routes; any change updates this appendix, the epic contract and those ledgers together.

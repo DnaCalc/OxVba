@@ -14,7 +14,7 @@ try {
     $manifestContext = Read-IdealProgramManifest -RepoRoot $repoRoot -ManifestPath $ManifestPath
     $manifest = $manifestContext.Manifest
 
-    foreach ($field in @("matrix_ownership", "matrix_schema", "bead_traceability", "legacy_migration")) {
+    foreach ($field in @("matrix_ownership", "matrix_schema", "bead_traceability", "legacy_migration", "environment_manifest", "clause_disposition")) {
         $path = [string]$manifest.$field
         Assert-IdealRelativePath -Path $path -Owner "manifest.$field"
         $abs = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path $path
@@ -165,7 +165,11 @@ try {
         [IO.Path]::GetFileName([string]$manifest.matrix_ownership),
         "remaining-accepted-scope",
         "target_arch=x64",
-        "Bare ``implemented`` is invalid"
+        "Bare ``implemented`` is invalid",
+        "observables:result=verified",
+        "capability_advertised",
+        '`dev-oracle`',
+        "IDEAL_CONTRACT_CLAUSE_DISPOSITION_V1.csv"
     )) {
         if (-not $schemaText.Contains($needle)) {
             throw "validate-validation-ownership: matrix schema is missing required policy text '$needle'"

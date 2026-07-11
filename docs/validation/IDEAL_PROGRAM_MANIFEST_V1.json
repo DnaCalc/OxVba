@@ -8,6 +8,8 @@
   "matrix_schema": "docs/validation/IDEAL_MATRIX_SCHEMA_V1.md",
   "bead_traceability": "docs/validation/IDEAL_MATRIX_BEAD_TRACEABILITY_V1.csv",
   "legacy_migration": "docs/validation/IDEAL_LEGACY_BEAD_MIGRATION_V1.csv",
+  "environment_manifest": "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv",
+  "clause_disposition": "docs/validation/IDEAL_CONTRACT_CLAUSE_DISPOSITION_V1.csv",
   "profiles": [
     {
       "profile": "core",

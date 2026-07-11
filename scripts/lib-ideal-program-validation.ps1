@@ -37,6 +37,8 @@ function Read-IdealProgramManifest {
         "matrix_schema",
         "bead_traceability",
         "legacy_migration",
+        "environment_manifest",
+        "clause_disposition",
         "profiles"
     )) {
         if ($manifest.PSObject.Properties.Name -notcontains $field) {
@@ -302,7 +304,15 @@ function Test-IdealEvidenceReferences {
                     return $false
                 }
             }
-            elseif ($prefix -notin @("br", "command", "cargo", "test", "oracle", "environment", "excel", "spec", "external", "transcript")) {
+            elseif ($prefix -eq "artifact") {
+                $path = ($value -split '#', 2)[0]
+                $path = ($path -split '::', 2)[0]
+                $normalized = $path.Replace('\', '/')
+                if ([string]::IsNullOrWhiteSpace($path) -or [IO.Path]::IsPathRooted($path) -or $normalized -match '(^|/)\.\.(/|$)') {
+                    return $false
+                }
+            }
+            elseif ($prefix -notin @("br", "command", "cargo", "test", "oracle", "environment", "excel", "spec", "external", "transcript", "observables")) {
                 return $false
             }
             continue
@@ -356,5 +366,253 @@ function Assert-IdealRelativePath {
     $normalized = $Path.Replace('\', '/')
     if ([IO.Path]::IsPathRooted($Path) -or $normalized -match '(^|/)\.\.(/|$)') {
         throw "ideal-program: $Owner must use a repository-relative path, found '$Path'"
+    }
+}
+
+function Split-IdealPipeList {
+    param(
+        [AllowEmptyString()][string]$Value,
+        [Parameter(Mandatory = $true)][string]$Owner,
+        [switch]$AllowNotApplicable
+    )
+
+    $trimmed = $Value.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) {
+        return @()
+    }
+    if ($AllowNotApplicable -and $trimmed -eq "n/a") {
+        return @()
+    }
+    if ($trimmed.Contains(";")) {
+        throw "ideal-program: $Owner must use pipe-delimited values, not semicolons"
+    }
+
+    $values = @($trimmed -split '\|' | ForEach-Object { $_.Trim() })
+    if (@($values | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+        throw "ideal-program: $Owner contains an empty pipe-delimited value"
+    }
+    $unique = @($values | Sort-Object -Unique)
+    if ($unique.Count -ne $values.Count) {
+        throw "ideal-program: $Owner contains duplicate values"
+    }
+    return $values
+}
+
+function Get-IdealExecutionMode {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$AutorunPath = "docs/AUTORUN_STATE.md"
+    )
+
+    $autorunAbs = Resolve-IdealRepoPath -RepoRoot $RepoRoot -Path $AutorunPath
+    if (-not (Test-Path -LiteralPath $autorunAbs -PathType Leaf)) {
+        throw "ideal-program: missing execution control $AutorunPath"
+    }
+    $text = Get-Content -LiteralPath $autorunAbs -Raw
+    $match = [regex]::Match($text, '(?im)^Mode:\s*(?<mode>[^\r\n]+)$')
+    if (-not $match.Success) {
+        throw "ideal-program: execution control has no Mode field"
+    }
+    $mode = $match.Groups['mode'].Value.Trim().Trim('`')
+    if ($mode -notin @("Directed", "AutoRun")) {
+        throw "ideal-program: execution control mode must be Directed or AutoRun, found '$mode'"
+    }
+    return $mode
+}
+
+function Assert-IdealExecutableAcceptanceGrammar {
+    param(
+        [AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        throw "ideal-program: $Owner has no executable acceptance text"
+    }
+    if (-not [regex]::IsMatch($Text, '(?im)(?:^|[\s`])command\s*:\s*[^\s`;|][^\r\n]*')) {
+        throw "ideal-program: $Owner must include a nonempty typed command: acceptance command"
+    }
+    if (-not [regex]::IsMatch($Text, '(?im)(?:^|[\s`])expected(?:-|\s+)observable\s*:\s*[^\s`;|][^\r\n]*')) {
+        throw "ideal-program: $Owner must include a nonempty expected-observable: statement"
+    }
+    if (-not [regex]::IsMatch($Text, '(?im)(?:^|[\s`])(?:artifact|transcript|oracle|environment)\s*:\s*[^\s`;|][^\r\n]*')) {
+        throw "ideal-program: $Owner must include an artifact:/transcript:/oracle:/environment: evidence reference"
+    }
+}
+
+function Get-IdealTypedReferenceMatches {
+    param(
+        [AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][string[]]$Prefixes
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return @()
+    }
+    $escaped = @($Prefixes | ForEach-Object { [regex]::Escape($_) }) -join '|'
+    return @(
+        [regex]::Matches(
+            $Text,
+            "(?im)(?:^|[;|])\s*(?<prefix>$escaped)\s*:\s*(?<value>[^;|\r\n]+)"
+        )
+    )
+}
+
+function Assert-IdealVerifiedEvidenceGrammar {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [AllowEmptyString()][string]$EvidenceRefs,
+        [Parameter(Mandatory = $true)][string]$Owner,
+        [hashtable]$EnvironmentById
+    )
+
+    if ([string]::IsNullOrWhiteSpace($EvidenceRefs)) {
+        throw "ideal-program: verified $Owner has no evidence_refs"
+    }
+
+    $observableMatch = [regex]::Match(
+        $EvidenceRefs,
+        '(?im)(?:^|[;|])\s*observables\s*:\s*(?<value>[^;|\r\n]+)'
+    )
+    if (-not $observableMatch.Success) {
+        throw "ideal-program: verified $Owner must classify observables: result, full-err, side-effects, lifecycle-order, transport, and balance"
+    }
+    $axisStates = @{}
+    foreach ($entry in @($observableMatch.Groups['value'].Value -split ',')) {
+        $pair = @($entry.Trim() -split '=', 2)
+        if ($pair.Count -ne 2 -or [string]::IsNullOrWhiteSpace($pair[0]) -or [string]::IsNullOrWhiteSpace($pair[1])) {
+            throw "ideal-program: verified $Owner has malformed observables entry '$entry'"
+        }
+        $axis = $pair[0].Trim().ToLowerInvariant()
+        $state = $pair[1].Trim().ToLowerInvariant()
+        if ($axisStates.ContainsKey($axis)) {
+            throw "ideal-program: verified $Owner repeats observable axis '$axis'"
+        }
+        if ($state -notin @("verified", "n/a")) {
+            throw "ideal-program: verified $Owner observable '$axis' must be verified or n/a"
+        }
+        $axisStates[$axis] = $state
+    }
+    $requiredAxes = @("result", "full-err", "side-effects", "lifecycle-order", "transport", "balance")
+    foreach ($axis in $requiredAxes) {
+        if (-not $axisStates.ContainsKey($axis)) {
+            throw "ideal-program: verified $Owner does not classify observable axis '$axis'"
+        }
+    }
+    if ($axisStates.Count -ne $requiredAxes.Count) {
+        $unexpected = @($axisStates.Keys | Where-Object { $_ -notin $requiredAxes }) -join ', '
+        throw "ideal-program: verified $Owner has unexpected observable axes: $unexpected"
+    }
+    if ($axisStates["result"] -ne "verified") {
+        throw "ideal-program: verified $Owner must have result=verified"
+    }
+
+    $actualMatches = @(Get-IdealTypedReferenceMatches -Text $EvidenceRefs -Prefixes @("artifact", "transcript", "oracle"))
+    if ($actualMatches.Count -eq 0) {
+        throw "ideal-program: verified $Owner needs a typed artifact:/transcript:/oracle: actual-evidence reference"
+    }
+    foreach ($match in $actualMatches) {
+        $prefix = $match.Groups['prefix'].Value.ToLowerInvariant()
+        $value = $match.Groups['value'].Value.Trim().Trim('`')
+        $path = ($value -split '#', 2)[0]
+        $path = ($path -split '::', 2)[0]
+        Assert-IdealRelativePath -Path $path -Owner "verified $Owner $prefix reference"
+        if (-not (Test-Path -LiteralPath (Resolve-IdealRepoPath -RepoRoot $RepoRoot -Path $path) -PathType Leaf)) {
+            throw "ideal-program: verified $Owner $prefix evidence does not resolve: '$path'"
+        }
+    }
+
+    foreach ($match in @(Get-IdealTypedReferenceMatches -Text $EvidenceRefs -Prefixes @("environment"))) {
+        $environmentId = $match.Groups['value'].Value.Trim().Trim('`')
+        if ($null -eq $EnvironmentById -or -not $EnvironmentById.ContainsKey($environmentId)) {
+            throw "ideal-program: verified $Owner references unknown environment '$environmentId'"
+        }
+    }
+}
+
+function Assert-IdealLspAdvertisement {
+    param(
+        [Parameter(Mandatory = $true)]$Row,
+        [Parameter(Mandatory = $true)][hashtable]$DirectRowsById,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    $advertised = ConvertFrom-IdealBoolean -Value ([string]$Row.capability_advertised) -Owner "$Owner capability_advertised"
+    if (-not $advertised) {
+        return
+    }
+
+    foreach ($field in @("truth_state", "projection_state", "equivalence_state")) {
+        if ([string]$Row.$field -ne "verified") {
+            throw "ideal-program: $Owner cannot advertise while $field='$($Row.$field)'"
+        }
+    }
+    $directRowId = [string]$Row.direct_matrix_row
+    if ([string]::IsNullOrWhiteSpace($directRowId) -or -not $DirectRowsById.ContainsKey($directRowId)) {
+        throw "ideal-program: $Owner advertises without a resolvable direct_matrix_row"
+    }
+    $directRow = $DirectRowsById[$directRowId]
+    if ([string]$directRow.truth_state -ne "verified") {
+        throw "ideal-program: $Owner advertises before direct row '$directRowId' is verified"
+    }
+    $directState = ""
+    if ($directRow.PSObject.Properties.Name -contains "direct_state") {
+        $directState = [string]$directRow.direct_state
+    }
+    elseif ($directRow.PSObject.Properties.Name -contains "direct_query_state") {
+        $directState = [string]$directRow.direct_query_state
+    }
+    if ($directState -ne "verified") {
+        throw "ideal-program: $Owner advertises before direct row '$directRowId' has a verified direct result"
+    }
+    if ($Row.PSObject.Properties.Name -contains "source_claim_key" -and
+        $directRow.PSObject.Properties.Name -contains "claim_key" -and
+        [string]$Row.source_claim_key -ne [string]$directRow.claim_key) {
+        throw "ideal-program: $Owner source_claim_key does not identify direct row '$directRowId'"
+    }
+    if ($directRow.PSObject.Properties.Name -contains "direct_api_method" -and
+        -not [string]::IsNullOrWhiteSpace([string]$directRow.direct_api_method) -and
+        [string]$directRow.direct_api_method -ne [string]$Row.direct_api_method) {
+        throw "ideal-program: $Owner direct_api_method disagrees with '$directRowId'"
+    }
+}
+
+function Assert-IdealClosedRolloutTraceState {
+    param(
+        [Parameter(Mandatory = $true)][string]$RolloutId,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$RolloutTraces,
+        [Parameter(Mandatory = $true)][hashtable]$MatrixRowsById,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$DeliveryLeafIds,
+        [Parameter(Mandatory = $true)][hashtable]$TraceRowsByBead
+    )
+
+    foreach ($trace in $RolloutTraces) {
+        if ([string]$trace.relationship -in @("matrix-scaffold", "owns-planned-row")) {
+            throw "ideal-program: closed rollout $RolloutId retains '$($trace.relationship)' trace $($trace.matrix_id)/$($trace.row_id)"
+        }
+    }
+    foreach ($matrixId in @($MatrixRowsById.Keys)) {
+        foreach ($matrixRow in @($MatrixRowsById[$matrixId].Values)) {
+            if ([string]$matrixRow.truth_state -eq "planned" -and
+                ([string]$matrixRow.evidence_owner_bead -eq $RolloutId -or [string]$matrixRow.residual_owner_bead -eq $RolloutId)) {
+                throw "ideal-program: closed rollout $RolloutId still owns planned row $matrixId/$($matrixRow.row_id)"
+            }
+        }
+    }
+    if ($DeliveryLeafIds.Count -eq 0) {
+        throw "ideal-program: closed rollout $RolloutId has no delivery leaf with an exact row path"
+    }
+    foreach ($deliveryLeafId in $DeliveryLeafIds) {
+        $leafTraces = @()
+        if ($TraceRowsByBead.ContainsKey($deliveryLeafId)) {
+            $leafTraces = @($TraceRowsByBead[$deliveryLeafId])
+        }
+        $exactLeafTraces = @($leafTraces | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_.row_id) -and
+            [string]$_.relationship -notin @("matrix-scaffold", "owns-planned-row")
+        })
+        if ($exactLeafTraces.Count -eq 0) {
+            throw "ideal-program: delivery leaf $deliveryLeafId under closed rollout $RolloutId lacks an exact row trace"
+        }
     }
 }

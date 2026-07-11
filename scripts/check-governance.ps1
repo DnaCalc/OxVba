@@ -30,6 +30,12 @@ try {
     Write-Host "[governance] validation-ownership"
     & "$PSScriptRoot/validate-validation-ownership.ps1"
 
+    Write-Host "[governance] contract-clause-disposition"
+    & "$PSScriptRoot/validate-contract-clause-disposition.ps1"
+
+    Write-Host "[governance] environment-manifest"
+    & "$PSScriptRoot/validate-environment-manifest.ps1"
+
     Write-Host "[governance] legacy-migration"
     & "$PSScriptRoot/validate-ideal-legacy-migration.ps1"
 
@@ -41,6 +47,9 @@ try {
 
     Write-Host "[governance] workset-rollout"
     & "$PSScriptRoot/validate-workset-rollout.ps1"
+
+    Write-Host "[governance] ideal-validator-negative-cases"
+    & "$PSScriptRoot/test-ideal-program-validator-negative-cases.ps1"
 
     Write-Host "[governance] validation-derived-summary"
     & "$PSScriptRoot/generate-validation-derived-summaries.ps1" -Check

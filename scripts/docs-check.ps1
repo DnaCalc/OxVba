@@ -11,6 +11,8 @@ try {
         "docs/AUTORUN_STATE.md",
         "docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json",
         "docs/validation/IDEAL_LEGACY_BEAD_MIGRATION_V1.csv",
+        "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv",
+        "docs/validation/IDEAL_CONTRACT_CLAUSE_DISPOSITION_V1.csv",
         "README.md",
         "Cargo.toml"
     )

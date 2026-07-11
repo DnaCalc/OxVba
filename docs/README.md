@@ -20,7 +20,7 @@ Read these documents in order:
 | Windows VBA/COM/native compatibility and outputs | `PROFILE-WIN-001`, `WIN-*`, `COM-*`, `NATIVE-*`, `BUILD-*` | [`worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md`](worksets/WORKSET_2026-07-10_JIT_WINDOWS_COM_NATIVE_INTEROP_AND_BINARY_EXPORT.md) |
 | IDE language-service foundation | `PROFILE-IDE-001`, `LS-*` | [`worksets/WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md`](worksets/WORKSET_2026-07-10_LANGUAGE_SERVICES_CLEAN_STACK_BASELINE.md) |
 
-The three worksets are accepted under umbrella bead `bd-59co`; PROGRAM-0 is performing directed rollout before AutoRun begins. Older worksets and profile ladders are historical execution records unless PROGRAM-0 explicitly imports a residual.
+The three worksets are accepted under umbrella bead `bd-59co`. PROGRAM-0 is closed, AutoRun is enabled, and the certified current ready leaf is the CORE-0 rollout. Older worksets and profile ladders are historical execution records unless PROGRAM-0 explicitly imports a residual.
 
 ## Current subsystem architecture contracts
 
@@ -62,7 +62,7 @@ External authority/source policy is summarized in [`FOUNDATION_SPEC_REFERENCE.md
 
 Canonical completion truth belongs in independently closable matrices under `validation/` and reproducible artifacts under `evidence/`. Narrative reports and status tours provide context but do not override matrices, tests or current architecture.
 
-The current worksets require new consolidated matrices for:
+The current worksets use these consolidated canonical matrices as their entry truth:
 
 - core compiler/VM3/JIT readiness;
 - VBA base-library parity;
@@ -72,7 +72,7 @@ The current worksets require new consolidated matrices for:
 - Windows COM/native/import/export profiles;
 - language-service features, reference kinds, LSP methods and performance.
 
-Until those matrices are delivered, the 2026-07-10 review and executable tests are the honest entry evidence.
+All 15 matrices are delivered and populated with 189 planned rows. They define the executable entry state together with the 2026-07-10 review and tests; no planned row is thereby credited as implemented or verified.
 
 ## Historical material
 

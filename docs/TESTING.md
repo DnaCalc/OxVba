@@ -23,6 +23,8 @@
 - Named program artifact scope guard: `./scripts/validate-profile-artifact-scope.ps1 -Mode staged`
 - Ideal program state/graph gate: `./scripts/validate-active-program-sync.ps1`; `./scripts/validate-workset-rollout.ps1`
 - Ideal validation truth gate: `./scripts/run-truth-reconciliation.ps1`
+- Ideal contract/environment gates: `./scripts/validate-contract-clause-disposition.ps1`; `./scripts/validate-environment-manifest.ps1`
+- Ideal validator negative cases: `./scripts/test-ideal-program-validator-negative-cases.ps1`
 - Ideal legacy reconciliation gate: `./scripts/validate-ideal-legacy-migration.ps1`
 - Evidence retention prune (keep latest + N runs): `./scripts/prune-evidence-artifacts.ps1 -KeepCount 5`
 

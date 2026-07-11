@@ -13,7 +13,7 @@ The direct Rust API is the semantic product surface for embedded hosts. LSP is a
 
 ## 2. Compiler analysis boundary
 
-The service consumes the versioned AnalysisResult defined by the compiler contract:
+The service consumes the immutable `AnalysisResultV1` and closed `AnalysisMode::{Strict, Editor}` boundary defined by the compiler contract:
 
 - CST and preprocessing context;
 - declarations, scopes and signatures;
@@ -24,7 +24,9 @@ The service consumes the versioned AnalysisResult defined by the compiler contra
 - project/reference/provider provenance;
 - optional CoreProgram, which the service never requires for malformed editor text.
 
-Valid strict compilation and editor analysis produce identical facts. Incomplete source may retain poison/unknown facts but cannot reach code generation. The service never binds substrings or invents a semantic recovery path that compilation cannot represent.
+It preserves compiler project/module/document/provider identities, syntax identities, scope structure, semantic facts, diagnostics, provenance and half-open UTF-8 byte spans unchanged. It may add snapshot-bound indices and handles, but never parses, rebinds, reconstructs source identity or derives semantic meaning from text that the result did not supply.
+
+Valid Strict compilation and Editor analysis produce identical facts. Incomplete source may retain poison/unknown facts but cannot reach code generation. The service never binds substrings or invents a semantic recovery path that compilation cannot represent.
 
 ## 3. Identity model
 
@@ -114,6 +116,8 @@ The transport owns:
 - URI/path normalization;
 - protocol-clean stdout and byte-accurate framing.
 
+Compiler and direct-service ranges remain half-open UTF-8 byte ranges. Only the LSP projection converts between those byte ranges and the client's negotiated UTF-8, UTF-16 or UTF-32 position encoding, using the exact originating SnapshotId, document identity and document version. Conversion validates UTF-8 boundaries, CRLF treatment and astral code points; stale versions, out-of-range positions and lossy or ambiguous conversions are rejected rather than rebased or clamped. A converted range never changes the compiler fact or its provenance.
+
 For client cancellation, a still-open request receives exactly one legal response. RequestCancelled is used when cancellation is answered as an error; ServerCancelled is limited to methods that support retrigger semantics. Late-cancel and partial-result races remain valid and tested.
 
 ## 10. Host and editor integration
@@ -134,7 +138,7 @@ Memory and handles remain bounded across open/change/close/reload cycles. Concur
 
 Language-service completion requires:
 
-- compiler strict/editor fact parity;
+- compiler `AnalysisMode::Strict`/`AnalysisMode::Editor` fact parity;
 - reference-kind matrix rerun after all producer contracts stabilize;
 - incomplete-code and Unicode/CRLF position corpora;
 - direct API tests for every feature/reference kind;

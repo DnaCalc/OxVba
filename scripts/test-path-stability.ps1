@@ -34,10 +34,13 @@ Invoke-InDirectory -Path (Join-Path $repoRoot "crates/oxvba-host") -Script {
 Invoke-InDirectory -Path (Join-Path $repoRoot "crates/oxvba-host") -Script {
     & (Join-Path $repoRoot "scripts/validate-active-program-sync.ps1") | Out-Null
     & (Join-Path $repoRoot "scripts/validate-validation-ownership.ps1") | Out-Null
+    & (Join-Path $repoRoot "scripts/validate-contract-clause-disposition.ps1") | Out-Null
+    & (Join-Path $repoRoot "scripts/validate-environment-manifest.ps1") | Out-Null
     & (Join-Path $repoRoot "scripts/validate-ideal-legacy-migration.ps1") | Out-Null
     & (Join-Path $repoRoot "scripts/validate-closure-taxonomy.ps1") | Out-Null
     & (Join-Path $repoRoot "scripts/validate-bead-traceability.ps1") | Out-Null
     & (Join-Path $repoRoot "scripts/validate-workset-rollout.ps1") -SkipReadyQueue | Out-Null
+    & (Join-Path $repoRoot "scripts/test-ideal-program-validator-negative-cases.ps1") | Out-Null
 }
 
 Write-Host "path-stability: ok"

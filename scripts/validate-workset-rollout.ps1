@@ -2,14 +2,20 @@ param(
     [string]$ManifestPath = "docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json",
     [string]$IssuesPath = ".beads/issues.jsonl",
     [switch]$SkipReadyQueue,
-    [switch]$SkipCycleCheck
+    [switch]$SkipCycleCheck,
+    [string]$RepositoryRoot = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repoRoot = if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
+    (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+}
+else {
+    (Resolve-Path $RepositoryRoot).Path
+}
 . (Join-Path $PSScriptRoot "lib-ideal-program-validation.ps1")
 
 function Assert-ExactSet {
@@ -94,6 +100,39 @@ function Assert-ExecutableLeafQuality {
 
     Assert-RoutingLabels -Issue $Issue -RequiredLabels $RequiredLabels -Owner $Owner
 
+    $labels = @(Get-IdealIssueLabels -Issue $Issue)
+    $allowedResources = @(
+        "resource-none",
+        "resource-rust-writer",
+        "resource-cargo-workspace",
+        "resource-excel-vbe",
+        "resource-registry",
+        "resource-vm-provision",
+        "resource-large-jit",
+        "resource-large-vm3",
+        "resource-large-differential",
+        "resource-large-rt-abi"
+    )
+    $resourceLabels = @($labels | Where-Object { $_ -like "resource-*" })
+    if ($resourceLabels.Count -eq 0) {
+        throw "validate-workset-rollout: $Owner must carry explicit resource-* scheduling metadata"
+    }
+    foreach ($resource in $resourceLabels) {
+        if ($resource -notin $allowedResources) {
+            throw "validate-workset-rollout: $Owner has unknown resource label '$resource'"
+        }
+    }
+    if ($resourceLabels -contains "resource-none" -and $resourceLabels.Count -ne 1) {
+        throw "validate-workset-rollout: $Owner cannot combine resource-none with a serialized resource"
+    }
+    $largeResources = @(
+        $resourceLabels |
+            Where-Object { $_ -in @("resource-large-jit", "resource-large-vm3", "resource-large-differential", "resource-large-rt-abi") }
+    )
+    if ($largeResources.Count -gt 0 -and $resourceLabels -notcontains "resource-rust-writer") {
+        throw "validate-workset-rollout: $Owner with resource-large-* must also carry resource-rust-writer"
+    }
+
     $acceptance = if ($Issue.PSObject.Properties.Name -contains "acceptance_criteria") { [string]$Issue.acceptance_criteria } else { "" }
     $description = if ($Issue.PSObject.Properties.Name -contains "description") { [string]$Issue.description } else { "" }
     if ([string]::IsNullOrWhiteSpace($acceptance)) {
@@ -113,6 +152,7 @@ function Assert-ExecutableLeafQuality {
     if ($qualityText -notmatch '(?i)\b(matrix|truth surface|matrix row)\w*\b') {
         throw "validate-workset-rollout: $Owner does not identify a canonical matrix/truth surface"
     }
+    Assert-IdealExecutableAcceptanceGrammar -Text $qualityText -Owner $Owner
 }
 
 function Get-OwningExpectedEpic {
@@ -189,6 +229,12 @@ try {
             throw "validate-workset-rollout: manifest bead '$requiredId' must be an epic"
         }
     }
+    $controlIssue = $issueById[[string]$manifest.control_epic]
+    $controlDescription = if ($controlIssue.PSObject.Properties.Name -contains "description") { [string]$controlIssue.description } else { "" }
+    $controlAcceptance = if ($controlIssue.PSObject.Properties.Name -contains "acceptance_criteria") { [string]$controlIssue.acceptance_criteria } else { "" }
+    Assert-IdealExecutableAcceptanceGrammar `
+        -Text "$controlDescription`n$controlAcceptance" `
+        -Owner "PROGRAM-0 control epic $($manifest.control_epic)"
 
     $root = $issueById[[string]$manifest.root_bead]
     if (@(Get-IdealParentIds -Issue $root).Count -ne 0) {
@@ -264,6 +310,9 @@ try {
         if ([string]::IsNullOrWhiteSpace($acceptance) -or -not (Test-IdealContractClauses -Text $description)) {
             throw "validate-workset-rollout: execution epic $($record.EpicId) must carry acceptance criteria and exact, non-wildcard clauses"
         }
+        Assert-IdealExecutableAcceptanceGrammar `
+            -Text "$description`n$acceptance" `
+            -Owner "execution epic $($record.EpicId)"
 
         $directChildren = if ($childrenByParent.ContainsKey($record.EpicId)) { @($childrenByParent[$record.EpicId]) } else { @() }
         $rollouts = @($directChildren | Where-Object { (Get-IdealIssueLabels -Issue $_) -contains "rollout" })
@@ -303,19 +352,17 @@ try {
             if ($unfinished.Count -gt 0) {
                 throw "validate-workset-rollout: closed execution epic $($record.EpicId) has unfinished descendants: $($unfinished -join ',')"
             }
-            if ((Get-IdealIssueLabels -Issue $epic) -contains "delivery") {
-                $deliveryLeaves = @(
-                    $epicDescendants |
-                        Where-Object {
-                            $descendantId = [string]$_
-                            [string]$issueById[$descendantId].issue_type -ne "epic" -and
-                            (-not $childrenByParent.ContainsKey($descendantId) -or @($childrenByParent[$descendantId]).Count -eq 0) -and
-                            (Get-IdealIssueLabels -Issue $issueById[$descendantId]) -contains "delivery"
-                        }
-                )
-                if ($deliveryLeaves.Count -eq 0) {
-                    throw "validate-workset-rollout: delivery execution epic $($record.EpicId) cannot close on support leaves alone"
-                }
+            $deliveryLeaves = @(
+                $epicDescendants |
+                    Where-Object {
+                        $descendantId = [string]$_
+                        [string]$issueById[$descendantId].issue_type -ne "epic" -and
+                        (-not $childrenByParent.ContainsKey($descendantId) -or @($childrenByParent[$descendantId]).Count -eq 0) -and
+                        (Get-IdealIssueLabels -Issue $issueById[$descendantId]) -contains "delivery"
+                    }
+            )
+            if ($deliveryLeaves.Count -eq 0) {
+                throw "validate-workset-rollout: closed execution epic $($record.EpicId) cannot close on support leaves alone"
             }
         }
     }
@@ -343,6 +390,38 @@ try {
             -Owner "execution leaf $id"
     }
 
+    $activeExecutionLeaves = @(
+        $executionDescendants |
+            Where-Object {
+                $candidate = $issueById[[string]$_]
+                [string]$candidate.status -eq "in_progress" -and
+                [string]$candidate.issue_type -ne "epic" -and
+                (-not $childrenByParent.ContainsKey([string]$candidate.id) -or @($childrenByParent[[string]$candidate.id]).Count -eq 0)
+            } |
+            ForEach-Object { $issueById[[string]$_] }
+    )
+    $resourceLimits = @(
+        @{ Name = "Rust writers"; Maximum = 2; Match = { param($labels) $labels -contains "resource-rust-writer" } },
+        @{ Name = "workspace Cargo gates"; Maximum = 1; Match = { param($labels) $labels -contains "resource-cargo-workspace" } },
+        @{ Name = "Excel/VBE automation lanes"; Maximum = 1; Match = { param($labels) $labels -contains "resource-excel-vbe" } },
+        @{ Name = "registry mutation lanes"; Maximum = 1; Match = { param($labels) $labels -contains "resource-registry" } },
+        @{ Name = "certification-VM provisioning lanes"; Maximum = 1; Match = { param($labels) $labels -contains "resource-vm-provision" } },
+        @{ Name = "large JIT/VM3/differential/rt-abi writers"; Maximum = 1; Match = {
+            param($labels)
+            @($labels | Where-Object { $_ -in @("resource-large-jit", "resource-large-vm3", "resource-large-differential", "resource-large-rt-abi") }).Count -gt 0
+        } }
+    )
+    foreach ($limit in $resourceLimits) {
+        $owners = @(
+            $activeExecutionLeaves |
+                Where-Object { & $limit.Match @(Get-IdealIssueLabels -Issue $_) } |
+                ForEach-Object { [string]$_.id }
+        )
+        if ($owners.Count -gt [int]$limit.Maximum) {
+            throw "validate-workset-rollout: active $($limit.Name) exceed limit $($limit.Maximum): $($owners -join ',')"
+        }
+    }
+
     $controlDescendants = @(Get-IdealDescendantIds -RootId ([string]$manifest.control_epic) -ChildrenByParent $childrenByParent)
     foreach ($id in $controlDescendants) {
         $issue = $issueById[$id]
@@ -362,6 +441,10 @@ try {
         if ([string]::IsNullOrWhiteSpace($acceptance)) {
             throw "validate-workset-rollout: PROGRAM-0 leaf $id has no acceptance criteria"
         }
+        $description = if ($issue.PSObject.Properties.Name -contains "description") { [string]$issue.description } else { "" }
+        Assert-IdealExecutableAcceptanceGrammar `
+            -Text "$description`n$acceptance" `
+            -Owner "PROGRAM-0 leaf $id"
     }
 
     if (-not $SkipCycleCheck) {

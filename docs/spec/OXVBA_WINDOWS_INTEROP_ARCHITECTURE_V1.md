@@ -55,6 +55,8 @@ Compiler and package descriptors elaborate into a plan containing:
 
 VM3 interprets the plan; the JIT lowers or invokes a typed plan adapter. Transport counters and structural results prove that early calls remain vtable-bound and both backends use equivalent semantics.
 
+Windows interop defines no second project-session type, mutable VBA-state owner, helper catalog or JIT cache. It attaches target admission, apartment/reentry services and plan adapters to the common project-runtime session and JIT cache. Every Windows adapter/helper symbol is generated from the versioned `oxvba-rt-abi` catalog and carries target, ownership, allocation, cleanup, VBA-error/internal-fault, panic-containment, reentry and apartment facts; a private Windows/JIT registration table is non-conforming.
+
 ## 6. Late-bound COM client
 
 Late binding supports ProgID/CLSID activation, host-returned objects, ROT/moniker/file GetObject, IDispatch name/DISPID resolution, methods, properties, default members, put/putref, statement/function context, named/omitted/Optional arguments, ByRef, chaining and enumeration.

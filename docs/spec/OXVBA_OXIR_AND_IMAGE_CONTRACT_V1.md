@@ -90,8 +90,8 @@ An OxImage contains:
 - verified OxPrograms;
 - content/integrity digest;
 - target/profile/capability requirements;
-- helper ABI version;
-- carrier/layout ABI version;
+- required helper-catalog identity, digest and ABI version;
+- required carrier/layout identity, digest and ABI version;
 - build/compiler version and settings affecting meaning;
 - complete reference/provenance manifest;
 - source/debug maps;
@@ -101,9 +101,11 @@ The entry field is authoritative; consumers do not infer the entry from “last 
 
 Version compatibility is explicit: a loader either accepts and upgrades a known compatible schema or rejects it. It never interprets unknown fields by historical convention.
 
+OxImage owns the recorded requirements and the verifier-owned compatibility check; it does not define helper or carrier semantics. `oxvba-rt-abi` owns the versioned helper descriptor catalog and carrier ABI facts. Early artifact-schema, sealed-handle, bounded-decode and base-verifier work therefore does not wait for the complete runtime catalog; later image compatibility verification consumes the exact catalog identity/digest produced by the runtime layer.
+
 ## 7. VM3 contract
 
-VM3 executes VerifiedOxImage/OxProgram through heap-owned frames, typed locals/places, explicit control flow and shared runtime/evaluation helpers. It implements every verified operation admitted for its target.
+VM3 executes `VerifiedOxImage`/`VerifiedOxProgram` through heap-owned frames, typed locals/places, explicit control flow and shared runtime/evaluation helpers. It implements every verified operation admitted for its target; raw `OxProgram` is never a production execution input.
 
 VM3 is the reference interpreter for backend parity, but its behavior is not self-authorizing. Excel/VBA and public specifications remain the semantic target; corrected VM3 behavior updates the golden corpus and JIT differential expectations.
 
@@ -111,7 +113,7 @@ VM3 honors the declared image/program entry, global initialization order, projec
 
 ## 8. Runtime and ownership integration
 
-VM3 and JIT share runtime carrier, evaluation and helper contracts through `oxvba-runtime`, `oxvba-eval` and `oxvba-rt-abi`. Descriptor projection has one owner and session-bounded storage; backends do not independently leak parallel class/interface metadata.
+VM3 and JIT share runtime carrier, evaluation and helper contracts through `oxvba-runtime`, `oxvba-eval` and `oxvba-rt-abi`. The versioned `oxvba-rt-abi` catalog is the sole source for VM3, JIT and Windows helper registration. Descriptor projection has one owner and session-bounded storage; backends do not independently leak parallel class/interface metadata or private helper catalogs.
 
 AddRef, Release, cleanup, termination and panic/fault paths are explicit. Repeated image/session create/invoke/reset/drop cycles have bounded memory and zero carrier/interface imbalance.
 

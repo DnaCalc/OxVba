@@ -122,9 +122,9 @@ Source and compiled project references expose the same VBA-visible public surfac
 
 ### Compiler analysis result — `COMP-ANALYSIS-001`
 
-The compiler produces one versioned analysis result containing syntax, declarations, scopes, resolved use sites, expression/member/call types, argument mapping, dispatch/accessor/default-member decisions, diagnostics, provenance and an optional CoreProgram.
+The compiler exposes the closed public mode enum `AnalysisMode::{Strict, Editor}` and produces one immutable `AnalysisResultV1` containing lossless syntax/CST, stable project/module/document/provider identities, scopes, declarations and resolved use sites, expression/member/call/result types, argument mapping, dispatch/accessor/default-member decisions, diagnostics, provenance and an optional CoreProgram.
 
-Strict compilation accepts only an error-free analysis result with a CoreProgram. Tolerant editor analysis may retain poison or unknown facts for incomplete source, but malformed source cannot reach code generation. Valid-source facts are identical in strict and editor use.
+Every compiler span is a half-open UTF-8 byte range in an identified supplied active-view document, with versioned maps to original, normalized or explicit generated/virtual documents. Strict compilation accepts only an error-free result with a CoreProgram. Editor analysis may retain poison or unknown facts for incomplete source, but malformed source cannot reach code generation. Valid-source facts are identical in Strict and Editor use.
 
 ### Typed binding — `COMP-BIND-001`
 
@@ -172,7 +172,7 @@ Value operations, coercion, comparison, string behavior, errors and lifecycle op
 
 ### Runtime ABI — `RUNTIME-ABI-001`
 
-The runtime-helper ABI is versioned and described by stable helper identities, typed signatures, ownership, allocation, error, reentrancy, target and panic-containment contracts. Raw-pointer entry points are explicitly unsafe behind typed internal wrappers. Panics never unwind across foreign or generated-code boundaries and always seat deterministic internal diagnostics.
+The runtime-helper ABI has one versioned descriptor catalog with stable helper identities, typed signatures, ownership, allocation, error, reentrancy, target, apartment and panic-containment contracts. VM3, JIT and Windows adapters generate registration from that catalog rather than private tables. Raw-pointer entry points are explicitly unsafe behind typed internal wrappers. Panics never unwind across foreign or generated-code boundaries and always seat deterministic internal diagnostics.
 
 ### VBA base library — `LIB-VBA-001`
 
@@ -274,7 +274,7 @@ Native outputs select exported procedures through explicit project metadata and 
 
 ### Compiler-fact snapshots — `LS-FACT-001`
 
-The language service consumes compiler-owned analysis results into immutable, versioned semantic snapshots. Snapshot-bound handles are never reused across versions; deterministic logical symbol keys support equivalence and cache reuse with provider/version provenance.
+The language service consumes compiler-owned `AnalysisResultV1` values into immutable, versioned semantic snapshots without parsing, rebinding or identity reconstruction. Snapshot-bound handles are never reused across versions; deterministic logical symbol keys support equivalence and cache reuse with provider/version provenance.
 
 ### Workspace and references — `LS-WORKSPACE-001`
 
@@ -288,7 +288,7 @@ Queries never parse substrings, rebuild a second symbol table or edit read-only 
 
 ### Thin LSP projection — `LS-LSP-001`
 
-LSP is a negotiated transport projection over the direct API, pinned to an exact protocol/meta-model revision. It owns JSON-RPC framing, document synchronization, position encoding, cancellation responses, result IDs, refresh, virtual content, versioned edits and capability advertisement—not VBA semantics or project discovery.
+LSP is a negotiated transport projection over the direct API, pinned to an exact protocol/meta-model revision. It alone converts compiler UTF-8 byte spans to/from the negotiated client position encoding using the exact snapshot and document version. It owns JSON-RPC framing, document synchronization, position conversion, cancellation responses, result IDs, refresh, virtual content, versioned edits and capability advertisement—not VBA semantics or project discovery.
 
 Detailed language-service requirements live in [`OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md).
 
