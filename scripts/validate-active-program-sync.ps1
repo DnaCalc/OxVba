@@ -20,7 +20,7 @@ function Get-ControlField {
 
     $match = [regex]::Match(
         $Text,
-        "(?im)^$([regex]::Escape($Name)):\s*([^\r\n]+)$"
+        "(?im)^$([regex]::Escape($Name)):[ \t]*([^\r\n]+)\r?$"
     )
     if (-not $match.Success) {
         if ($Required) {

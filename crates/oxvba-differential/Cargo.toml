@@ -14,6 +14,7 @@ oxvba-oxir.workspace = true
 oxvba-runtime = { workspace = true, features = ["live-counters"] }
 oxvba-symbol.workspace = true
 oxvba-vm3.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

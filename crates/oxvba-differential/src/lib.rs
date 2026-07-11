@@ -22,6 +22,7 @@
 //! ([`oracle`]) validates vm3 against captured VBA 7.1 ground truth. The optimization
 //! tier (M4 JIT) differentials the JIT against this same vm3 observable.
 
+pub mod balance_protocol;
 pub mod oracle;
 
 use oxvba_host::{Engine, FinalErr, HostConfig, RuntimeProfileId, SnapshotOutcome, Vm3Snapshot};
@@ -22708,10 +22709,10 @@ End Sub
     /// A deterministic single-line rendering of a run's observable (axis 1 snapshot + axis 2
     /// `Err` + completion shape), for the vm3 golden snapshot. `{:?}` on the `Err` keeps it on
     /// one line (newlines in a description escape to `\n`).
-    fn render_outcome(o: &RunOutcome) -> String {
+    fn render_outcome(fixture: &str, o: &RunOutcome) -> String {
         assert!(
             o.handle_balance.is_some_and(HandleBalance::is_zero),
-            "vm3 corpus handle imbalance: {:?} for outcome {o:?}",
+            "vm3 corpus fixture `{fixture}` handle imbalance: {:?} for outcome {o:?}",
             o.handle_balance
         );
         if let Some(what) = &o.unsupported {
@@ -26953,7 +26954,7 @@ End Sub
                     .replace('\\', "/");
                 let rendered = match run_with_timeout(Executor::Vm3, &source, "VBAProject", budget)
                 {
-                    Some(outcome) => render_outcome(&outcome),
+                    Some(outcome) => render_outcome(&rel, &outcome),
                     None => "TIMEOUT".to_string(),
                 };
                 lines.push(format!("{rel}\t{rendered}"));

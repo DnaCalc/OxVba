@@ -248,10 +248,14 @@ Deliver:
 - RAII drain/reentrancy/panic/fault state;
 - deterministic internal fault seating;
 - shared semantic ownership for error, lifecycle, array, object and call operations;
+- exact, non-narrowing `SafeArray` dimension/layout ownership, with hostile-rank
+  rejection and balanced destruction;
+- type-enforced thread ownership for `SafeArray`/`Variant` object carriers,
+  including final release, termination-queue and Windows apartment handoff;
 - backend-neutral verified project-session API;
 - repeated compile/load/initialize/invoke/reset/drop stability.
 
-First beads: carrier ABI identity; helper catalog; descriptor arena; session-owned metadata; unsafe API audit; RAII/panic injection; semantic-kernel extraction tranches; shared session facade after the CORE-4 sealed-handle slice; lifecycle stress.
+First beads: carrier ABI identity; helper catalog; descriptor arena; session-owned metadata; unsafe API audit; `SafeArray` exact dimension/allocation-layout enforcement; `SafeArray` object-carrier thread-ownership enforcement; RAII/panic injection; semantic-kernel extraction tranches; shared session facade after the CORE-4 sealed-handle slice; lifecycle stress.
 
 Close: runtime/helper/session ownership is sound, versioned and bounded with zero balance drift.
 

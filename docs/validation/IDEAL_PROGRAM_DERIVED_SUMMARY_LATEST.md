@@ -18,7 +18,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Matrix | Profile | Role | Owner epic | Rows | Verified | Open | Trace relationships |
 |---|---|---|---|---:|---:|---:|---:|
-| CORE-READINESS | core | primary | bd-59co.2.1 | 24 | 1 | 23 | 55 |
+| CORE-READINESS | core | primary | bd-59co.2.1 | 24 | 1 | 23 | 57 |
 | VBA-LIBRARY | core | primary | bd-59co.2.5 | 7 | 0 | 7 | 7 |
 | OXIR-BACKENDS | core | primary | bd-59co.2.6 | 12 | 0 | 12 | 12 |
 | OXIMAGE-CONTRACT | core | primary | bd-59co.2.6 | 8 | 0 | 8 | 8 |
