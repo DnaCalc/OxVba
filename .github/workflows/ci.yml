@@ -29,12 +29,26 @@ jobs:
 
   linux-ready:
     name: linux-ready
-    runs-on: ubuntu-latest
+    # The host label is scheduling only. All repository commands execute in the
+    # immutable x64 manifest pinned by ci/linux-x64/contract-v1.json.
+    runs-on: ubuntu-24.04
+    container:
+      image: rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TZ: UTC
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          clean: true
+          persist-credentials: false
+      - name: Install pinned PowerShell
+        shell: bash
+        run: bash ./scripts/install-pinned-pwsh.sh
+      - name: Verify pinned Linux x64 environment
+        shell: pwsh
+        run: ./scripts/validate-linux-ci-environment.ps1 -Runtime
       - name: Meta check (fast, no artifacts)
         shell: pwsh
         run: ./scripts/meta-check.ps1 -Fast -NoArtifacts
@@ -53,14 +67,24 @@ jobs:
 
   wasm-hal-ready:
     name: wasm-hal-ready
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container:
+      image: rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TZ: UTC
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
+          clean: true
+          persist-credentials: false
+      - name: Install pinned PowerShell
+        shell: bash
+        run: bash ./scripts/install-pinned-pwsh.sh
+      - name: Verify pinned Linux x64 environment
+        shell: pwsh
+        run: ./scripts/validate-linux-ci-environment.ps1 -Runtime
       - name: HAL conformance on wasm32/WASI
         shell: pwsh
         run: ./scripts/run-hal-conformance-wasm32.ps1 -SkipTests -OutputDir temp/no-artifacts/hal_wasm32_ci
@@ -80,16 +104,28 @@ jobs:
 
   formal-kani:
     if: ${{ github.event_name == 'workflow_dispatch' && vars.RUN_KANI == '1' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container:
+      image: rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TZ: UTC
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          clean: true
+          persist-credentials: false
+      - name: Install pinned PowerShell
+        shell: bash
+        run: bash ./scripts/install-pinned-pwsh.sh
+      - name: Verify pinned Linux x64 environment
+        shell: pwsh
+        run: ./scripts/validate-linux-ci-environment.ps1 -Runtime
       - name: Setup Kani
         shell: pwsh
-        run: ./scripts/setup-kani.ps1 -Install
+        run: ./scripts/setup-kani.ps1 -Install -Version 0.67.0
       - name: Formal obligations (Kani required)
         shell: pwsh
         run: ./scripts/run-formal.ps1 -RequireKani

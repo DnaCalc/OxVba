@@ -9,6 +9,12 @@ try {
     Write-Host "[governance] line-ending-mutations"
     & "$PSScriptRoot/test-line-endings.ps1"
 
+    Write-Host "[governance] linux-ci-environment"
+    & "$PSScriptRoot/validate-linux-ci-environment.ps1"
+
+    Write-Host "[governance] linux-ci-environment-mutations"
+    & "$PSScriptRoot/test-linux-ci-environment.ps1"
+
     Write-Host "[governance] docs-check"
     & "$PSScriptRoot/docs-check.ps1"
 

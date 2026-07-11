@@ -1,0 +1,129 @@
+{
+  "schema_id": "oxvba-linux-x64-ci-contract-v1",
+  "contract_id": "linux-x64-ci-rust-1.94.1-bookworm-amd64-v1",
+  "environment_id": "linux-x64-ci-rust-1.94.1-bookworm-amd64-v1",
+  "profile": "core",
+  "target": {
+    "os": "linux",
+    "architecture": "x86_64",
+    "rust_target": "x86_64-unknown-linux-gnu",
+    "os_release_id": "debian",
+    "os_release_version": "12"
+  },
+  "scheduler": {
+    "provider": "github-hosted",
+    "runs_on": "ubuntu-24.04",
+    "image_os": "ubuntu24",
+    "image_version": "20260705.232",
+    "image_release": "ubuntu24/20260705.232",
+    "image_release_commit": "7a421938a88d5f98ff2cf22875b5237aa80f54c1",
+    "sbom_asset_sha256": "3a0031ca049f21bd6a8af509c4b21fa967e75bd66617fb0786cc9a91042dafdb",
+    "execution_authority": false,
+    "fresh_vm_per_job": true,
+    "release_url": "https://github.com/actions/runner-images/releases/tag/ubuntu24/20260705.232",
+    "reset_policy_url": "https://docs.github.com/en/actions/reference/runners/github-hosted-runners"
+  },
+  "execution_image": {
+    "repository": "docker.io/library/rust",
+    "reference": "rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b",
+    "tag_provenance": "1.94.1-bookworm",
+    "index_digest": "sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55",
+    "manifest_digest": "sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b",
+    "registry_manifest_url": "https://registry-1.docker.io/v2/library/rust/manifests/1.94.1-bookworm",
+    "provenance_url": "https://hub.docker.com/_/rust/"
+  },
+  "toolchains": {
+    "rust": {
+      "version": "1.94.1",
+      "rustc_commit": "e408947bfd200af42db322daf0fadfe7e26d3bd1",
+      "cargo_version": "1.94.1",
+      "cargo_commit": "29ea6fb6a5db279426f4cc4e17aa385f05a0cfbc",
+      "dist_manifest_url": "https://static.rust-lang.org/dist/channel-rust-1.94.1.toml",
+      "dist_manifest_sha256": "cc2f04dfc883549d683c8cc2a9393f523a3dfbd931f5d5eaef00303cca64a60d",
+      "release_url": "https://blog.rust-lang.org/2026/03/26/1.94.1-release/"
+    },
+    "powershell": {
+      "version": "7.5.7",
+      "asset_url": "https://github.com/PowerShell/PowerShell/releases/download/v7.5.7/powershell-7.5.7-linux-x64.tar.gz",
+      "asset_sha256": "207a3c0b2f630e8e1226cc9beb651e2e16789f07729197f45fd3ad0902d1c593",
+      "release_commit": "3416dd0145a9530d93c0a9be8c066ca4212a8c16",
+      "release_url": "https://github.com/PowerShell/PowerShell/releases/tag/v7.5.7"
+    },
+    "kani": {
+      "version": "0.67.0",
+      "release_commit": "4feaaad1d6a2378a6ff6caa3b4fc5d6999c7bb5d",
+      "release_url": "https://github.com/model-checking/kani/releases/tag/kani-0.67.0"
+    },
+    "wasmtime": {
+      "version": "42.0.1",
+      "linux_asset_sha256": "dd5253f3cb521bb094f9951c3d2c45c746b31e5723b07ce56f162ec9bab44d59",
+      "linux_binary_sha256": "21f8e8f994a96d2267afe4a4c06a6302e78aca20e9438afbf01dd443fe32108b",
+      "windows_asset_sha256": "daa52754776eabdbbf82037d41a26f556ccd4fd5723dcab328b12c680894c072",
+      "windows_binary_sha256": "b86766999318183c37f5a51c56d4ae26ecdf34099cd0ebbbdf0108e1013ba4b1",
+      "release_commit": "6844a83b530f86ad13a65175282fe2dbcd33cad1",
+      "release_url": "https://github.com/bytecodealliance/wasmtime/releases/tag/v42.0.1"
+    }
+  },
+  "actions": [
+    {
+      "repository": "actions/checkout",
+      "commit": "34e114876b0b11c390a56381ad16ebd13914f8d5",
+      "provenance_url": "https://github.com/actions/checkout/commit/34e114876b0b11c390a56381ad16ebd13914f8d5"
+    }
+  ],
+  "workflow": {
+    "path": ".github/workflows/ci.yml",
+    "jobs": [
+      "formal-kani",
+      "linux-ready",
+      "wasm-hal-ready"
+    ],
+    "forbidden_aliases": [
+      "@main",
+      "@master",
+      "@stable",
+      "@vN",
+      ":latest",
+      "ubuntu-latest"
+    ]
+  },
+  "determinism": {
+    "locale": "C.UTF-8",
+    "timezone": "UTC",
+    "reset_policy": "github-hosted-new-vm-per-job;fresh-digest-pinned-job-container;clean-checkout;no-actions-cache;owned-state-under-RUNNER_TEMP;delete-owned-processes-and-state-only",
+    "retained_state_sentinel": "oxvba-linux-ci-retained-state-v1",
+    "cross_run_cache": "forbidden"
+  },
+  "source_files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "bdc6ff1f7a0859dafdf4c54f70e151bb118d2e978e83bbec166365d4cd01de52"
+    },
+    {
+      "path": "scripts/install-pinned-pwsh.sh",
+      "sha256": "f822fe27bc75cb435773ad1b9ea1dbd3d28a5a873c0d3c9a612b13d0ff3fe6cf"
+    },
+    {
+      "path": "scripts/run-hal-conformance-wasm32.ps1",
+      "sha256": "0d64e4b56cd7ed9ccba60e45e3233df717530dcd9efb14b32f30f3b01088f570"
+    },
+    {
+      "path": "scripts/setup-kani.ps1",
+      "sha256": "9d84171fb604de2bece6c7efaa990feb7d46632c32e054667e0756145bffe8e8"
+    },
+    {
+      "path": "scripts/test-linux-ci-environment.ps1",
+      "sha256": "df6e9dfe68e4235df602288fe758e427c0f5962cc7a600df235e806d35606c26"
+    },
+    {
+      "path": "scripts/validate-linux-ci-environment.ps1",
+      "sha256": "366a8de58ff65e997e9e8327f8a4616f5a8115d509c92ef5804958d95991cc03"
+    }
+  ],
+  "availability": {
+    "contract_state": "sealed",
+    "execution_evidence_state": "planned-blocking",
+    "execution_owner_bead": "bd-59co.2.2.11",
+    "reason": "The immutable execution contract is sealed, but no GitHub-hosted run of this exact image has yet produced the canonical Linux baseline transcript."
+  }
+}
