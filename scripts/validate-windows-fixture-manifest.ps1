@@ -310,6 +310,7 @@ try {
                             -FixtureId ([string]$row.fixture_id) `
                             -ArtifactId ([string]$row.built_artifact_id) `
                             -ExpectedComponents ([string]$row.built_artifact_components) `
+                            -ExpectedComponentConstraints ([string]$expected.built_artifact_component_constraints) `
                             -Owner "row '$key' built artifact"
                     }
                 }

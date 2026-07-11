@@ -154,8 +154,13 @@ function New-WindowsFixtureArtifactContract {
         [Parameter(Mandatory = $true)][string]$MatrixId,
         [Parameter(Mandatory = $true)][string]$RowId,
         [Parameter(Mandatory = $true)][string]$ArtifactClass,
-        [Parameter(Mandatory = $true)][string]$Components
+        [Parameter(Mandatory = $true)][string]$Components,
+        [AllowEmptyString()][string]$ComponentConstraints = "n/a"
     )
+
+    if ([string]::IsNullOrWhiteSpace($ComponentConstraints)) {
+        $ComponentConstraints = "n/a"
+    }
 
     $root = "artifacts/windows-x64/controlled-fixtures/v1/$($MatrixId.ToLowerInvariant())/$($RowId.ToLowerInvariant())"
     $name = ""
@@ -167,6 +172,9 @@ function New-WindowsFixtureArtifactContract {
             if ($Components -ne "n/a") {
                 throw "Direct PE DLL artifact '$MatrixId|$RowId' cannot declare bundle components"
             }
+            if ($ComponentConstraints -ne "n/a") {
+                throw "Direct PE DLL artifact '$MatrixId|$RowId' cannot declare component constraints"
+            }
         }
         "pe-exe-x64" {
             $name = "fixture.exe"
@@ -174,12 +182,23 @@ function New-WindowsFixtureArtifactContract {
             if ($Components -ne "n/a") {
                 throw "Direct PE EXE artifact '$MatrixId|$RowId' cannot declare bundle components"
             }
+            if ($ComponentConstraints -ne "n/a") {
+                throw "Direct PE EXE artifact '$MatrixId|$RowId' cannot declare component constraints"
+            }
         }
         "fixture-bundle-json-v1" {
             $name = "fixture-bundle.json"
             $type = "oxvba-windows-x64-fixture-bundle-v1"
             if ([string]::IsNullOrWhiteSpace($Components) -or $Components -eq "n/a") {
                 throw "Bundle artifact '$MatrixId|$RowId' must declare exact component types"
+            }
+            if ($ComponentConstraints -ne "n/a") {
+                $componentKinds = @($Components -split '\|')
+                $constraints = @($ComponentConstraints -split '\|')
+                if ($constraints.Count -ne $componentKinds.Count -or
+                    @($constraints | Where-Object { $_ -ne "n/a" -and $_ -notmatch '^sha256:[0-9a-f]{64}$' }).Count -gt 0) {
+                    throw "Bundle artifact '$MatrixId|$RowId' has malformed ordered component constraints"
+                }
             }
         }
         default {
@@ -192,12 +211,13 @@ function New-WindowsFixtureArtifactContract {
         Name = $name
         Type = $type
         Components = $Components
+        ComponentConstraints = $ComponentConstraints
     }
 }
 
 function Get-WindowsFixtureArtifactContractMap {
     $specs = @'
-matrix_id,row_id,artifact_class,components
+matrix_id,row_id,artifact_class,components,component_constraints
 WIN-COM-CLIENT,WCC-PLAN-LATE,pe-dll-x64,n/a
 WIN-COM-CLIENT,WCC-LATE-ARGS,pe-dll-x64,n/a
 WIN-COM-CLIENT,WCC-LATE-STRUCTURAL,pe-dll-x64,n/a
@@ -247,7 +267,7 @@ WIN-ABI-CARRIER,WAC-VT-RECORD,pe-exe-x64,n/a
 WIN-ABI-CARRIER,WAC-CARRIER-EXCEL-ROUNDTRIP,fixture-bundle-json-v1,pe-dll-x64|vba-source-utf8-v1
 WIN-ABI-CARRIER,WAC-SAFETY-MUTATION,pe-exe-x64,n/a
 WIN-ABI-CARRIER,WAC-TARGET-DEV-ENV,fixture-bundle-json-v1,pe-exe-x64
-WIN-ABI-CARRIER,WAC-TYPELIB-METADATA,fixture-bundle-json-v1,pe-dll-x64|msft-tlb-v1
+WIN-ABI-CARRIER,WAC-TYPELIB-METADATA,fixture-bundle-json-v1,pe-dll-x64|msft-tlb-v1,n/a|sha256:9bdbc6a597d233296bd39adba69db9765552fdcce0261c6102b2e19d4d4c1a12
 WIN-ABI-CARRIER,WAC-VERIFIED-INTEROP-PLAN,pe-exe-x64,n/a
 WIN-ABI-CARRIER,WAC-WINDOWS-DESCRIPTORS,pe-exe-x64,n/a
 WIN-ABI-CARRIER,WAC-CLEAN-CERT-ENV,fixture-bundle-json-v1,pe-exe-x64
@@ -270,7 +290,8 @@ WIN-ABI-CARRIER,WAC-PROFILE-TERMINAL,fixture-bundle-json-v1,pe-dll-x64|pe-exe-x6
             -MatrixId ([string]$spec.matrix_id) `
             -RowId ([string]$spec.row_id) `
             -ArtifactClass ([string]$spec.artifact_class) `
-            -Components ([string]$spec.components)
+            -Components ([string]$spec.components) `
+            -ComponentConstraints ([string]$spec.component_constraints)
     }
     return $contracts
 }
@@ -585,6 +606,32 @@ function Read-WindowsFixtureUInt32 {
     return [BitConverter]::ToUInt32($Bytes, $Offset)
 }
 
+function Read-WindowsFixtureInt16 {
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][int]$Offset,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    if ($Offset -lt 0 -or $Offset + 2 -gt $Bytes.Length) {
+        throw "$Owner has a truncated signed 16-bit field at offset $Offset"
+    }
+    return [BitConverter]::ToInt16($Bytes, $Offset)
+}
+
+function Read-WindowsFixtureInt32 {
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][int]$Offset,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    if ($Offset -lt 0 -or $Offset + 4 -gt $Bytes.Length) {
+        throw "$Owner has a truncated signed 32-bit field at offset $Offset"
+    }
+    return [BitConverter]::ToInt32($Bytes, $Offset)
+}
+
 function Test-WindowsFixturePowerOfTwo {
     param([uint64]$Value)
 
@@ -732,6 +779,30 @@ function Assert-WindowsFixturePeFile {
         if (($ExpectedKind -eq "pe-dll-x64" -and -not $isDll) -or
             ($ExpectedKind -eq "pe-exe-x64" -and $isDll)) {
             throw "$Owner PE DLL/EXE characteristics do not match '$ExpectedKind'"
+        }
+
+        # Controlled fixtures are desktop user-mode images. Bits below 0x20
+        # are reserved/obsolete in current PE32+ images; AppContainer and WDM
+        # describe process roles that this fixture contract does not admit.
+        $dllCharacteristics = [uint16][int]$pe.DllCharacteristics
+        if (($dllCharacteristics -band 0x001F) -ne 0) {
+            throw ("$Owner PE DllCharacteristics contains reserved bits (0x{0:X4})" -f $dllCharacteristics)
+        }
+        if (($dllCharacteristics -band 0x0080) -ne 0) {
+            throw "$Owner PE FORCE_INTEGRITY requires verified Authenticode admission, which this fixture gate does not perform"
+        }
+        if (($dllCharacteristics -band 0x1000) -ne 0 -or
+            ($dllCharacteristics -band 0x2000) -ne 0) {
+            throw "$Owner PE DllCharacteristics declares an unsupported AppContainer or WDM-driver role"
+        }
+        if (($ExpectedKind -eq "pe-dll-x64" -and
+                $pe.Subsystem -ne [Reflection.PortableExecutable.Subsystem]::WindowsGui) -or
+            ($ExpectedKind -eq "pe-exe-x64" -and
+                $pe.Subsystem -notin @(
+                    [Reflection.PortableExecutable.Subsystem]::WindowsGui,
+                    [Reflection.PortableExecutable.Subsystem]::WindowsCui
+                ))) {
+            throw "$Owner PE subsystem '$($pe.Subsystem)' is not valid for controlled desktop '$ExpectedKind' role"
         }
 
         $fileAlignment = [uint64]$pe.FileAlignment
@@ -901,6 +972,535 @@ function Assert-WindowsFixturePeFile {
     Assert-WindowsFixtureWindowsPeLoadable -Path $Path -Owner $Owner
 }
 
+function Assert-WindowsFixtureMsftOwnedRecords {
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][object[]]$Segments,
+        [Parameter(Mandatory = $true)][object[]]$TypeInfos,
+        [Parameter(Mandatory = $true)][uint64]$NameCount,
+        [Parameter(Mandatory = $true)][uint64]$NameCharacters,
+        [Parameter(Mandatory = $true)][uint64]$ImportInfoCount,
+        [Parameter(Mandatory = $true)][uint32]$VarFlags,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    $fileLength = [uint64]$Bytes.Length
+    $segmentDataEnd = [uint64](@($Segments | Measure-Object -Property End -Maximum)[0].Maximum)
+    $typeInfoOffsets = [Collections.Generic.HashSet[int32]]::new()
+    foreach ($typeInfo in $TypeInfos) {
+        [void]$typeInfoOffsets.Add([int32]$typeInfo.RelativeOffset)
+    }
+
+    $assertFixedReference = {
+        param(
+            [int32]$Value,
+            [int]$SegmentIndex,
+            [int]$RecordSize,
+            [int]$Alignment,
+            [bool]$AllowMissing,
+            [string]$ReferenceOwner
+        )
+        if ($Value -eq -1 -and $AllowMissing) {
+            return
+        }
+        if ($Value -lt 0) {
+            throw "$Owner MSFT $ReferenceOwner uses an invalid negative segment offset"
+        }
+        $segment = $Segments[$SegmentIndex]
+        $offset = [uint64]$Value
+        if ($segment.Length -eq 0 -or $offset % [uint64]$Alignment -ne 0 -or
+            $offset + [uint64]$RecordSize -gt [uint64]$segment.Length) {
+            throw "$Owner MSFT $ReferenceOwner does not identify a complete record in segment $SegmentIndex"
+        }
+    }
+
+    # Parse the complete variable-length name table first. Every later name
+    # reference must equal an entry start, not merely land somewhere in it.
+    $nameOffsets = [Collections.Generic.HashSet[int32]]::new()
+    $nameEntries = [Collections.Generic.List[object]]::new()
+    $namePosition = [uint64]0
+    $observedNameCharacters = [uint64]0
+    $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+    while ($namePosition -lt [uint64]$Segments[7].Length) {
+        if ($namePosition + 12 -gt [uint64]$Segments[7].Length) {
+            throw "$Owner MSFT name table ends with a partial entry header"
+        }
+        $absolute = [int]([uint64]$Segments[7].Offset + $namePosition)
+        $nameLength = [uint64]$Bytes[$absolute + 8]
+        $paddedNameLength = $nameLength + ((4 - ($nameLength % 4)) % 4)
+        $entryEnd = $namePosition + 12 + $paddedNameLength
+        if ($entryEnd -gt [uint64]$Segments[7].Length) {
+            throw "$Owner MSFT name table contains a truncated entry"
+        }
+        try {
+            [void]$strictUtf8.GetString($Bytes, $absolute + 12, [int]$nameLength)
+        }
+        catch {
+            throw "$Owner MSFT name table contains non-UTF-8 identifier bytes"
+        }
+        [void]$nameOffsets.Add([int32]$namePosition)
+        $nameEntries.Add([pscustomobject]@{
+            Offset = [int32]$namePosition
+            Href = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset $absolute -Owner $Owner
+            NextHash = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($absolute + 4) -Owner $Owner
+        })
+        $observedNameCharacters += $nameLength
+        $namePosition = $entryEnd
+    }
+    if ([uint64]$nameOffsets.Count -ne $NameCount -or $observedNameCharacters -ne $NameCharacters) {
+        throw "$Owner MSFT name table entries/characters do not match the bounded header counts"
+    }
+
+    $assertNameReference = {
+        param([int32]$Value, [bool]$AllowMissing, [string]$ReferenceOwner)
+        if ($Value -eq -1 -and $AllowMissing) {
+            return
+        }
+        if ($Value -lt 0 -or -not $nameOffsets.Contains($Value)) {
+            throw "$Owner MSFT $ReferenceOwner does not identify a complete name-table entry"
+        }
+    }
+
+    # The string table uses 2-byte lengths and 4-byte aligned entry starts.
+    $stringOffsets = [Collections.Generic.HashSet[int32]]::new()
+    $stringPosition = [uint64]0
+    while ($stringPosition -lt [uint64]$Segments[8].Length) {
+        if ($stringPosition + 2 -gt [uint64]$Segments[8].Length) {
+            throw "$Owner MSFT string table ends with a partial length"
+        }
+        $absolute = [int]([uint64]$Segments[8].Offset + $stringPosition)
+        $stringLength = [uint64](Read-WindowsFixtureUInt16 -Bytes $Bytes -Offset $absolute -Owner $Owner)
+        $rawSize = [uint64]2 + $stringLength
+        $entrySize = $rawSize + ((4 - ($rawSize % 4)) % 4)
+        if ($stringPosition + $entrySize -gt [uint64]$Segments[8].Length) {
+            throw "$Owner MSFT string table contains a truncated entry"
+        }
+        try {
+            [void]$strictUtf8.GetString($Bytes, $absolute + 2, [int]$stringLength)
+        }
+        catch {
+            throw "$Owner MSFT string table contains non-UTF-8 bytes"
+        }
+        [void]$stringOffsets.Add([int32]$stringPosition)
+        $stringPosition += $entrySize
+    }
+    $assertStringReference = {
+        param([int32]$Value, [bool]$AllowMissing, [string]$ReferenceOwner)
+        if ($Value -eq -1 -and $AllowMissing) {
+            return
+        }
+        if ($Value -lt 0 -or -not $stringOffsets.Contains($Value)) {
+            throw "$Owner MSFT $ReferenceOwner does not identify a complete string-table entry"
+        }
+    }
+
+    # Import-file entries are variable length; record their exact starts so
+    # ImpInfo cannot point into a filename or its padding.
+    $importFileOffsets = [Collections.Generic.HashSet[int32]]::new()
+    $importFilePosition = [uint64]0
+    while ($importFilePosition -lt [uint64]$Segments[2].Length) {
+        if ($importFilePosition + 14 -gt [uint64]$Segments[2].Length) {
+            throw "$Owner MSFT import-file table ends with a partial entry"
+        }
+        $absolute = [int]([uint64]$Segments[2].Offset + $importFilePosition)
+        $sizeField = Read-WindowsFixtureUInt16 -Bytes $Bytes -Offset ($absolute + 12) -Owner $Owner
+        $fileNameLength = [uint64]($sizeField -shr 2)
+        $rawSize = [uint64]14 + $fileNameLength
+        $entrySize = $rawSize + ((4 - ($rawSize % 4)) % 4)
+        if ($importFilePosition + $entrySize -gt [uint64]$Segments[2].Length) {
+            throw "$Owner MSFT import-file table contains a truncated filename"
+        }
+        try {
+            [void]$strictUtf8.GetString($Bytes, $absolute + 14, [int]$fileNameLength)
+        }
+        catch {
+            throw "$Owner MSFT import-file table contains a non-UTF-8 filename"
+        }
+        [void]$importFileOffsets.Add([int32]$importFilePosition)
+        & $assertFixedReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset $absolute -Owner $Owner) `
+            5 24 24 $false "import-file GUID"
+        $importFilePosition += $entrySize
+    }
+
+    for ($index = 0; $index -lt $ImportInfoCount; $index++) {
+        $absolute = [int]([uint64]$Segments[1].Offset + ([uint64]$index * 12))
+        $fileOffset = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($absolute + 4) -Owner $Owner
+        if ($fileOffset -lt 0 -or -not $importFileOffsets.Contains($fileOffset)) {
+            throw "$Owner MSFT ImpInfo[$index] does not identify a complete import-file entry"
+        }
+        & $assertFixedReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($absolute + 8) -Owner $Owner) `
+            5 24 24 $false "ImpInfo[$index] GUID"
+    }
+
+    $assertHref = {
+        param([int32]$Value, [string]$ReferenceOwner)
+        if ($Value -lt 0) {
+            throw "$Owner MSFT $ReferenceOwner uses a negative hreftype"
+        }
+        $effective = [int64]([uint32]$Value)
+        if (($effective -band 0x01000000) -ne 0) {
+            $effective = $effective -band 0xFEFFFFFF
+        }
+        if ($effective -le [int32]::MaxValue -and $typeInfoOffsets.Contains([int32]$effective)) {
+            return
+        }
+        $importOffset = [int64]($effective -band 0xFFFFFFFC)
+        if ($importOffset -gt [int32]::MaxValue) {
+            throw "$Owner MSFT $ReferenceOwner hreftype is outside internal/import tables"
+        }
+        & $assertFixedReference ([int32]$importOffset) 1 12 12 $false $ReferenceOwner
+    }
+
+    # Validate hash-table buckets and every complete GUID/name hash link.
+    for ($offset = 0; $offset -lt [int]$Segments[4].Length; $offset += 4) {
+        & $assertFixedReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$Segments[4].Offset + $offset) -Owner $Owner) `
+            5 24 24 $true "GUID hash bucket[$($offset / 4)]"
+    }
+    for ($offset = 0; $offset -lt [int]$Segments[5].Length; $offset += 24) {
+        & $assertFixedReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$Segments[5].Offset + $offset + 20) -Owner $Owner) `
+            5 24 24 $true "GUID entry[$($offset / 24)] hash link"
+    }
+    for ($offset = 0; $offset -lt [int]$Segments[6].Length; $offset += 4) {
+        & $assertNameReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$Segments[6].Offset + $offset) -Owner $Owner) `
+            $true "name hash bucket[$($offset / 4)]"
+    }
+    foreach ($entry in $nameEntries) {
+        & $assertNameReference ([int32]$entry.NextHash) $true "name hash link at $($entry.Offset)"
+        if ([int32]$entry.Href -ge 0 -and -not $typeInfoOffsets.Contains([int32]$entry.Href)) {
+            throw "$Owner MSFT name entry at $($entry.Offset) has an invalid TypeInfo owner"
+        }
+    }
+
+    $assertTypeDesc = $null
+    $assertArrayDesc = $null
+    $activeTypeDescs = [Collections.Generic.HashSet[int32]]::new()
+    $assertArrayDesc = {
+        param([int32]$Value, [string]$ReferenceOwner)
+        & $assertFixedReference $Value 10 8 4 $false $ReferenceOwner
+        $absolute = [int]([uint64]$Segments[10].Offset + [uint64]$Value)
+        $dimensions = [uint64](Read-WindowsFixtureUInt16 -Bytes $Bytes -Offset ($absolute + 4) -Owner $Owner)
+        if ($dimensions -gt 64 -or [uint64]$Value + 8 + ($dimensions * 8) -gt [uint64]$Segments[10].Length) {
+            throw "$Owner MSFT $ReferenceOwner array descriptor is truncated or unbounded"
+        }
+        $elementType = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset $absolute -Owner $Owner
+        if ($elementType -ge 0) {
+            & $assertTypeDesc $elementType "$ReferenceOwner element type"
+        }
+    }
+    $assertTypeDesc = {
+        param([int32]$Value, [string]$ReferenceOwner)
+        & $assertFixedReference $Value 9 8 8 $false $ReferenceOwner
+        if (-not $activeTypeDescs.Add($Value)) {
+            return
+        }
+        try {
+            $absolute = [int]([uint64]$Segments[9].Offset + [uint64]$Value)
+            $vt = (Read-WindowsFixtureUInt32 -Bytes $Bytes -Offset $absolute -Owner $Owner) -band 0xFFFF
+            $extra = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($absolute + 4) -Owner $Owner
+            switch ($vt) {
+                26 { if ($extra -ge 0) { & $assertTypeDesc $extra "$ReferenceOwner pointed type" } }
+                27 { if ($extra -ge 0) { & $assertTypeDesc $extra "$ReferenceOwner SAFEARRAY element type" } }
+                28 { if ($extra -ge 0) { & $assertArrayDesc $extra "$ReferenceOwner CARRAY descriptor" } }
+                29 { & $assertHref $extra "$ReferenceOwner user-defined type" }
+            }
+        }
+        finally {
+            [void]$activeTypeDescs.Remove($Value)
+        }
+    }
+    for ($offset = 0; $offset -lt [int]$Segments[9].Length; $offset += 8) {
+        & $assertTypeDesc ([int32]$offset) "TypeDesc[$($offset / 8)]"
+    }
+
+    $assertCustValue = {
+        param([int32]$Value, [string]$ReferenceOwner)
+        if ($Value -lt 0 -or [uint64]$Value + 2 -gt [uint64]$Segments[11].Length) {
+            throw "$Owner MSFT $ReferenceOwner does not identify a complete custom-data value"
+        }
+        $absolute = [int]([uint64]$Segments[11].Offset + [uint64]$Value)
+        $vt = Read-WindowsFixtureUInt16 -Bytes $Bytes -Offset $absolute -Owner $Owner
+        $required = switch ($vt) {
+            { $_ -in @(0, 1, 24) } { [uint64]2; break }
+            { $_ -in @(2, 11) } { [uint64]4; break }
+            { $_ -in @(5, 6, 7, 20, 21, 64) } { [uint64]10; break }
+            8 {
+                if ([uint64]$Value + 6 -gt [uint64]$Segments[11].Length) {
+                    throw "$Owner MSFT $ReferenceOwner BSTR custom-data header is truncated"
+                }
+                [uint64]6 + [uint64](Read-WindowsFixtureUInt32 -Bytes $Bytes -Offset ($absolute + 2) -Owner $Owner)
+                break
+            }
+            14 { [uint64]18; break }
+            default { [uint64]6 }
+        }
+        if ([uint64]$Value + $required -gt [uint64]$Segments[11].Length) {
+            throw "$Owner MSFT $ReferenceOwner custom-data value is truncated"
+        }
+    }
+
+    $customDataEntries = @{}
+    for ($offset = 0; $offset -lt [int]$Segments[12].Length; $offset += 12) {
+        $absolute = [int]$Segments[12].Offset + $offset
+        $entry = [pscustomobject]@{
+            Offset = [int32]$offset
+            Guid = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset $absolute -Owner $Owner
+            Data = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($absolute + 4) -Owner $Owner
+            Next = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($absolute + 8) -Owner $Owner
+        }
+        $customDataEntries[[string]$offset] = $entry
+        & $assertFixedReference $entry.Guid 5 24 24 $false "custom-data GUID[$($offset / 12)]"
+        & $assertCustValue $entry.Data "custom-data value[$($offset / 12)]"
+        & $assertFixedReference $entry.Next 12 12 12 $true "custom-data next[$($offset / 12)]"
+    }
+    $assertCustomDataChain = {
+        param([int32]$Value, [bool]$AllowMissing, [string]$ReferenceOwner)
+        if ($Value -eq -1 -and $AllowMissing) {
+            return
+        }
+        & $assertFixedReference $Value 12 12 12 $false $ReferenceOwner
+        $seen = [Collections.Generic.HashSet[int32]]::new()
+        $next = $Value
+        while ($next -ne -1) {
+            if (-not $seen.Add($next)) {
+                throw "$Owner MSFT $ReferenceOwner custom-data chain contains a cycle"
+            }
+            $next = [int32]$customDataEntries[[string]$next].Next
+        }
+    }
+
+    # Validate every reference-table entry, then verify each coclass chain
+    # starts at datatype1 and contains exactly cImplTypes complete records.
+    $referenceEntries = @{}
+    for ($offset = 0; $offset -lt [int]$Segments[3].Length; $offset += 16) {
+        $absolute = [int]$Segments[3].Offset + $offset
+        $entry = [pscustomobject]@{
+            RefType = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset $absolute -Owner $Owner
+            Next = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($absolute + 12) -Owner $Owner
+        }
+        $referenceEntries[[string]$offset] = $entry
+        & $assertHref $entry.RefType "reference-table hreftype[$($offset / 16)]"
+        & $assertFixedReference $entry.Next 3 16 16 $true "reference-table next[$($offset / 16)]"
+    }
+
+    & $assertFixedReference `
+        (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset 0x08 -Owner $Owner) `
+        5 24 24 $false "library GUID"
+    & $assertNameReference `
+        (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset 0x38 -Owner $Owner) `
+        $false "library name"
+    & $assertStringReference `
+        (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset 0x24 -Owner $Owner) `
+        $true "library help string"
+    & $assertStringReference `
+        (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset 0x3C -Owner $Owner) `
+        $true "library help file"
+    & $assertCustomDataChain `
+        (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset 0x40 -Owner $Owner) `
+        $true "library custom data"
+    if (($VarFlags -band 0x100) -ne 0) {
+        $helpDllOffsetPosition = 0x54 + ($TypeInfos.Count * 4)
+        & $assertStringReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset $helpDllOffsetPosition -Owner $Owner) `
+            $true "library help DLL"
+    }
+
+    $memberIntervals = [Collections.Generic.List[object]]::new()
+    foreach ($typeInfo in $TypeInfos) {
+        $recordOffset = [int]$typeInfo.RecordOffset
+        & $assertFixedReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($recordOffset + 0x2C) -Owner $Owner) `
+            5 24 24 $true "TypeInfo[$($typeInfo.Index)] GUID"
+        & $assertNameReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($recordOffset + 0x34) -Owner $Owner) `
+            $false "TypeInfo[$($typeInfo.Index)] name"
+        & $assertStringReference `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($recordOffset + 0x3C) -Owner $Owner) `
+            $true "TypeInfo[$($typeInfo.Index)] doc string"
+        & $assertCustomDataChain `
+            (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($recordOffset + 0x48) -Owner $Owner) `
+            $true "TypeInfo[$($typeInfo.Index)] custom data"
+
+        if ([uint32]$typeInfo.TypeKind -eq 6) {
+            $aliasType = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($recordOffset + 0x54) -Owner $Owner
+            if ($aliasType -ge 0) {
+                & $assertTypeDesc $aliasType "TypeInfo[$($typeInfo.Index)] alias type"
+            }
+        }
+        if ([uint32]$typeInfo.TypeKind -eq 5) {
+            $expectedReferences = [int]$typeInfo.ImplementationCount
+            $next = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($recordOffset + 0x54) -Owner $Owner
+            $seen = [Collections.Generic.HashSet[int32]]::new()
+            for ($referenceIndex = 0; $referenceIndex -lt $expectedReferences; $referenceIndex++) {
+                & $assertFixedReference $next 3 16 16 $false "TypeInfo[$($typeInfo.Index)] implemented reference[$referenceIndex]"
+                if (-not $seen.Add($next)) {
+                    throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] implemented-reference chain contains a cycle"
+                }
+                $next = [int32]$referenceEntries[[string]$next].Next
+            }
+            if ($next -ne -1) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] implemented-reference count does not terminate its chain"
+            }
+        }
+
+        $memberCount = [uint64]$typeInfo.FunctionCount + [uint64]$typeInfo.VariableCount
+        $memberOffset = [int64]$typeInfo.MemberOffset
+        if ($memberCount -eq 0) {
+            if ($memberOffset -ne -1 -and
+                ([uint64]$memberOffset -lt $segmentDataEnd -or [uint64]$memberOffset -gt $fileLength)) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] empty member-data offset is outside the post-segment file range"
+            }
+            continue
+        }
+        if ($memberOffset -lt 0 -or [uint64]$memberOffset -lt $segmentDataEnd -or
+            [uint64]$memberOffset + 4 -gt $fileLength) {
+            throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] member-data offset does not identify a complete post-segment block"
+        }
+        $blockSize = [uint64](Read-WindowsFixtureUInt32 -Bytes $Bytes -Offset ([int]$memberOffset) -Owner $Owner)
+        $recordsStart = [uint64]$memberOffset + 4
+        $recordsEnd = $recordsStart + $blockSize
+        $auxiliarySize = $memberCount * 12
+        $memberEnd = $recordsEnd + $auxiliarySize
+        if ($recordsEnd -lt $recordsStart -or $memberEnd -lt $recordsEnd -or $memberEnd -gt $fileLength) {
+            throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] member records/auxiliary arrays exceed fileLength"
+        }
+
+        $recordStarts = [Collections.Generic.List[uint32]]::new()
+        $position = $recordsStart
+        for ($functionIndex = 0; $functionIndex -lt [int]$typeInfo.FunctionCount; $functionIndex++) {
+            if ($position + 24 -gt $recordsEnd) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] function[$functionIndex] record is truncated"
+            }
+            $recordSize = [uint64]((Read-WindowsFixtureUInt32 -Bytes $Bytes -Offset ([int]$position) -Owner $Owner) -band 0xFFFF)
+            $argumentCount = Read-WindowsFixtureInt16 -Bytes $Bytes -Offset ([int]$position + 0x14) -Owner $Owner
+            $optionalCount = Read-WindowsFixtureInt16 -Bytes $Bytes -Offset ([int]$position + 0x16) -Owner $Owner
+            $fkccic = Read-WindowsFixtureUInt32 -Bytes $Bytes -Offset ([int]$position + 0x10) -Owner $Owner
+            $argumentCustomSize = if (($fkccic -band 0x1000) -ne 0) { [uint64]$argumentCount * 4 } else { [uint64]0 }
+            if ($recordSize -lt 24 -or $recordSize % 4 -ne 0 -or $position + $recordSize -gt $recordsEnd -or
+                $argumentCount -lt 0 -or $argumentCount -gt 1024 -or
+                $optionalCount -lt -1 -or $optionalCount -gt $argumentCount -or
+                $recordSize -lt 24 + ([uint64]$argumentCount * 12) + $argumentCustomSize) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] function[$functionIndex] layout is invalid or unbounded"
+            }
+            $attributeBytes = $recordSize - 24 - ([uint64]$argumentCount * 12) - $argumentCustomSize
+            if ($attributeBytes % 4 -ne 0 -or $attributeBytes / 4 -gt 6) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] function[$functionIndex] attribute layout is invalid"
+            }
+            [void]$recordStarts.Add([uint32]($position - $recordsStart))
+            $dataType = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 4) -Owner $Owner
+            if ($dataType -ge 0) { & $assertTypeDesc $dataType "function[$functionIndex] return type" }
+            $attributeCount = [int]($attributeBytes / 4)
+            if ($attributeCount -gt 1) {
+                & $assertStringReference `
+                    (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 0x1C) -Owner $Owner) `
+                    $true "function[$functionIndex] help string"
+            }
+            if ($attributeCount -gt 3) {
+                & $assertNameReference `
+                    (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 0x24) -Owner $Owner) `
+                    $true "function[$functionIndex] name"
+            }
+            if ($attributeCount -gt 5) {
+                & $assertCustomDataChain `
+                    (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 0x2C) -Owner $Owner) `
+                    $true "function[$functionIndex] custom data"
+            }
+            $argumentCustomStart = $position + 24 + $attributeBytes
+            if (($fkccic -band 0x1000) -ne 0) {
+                for ($argumentIndex = 0; $argumentIndex -lt $argumentCount; $argumentIndex++) {
+                    & $assertCustomDataChain `
+                        (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]($argumentCustomStart + ($argumentIndex * 4))) -Owner $Owner) `
+                        $true "function[$functionIndex] argument[$argumentIndex] custom data"
+                }
+            }
+            $parametersStart = $position + $recordSize - ([uint64]$argumentCount * 12)
+            for ($argumentIndex = 0; $argumentIndex -lt $argumentCount; $argumentIndex++) {
+                $parameterOffset = [int]($parametersStart + ([uint64]$argumentIndex * 12))
+                $parameterType = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset $parameterOffset -Owner $Owner
+                if ($parameterType -ge 0) { & $assertTypeDesc $parameterType "function[$functionIndex] argument[$argumentIndex] type" }
+                & $assertNameReference `
+                    (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ($parameterOffset + 4) -Owner $Owner) `
+                    $true "function[$functionIndex] argument[$argumentIndex] name"
+            }
+            $position += $recordSize
+        }
+        for ($variableIndex = 0; $variableIndex -lt [int]$typeInfo.VariableCount; $variableIndex++) {
+            if ($position + 20 -gt $recordsEnd) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] variable[$variableIndex] record is truncated"
+            }
+            $recordSize = [uint64]((Read-WindowsFixtureUInt32 -Bytes $Bytes -Offset ([int]$position) -Owner $Owner) -band 0xFFFF)
+            if ($recordSize -lt 20 -or $recordSize % 4 -ne 0 -or $position + $recordSize -gt $recordsEnd -or
+                ($recordSize - 20) / 4 -gt 5) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] variable[$variableIndex] layout is invalid"
+            }
+            [void]$recordStarts.Add([uint32]($position - $recordsStart))
+            $dataType = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 4) -Owner $Owner
+            if ($dataType -ge 0) { & $assertTypeDesc $dataType "variable[$variableIndex] type" }
+            $variableKind = Read-WindowsFixtureInt16 -Bytes $Bytes -Offset ([int]$position + 0x0C) -Owner $Owner
+            if ($variableKind -lt 0 -or $variableKind -gt 3) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] variable[$variableIndex] kind is invalid"
+            }
+            if ($variableKind -eq 2) {
+                $valueOffset = Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 0x10) -Owner $Owner
+                if ($valueOffset -ge 0) { & $assertCustValue $valueOffset "variable[$variableIndex] constant value" }
+            }
+            $attributeCount = [int](($recordSize - 20) / 4)
+            if ($attributeCount -gt 1) {
+                & $assertStringReference `
+                    (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 0x18) -Owner $Owner) `
+                    $true "variable[$variableIndex] help string"
+            }
+            if ($attributeCount -gt 3) {
+                & $assertCustomDataChain `
+                    (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]$position + 0x20) -Owner $Owner) `
+                    $true "variable[$variableIndex] custom data"
+            }
+            $position += $recordSize
+        }
+        if ($position -ne $recordsEnd) {
+            throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] block_size does not equal its complete member records"
+        }
+
+        $auxiliaryStart = $recordsEnd
+        $functionCount = [uint64]$typeInfo.FunctionCount
+        $variableCount = [uint64]$typeInfo.VariableCount
+        for ($memberIndex = 0; $memberIndex -lt [int]$memberCount; $memberIndex++) {
+            $nameArrayIndex = if ($memberIndex -lt $functionCount) {
+                $functionCount + $variableCount + [uint64]$memberIndex
+            }
+            else {
+                (2 * $functionCount) + $variableCount + ([uint64]$memberIndex - $functionCount)
+            }
+            & $assertNameReference `
+                (Read-WindowsFixtureInt32 -Bytes $Bytes -Offset ([int]($auxiliaryStart + ($nameArrayIndex * 4))) -Owner $Owner) `
+                $false "TypeInfo[$($typeInfo.Index)] member[$memberIndex] auxiliary name"
+            $recordArrayIndex = (2 * $functionCount) + (2 * $variableCount) + [uint64]$memberIndex
+            $recordRelative = Read-WindowsFixtureUInt32 `
+                -Bytes $Bytes `
+                -Offset ([int]($auxiliaryStart + ($recordArrayIndex * 4))) `
+                -Owner $Owner
+            if ($recordRelative -ne $recordStarts[$memberIndex]) {
+                throw "$Owner MSFT TypeInfo[$($typeInfo.Index)] member[$memberIndex] auxiliary record offset is not a record start"
+            }
+        }
+        $memberIntervals.Add([pscustomobject]@{
+            Start = [uint64]$memberOffset
+            End = [uint64]$memberEnd
+            TypeInfo = [int]$typeInfo.Index
+        })
+    }
+    $orderedMemberIntervals = @($memberIntervals | Sort-Object Start, End)
+    for ($index = 1; $index -lt $orderedMemberIntervals.Count; $index++) {
+        if ([uint64]$orderedMemberIntervals[$index].Start -lt [uint64]$orderedMemberIntervals[$index - 1].End) {
+            throw "$Owner MSFT TypeInfo member-data blocks overlap"
+        }
+    }
+}
+
 function Assert-WindowsFixtureMsftTypeLib {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -928,19 +1528,20 @@ function Assert-WindowsFixtureMsftTypeLib {
     $nameCount = [uint64](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x30 -Owner $Owner)
     $nameCharacters = [uint64](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x34 -Owner $Owner)
     $importInfoCount = [uint64](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x50 -Owner $Owner)
-    $libraryVersion = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x18 -Owner $Owner
-    if ($typeInfoCount -ne 1 -or $libraryVersion -ne 1 -or
-        $nameCount -ne 3 -or $nameCharacters -ne 66) {
+    if ($typeInfoCount -lt 1 -or $typeInfoCount -gt 4096 -or
+        $nameCount -lt 1 -or $nameCount -gt 65536 -or
+        $nameCharacters -lt 1 -or $nameCharacters -gt 16777216 -or
+        $importInfoCount -gt 65536) {
         throw "$Owner MSFT header counts are invalid or unbounded"
     }
     $baseDirectoryOffset = [uint64]0x54 + ($typeInfoCount * 4)
-    $candidateDirectoryOffsets = @($baseDirectoryOffset)
+    $directoryOffset = $baseDirectoryOffset
     if (($varFlags -band 0x100) -ne 0) {
-        $candidateDirectoryOffsets += ($baseDirectoryOffset + 4)
+        $directoryOffset += 4
     }
 
     $validLayouts = [Collections.Generic.List[object]]::new()
-    foreach ($directoryOffsetValue in $candidateDirectoryOffsets) {
+    foreach ($directoryOffsetValue in @($directoryOffset)) {
         $directoryOffset = [uint64]$directoryOffsetValue
         $directoryEnd = $directoryOffset + (15 * 16)
         if ($directoryEnd -gt [uint64]$bytes.Length) {
@@ -1004,6 +1605,7 @@ function Assert-WindowsFixtureMsftTypeLib {
         throw "$Owner MSFT TypeInfo segment does not match the header count"
     }
     $seenTypeInfoOffsets = [Collections.Generic.HashSet[uint32]]::new()
+    $typeInfos = [Collections.Generic.List[object]]::new()
     for ($index = 0; $index -lt $typeInfoCount; $index++) {
         $offset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset (0x54 + ($index * 4)) -Owner $Owner
         if ($offset % 100 -ne 0 -or [uint64]$offset + 100 -gt [uint64]$typeInfoSegment.Length -or
@@ -1012,20 +1614,37 @@ function Assert-WindowsFixtureMsftTypeLib {
         }
         $recordOffset = [int]([uint64]$typeInfoSegment.Offset + [uint64]$offset)
         $typeKind = (Read-WindowsFixtureUInt32 -Bytes $bytes -Offset $recordOffset -Owner $Owner) -band 0x0F
-        $memberOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($recordOffset + 4) -Owner $Owner
-        $typeInfoGuidOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($recordOffset + 44) -Owner $Owner
-        if ($typeKind -ne 0 -or
-            $typeInfoGuidOffset -ne [uint32]::MaxValue -or
-            ($memberOffset -ne [uint32]::MaxValue -and
-                ([uint64]$memberOffset -lt [uint64]$layout.DirectoryEnd -or [uint64]$memberOffset -gt [uint64]$bytes.Length))) {
+        $memberOffset = Read-WindowsFixtureInt32 -Bytes $bytes -Offset ($recordOffset + 4) -Owner $Owner
+        $elementCount = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($recordOffset + 0x18) -Owner $Owner
+        $functionCount = [uint32]($elementCount -band 0xFFFF)
+        $variableCount = [uint32]($elementCount -shr 16)
+        $implementationCount = Read-WindowsFixtureInt16 -Bytes $bytes -Offset ($recordOffset + 0x4C) -Owner $Owner
+        if ($typeKind -gt 8 -or $implementationCount -lt 0 -or $implementationCount -gt 4096 -or
+            ($memberOffset -lt -1 -or [int64]$memberOffset -gt [int64]$bytes.Length) -or
+            (Read-WindowsFixtureInt32 -Bytes $bytes -Offset ($recordOffset + 0x5C) -Owner $Owner) -ne 0 -or
+            (Read-WindowsFixtureInt32 -Bytes $bytes -Offset ($recordOffset + 0x60) -Owner $Owner) -ne -1) {
             throw "$Owner MSFT TypeInfo record[$index] has an invalid kind or member-data offset"
         }
+        $typeInfos.Add([pscustomobject]@{
+            Index = $index
+            RelativeOffset = [uint32]$offset
+            RecordOffset = $recordOffset
+            TypeKind = [uint32]$typeKind
+            MemberOffset = [int32]$memberOffset
+            FunctionCount = [uint32]$functionCount
+            VariableCount = [uint32]$variableCount
+            ImplementationCount = [int32]$implementationCount
+        })
     }
 
     if ($segments[4].Length -ne 0x80 -or
         $segments[5].Length -le 0 -or $segments[5].Length % 24 -ne 0 -or
         $segments[6].Length -ne 0x200 -or
-        $segments[7].Length -le 0 -or $segments[8].Length -le 0) {
+        $segments[7].Length -le 0 -or
+        $segments[3].Length % 16 -ne 0 -or
+        $segments[9].Length % 8 -ne 0 -or
+        $segments[12].Length % 12 -ne 0 -or
+        $segments[13].Length -ne 0 -or $segments[14].Length -ne 0) {
         throw "$Owner MSFT GUID/name/string tables are missing or malformed"
     }
     if (($importInfoCount -eq 0 -and $segments[1].Length -ne 0) -or
@@ -1047,55 +1666,25 @@ function Assert-WindowsFixtureMsftTypeLib {
     if ($guidOffset % 24 -ne 0 -or [uint64]$guidOffset + 24 -gt [uint64]$segments[5].Length) {
         throw "$Owner MSFT library GUID entry is misaligned or truncated"
     }
-    $guidBytes = [byte[]]::new(16)
-    [Array]::Copy($bytes, [int]([uint64]$segments[5].Offset + [uint64]$guidOffset), $guidBytes, 0, 16)
-    $libraryGuid = [Guid]::new($guidBytes)
-    if ($libraryGuid -ne [Guid]"47C202E7-AD2A-49D3-9289-45B68A62499D") {
-        throw "$Owner MSFT LIBID does not match the controlled fixture library"
-    }
-
     $readName = {
         param([uint32]$Offset, [string]$NameOwner)
 
-        $candidates = [Collections.Generic.List[string]]::new()
-        foreach ($headerLength in @(8, 12)) {
-            if ([uint64]$Offset + [uint64]$headerLength -gt [uint64]$segments[7].Length) {
-                continue
-            }
-            $lengthOffset = [int]([uint64]$segments[7].Offset + [uint64]$Offset + [uint64]$headerLength - 4)
-            $length = [uint64]$bytes[$lengthOffset]
-            if ($length -eq 0 -or [uint64]$Offset + [uint64]$headerLength + $length -gt [uint64]$segments[7].Length) {
-                continue
-            }
-            $nameBytes = [byte[]]::new([int]$length)
-            [Array]::Copy(
-                $bytes,
-                [int]([uint64]$segments[7].Offset + [uint64]$Offset + [uint64]$headerLength),
-                $nameBytes,
-                0,
-                [int]$length)
-            if (@($nameBytes | Where-Object { $_ -lt 0x20 -or $_ -gt 0x7E }).Count -eq 0) {
-                $candidates.Add([Text.Encoding]::ASCII.GetString($nameBytes))
-            }
+        if ([uint64]$Offset + 12 -gt [uint64]$segments[7].Length) {
+            throw "$Owner MSFT $NameOwner name entry is truncated"
         }
-        $unique = @($candidates | Sort-Object -Unique -CaseSensitive)
-        if ($unique.Count -ne 1) {
-            throw "$Owner MSFT $NameOwner name entry is ambiguous, non-ASCII, or truncated"
+        $absoluteOffset = [int]([uint64]$segments[7].Offset + [uint64]$Offset)
+        $length = [uint64]$bytes[$absoluteOffset + 8]
+        if ([uint64]$Offset + 12 + $length -gt [uint64]$segments[7].Length) {
+            throw "$Owner MSFT $NameOwner name entry is truncated"
         }
-        return $unique[0]
+        try {
+            return [Text.UTF8Encoding]::new($false, $true).GetString($bytes, $absoluteOffset + 12, [int]$length)
+        }
+        catch {
+            throw "$Owner MSFT $NameOwner name entry is not strict UTF-8"
+        }
     }
-    $libraryName = & $readName $nameOffset "library"
-    if ($libraryName -cne "OxVbaFixtureAdmissionLib") {
-        throw "$Owner MSFT library name does not match the controlled fixture library"
-    }
-    $typeInfoNameOffset = Read-WindowsFixtureUInt32 `
-        -Bytes $bytes `
-        -Offset ([int]([uint64]$typeInfoSegment.Offset + 52)) `
-        -Owner $Owner
-    $typeInfoName = & $readName $typeInfoNameOffset "TypeInfo"
-    if ($typeInfoName -cne "FixtureAdmissionState") {
-        throw "$Owner MSFT TypeInfo name does not match the controlled fixture enum"
-    }
+    [void](& $readName $nameOffset "library")
     foreach ($offsetField in @(0x24, 0x3C)) {
         $stringOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset $offsetField -Owner $Owner
         if ($stringOffset -eq [uint32]::MaxValue) {
@@ -1111,13 +1700,24 @@ function Assert-WindowsFixtureMsftTypeLib {
         }
     }
 
+    Assert-WindowsFixtureMsftOwnedRecords `
+        -Bytes $bytes `
+        -Segments $segments `
+        -TypeInfos @($typeInfos) `
+        -NameCount $nameCount `
+        -NameCharacters $nameCharacters `
+        -ImportInfoCount $importInfoCount `
+        -VarFlags $varFlags `
+        -Owner $Owner
+
     if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)) {
         Initialize-WindowsFixtureNativeProbe
         $typeLib = [IntPtr]::Zero
         try {
             $hresult = [OxVbaFixtureAdmissionNativeV1]::LoadTypeLibEx($Path, 2, [ref]$typeLib)
             if ($hresult -lt 0 -or $typeLib -eq [IntPtr]::Zero) {
-                throw ("$Owner was rejected by LoadTypeLibEx(REGKIND_NONE) (HRESULT=0x{0:X8})" -f ([uint32]$hresult))
+                $hresultBits = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]$hresult), 0)
+                throw ("$Owner was rejected by LoadTypeLibEx(REGKIND_NONE) (HRESULT=0x{0:X8})" -f $hresultBits)
             }
         }
         finally {
@@ -1154,6 +1754,7 @@ function Assert-WindowsFixtureBundleArtifact {
         [Parameter(Mandatory = $true)][string]$FixtureId,
         [Parameter(Mandatory = $true)][string]$ArtifactId,
         [Parameter(Mandatory = $true)][string]$ExpectedComponents,
+        [Parameter(Mandatory = $true)][string]$ExpectedComponentConstraints,
         [Parameter(Mandatory = $true)][string]$Owner
     )
 
@@ -1187,8 +1788,18 @@ function Assert-WindowsFixtureBundleArtifact {
 
     $components = @($bundle.components)
     $expectedKinds = @($ExpectedComponents -split '\|')
+    $expectedConstraints = if ($ExpectedComponentConstraints -eq "n/a") {
+        @($expectedKinds | ForEach-Object { "n/a" })
+    }
+    else {
+        @($ExpectedComponentConstraints -split '\|')
+    }
     if ($components.Count -ne $expectedKinds.Count) {
         throw "$Owner component count must be $($expectedKinds.Count), found $($components.Count)"
+    }
+    if ($expectedConstraints.Count -ne $expectedKinds.Count -or
+        @($expectedConstraints | Where-Object { $_ -ne "n/a" -and $_ -notmatch '^sha256:[0-9a-f]{64}$' }).Count -gt 0) {
+        throw "$Owner controller-owned component constraints are malformed"
     }
     $seenIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $seenPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -1228,6 +1839,10 @@ function Assert-WindowsFixtureBundleArtifact {
         if ([string]$component.sha256 -notmatch '^sha256:[0-9a-f]{64}$' -or
             [string]$component.sha256 -cne $actualHash) {
             throw "$Owner component[$index] hash is malformed, forged, or stale"
+        }
+        if ($expectedConstraints[$index] -ne "n/a" -and
+            $actualHash -cne $expectedConstraints[$index]) {
+            throw "$Owner component[$index] bytes do not match the controller-owned digest constraint"
         }
         switch ($kind) {
             "pe-dll-x64" { Assert-WindowsFixturePeFile -Path $componentPath -ExpectedKind $kind -Owner "$Owner component[$index]" }
@@ -1528,6 +2143,10 @@ function New-WindowsFixtureManifestRows {
                 built_artifact_name = [string]$artifactContract.Name
                 built_artifact_type = [string]$artifactContract.Type
                 built_artifact_components = [string]$artifactContract.Components
+                # Controller-owned, non-serialized admission policy. The V1
+                # canonical CSV schema stays unchanged; the validator obtains
+                # this value from the explicit source contract above.
+                built_artifact_component_constraints = [string]$artifactContract.ComponentConstraints
                 built_artifact_state = $builtState
                 built_artifact_path = $builtPath
                 built_artifact_hash = $fixtureHash
