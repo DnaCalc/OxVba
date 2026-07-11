@@ -3,7 +3,9 @@
 Date: 2026-07-11
 Status: normative support-safety policy
 Owning bead: `bd-59co.3.1.5`
-System clauses: `SEC-BOUNDARY-001`, `CONF-MATRIX-001`, `CONF-QUALITY-001`, `PROFILE-WIN-001`
+Owned/advanced clause: `CONF-MATRIX-001`
+Parent/profile context (not advanced): `PROFILE-WIN-001`
+Downstream informed constraints (not advanced): `SEC-BOUNDARY-001`, `CONF-QUALITY-001`
 Capability credit: none
 
 ## 1. Purpose and authority
@@ -21,9 +23,12 @@ evidence. Convenience cleanup, machine-wide discovery, process-name cleanup,
 window-class cleanup, recursive deletion, and wildcard deletion are not
 equivalent implementations.
 
-This is a support-only control. Passing it does not implement or certify COM,
-native import/export, VM3, JIT, Excel/VBA, or any canonical Windows capability
-row. It must not change a matrix truth state or evidence state.
+This is a support-only control. Passing it advances only the fixture-manifest
+conformance obligation `CONF-MATRIX-001`; it does not advance the parent
+Windows profile `PROFILE-WIN-001` or the downstream security/quality
+constraints `SEC-BOUNDARY-001` and `CONF-QUALITY-001`. It does not implement or
+certify COM, native import/export, VM3, JIT, Excel/VBA, or any canonical Windows
+capability row, and it grants no such row capability credit.
 
 ## 2. Normative terms and ownership tuple
 
@@ -39,7 +44,7 @@ Ownership is not inferred from a friendly name. The minimum ownership tuple is:
 |---|---|
 | run | run ID, owner PID, owner process start UTC, journal path |
 | file | canonical absolute path, before snapshot, expected length and SHA-256 |
-| registry value | normalized HKCU key path, exact value name, kind/bytes, deepest existing ancestor and exact absent chain |
+| registry value | normalized HKCU Registry64 key path, exact value name, kind/bytes, deepest existing ancestor, and per-key Win32 disposition/marker-token records |
 | process | resource ID, PID, process start UTC and executable path |
 | dialog/UIA | process resource ID, PID/start, UIA runtime ID and native handle |
 | apartment | owner process, managed thread, model, initialization owner, pump and reentry policy |
@@ -71,6 +76,14 @@ to recursively clean the temporary root; completed journal files are durable
 audit records unless an outer, independently owned test fixture removes their
 exact paths.
 
+The repository root, temporary root, existing journal/run infrastructure, run
+root, journal parent/file, and confined resource path components MUST be
+checked for reparse points before use. The check is repeated after the journal
+transaction lease is acquired and at the immediately preceding operation
+boundary for journal replacement, file creation/deletion, and child launch.
+An existing junction at a caller root or infrastructure component is a
+fail-closed error. Creating or swapping a junction does not enlarge ownership.
+
 Paths are compared canonically and case-insensitively on Windows. A resource
 file MUST be below the declared repository or temporary root, MUST NOT name a
 controlled root, MUST NOT contain wildcard or traversal selectors, and MUST NOT
@@ -86,7 +99,7 @@ root properties are:
 
 `schema_id`, `schema_version`, `run_id`, `created_utc`, `updated_utc`,
 `owner_pid`, `owner_process_start_utc`, `repository_root`, `temp_root`,
-`run_root`, `journal_path`, `allowed_registry_paths`,
+`run_root`, `journal_path`, `registry_view`, `allowed_registry_paths`,
 `allowed_executable_paths`, `orchestrator_apartment`, `reentry_policy`,
 `state`, `next_resource_sequence`, `next_event_sequence`, `resources`,
 `events`, and `journal_digest`.
@@ -96,6 +109,18 @@ The schema ID is `oxvba-windows-owned-resource-journal-v1`; the version is `1`.
 Root states are `active`, `cleaning`, `cleanup-conflict`, and `completed`.
 Resource states are `prepared`, `active`, `cleaned`, and `conflict`.
 
+Validation MUST inspect raw `System.Text.Json` `JsonValueKind` values before
+PowerShell object conversion. Every root, apartment, resource, descriptor,
+snapshot, key-ownership record, and event has an exact case-sensitive property
+set. Booleans MUST be JSON booleans, integers MUST be integral JSON numbers in
+their declared Int32/Int64 ranges, arrays MUST be JSON arrays with the declared
+item kind, and objects MUST not be accepted through scalar coercion. Dependency
+references MUST name exactly one earlier resource of the required kind:
+apartment before callback, matching apartment and callback before connection,
+and process before dialog. Lifecycle events MUST agree with resource/root
+states and timestamps, and each cleanup cycle—including conflicts—MUST proceed
+in descending acquisition order.
+
 `journal_digest` is SHA-256 over the fixed-order JSON-normalized journal payload
 excluding the digest field. It detects truncation, accidental modification,
 and non-recomputed tampering; it is an integrity checksum, not a substitute for
@@ -103,7 +128,37 @@ an authenticated hostile-machine boundary. A bad schema, duplicate property,
 counter mismatch, identity mismatch, or digest mismatch MUST cause zero
 resource mutation.
 
-### 4.2 Atomic durability
+### 4.2 Per-journal transaction lease
+
+Every journal mutation MUST hold one stable Windows named mutex derived from
+the lowercase canonical journal path and its SHA-256 digest. The reference name
+is `Local\OxVba.WindowsOwnedJournal.<digest>`. Acquisition is bounded; timeout
+does not grant mutation authority.
+
+One lease covers the entire transaction, not only the JSON write:
+
+1. acquire the named mutex and validate/revalidate the journal;
+2. write and durably flush the prepared state;
+3. perform the exact real mutation;
+4. write and durably flush the active state; and
+5. release the mutex.
+
+Cleanup likewise holds the same lease across the durable `cleaning` transition,
+every reverse inverse and per-resource terminal write, and the final
+`completed` or `cleanup-conflict` transition. Nested helpers MUST receive and
+validate the exact live in-process lease object; a copied or fabricated token,
+wrong journal, wrong process/thread, released lease, or abandoned lease pending
+revalidation grants no mutation authority. Same-thread nested acquisition is
+permitted only through the same named mutex and balanced release.
+
+An abandoned mutex is acquired as an explicit recovery condition. For an
+existing journal, the full strict schema, identity, digest, dependency, and
+lifecycle validation MUST succeed before the lease becomes mutation-capable.
+For a new immutable run, exact absence of both its journal and run root plus
+reparse validation of every existing parent is the fail-closed revalidation
+condition. No infrastructure or resource mutation may occur first.
+
+### 4.3 Atomic durability
 
 Each transition MUST be serialized to an adjacent unique file, flushed with
 write-through semantics, and atomically moved over the journal. Resource and
@@ -125,29 +180,69 @@ the mutation and activation transition.
 
 ### 5.1 Registry values
 
-The reference evidence helper is HKCU-only. Every key MUST be an exact
-normalized `HKCU\Software\<namespace>\<identity>...` allowlist entry. Hive and
-category roots such as `...\Classes\CLSID`, subtree selectors, value-name
-wildcards, and HKLM are rejected.
+The reference evidence helper is HKCU-only and x64-only. It MUST run in a
+64-bit process on 64-bit Windows. The root and every registry descriptor MUST
+spell the view exactly `Registry64`; managed reads/writes use
+`RegistryKey.OpenBaseKey(CurrentUser, Registry64)`, and native creation/deletion
+uses `KEY_WOW64_64KEY`. Every key MUST be an exact normalized
+`HKCU\Software\<namespace>\<identity>...` allowlist entry. Hive and category
+roots such as `...\Classes\CLSID`, subtree selectors, value-name wildcards,
+HKLM, and case-drifted view records are rejected.
 
 The before/expected snapshots record key existence, value existence, registry
-kind, and canonical base64 data. Before mutation, the prepared descriptor MUST
-also record:
+kind, and canonical base64 data. Before any key creation, the durable prepared
+descriptor MUST record:
 
-- `existing_ancestor_path`: the deepest exact registry key that already exists,
-  with `HKCU\Software` as the lowest permitted boundary; and
-- `absent_ancestor_paths`: every absent key from the next child through the
-  allowlisted leaf, in canonical shallow-to-deep order.
+- `existing_ancestor_path`: the deepest key observed to exist, with
+  `HKCU\Software` as the lowest permitted boundary; and
+- `key_ownership`: every then-absent key through the allowlisted leaf in
+  canonical shallow-to-deep order. Each record contains its exact `path`, an
+  initial `creation_disposition` of `pending`, and a unique prejournaled
+  `marker_name`/`marker_token` pair.
 
-The absent chain is part of ownership; implicit `CreateSubKey` ancestors are not
-an unjournaled side effect. Cleanup may restore or delete only the exact value,
-then visit only the recorded absent ancestors in deepest-first order. Each such
-key may be deleted only while it is empty. A pre-existing ancestor is never in
-the deletion list and MUST be preserved. A recorded created ancestor that now
-contains any neighbor value or subkey is a cleanup conflict: cleanup preserves
-it, stops deleting its ancestors, and reports the exact path. Recovery from a
-crash between value restoration and ancestor removal resumes through the same
-recorded empty-key chain; it does not scan for related keys.
+Absence is a creation plan, never proof that this run created a key. Each
+planned key MUST be opened/created one at a time with x64 `RegCreateKeyExW`, and
+the returned Win32 disposition is authoritative:
+
+- `REG_CREATED_NEW_KEY` permits writing the prejournaled exact `REG_SZ` marker;
+  after the marker is flushed, the durable disposition becomes
+  `created-owned`;
+- `REG_OPENED_EXISTING_KEY` writes no marker and durably becomes
+  `opened-existing`; cleanup MUST preserve it; and
+- any error or unknown disposition is fail-closed.
+
+Creation outcomes form one durable shallow-to-deep prefix. The exact descriptor
+update event for each outcome MUST be durable before proceeding. Value mutation
+MUST open an existing exact Registry64 key and MUST NOT implicitly create it.
+
+Cleanup first restores or deletes only the exact value. It then visits only the
+recorded `key_ownership` chain deepest-first. An `opened-existing` key is never
+deleted. A `pending` or `created-owned` key may be deleted only when its exact
+marker is present as a string with the exact token, that marker is the key's
+only value, and the key has no subkeys. The marker MUST remain inside the key
+until x64 `RegDeleteKeyExW` deletes the key; cleanup never removes the marker as
+a separate mutation.
+
+The crash outcomes are deliberately asymmetric:
+
+- before `RegCreateKeyExW`, a pending record with no key causes no mutation;
+- if another actor creates the key first, the Win32 opened-existing disposition
+  preserves that actor's key;
+- a crash after key creation but before its marker leaves an unprovable key,
+  which cleanup preserves and reports as a blocking conflict;
+- a crash after the exact marker but before the descriptor update remains
+  provable from the prejournaled token, so cleanup may remove the otherwise
+  empty key; and
+- a crash after value rollback but before key deletion resumes from the intact
+  marker chain.
+
+A pre-existing ancestor is never in the deletion chain. A marker-owned key
+that later contains any neighbor value or subkey is preserved as a cleanup
+conflict. The digest and random marker are non-hostile integrity/ownership
+evidence, not authentication against a malicious same-user actor that reads
+and reproduces the journal token. External mutation racing the final
+proof-to-delete interval is outside this cooperative test boundary; native
+deletion still fails closed when Windows reports a populated/nonempty key.
 
 HKCU-first means a test MUST use this exact user-scoped route whenever the
 behavior can be tested there. Machine registration required by a downstream
@@ -241,15 +336,17 @@ MUST be absent or mismatched. Recovery refuses a still-live exact owner.
 
 Cleanup MUST:
 
-1. validate the complete journal and digest before mutation;
-2. write `cleaning` durably;
+1. acquire the per-journal transaction lease and validate the complete journal,
+   raw schema, identity, digest, dependencies, lifecycle, and path boundary;
+2. write `cleaning` durably while retaining that lease;
 3. visit resources in strictly descending acquisition sequence;
 4. compare each real resource with its exact `before` and `expected` snapshot;
 5. apply only its resource-specific exact inverse;
 6. durably record `resource-cleaned` and the exact action after each inverse;
-7. continue with independently safe resources if one resource conflicts; and
+7. durably record conflicts in that same descending sequence and continue with
+   independently safe resources; and
 8. finish as `completed`, or `cleanup-conflict` with the exact resource IDs and
-   diagnostics.
+   diagnostics, before releasing the lease.
 
 If current state equals `before`, the inverse is already complete. If it equals
 `expected`, the exact inverse is safe. If it equals neither, cleanup MUST NOT
@@ -260,7 +357,9 @@ the exact expected state.
 Calling cleanup again on `completed` MUST return without rewriting the journal.
 This byte-idempotence applies to normal and stale cleanup.
 
-An abandoned but valid journal is the sole stale-recovery authority. Recovery
+An abandoned but valid journal is the sole stale-recovery authority. An
+abandoned named mutex is not authority by itself; the journal must be strictly
+revalidated before its acquired lease can mutate. Recovery
 does not scan registry hives, directories, processes, windows, ROT entries, or
 connection points for things that look related. A corrupt or ambiguous stale
 journal is a blocker and grants no cleanup authority.
@@ -284,17 +383,29 @@ The following are non-conforming even when used in a test teardown block:
 Conformance evidence MUST show:
 
 - unique-run collision refusal;
-- strict schema, duplicate-property, counter, and digest fail-closed behavior;
+- strict raw JSON kind/range/array/object validation; property-case, unknown,
+  duplicate, counter, dependency, lifecycle, identity, and digest fail-closed
+  behavior;
+- one unforgeable per-journal lease across complete prepare/mutate/activate and
+  cleanup transactions, plus abandoned-mutex revalidation;
+- at least 24 deterministic contending recorded writers with gap-free resource
+  sequences, unique records/targets, no lost atomic-move temporary, and a
+  writer-versus-cleanup race with no unjournaled mutation or residue;
 - prepared-before-mutation ordering for file, registry, and child process;
 - child PID/start/executable recorded before activation;
 - exact HKCU value, confined file, and hidden harmless child creation/cleanup;
-- exact absent registry-ancestor capture/removal, pre-existing ancestor
-  preservation, and populated-created-ancestor conflict refusal;
-- repo/temp escape, wildcard, controlled-root, and reparse rejection;
+- exact Registry64 view/disposition/token records and these registry paths:
+  crash before create, external empty key, another actor winning creation,
+  create-before-marker ambiguity, marker-before-descriptor recovery, normal
+  rollback, value rollback before key deletion, pre-existing key, and populated
+  marker-owned ancestor conflict;
+- repository-root, temporary-root, journal-infrastructure, run-root, confined
+  traversal, escape, wildcard, controlled-root, and reparse rejection;
 - blanket process/dialog/registry/file selector rejection;
 - explicit apartment/reentry/callback/connection/dialog identities;
 - connection cleanup before callback and apartment cleanup;
-- strictly descending resource cleanup sequences;
+- strictly descending resource cleanup/conflict sequences and exact root/resource
+  lifecycle agreement;
 - conflict refusal that leaves changed owned data untouched;
 - live-owner recovery refusal and dead-owner stale recovery;
 - byte-identical repeated normal and stale cleanup; and
@@ -307,6 +418,11 @@ connection, and dialog records MUST remain logical/file-backed. It MUST NOT
 start Excel/VBE or invoke real COM/UIA.
 
 ## 9. Matrix and downstream boundary
+
+This bead owns and advances only `CONF-MATRIX-001`. `PROFILE-WIN-001` is its
+parent/profile context, while `SEC-BOUNDARY-001` and `CONF-QUALITY-001` are
+downstream constraints informed by the policy; none of those three clauses is
+advanced by this support result.
 
 This policy is prerequisite support for resource-mutating evidence around
 `WAC-SAFETY-MUTATION`, `WAC-TARGET-DEV-ENV`, `WCC-LATE-OUTPROC-ERROR`,
