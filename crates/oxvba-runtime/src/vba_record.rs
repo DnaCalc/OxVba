@@ -6,6 +6,63 @@ use crate::{
 use core::{ptr, slice};
 use std::sync::Arc;
 
+/// VBA rejects a user-defined type whose packed native payload exceeds 64 KiB.
+///
+/// Procedure-local declarations have an additional 32 KiB compiler rule; this
+/// runtime limit is the context-independent upper bound for the type itself.
+pub const MAX_VBA_RECORD_SIZE: usize = 64 * 1024;
+
+/// VBA arrays admit at most 60 dimensions.
+pub const MAX_VBA_RECORD_FIXED_ARRAY_RANK: usize = 60;
+
+/// OxVba verifier/security limit for recursive record-layout metadata.
+///
+/// VBA rejects direct and indirect self-reference, but its published
+/// documentation does not define a maximum finite nesting depth. This cap is a
+/// resource-safety admission policy, not a VBA semantic limit.
+pub const MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH: usize = 64;
+
+/// Maximum aggregate metadata nodes visited while sealing one record layout.
+///
+/// This is derived from the 64 KiB non-zero field budget times the graph-depth
+/// cap, so a layout satisfying both primary bounds cannot be rejected merely
+/// for using a wide graph. It also bounds validation work for a hostile DAG.
+pub const MAX_VBA_RECORD_LAYOUT_GRAPH_VISITS: usize =
+    MAX_VBA_RECORD_SIZE * MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH;
+
+#[cfg(test)]
+std::thread_local! {
+    static FIELD_POINTER_PROJECTIONS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+    static RECORD_BUFFER_EVENTS: core::cell::Cell<(usize, usize)> = const { core::cell::Cell::new((0, 0)) };
+    static LAYOUT_FIELD_TABLE_RESERVATIONS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn note_field_pointer_projection() {
+    FIELD_POINTER_PROJECTIONS.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn note_record_buffer_allocation() {
+    RECORD_BUFFER_EVENTS.with(|events| {
+        let (allocated, freed) = events.get();
+        events.set((allocated + 1, freed));
+    });
+}
+
+#[cfg(test)]
+fn note_record_buffer_free() {
+    RECORD_BUFFER_EVENTS.with(|events| {
+        let (allocated, freed) = events.get();
+        events.set((allocated, freed + 1));
+    });
+}
+
+#[cfg(test)]
+fn note_layout_field_table_reservation() {
+    LAYOUT_FIELD_TABLE_RESERVATIONS.with(|count| count.set(count.get() + 1));
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VbaRecordFieldKind {
     Variant,
@@ -50,11 +107,11 @@ impl VbaRecordFieldSpec {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VbaRecordFieldLayout {
-    pub name: Option<String>,
-    pub kind: VbaRecordFieldKind,
-    pub offset: usize,
-    pub size: usize,
-    pub align: usize,
+    name: Option<String>,
+    kind: VbaRecordFieldKind,
+    offset: usize,
+    size: usize,
+    align: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +119,7 @@ pub struct VbaRecordLayout {
     fields: Vec<VbaRecordFieldLayout>,
     size: usize,
     align: usize,
+    graph_depth: usize,
 }
 
 pub struct VbaRecord {
@@ -69,32 +127,120 @@ pub struct VbaRecord {
     data: Vec<u64>,
 }
 
+/// An unforgeable field selection bound to one runtime layout instance.
+///
+/// A handle can be reused across records only when they share the same
+/// [`Arc<VbaRecordLayout>`]. Passing a handle from an independently constructed
+/// (even structurally equal) layout is rejected before a record pointer is
+/// formed.
+#[derive(Clone)]
+pub struct VbaRecordFieldHandle {
+    layout: Arc<VbaRecordLayout>,
+    index: usize,
+}
+
+impl VbaRecordFieldLayout {
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn kind(&self) -> &VbaRecordFieldKind {
+        &self.kind
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn align(&self) -> usize {
+        self.align
+    }
+}
+
+impl VbaRecordFieldHandle {
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.layout.fields[self.index].name()
+    }
+
+    pub fn kind(&self) -> &VbaRecordFieldKind {
+        self.layout.fields[self.index].kind()
+    }
+
+    pub fn offset(&self) -> usize {
+        self.layout.fields[self.index].offset()
+    }
+
+    pub fn size(&self) -> usize {
+        self.layout.fields[self.index].size()
+    }
+
+    pub fn align(&self) -> usize {
+        self.layout.fields[self.index].align()
+    }
+}
+
+impl core::fmt::Debug for VbaRecordFieldHandle {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("VbaRecordFieldHandle")
+            .field("index", &self.index)
+            .field("name", &self.name())
+            .field("offset", &self.offset())
+            .field("size", &self.size())
+            .field("align", &self.align())
+            .finish()
+    }
+}
+
+impl PartialEq for VbaRecordFieldHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index && Arc::ptr_eq(&self.layout, &other.layout)
+    }
+}
+
+impl Eq for VbaRecordFieldHandle {}
+
 impl VbaRecordLayout {
     pub fn new(fields: Vec<VbaRecordFieldSpec>) -> Result<Self, String> {
+        let (size, align, graph_depth) = validate_record_shape(&fields)?;
+
         let mut offset = 0usize;
-        let mut record_align = 1usize;
-        let mut layouts = Vec::with_capacity(fields.len());
+        let mut layouts = Vec::new();
+        #[cfg(test)]
+        note_layout_field_table_reservation();
+        layouts
+            .try_reserve_exact(fields.len())
+            .map_err(|_| "VBA record field table allocation failed".to_string())?;
 
         for field in fields {
-            let (size, align) = field.kind.storage_shape()?;
-            offset = align_to(offset, align);
+            let (field_size, field_align) = field.kind.storage_shape()?;
+            offset = checked_align_to(offset, field_align)?;
             layouts.push(VbaRecordFieldLayout {
                 name: field.name,
                 kind: field.kind,
                 offset,
-                size,
-                align,
+                size: field_size,
+                align: field_align,
             });
             offset = offset
-                .checked_add(size)
+                .checked_add(field_size)
                 .ok_or_else(|| "VBA record layout size overflow".to_string())?;
-            record_align = record_align.max(align);
         }
+
+        debug_assert_eq!(checked_align_to(offset, align), Ok(size));
 
         Ok(Self {
             fields: layouts,
-            size: align_to(offset, record_align),
-            align: record_align,
+            size,
+            align,
+            graph_depth,
         })
     }
 
@@ -108,6 +254,18 @@ impl VbaRecordLayout {
 
     pub fn align(&self) -> usize {
         self.align
+    }
+
+    pub fn graph_depth(&self) -> usize {
+        self.graph_depth
+    }
+
+    pub fn field_handle(self: &Arc<Self>, index: usize) -> Option<VbaRecordFieldHandle> {
+        self.fields.get(index)?;
+        Some(VbaRecordFieldHandle {
+            layout: Arc::clone(self),
+            index,
+        })
     }
 
     pub fn file_len(&self) -> Result<usize, String> {
@@ -158,10 +316,13 @@ impl VbaRecordFieldKind {
             }
             Self::FixedString { len } => *len,
             Self::Record(layout) => layout.file_len()?,
-            Self::FixedArray { element, bounds } => element
-                .file_len()?
-                .checked_mul(fixed_array_total_len(bounds)?)
-                .ok_or_else(|| "VBA fixed-array record file length overflow".to_string())?,
+            Self::FixedArray { element, bounds } => {
+                reject_nested_fixed_array_element(element)?;
+                element
+                    .file_len()?
+                    .checked_mul(fixed_array_total_len(bounds)?)
+                    .ok_or_else(|| "VBA fixed-array record file length overflow".to_string())?
+            }
             _ => self.storage_shape()?.0,
         };
         Ok(len)
@@ -186,25 +347,40 @@ impl VbaRecordFieldKind {
                 (core::mem::size_of::<f64>(), core::mem::align_of::<f64>())
             }
             Self::String => pointer_shape,
-            Self::FixedString { len } => (
-                len.checked_mul(core::mem::size_of::<u16>())
-                    .ok_or_else(|| "VBA fixed-string record field size overflow".to_string())?,
-                1,
-            ),
+            Self::FixedString { len } => {
+                if *len == 0 {
+                    return Err(
+                        "VBA fixed-string record field must have at least one character"
+                            .to_string(),
+                    );
+                }
+                let size = len
+                    .checked_mul(core::mem::size_of::<u16>())
+                    .ok_or_else(|| "VBA fixed-string record field size overflow".to_string())?;
+                validate_record_size(size)?;
+                (size, 1)
+            }
             Self::Boolean => (core::mem::size_of::<i16>(), core::mem::align_of::<i16>()),
             Self::Record(layout) => (layout.size(), layout.align()),
             Self::FixedArray { element, bounds } => {
+                reject_nested_fixed_array_element(element)?;
                 let len = fixed_array_total_len(bounds)?;
                 let (element_size, element_align) = element.storage_shape()?;
-                let stride = align_to(element_size, element_align);
-                (
-                    stride
-                        .checked_mul(len)
-                        .ok_or_else(|| "VBA fixed-array record field size overflow".to_string())?,
-                    element_align,
-                )
+                if element_size == 0 {
+                    return Err("VBA fixed-array record element cannot be zero-sized".to_string());
+                }
+                let stride = checked_align_to(element_size, element_align)?;
+                let size = stride
+                    .checked_mul(len)
+                    .ok_or_else(|| "VBA fixed-array record field size overflow".to_string())?;
+                validate_record_size(size)?;
+                (size, element_align)
             }
         };
+        if shape.0 == 0 {
+            return Err("VBA record field cannot be zero-sized".to_string());
+        }
+        validate_record_size(shape.0)?;
         Ok(shape)
     }
 
@@ -264,25 +440,32 @@ impl VbaRecordFieldKind {
 
 impl VbaRecord {
     pub fn new_default(layout: Arc<VbaRecordLayout>) -> Result<Self, String> {
-        if layout.align() > core::mem::align_of::<u64>() {
-            return Err(format!(
-                "VBA record layout alignment {} exceeds native buffer alignment {}",
-                layout.align(),
-                core::mem::align_of::<u64>()
-            ));
-        }
-        let words = layout.size().div_ceil(core::mem::size_of::<u64>());
-        let mut record = Self {
-            layout,
-            data: vec![0; words],
-        };
+        validate_record_size(layout.size())?;
+        validate_storage_alignment(layout.align())?;
+        let word_size = core::mem::size_of::<u64>();
+        let words = layout
+            .size()
+            .checked_add(word_size - 1)
+            .ok_or_else(|| "VBA record buffer word count overflow".to_string())?
+            / word_size;
+        let mut data = Vec::new();
+        data.try_reserve_exact(words).map_err(|_| {
+            format!(
+                "VBA record buffer allocation failed for {} bytes",
+                layout.size()
+            )
+        })?;
+        data.resize(words, 0);
+        let mut record = Self { layout, data };
         crate::live_counters::record_buffer_allocated();
-        let fields = record.layout.fields().to_vec();
-        for field in &fields {
+        #[cfg(test)]
+        note_record_buffer_allocation();
+        let init_layout = Arc::clone(&record.layout);
+        for (index, field) in init_layout.fields().iter().enumerate() {
             // SAFETY: the buffer is sized to `layout.size()`, and each field offset
             // and recursive fixed-array stride was computed by `VbaRecordLayout`.
             unsafe {
-                init_field_at(record.field_mut_ptr(field), &field.kind)?;
+                init_field_at(record.field_mut_ptr_by_index(index)?, &field.kind)?;
             }
         }
         Ok(record)
@@ -308,44 +491,125 @@ impl VbaRecord {
         self.data.as_mut_ptr().cast()
     }
 
-    pub fn field_ptr(&self, field: &VbaRecordFieldLayout) -> *const u8 {
-        // SAFETY: `field` belongs to this record's `layout` (the only source of
-        // `VbaRecordFieldLayout` callers have), so `field.offset < layout.size()`
-        // and the offset stays within the `layout.size()`-sized owned buffer.
-        unsafe { self.data_ptr().add(field.offset) }
+    pub fn field_handle(&self, index: usize) -> Option<VbaRecordFieldHandle> {
+        self.layout.field_handle(index)
     }
 
-    pub fn field_mut_ptr(&mut self, field: &VbaRecordFieldLayout) -> *mut u8 {
-        // SAFETY: `field` belongs to this record's `layout`, so `field.offset`
-        // is within the `layout.size()`-sized owned buffer (see `field_ptr`).
-        unsafe { self.data_mut_ptr().add(field.offset) }
+    /// Return this record's pointer for an owner-bound field handle.
+    ///
+    /// Layout identity, index, kind shape, extent and alignment are validated
+    /// before pointer arithmetic. Dereferencing or casting the returned raw
+    /// pointer remains the caller's unsafe operation.
+    pub fn field_ptr(&self, field: &VbaRecordFieldHandle) -> Result<*const u8, String> {
+        self.ensure_handle_belongs(field)?;
+        self.field_ptr_by_index(field.index)
+    }
+
+    /// Return this record's mutable pointer for an owner-bound field handle.
+    ///
+    /// The same validation as [`Self::field_ptr`] happens before pointer
+    /// arithmetic; `&mut self` supplies exclusive record access.
+    pub fn field_mut_ptr(&mut self, field: &VbaRecordFieldHandle) -> Result<*mut u8, String> {
+        self.ensure_handle_belongs(field)?;
+        self.field_mut_ptr_by_index(field.index)
     }
 
     pub fn field_bytes(&self, index: usize) -> Option<&[u8]> {
-        let field = self.layout.fields().get(index)?;
-        // SAFETY: the layout field is within the owned buffer by construction.
-        Some(unsafe { slice::from_raw_parts(self.data_ptr().add(field.offset), field.size) })
+        let size = self.checked_field_by_index(index).ok()?.size;
+        let ptr = self.field_ptr_by_index(index).ok()?;
+        // SAFETY: `field_ptr_by_index` validated that the complete field extent is
+        // inside this live record buffer.
+        Some(unsafe { slice::from_raw_parts(ptr, size) })
     }
 
     pub fn read_field_variant(&self, index: usize) -> Result<Variant, String> {
-        let field = self
-            .layout
-            .fields()
-            .get(index)
-            .ok_or_else(|| format!("record field {index} out of range"))?;
+        let field = self.checked_field_by_index(index)?;
         // SAFETY: the field pointer is in range and aligned for `field.kind`.
-        unsafe { read_field_variant_at(self.field_ptr(field), &field.kind) }
+        unsafe { read_field_variant_at(self.field_ptr_by_index(index)?, &field.kind) }
     }
 
     pub fn write_field_variant(&mut self, index: usize, value: &Variant) -> Result<(), String> {
-        let field = self
-            .layout
+        let layout = Arc::clone(&self.layout);
+        let field = layout
             .fields()
             .get(index)
-            .cloned()
             .ok_or_else(|| format!("record field {index} out of range"))?;
         // SAFETY: the field pointer is in range and aligned for `field.kind`.
-        unsafe { write_field_variant_at(self.field_mut_ptr(&field), &field.kind, value) }
+        unsafe { write_field_variant_at(self.field_mut_ptr_by_index(index)?, &field.kind, value) }
+    }
+
+    fn ensure_handle_belongs(&self, field: &VbaRecordFieldHandle) -> Result<(), String> {
+        if !Arc::ptr_eq(&self.layout, &field.layout) {
+            return Err("record field handle belongs to a different layout".to_string());
+        }
+        if field.index >= self.layout.fields.len() {
+            return Err(format!(
+                "record field handle index {} is out of range",
+                field.index
+            ));
+        }
+        Ok(())
+    }
+
+    fn checked_field_by_index(&self, index: usize) -> Result<&VbaRecordFieldLayout, String> {
+        let field = self
+            .layout
+            .fields
+            .get(index)
+            .ok_or_else(|| format!("record field {index} out of range"))?;
+        let (expected_size, expected_align) = field.kind.storage_shape()?;
+        validate_storage_alignment(field.align)?;
+        if field.size != expected_size || field.align != expected_align {
+            return Err(format!(
+                "record field {index} shape does not match its sealed kind"
+            ));
+        }
+        if field.offset % field.align != 0 {
+            return Err(format!(
+                "record field {index} offset {} is not aligned to {}",
+                field.offset, field.align
+            ));
+        }
+        let end = field
+            .offset
+            .checked_add(field.size)
+            .ok_or_else(|| format!("record field {index} extent overflow"))?;
+        if end > self.layout.size {
+            return Err(format!(
+                "record field {index} extent {end} exceeds layout size {}",
+                self.layout.size
+            ));
+        }
+        let buffer_bytes = self
+            .data
+            .len()
+            .checked_mul(core::mem::size_of::<u64>())
+            .ok_or_else(|| "record buffer byte length overflow".to_string())?;
+        if self.layout.size > buffer_bytes || end > buffer_bytes {
+            return Err(format!(
+                "record field {index} extent is outside its owned buffer"
+            ));
+        }
+        Ok(field)
+    }
+
+    fn field_ptr_by_index(&self, index: usize) -> Result<*const u8, String> {
+        let offset = self.checked_field_by_index(index)?.offset;
+        #[cfg(test)]
+        note_field_pointer_projection();
+        // SAFETY: `checked_field_by_index` proved the offset and full field extent
+        // are inside the live `Vec<u64>` buffer, and that the offset has the kind's
+        // required alignment relative to the `u64`-aligned base.
+        Ok(unsafe { self.data.as_ptr().cast::<u8>().add(offset) })
+    }
+
+    fn field_mut_ptr_by_index(&mut self, index: usize) -> Result<*mut u8, String> {
+        let offset = self.checked_field_by_index(index)?.offset;
+        #[cfg(test)]
+        note_field_pointer_projection();
+        // SAFETY: the same extent/alignment proof as `field_ptr_by_index` applies;
+        // `&mut self` supplies exclusive access to the buffer.
+        Ok(unsafe { self.data.as_mut_ptr().cast::<u8>().add(offset) })
     }
 
     pub fn lset_from(&mut self, source: &VbaRecord) -> Result<(), String> {
@@ -364,15 +628,11 @@ impl VbaRecord {
         &self,
         index: usize,
     ) -> Result<Option<(Vec<SafeArrayBound>, usize)>, String> {
-        let field = self
-            .layout
-            .fields()
-            .get(index)
-            .ok_or_else(|| format!("record field {index} out of range"))?;
+        let field = self.checked_field_by_index(index)?;
         match &field.kind {
             VbaRecordFieldKind::Variant => {
                 // SAFETY: this field is a live Variant slot in this record layout.
-                let value = unsafe { &*self.field_ptr(field).cast::<Variant>() };
+                let value = unsafe { &*self.field_ptr_by_index(index)?.cast::<Variant>() };
                 Ok(value.safearray_bounds_len())
             }
             VbaRecordFieldKind::FixedArray { bounds, .. } => {
@@ -387,15 +647,11 @@ impl VbaRecord {
         index: usize,
         flat: usize,
     ) -> Result<Option<Variant>, String> {
-        let field = self
-            .layout
-            .fields()
-            .get(index)
-            .ok_or_else(|| format!("record field {index} out of range"))?;
+        let field = self.checked_field_by_index(index)?;
         match &field.kind {
             VbaRecordFieldKind::Variant => {
                 // SAFETY: this field is a live Variant slot in this record layout.
-                let value = unsafe { &*self.field_ptr(field).cast::<Variant>() };
+                let value = unsafe { &*self.field_ptr_by_index(index)?.cast::<Variant>() };
                 Ok(value.safearray_element(flat).transpose()?)
             }
             VbaRecordFieldKind::FixedArray { element, bounds } => {
@@ -404,11 +660,14 @@ impl VbaRecord {
                     return Err("fixed-array record field index out of range".to_string());
                 }
                 let (element_size, element_align) = element.storage_shape()?;
-                let stride = align_to(element_size, element_align);
+                let stride = checked_align_to(element_size, element_align)?;
                 // SAFETY: `flat < len`; `stride` is the element storage size and
-                // `field_ptr(field)` is the fixed-array field base.
+                // `field_ptr_by_index(index)` is the validated fixed-array base.
                 Ok(Some(unsafe {
-                    read_field_variant_at(self.field_ptr(field).add(flat * stride), element)?
+                    read_field_variant_at(
+                        self.field_ptr_by_index(index)?.add(flat * stride),
+                        element,
+                    )?
                 }))
             }
             _ => Ok(None),
@@ -421,17 +680,17 @@ impl VbaRecord {
         flat: usize,
         value: &Variant,
     ) -> Result<Option<()>, String> {
-        let field = self
-            .layout
+        let layout = Arc::clone(&self.layout);
+        let field = layout
             .fields()
             .get(index)
-            .cloned()
             .ok_or_else(|| format!("record field {index} out of range"))?;
         match &field.kind {
             VbaRecordFieldKind::Variant => {
                 // SAFETY: this field is a live Variant slot and `&mut self` proves
                 // exclusive access to it.
-                let field_value = unsafe { &mut *self.field_mut_ptr(&field).cast::<Variant>() };
+                let field_value =
+                    unsafe { &mut *self.field_mut_ptr_by_index(index)?.cast::<Variant>() };
                 if field_value.safearray_bounds_len().is_none() {
                     return Ok(None);
                 }
@@ -444,12 +703,12 @@ impl VbaRecord {
                     return Err("fixed-array record field index out of range".to_string());
                 }
                 let (element_size, element_align) = element.storage_shape()?;
-                let stride = align_to(element_size, element_align);
+                let stride = checked_align_to(element_size, element_align)?;
                 // SAFETY: `flat < len`; `stride` is the element storage size and
-                // `field_mut_ptr(field)` is the fixed-array field base.
+                // `field_mut_ptr_by_index(index)` is the validated field base.
                 unsafe {
                     write_field_variant_at(
-                        self.field_mut_ptr(&field).add(flat * stride),
+                        self.field_mut_ptr_by_index(index)?.add(flat * stride),
                         element,
                         value,
                     )?;
@@ -540,19 +799,24 @@ impl VbaRecord {
 
 impl Clone for VbaRecord {
     fn clone(&self) -> Self {
+        let layout = Arc::clone(&self.layout);
         let mut clone = Self {
-            layout: self.layout.clone(),
+            layout: Arc::clone(&layout),
             data: vec![0; self.data.len()],
         };
         crate::live_counters::record_buffer_allocated();
-        let fields = self.layout.fields().to_vec();
-        for field in &fields {
+        #[cfg(test)]
+        note_record_buffer_allocation();
+        for (index, field) in layout.fields().iter().enumerate() {
             // SAFETY: source and destination are distinct buffers with the same
             // descriptor-backed layout.
             unsafe {
                 clone_field_at(
-                    self.field_ptr(field),
-                    clone.field_mut_ptr(field),
+                    self.field_ptr_by_index(index)
+                        .expect("sealed source record field"),
+                    clone
+                        .field_mut_ptr_by_index(index)
+                        .expect("sealed destination record field"),
                     &field.kind,
                 )
                 .expect("VBA record deep clone should succeed");
@@ -564,16 +828,17 @@ impl Clone for VbaRecord {
 
 impl Drop for VbaRecord {
     fn drop(&mut self) {
-        let fields = self.layout.fields().to_vec();
-        for field in &fields {
+        let data_ptr = self.data.as_mut_ptr().cast::<u8>();
+        for field in self.layout.fields() {
             // SAFETY: each initialized field is dropped exactly once while the owning
             // record buffer is still live.
             unsafe {
-                let ptr = self.data_mut_ptr().add(field.offset);
-                drop_field_at(ptr, &field.kind);
+                drop_field_at(data_ptr.add(field.offset), &field.kind);
             }
         }
         crate::live_counters::record_buffer_freed();
+        #[cfg(test)]
+        note_record_buffer_free();
     }
 }
 
@@ -607,7 +872,7 @@ unsafe fn init_field_at(ptr: *mut u8, kind: &VbaRecordFieldKind) -> Result<(), S
         VbaRecordFieldKind::FixedArray { element, bounds } => {
             let len = fixed_array_total_len(bounds)?;
             let (element_size, element_align) = element.storage_shape()?;
-            let stride = align_to(element_size, element_align);
+            let stride = checked_align_to(element_size, element_align)?;
             for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the per-element storage size, so
                 // `i * stride` indexes the `i`-th element slot inside the array field.
@@ -655,7 +920,7 @@ unsafe fn clone_field_at(
         VbaRecordFieldKind::FixedArray { element, bounds } => {
             let len = fixed_array_total_len(bounds)?;
             let (element_size, element_align) = element.storage_shape()?;
-            let stride = align_to(element_size, element_align);
+            let stride = checked_align_to(element_size, element_align)?;
             for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the element storage size, so
                 // `i * stride` selects matching element slots in `src` and `dst`.
@@ -702,7 +967,9 @@ unsafe fn drop_field_at(ptr: *mut u8, kind: &VbaRecordFieldKind) {
             let Ok(len) = fixed_array_total_len(bounds) else {
                 return;
             };
-            let stride = align_to(element_size, element_align);
+            let Ok(stride) = checked_align_to(element_size, element_align) else {
+                return;
+            };
             for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the element storage size, so each
                 // `i * stride` selects a distinct live element slot dropped once.
@@ -776,7 +1043,7 @@ unsafe fn read_field_variant_at(
         VbaRecordFieldKind::FixedArray { element, bounds } => {
             let len = fixed_array_total_len(bounds)?;
             let (element_size, element_align) = element.storage_shape()?;
-            let stride = align_to(element_size, element_align);
+            let stride = checked_align_to(element_size, element_align)?;
             let mut values = Vec::with_capacity(len);
             for i in 0..len {
                 // SAFETY: `i < len` and `stride` is the element storage size, so
@@ -946,7 +1213,7 @@ unsafe fn write_field_variant_at(
                 ));
             }
             let (element_size, element_align) = element.storage_shape()?;
-            let stride = align_to(element_size, element_align);
+            let stride = checked_align_to(element_size, element_align)?;
             for (i, value) in values.iter().enumerate() {
                 // SAFETY: `i < len` (length checked above) and `stride` is the element
                 // storage size, so `i * stride` targets the live `i`-th element slot.
@@ -1005,9 +1272,185 @@ fn clone_bstr_raw(raw: *mut u16) -> Result<*mut u16, String> {
     cloned
 }
 
+fn validate_record_shape(fields: &[VbaRecordFieldSpec]) -> Result<(usize, usize, usize), String> {
+    if fields.is_empty() {
+        return Err("VBA record layout must contain at least one field".to_string());
+    }
+    if fields.len() > MAX_VBA_RECORD_SIZE {
+        return Err(format!(
+            "VBA record layout has {} fields; the sealed field table limit is {}",
+            fields.len(),
+            MAX_VBA_RECORD_SIZE
+        ));
+    }
+    let graph_depth = validate_layout_graph(fields)?;
+
+    let mut offset = 0usize;
+    let mut record_align = 1usize;
+    for field in fields {
+        let (size, align) = field.kind.storage_shape()?;
+        validate_storage_alignment(align)?;
+        offset = checked_align_to(offset, align)?;
+        offset = offset
+            .checked_add(size)
+            .ok_or_else(|| "VBA record layout size overflow".to_string())?;
+        validate_record_size(offset)?;
+        record_align = record_align.max(align);
+    }
+
+    let size = checked_align_to(offset, record_align)?;
+    validate_record_size(size)?;
+    Ok((size, record_align, graph_depth))
+}
+
+fn validate_layout_graph(fields: &[VbaRecordFieldSpec]) -> Result<usize, String> {
+    let mut ancestors = [ptr::null(); MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH];
+    let mut visits = 0usize;
+    validate_layout_fields_graph(
+        fields,
+        MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH,
+        &mut ancestors,
+        0,
+        &mut visits,
+    )
+}
+
+fn validate_layout_fields_graph(
+    fields: &[VbaRecordFieldSpec],
+    remaining_depth: usize,
+    ancestors: &mut [*const VbaRecordLayout; MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH],
+    ancestor_len: usize,
+    visits: &mut usize,
+) -> Result<usize, String> {
+    let mut graph_depth = 0usize;
+    for field in fields {
+        graph_depth = graph_depth.max(validate_field_kind_graph(
+            &field.kind,
+            remaining_depth,
+            ancestors,
+            ancestor_len,
+            visits,
+        )?);
+    }
+    Ok(graph_depth)
+}
+
+fn validate_sealed_layout_fields_graph(
+    fields: &[VbaRecordFieldLayout],
+    remaining_depth: usize,
+    ancestors: &mut [*const VbaRecordLayout; MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH],
+    ancestor_len: usize,
+    visits: &mut usize,
+) -> Result<usize, String> {
+    let mut graph_depth = 0usize;
+    for field in fields {
+        graph_depth = graph_depth.max(validate_field_kind_graph(
+            &field.kind,
+            remaining_depth,
+            ancestors,
+            ancestor_len,
+            visits,
+        )?);
+    }
+    Ok(graph_depth)
+}
+
+fn validate_field_kind_graph(
+    kind: &VbaRecordFieldKind,
+    remaining_depth: usize,
+    ancestors: &mut [*const VbaRecordLayout; MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH],
+    ancestor_len: usize,
+    visits: &mut usize,
+) -> Result<usize, String> {
+    *visits = visits
+        .checked_add(1)
+        .ok_or_else(|| "VBA record layout graph visit count overflow".to_string())?;
+    if *visits > MAX_VBA_RECORD_LAYOUT_GRAPH_VISITS {
+        return Err(format!(
+            "VBA record layout graph exceeds the OxVba validation budget of {MAX_VBA_RECORD_LAYOUT_GRAPH_VISITS} nodes"
+        ));
+    }
+    if remaining_depth == 0 {
+        return Err(format!(
+            "VBA record layout graph depth exceeds the OxVba safety limit of {MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH}"
+        ));
+    }
+
+    match kind {
+        VbaRecordFieldKind::Record(layout) => {
+            let layout_ptr = Arc::as_ptr(layout);
+            if ancestors[..ancestor_len].contains(&layout_ptr) {
+                return Err("VBA record layout graph contains a recursive record cycle".to_string());
+            }
+            if ancestor_len >= ancestors.len() {
+                return Err(format!(
+                    "VBA record layout graph depth exceeds the OxVba safety limit of {MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH}"
+                ));
+            }
+            ancestors[ancestor_len] = layout_ptr;
+            let child_depth = validate_sealed_layout_fields_graph(
+                layout.fields(),
+                remaining_depth - 1,
+                ancestors,
+                ancestor_len + 1,
+                visits,
+            )?;
+            Ok(1 + child_depth)
+        }
+        VbaRecordFieldKind::FixedArray { element, .. } => {
+            reject_nested_fixed_array_element(element)?;
+            Ok(1 + validate_field_kind_graph(
+                element,
+                remaining_depth - 1,
+                ancestors,
+                ancestor_len,
+                visits,
+            )?)
+        }
+        _ => Ok(1),
+    }
+}
+
+fn reject_nested_fixed_array_element(element: &VbaRecordFieldKind) -> Result<(), String> {
+    if matches!(element, VbaRecordFieldKind::FixedArray { .. }) {
+        return Err("VBA record fixed-array element cannot itself be a fixed array".to_string());
+    }
+    Ok(())
+}
+
+fn validate_record_size(size: usize) -> Result<(), String> {
+    if size > MAX_VBA_RECORD_SIZE {
+        return Err(format!(
+            "VBA record layout size {size} exceeds the 64 KiB limit ({MAX_VBA_RECORD_SIZE} bytes)"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_storage_alignment(align: usize) -> Result<(), String> {
+    if align == 0 || !align.is_power_of_two() {
+        return Err(format!(
+            "VBA record field alignment {align} is not a non-zero power of two"
+        ));
+    }
+    if align > core::mem::align_of::<u64>() {
+        return Err(format!(
+            "VBA record field alignment {align} exceeds native buffer alignment {}",
+            core::mem::align_of::<u64>()
+        ));
+    }
+    Ok(())
+}
+
 fn fixed_array_total_len(bounds: &[SafeArrayBound]) -> Result<usize, String> {
     if bounds.is_empty() {
         return Err("VBA fixed-array record field must have at least one dimension".into());
+    }
+    if bounds.len() > MAX_VBA_RECORD_FIXED_ARRAY_RANK {
+        return Err(format!(
+            "VBA fixed-array record field rank {} exceeds the {MAX_VBA_RECORD_FIXED_ARRAY_RANK}-dimension limit",
+            bounds.len()
+        ));
     }
     bounds.iter().try_fold(1usize, |total, bound| {
         if bound.count == 0 {
@@ -1019,15 +1462,26 @@ fn fixed_array_total_len(bounds: &[SafeArrayBound]) -> Result<usize, String> {
     })
 }
 
-fn align_to(value: usize, align: usize) -> usize {
-    debug_assert!(align.is_power_of_two());
-    (value + align - 1) & !(align - 1)
+fn checked_align_to(value: usize, align: usize) -> Result<usize, String> {
+    if align == 0 || !align.is_power_of_two() {
+        return Err(format!(
+            "VBA record alignment {align} is not a non-zero power of two"
+        ));
+    }
+    let mask = align - 1;
+    value
+        .checked_add(mask)
+        .map(|value| value & !mask)
+        .ok_or_else(|| "VBA record layout alignment overflow".to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        VbaRecord, VbaRecordFieldKind as Kind, VbaRecordFieldSpec as Field, VbaRecordLayout,
+        FIELD_POINTER_PROJECTIONS, LAYOUT_FIELD_TABLE_RESERVATIONS,
+        MAX_VBA_RECORD_FIXED_ARRAY_RANK, MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH, MAX_VBA_RECORD_SIZE,
+        RECORD_BUFFER_EVENTS, VbaRecord, VbaRecordFieldHandle, VbaRecordFieldKind as Kind,
+        VbaRecordFieldSpec as Field, VbaRecordLayout, checked_align_to, validate_field_kind_graph,
     };
     use crate::safe_array::SafeArrayBound;
     use crate::{Variant, bstr::BStr};
@@ -1038,6 +1492,361 @@ mod tests {
             lower,
             count: u32::try_from(len).expect("test bound fits u32"),
         }]
+    }
+
+    fn pointer_projection_count() -> usize {
+        FIELD_POINTER_PROJECTIONS.with(core::cell::Cell::get)
+    }
+
+    fn record_buffer_events() -> (usize, usize) {
+        RECORD_BUFFER_EVENTS.with(core::cell::Cell::get)
+    }
+
+    fn layout_field_table_reservations() -> usize {
+        LAYOUT_FIELD_TABLE_RESERVATIONS.with(core::cell::Cell::get)
+    }
+
+    #[test]
+    fn vba_record_layout_sealing_rejects_forged_and_cross_layout_handles_before_projection() {
+        let before_buffers = record_buffer_events();
+        let layout_a = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Value", Kind::Long)]).expect("first layout"),
+        );
+        let layout_b = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Value", Kind::Long)])
+                .expect("structurally equal second layout"),
+        );
+        let mut record = VbaRecord::new_default(layout_a.clone()).expect("record");
+        let other_handle = layout_b.field_handle(0).expect("other handle");
+        let forged_handle = VbaRecordFieldHandle {
+            layout: layout_a.clone(),
+            index: usize::MAX,
+        };
+
+        let before_projection = pointer_projection_count();
+        assert_eq!(
+            record
+                .field_ptr(&other_handle)
+                .expect_err("cross-layout handle"),
+            "record field handle belongs to a different layout"
+        );
+        assert_eq!(pointer_projection_count(), before_projection);
+        assert_eq!(
+            record
+                .field_mut_ptr(&forged_handle)
+                .expect_err("forged index"),
+            format!("record field handle index {} is out of range", usize::MAX)
+        );
+        assert_eq!(pointer_projection_count(), before_projection);
+        assert!(layout_a.field_handle(usize::MAX).is_none());
+
+        let own_handle = record.field_handle(0).expect("own handle");
+        let ptr = record.field_ptr(&own_handle).expect("validated pointer");
+        assert_eq!(ptr as usize % own_handle.align(), 0);
+        assert_eq!(pointer_projection_count(), before_projection + 1);
+
+        drop(record);
+        let after_buffers = record_buffer_events();
+        assert_eq!(after_buffers.0 - before_buffers.0, 1);
+        assert_eq!(after_buffers.1 - before_buffers.1, 1);
+    }
+
+    #[test]
+    fn vba_record_layout_sealing_reuses_same_arc_handle_across_record_lifetimes() {
+        let before_buffers = record_buffer_events();
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Value", Kind::Long)]).expect("layout"),
+        );
+        let mut record_a = VbaRecord::new_default(Arc::clone(&layout)).expect("record A");
+        let mut record_b = VbaRecord::new_default(layout).expect("record B");
+        let handle = record_a.field_handle(0).expect("shared-layout handle");
+
+        record_a
+            .write_field_variant(0, &Variant::from_i32(11))
+            .expect("write A");
+        record_b
+            .write_field_variant(0, &Variant::from_i32(22))
+            .expect("write B");
+        let ptr_a = record_a.field_ptr(&handle).expect("A pointer");
+        let ptr_b = record_b.field_ptr(&handle).expect("B pointer");
+        assert_ne!(ptr_a, ptr_b);
+        assert_eq!(
+            record_a.read_field_variant(0).expect("read A").as_i32(),
+            Some(11)
+        );
+        assert_eq!(
+            record_b.read_field_variant(0).expect("read B").as_i32(),
+            Some(22)
+        );
+
+        drop(record_a);
+        assert_eq!(
+            record_b.field_ptr(&handle).expect("B pointer after A drop"),
+            ptr_b
+        );
+        // SAFETY: `handle` is still bound to record B's exact layout Arc and the
+        // checked projection proves this is its aligned Long field.
+        unsafe {
+            record_b
+                .field_mut_ptr(&handle)
+                .expect("B mutable pointer after A drop")
+                .cast::<i32>()
+                .write(33);
+        }
+        assert_eq!(
+            record_b
+                .read_field_variant(0)
+                .expect("read B after A drop")
+                .as_i32(),
+            Some(33)
+        );
+
+        drop(record_b);
+        drop(handle);
+        let after_buffers = record_buffer_events();
+        assert_eq!(after_buffers.0 - before_buffers.0, 2);
+        assert_eq!(after_buffers.1 - before_buffers.1, 2);
+    }
+
+    #[test]
+    fn vba_record_layout_sealing_rejects_hostile_shape_inputs_before_record_allocation() {
+        let before_buffers = record_buffer_events();
+        let before_projection = pointer_projection_count();
+        let before_field_tables = layout_field_table_reservations();
+
+        assert_eq!(
+            VbaRecordLayout::new(vec![Field::named(
+                "Text",
+                Kind::FixedString { len: usize::MAX },
+            )])
+            .expect_err("fixed string multiplication overflow"),
+            "VBA fixed-string record field size overflow"
+        );
+        assert_eq!(
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::FixedString { len: 0 })])
+                .expect_err("zero-size fixed string"),
+            "VBA fixed-string record field must have at least one character"
+        );
+        assert_eq!(
+            VbaRecordLayout::new(Vec::new()).expect_err("empty layout"),
+            "VBA record layout must contain at least one field"
+        );
+
+        let nested_array = Kind::FixedArray {
+            element: Box::new(Kind::FixedArray {
+                element: Box::new(Kind::Byte),
+                bounds: bounds(0, 2),
+            }),
+            bounds: bounds(0, 2),
+        };
+        assert_eq!(
+            VbaRecordLayout::new(vec![Field::named("Nested", nested_array)])
+                .expect_err("array-of-array shape"),
+            "VBA record fixed-array element cannot itself be a fixed array"
+        );
+
+        let excessive_rank =
+            vec![SafeArrayBound { count: 1, lower: 0 }; MAX_VBA_RECORD_FIXED_ARRAY_RANK + 1];
+        assert_eq!(
+            VbaRecordLayout::new(vec![Field::named(
+                "Values",
+                Kind::FixedArray {
+                    element: Box::new(Kind::Byte),
+                    bounds: excessive_rank,
+                },
+            )])
+            .expect_err("rank limit"),
+            format!(
+                "VBA fixed-array record field rank {} exceeds the {MAX_VBA_RECORD_FIXED_ARRAY_RANK}-dimension limit",
+                MAX_VBA_RECORD_FIXED_ARRAY_RANK + 1
+            )
+        );
+
+        let overflowing_bounds = vec![
+            SafeArrayBound {
+                count: u32::MAX,
+                lower: 0,
+            };
+            3
+        ];
+        assert_eq!(
+            VbaRecordLayout::new(vec![Field::named(
+                "Values",
+                Kind::FixedArray {
+                    element: Box::new(Kind::Byte),
+                    bounds: overflowing_bounds,
+                },
+            )])
+            .expect_err("element-count overflow"),
+            "VBA fixed-array record field size overflow"
+        );
+
+        let over_limit_units = MAX_VBA_RECORD_SIZE / core::mem::size_of::<u16>() + 1;
+        assert!(
+            VbaRecordLayout::new(vec![Field::named(
+                "Text",
+                Kind::FixedString {
+                    len: over_limit_units,
+                },
+            )])
+            .expect_err("64 KiB record limit")
+            .contains("exceeds the 64 KiB limit")
+        );
+        assert_eq!(
+            checked_align_to(usize::MAX, 8).expect_err("alignment overflow"),
+            "VBA record layout alignment overflow"
+        );
+        assert_eq!(
+            checked_align_to(8, 3).expect_err("invalid alignment"),
+            "VBA record alignment 3 is not a non-zero power of two"
+        );
+
+        assert_eq!(pointer_projection_count(), before_projection);
+        assert_eq!(record_buffer_events(), before_buffers);
+        assert_eq!(layout_field_table_reservations(), before_field_tables);
+    }
+
+    #[test]
+    fn vba_record_layout_sealing_enforces_bounded_graph_depth_before_allocation() {
+        let cycle_layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("CycleProbe", Kind::Byte)])
+                .expect("cycle probe layout"),
+        );
+        let mut simulated_ancestors = [core::ptr::null(); MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH];
+        simulated_ancestors[0] = Arc::as_ptr(&cycle_layout);
+        let mut simulated_visits = 0usize;
+        assert_eq!(
+            validate_field_kind_graph(
+                &Kind::Record(cycle_layout),
+                MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH,
+                &mut simulated_ancestors,
+                1,
+                &mut simulated_visits,
+            )
+            .expect_err("simulated recursive layout graph"),
+            "VBA record layout graph contains a recursive record cycle"
+        );
+
+        let mut boundary = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Leaf", Kind::Byte)]).expect("depth-one layout"),
+        );
+        for level in 2..=MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH {
+            boundary = Arc::new(
+                VbaRecordLayout::new(vec![Field::named(
+                    format!("Level{level}"),
+                    Kind::Record(boundary),
+                )])
+                .expect("layout at safety boundary"),
+            );
+        }
+        assert_eq!(boundary.graph_depth(), MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH);
+
+        let before_field_tables = layout_field_table_reservations();
+        let before_buffers = record_buffer_events();
+        let before_projection = pointer_projection_count();
+        assert_eq!(
+            VbaRecordLayout::new(vec![Field::named(
+                "TooDeep",
+                Kind::Record(Arc::clone(&boundary)),
+            )])
+            .expect_err("depth boundary plus one"),
+            format!(
+                "VBA record layout graph depth exceeds the OxVba safety limit of {MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH}"
+            )
+        );
+        assert_eq!(layout_field_table_reservations(), before_field_tables);
+        assert_eq!(record_buffer_events(), before_buffers);
+        assert_eq!(pointer_projection_count(), before_projection);
+
+        let record = VbaRecord::new_default(boundary).expect("boundary record");
+        let handle = record.field_handle(0).expect("boundary field handle");
+        assert!(record.field_ptr(&handle).is_ok());
+        drop(record);
+        drop(handle);
+        let after_buffers = record_buffer_events();
+        assert_eq!(after_buffers.0 - before_buffers.0, 1);
+        assert_eq!(after_buffers.1 - before_buffers.1, 1);
+    }
+
+    #[test]
+    fn vba_record_layout_sealing_preserves_nested_fixed_array_alignment_and_extents() {
+        let before_buffers = record_buffer_events();
+        let inner = Arc::new(
+            VbaRecordLayout::new(vec![
+                Field::named("Tag", Kind::Byte),
+                Field::named("Value", Kind::LongLong),
+            ])
+            .expect("inner layout"),
+        );
+        let outer = Arc::new(
+            VbaRecordLayout::new(vec![
+                Field::named("Prefix", Kind::Byte),
+                Field::named("Nested", Kind::Record(inner.clone())),
+                Field::named(
+                    "Items",
+                    Kind::FixedArray {
+                        element: Box::new(Kind::Record(inner)),
+                        bounds: bounds(-1, 2),
+                    },
+                ),
+                Field::named("Tail", Kind::FixedString { len: 3 }),
+            ])
+            .expect("outer layout"),
+        );
+        let record = VbaRecord::new_default(outer.clone()).expect("outer record");
+
+        let mut prior_end = 0usize;
+        for index in 0..outer.fields().len() {
+            let descriptor = &outer.fields()[index];
+            let handle = record.field_handle(index).expect("field handle");
+            assert_eq!(handle.index(), index);
+            assert_eq!(handle.offset(), descriptor.offset());
+            assert_eq!(handle.size(), descriptor.size());
+            assert_eq!(handle.kind(), descriptor.kind());
+            assert!(handle.offset() >= prior_end);
+            assert_eq!(handle.offset() % handle.align(), 0);
+            assert!(handle.offset() + handle.size() <= outer.size());
+            let ptr = record.field_ptr(&handle).expect("aligned field pointer");
+            assert_eq!(ptr as usize % handle.align(), 0);
+            prior_end = handle.offset() + handle.size();
+        }
+
+        let materialized = record
+            .read_array_field_element(2, 1)
+            .expect("fixed-array read")
+            .expect("fixed-array element");
+        assert!(materialized.as_vba_record().is_some());
+
+        drop(materialized);
+        drop(record);
+        let after_buffers = record_buffer_events();
+        assert_eq!(
+            after_buffers.0 - before_buffers.0,
+            after_buffers.1 - before_buffers.1
+        );
+    }
+
+    #[test]
+    fn vba_record_layout_sealing_allows_maximum_bounded_allocation_and_balances() {
+        let before_buffers = record_buffer_events();
+        let units = MAX_VBA_RECORD_SIZE / core::mem::size_of::<u16>();
+        let layout = Arc::new(
+            VbaRecordLayout::new(vec![Field::named("Text", Kind::FixedString { len: units })])
+                .expect("maximum layout"),
+        );
+        assert_eq!(layout.size(), MAX_VBA_RECORD_SIZE);
+
+        let record = VbaRecord::new_default(layout).expect("bounded fallible allocation");
+        assert_eq!(record.memory_len(), MAX_VBA_RECORD_SIZE);
+        assert_eq!(
+            record.field_bytes(0).expect("field extent").len(),
+            MAX_VBA_RECORD_SIZE
+        );
+        drop(record);
+
+        let after_buffers = record_buffer_events();
+        assert_eq!(after_buffers.0 - before_buffers.0, 1);
+        assert_eq!(after_buffers.1 - before_buffers.1, 1);
     }
 
     #[test]
@@ -1236,15 +2045,24 @@ mod tests {
             .expect("layout"),
         );
         let mut record = VbaRecord::new_default(layout).expect("record");
-        let fields = record.layout().fields().to_vec();
+        let fields = [
+            record.field_handle(0).expect("id field"),
+            record.field_handle(1).expect("bytes field"),
+        ];
 
         // SAFETY: `fields` are this record's own layout fields, so `field_mut_ptr`
         // yields in-bounds slots: a `Long` (i32) slot and a 4-byte fixed-array slot.
         unsafe {
-            record.field_mut_ptr(&fields[0]).cast::<i32>().write(1234);
+            record
+                .field_mut_ptr(&fields[0])
+                .expect("id field pointer")
+                .cast::<i32>()
+                .write(1234);
             core::ptr::copy_nonoverlapping(
                 [1u8, 2, 3, 4].as_ptr(),
-                record.field_mut_ptr(&fields[1]),
+                record
+                    .field_mut_ptr(&fields[1])
+                    .expect("bytes field pointer"),
                 4,
             );
         }
@@ -1403,7 +2221,10 @@ mod tests {
             .expect("layout"),
         );
         let mut record = VbaRecord::new_default(layout).expect("record");
-        let fields = record.layout().fields().to_vec();
+        let fields = [
+            record.field_handle(0).expect("text field"),
+            record.field_handle(1).expect("value field"),
+        ];
         let bstr = BStr::from("alpha");
         let raw_bstr = bstr.clone_raw_bstr().expect("clone bstr");
 
@@ -1413,14 +2234,17 @@ mod tests {
         unsafe {
             record
                 .field_mut_ptr(&fields[0])
+                .expect("text field pointer")
                 .cast::<*mut u16>()
                 .write(raw_bstr);
             record
                 .field_mut_ptr(&fields[1])
+                .expect("value field pointer")
                 .cast::<Variant>()
                 .drop_in_place();
             record
                 .field_mut_ptr(&fields[1])
+                .expect("value field pointer")
                 .cast::<Variant>()
                 .write(Variant::from_string("payload"));
         }
@@ -1428,9 +2252,19 @@ mod tests {
         let clone = record.clone();
         // SAFETY: `fields[0]` is the String slot in both records; read its BSTR
         // carrier pointer (without taking ownership) to compare original vs clone.
-        let original_raw = unsafe { *record.field_ptr(&fields[0]).cast::<*mut u16>() };
+        let original_raw = unsafe {
+            *record
+                .field_ptr(&fields[0])
+                .expect("text field pointer")
+                .cast::<*mut u16>()
+        };
         // SAFETY: same as above, reading the cloned record's String-slot pointer.
-        let clone_raw = unsafe { *clone.field_ptr(&fields[0]).cast::<*mut u16>() };
+        let clone_raw = unsafe {
+            *clone
+                .field_ptr(&fields[0])
+                .expect("clone text field pointer")
+                .cast::<*mut u16>()
+        };
 
         assert!(!original_raw.is_null());
         assert!(!clone_raw.is_null());

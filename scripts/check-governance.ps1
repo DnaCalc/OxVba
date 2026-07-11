@@ -3,6 +3,12 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    Write-Host "[governance] line-endings"
+    & "$PSScriptRoot/validate-line-endings.ps1"
+
+    Write-Host "[governance] line-ending-mutations"
+    & "$PSScriptRoot/test-line-endings.ps1"
+
     Write-Host "[governance] docs-check"
     & "$PSScriptRoot/docs-check.ps1"
 
@@ -32,6 +38,12 @@ try {
 
     Write-Host "[governance] windows-x64-control-surfaces"
     & "$PSScriptRoot/validate-windows-x64-control-surfaces.ps1"
+
+    Write-Host "[governance] windows-x64-fixture-manifest-sync"
+    & "$PSScriptRoot/sync-windows-fixture-manifest.ps1" -Check
+
+    Write-Host "[governance] windows-x64-fixture-manifest"
+    & "$PSScriptRoot/validate-windows-fixture-manifest.ps1"
 
     Write-Host "[governance] contract-clause-disposition"
     & "$PSScriptRoot/validate-contract-clause-disposition.ps1"

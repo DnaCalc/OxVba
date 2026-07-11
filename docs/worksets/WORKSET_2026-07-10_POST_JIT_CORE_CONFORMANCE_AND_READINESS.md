@@ -129,13 +129,33 @@ Deliver:
 
 - cross-platform line-ending policy and stable snapshots;
 - fixture-addressable, process-isolated carrier/resource counters;
-- fix the policy-error BSTR imbalance;
-- repair stale host/JIT diagnostic expectations;
+- fix the policy-error BSTR imbalance and separately balance tracked BSTR
+  ownership transferred through Windows VARIANT pointer projections;
+- seal `VbaRecord` layout arithmetic and field handles, and make all owning
+  record/record-SAFEARRAY mutation transactional under clone failure/unwind;
+- make raw BSTR/SAFEARRAY/Variant borrow projections non-owning and unwind-safe
+  before any fallible clone/read/write operation;
+- make VariantCore pointer-carrier packing and recovery valid under Rust strict
+  provenance for records, BSTRs, objects and SAFEARRAYs, with focused Miri and
+  single-drop balance proof;
+- make partial VariantCore payload initialization unrepresentable to safe
+  callers while preserving the 16-byte ABI, and repair the adjacent VM3
+  foreign-object fixture to derive interface pointers from full allocations;
+- repair stale host/JIT diagnostic expectations and eliminate platform-specific
+  dynamic-COM diagnostic wording from the VM3 golden;
+- adjudicate the VMR05 array-shape fixture against VBA authority, then repair
+  its executable coverage or parser spans so UTF-8 offsets and LF/CRLF
+  provenance are direct-testable rather than incidental golden text;
 - restore strict Clippy and ordinary workspace tests;
 - keep governance/meta checks green under the new authority model;
 - add one versioned cross-platform gate runner with exact commands, environments, timeouts and evidence paths.
 
-First beads: EOL/snapshot gate; balance isolation; policy-error leak; host expectations; Clippy; canonical runner.
+First beads: EOL/snapshot gate; balance isolation; policy-error leak; Windows
+VARIANT-pointer BSTR ownership; `VbaRecord` layout sealing and transactional
+writeback; borrowed-carrier unwind safety; host expectations; Clippy; canonical
+carrier strict-provenance and safe-initialization repairs; VM3 fixture provenance
+audit; runner; VMR05 array-shape parser/provenance adjudication for any residual
+golden drift exposed by the scoped expectation repairs.
 
 Close: Linux and Windows default-parallel/single-thread baselines agree and all ordinary gates are green.
 
@@ -171,6 +191,8 @@ Deliver:
 - `AnalysisMode::Strict`/`AnalysisMode::Editor` fact identity and poison/unknown isolation;
 - one callable-signature model across project/library/host/COM/Declare providers;
 - declared return/parameter/array/UDT/object/interface type preservation;
+- authority- and Excel/VBA-backed UDT and fixed/static-data size diagnostics,
+  including procedure-local and module aggregate boundaries before Core IR;
 - complete ByVal/ByRef/Optional/named/omitted/ParamArray legality/coercion;
 - cross-project public data and equivalent source/OxImage export surfaces;
 - deterministic ambiguity/visibility/Option Private/diamond behavior;
@@ -178,7 +200,7 @@ Deliver:
 - cycle-aware default-member behavior;
 - DefDec and a host-collation contract for Option Compare Database.
 
-First beads: AnalysisResultV1 schema/identity/syntax/scope fact sink; declaration/use-site and typed call facts; `AnalysisMode::Strict`/`AnalysisMode::Editor` parity; typed provider signatures; argument matrix split by scalar/array/UDT/object; public data exports; diagnostic spans; default-member cycles; DefDec/database collation.
+First beads: AnalysisResultV1 schema/identity/syntax/scope fact sink; declaration/use-site and typed call facts; `AnalysisMode::Strict`/`AnalysisMode::Editor` parity; typed provider signatures; argument matrix split by scalar/array/UDT/object; UDT declaration-context size limits; public data exports; diagnostic spans; default-member cycles; DefDec/database collation.
 
 Close: every compiler matrix row is decided once, typed, source-provenanced and consumable by Core IR/language services.
 
@@ -250,12 +272,12 @@ Deliver:
 - shared semantic ownership for error, lifecycle, array, object and call operations;
 - exact, non-narrowing `SafeArray` dimension/layout ownership, with hostile-rank
   rejection and balanced destruction;
-- type-enforced thread ownership for `SafeArray`/`Variant` object carriers,
+- type-enforced thread ownership for `SafeArray`/`Variant`/`VbaRecord` object carriers,
   including final release, termination-queue and Windows apartment handoff;
 - backend-neutral verified project-session API;
 - repeated compile/load/initialize/invoke/reset/drop stability.
 
-First beads: carrier ABI identity; helper catalog; descriptor arena; session-owned metadata; unsafe API audit; `SafeArray` exact dimension/allocation-layout enforcement; `SafeArray` object-carrier thread-ownership enforcement; RAII/panic injection; semantic-kernel extraction tranches; shared session facade after the CORE-4 sealed-handle slice; lifecycle stress.
+First beads: carrier ABI identity; helper catalog; descriptor arena; session-owned metadata; unsafe API audit; `SafeArray` exact dimension/allocation-layout enforcement; `SafeArray`/`Variant`/`VbaRecord` object-carrier thread-ownership enforcement; RAII/panic injection; semantic-kernel extraction tranches; shared session facade after the CORE-4 sealed-handle slice; lifecycle stress.
 
 Close: runtime/helper/session ownership is sound, versioned and bounded with zero balance drift.
 

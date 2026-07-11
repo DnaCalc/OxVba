@@ -1,0 +1,12 @@
+[
+    uuid(47C202E7-AD2A-49D3-9289-45B68A62499D),
+    version(1.0),
+    helpstring("OxVba fixture admission test library")
+]
+library OxVbaFixtureAdmissionLib
+{
+    typedef enum FixtureAdmissionState
+    {
+        FixtureAdmissionReady = 64
+    } FixtureAdmissionState;
+};

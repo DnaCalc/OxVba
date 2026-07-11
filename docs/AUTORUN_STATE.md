@@ -7,13 +7,13 @@ Active program manifest: docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json
 Program root: bd-59co
 Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
-Queue certification: certified — three second-wave leaves are active; the actual ready queue contains exactly the seven remaining current leaves listed below and no stale work.
+Queue certification: certified — three current leaves are active; the actual ready queue contains exactly the seven current leaves listed below and no stale work.
 Claim queue: br ready -l ideal-2026-07 -t task
-Current tasks: `bd-59co.2.2.6` (policy-error BSTR ownership repair), `bd-59co.2.2.13` (HAL strict-Clippy cleanup), and `bd-59co.3.1.4` (controlled x64 fixture manifest/hashes).
-Certified ready queue: `bd-59co.2.2.2`, `bd-59co.2.2.4`, `bd-59co.2.2.7`, `bd-59co.2.2.8`, `bd-59co.3.1.5`, `bd-59co.3.1.6`, and `bd-59co.3.15.4`.
+Current tasks: `bd-59co.2.2.8` (pinned Linux x64 CI environment contract), `bd-59co.2.2.16` (transactional owning VbaRecord writes), and `bd-59co.3.1.5` (owned Windows test-resource policy).
+Certified ready queue: `bd-59co.2.2.3`, `bd-59co.2.2.14`, `bd-59co.2.2.17`, `bd-59co.2.2.18`, `bd-59co.2.2.22`, `bd-59co.3.1.6`, and `bd-59co.3.15.4`.
 Current capacity snapshot: `docs/evidence/programs/ideal-2026-07/capacity/POST_ROLLOUT_CAPACITY_2026-07-11.md` (three agents, source hash `19876d013a3d9d45`).
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
-Last completed tasks: first-wave leaves `bd-2cjy`, `bd-59co.2.2.5`, and `bd-59co.3.1.3` closed after targeted checks, governance/truth reconciliation and independent fresh-eyes review. The SafeArray audit routed dimension-layout and object-thread defects to exact successors `bd-59co.2.7.3` and `bd-59co.2.7.2`; the isolated balance protocol retained policy BSTR cleanup in `bd-59co.2.2.6`; Windows stewardship advanced no capability truth.
+Last completed tasks: `bd-59co.3.1.4` closed support-only after genuine loader-backed x64 PE/TLB admission, controller-owned digest binding, generalized fail-closed MSFT record parsing, 8 positive/54 mutation evidence and clean non-author review; all 57 artifacts/environments remain pending with no capability credit. `bd-59co.2.2.21` remains closed after safe full-payload/non-Send/Sync VariantCore proof and `.4` after the LF/snapshot contract. Exact open successors `.16`, `.18`, `.22`, `.2.4.4`, and `bd-59co.2.7.2` own transactional record writes, VMR05 provenance, VM3 fixture provenance, compiler UDT size/depth limits, and hidden object-carrier thread/apartment transit; no terminal row is closed by these slices.
 
 ## Accepted umbrella and worksets under AutoRun
 

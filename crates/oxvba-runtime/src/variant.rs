@@ -66,25 +66,158 @@ impl VarType {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub union VariantData {
-    pub bytes: [u8; 8],
-    pub i16_val: i16,
-    pub i32_val: i32,
-    pub i64_val: i64,
-    pub f64_val: f64,
-    pub ptr_val: *mut core::ffi::c_void,
+/// Fully initialized eight-byte payload of [`VariantCore`].
+///
+/// This used to be a public union whose short scalar fields allowed safe code
+/// to initialize only one, two, or four bytes. A later safe `data_bytes`,
+/// `Debug`, equality, or wire read then observed the uninitialized tail. The
+/// byte carrier makes that state unrepresentable: every safe constructor writes
+/// all eight bytes.
+///
+/// Downstream code that previously used a union scalar literal should migrate
+/// to the matching `from_*` constructor. Code that owns an exact ABI payload
+/// should use [`Self::from_bytes`].
+///
+/// ```compile_fail
+/// use oxvba_runtime::variant::VariantData;
+///
+/// // The former public short union field no longer exists, so safe external
+/// // code cannot create a payload with six uninitialized trailing bytes.
+/// let _partial = VariantData { i16_val: 7 };
+/// ```
+///
+/// The former union's raw-pointer member also made the carrier neither `Send`
+/// nor `Sync`. The zero-sized marker preserves that safety boundary without
+/// changing layout:
+///
+/// ```compile_fail
+/// use oxvba_runtime::VariantData;
+/// fn require_send<T: Send>() {}
+/// require_send::<VariantData>();
+/// ```
+///
+/// ```compile_fail
+/// use oxvba_runtime::VariantData;
+/// fn require_sync<T: Sync>() {}
+/// require_sync::<VariantData>();
+/// ```
+#[repr(C, align(8))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VariantData {
+    bytes: [u8; 8],
+    not_send_sync: core::marker::PhantomData<*mut core::ffi::c_void>,
 }
 
+impl VariantData {
+    /// Construct a fully initialized raw payload from all eight ABI bytes.
+    ///
+    /// The active carrier contract is simulated x64 little-endian. These bytes
+    /// are initialized but otherwise unvalidated and non-owning: this function
+    /// does not allocate, retain, recover pointer provenance, or make pointer-tag
+    /// bytes safe to dereference. Safe code cannot promote this payload into an
+    /// owning [`Variant`]. Use validated wire decoding for untrusted input; the
+    /// unsafe trusted decoder is the only pointer-recovery route.
+    pub const fn from_bytes(bytes: [u8; 8]) -> Self {
+        Self {
+            bytes,
+            not_send_sync: core::marker::PhantomData,
+        }
+    }
+
+    /// Encode an `i16` into the low two little-endian bytes.
+    ///
+    /// The six unused ABI bytes are zero-filled, not sign-extended. The result
+    /// is an initialized, unvalidated, non-owning raw carrier.
+    pub const fn from_i16(value: i16) -> Self {
+        let value = value.to_le_bytes();
+        Self::from_bytes([value[0], value[1], 0, 0, 0, 0, 0, 0])
+    }
+
+    /// Encode an `i32` into the low four little-endian bytes.
+    ///
+    /// The four unused ABI bytes are zero-filled, not sign-extended. The result
+    /// is an initialized, unvalidated, non-owning raw carrier.
+    pub const fn from_i32(value: i32) -> Self {
+        let value = value.to_le_bytes();
+        Self::from_bytes([value[0], value[1], value[2], value[3], 0, 0, 0, 0])
+    }
+
+    /// Encode an `i64` into all eight simulated-x64 little-endian bytes.
+    ///
+    /// The result is initialized but unvalidated and non-owning.
+    pub const fn from_i64(value: i64) -> Self {
+        Self::from_bytes(value.to_le_bytes())
+    }
+
+    /// Encode an IEEE-754 `f64` into all eight little-endian ABI bytes.
+    ///
+    /// The result is initialized but unvalidated and non-owning.
+    pub const fn from_f64(value: f64) -> Self {
+        Self::from_bytes(value.to_le_bytes())
+    }
+
+    /// Store the exposed address of a process-local pointer in the complete
+    /// x64 byte carrier.
+    ///
+    /// Recovering a dereferenceable pointer later requires the matching Rust
+    /// Exposed Provenance API and a live originating allocation. This method
+    /// only creates the initialized, unvalidated, non-owning ABI bytes; it does
+    /// not extend any lifetime or make the bytes safe to promote into an owning
+    /// [`Variant`].
+    pub fn from_exposed_pointer<T>(pointer: *const T) -> Self {
+        let address = u64::try_from(pointer.expose_provenance())
+            .expect("Variant pointer address must fit the x64 carrier");
+        Self::from_bytes(address.to_le_bytes())
+    }
+
+    pub const fn bytes(self) -> [u8; 8] {
+        self.bytes
+    }
+}
+
+/// Exact 16-byte VBA/COM-shaped Variant core.
+///
+/// The fields are private so safe downstream code must use fully initialized
+/// constructors. This changes only Rust source access: `repr(C)`, size,
+/// alignment, offsets, and byte representation remain unchanged. Direct field
+/// construction migrates to [`Self::from_parts`], and reads migrate to the
+/// accessors below.
+///
+/// ```compile_fail
+/// use oxvba_runtime::{VarType, VariantCore};
+/// use oxvba_runtime::variant::VariantData;
+///
+/// // Direct field construction is intentionally sealed at the safe boundary.
+/// let _core = VariantCore {
+///     vtype: VarType::Integer,
+///     reserved1: 0,
+///     reserved2: 0,
+///     reserved3: 0,
+///     data: VariantData::from_i16(7),
+/// };
+/// ```
+///
+/// `VariantCore` retains the former union's cross-thread ownership boundary:
+///
+/// ```compile_fail
+/// use oxvba_runtime::VariantCore;
+/// fn require_send<T: Send>() {}
+/// require_send::<VariantCore>();
+/// ```
+///
+/// ```compile_fail
+/// use oxvba_runtime::VariantCore;
+/// fn require_sync<T: Sync>() {}
+/// require_sync::<VariantCore>();
+/// ```
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct VariantCore {
-    pub vtype: VarType,
-    pub reserved1: u16,
-    pub reserved2: u16,
-    pub reserved3: u16,
-    pub data: VariantData,
+    vtype: VarType,
+    reserved1: u16,
+    reserved2: u16,
+    reserved3: u16,
+    data: VariantData,
 }
 
 impl core::fmt::Debug for VariantCore {
@@ -112,21 +245,63 @@ impl PartialEq for VariantCore {
 impl Eq for VariantCore {}
 
 impl VariantCore {
-    fn from_bytes(vtype: VarType, bytes: [u8; 8]) -> Self {
+    /// Construct a fully initialized raw core with zero reserved words.
+    ///
+    /// `bytes` use the simulated x64 little-endian carrier representation. The
+    /// result is initialized but unvalidated and non-owning; tag/payload
+    /// canonicality is not checked, and pointer-looking bytes gain no lifetime,
+    /// provenance, or ownership. Safe downstream code cannot turn this core into
+    /// an owning/dereferenceable [`Variant`]. Use [`Self::from_wire_bytes`] to
+    /// validate untrusted raw cores; pointer-bearing owning recovery is only via
+    /// unsafe [`Variant::from_trusted_wire_bytes`].
+    pub const fn from_bytes(vtype: VarType, bytes: [u8; 8]) -> Self {
+        Self::from_parts(vtype, 0, 0, 0, bytes)
+    }
+
+    /// Construct a fully initialized raw core with explicit header words.
+    ///
+    /// This is the documented source migration for direct field construction,
+    /// not an untrusted decoder. All bytes are initialized in simulated x64
+    /// little-endian form, but noncanonical reserved words, tag/payload pairs,
+    /// and pointer addresses are deliberately not validated. The returned Copy
+    /// carrier is non-owning and cannot be safely promoted to an owning
+    /// [`Variant`]. Use [`Self::from_wire_bytes`] for untrusted validation and
+    /// unsafe [`Variant::from_trusted_wire_bytes`] only when its live-pointer
+    /// preconditions hold.
+    pub const fn from_parts(
+        vtype: VarType,
+        reserved1: u16,
+        reserved2: u16,
+        reserved3: u16,
+        bytes: [u8; 8],
+    ) -> Self {
         Self {
             vtype,
-            reserved1: 0,
-            reserved2: 0,
-            reserved3: 0,
-            data: VariantData { bytes },
+            reserved1,
+            reserved2,
+            reserved3,
+            data: VariantData::from_bytes(bytes),
         }
     }
 
-    pub fn data_bytes(&self) -> [u8; 8] {
-        // SAFETY: every `VariantData` in the workspace is constructed through its full
-        // 8-byte `bytes` field (`from_bytes`, `from_wire_bytes`, `from_decimal96`), so all
-        // 8 bytes are initialized, and any bit pattern is a valid `[u8; 8]`.
-        unsafe { self.data.bytes }
+    pub const fn vtype(&self) -> VarType {
+        self.vtype
+    }
+
+    pub const fn reserved1(&self) -> u16 {
+        self.reserved1
+    }
+
+    pub const fn reserved2(&self) -> u16 {
+        self.reserved2
+    }
+
+    pub const fn reserved3(&self) -> u16 {
+        self.reserved3
+    }
+
+    pub const fn data_bytes(&self) -> [u8; 8] {
+        self.data.bytes()
     }
 
     pub fn to_wire_bytes(&self) -> [u8; 16] {
@@ -139,6 +314,12 @@ impl VariantCore {
         out
     }
 
+    /// Decode an untrusted raw core after validating its tag and reserved-word
+    /// shape.
+    ///
+    /// The result is still a non-owning byte carrier. Pointer payloads are not
+    /// recovered or dereferenced here; safe owning [`Variant`] admission rejects
+    /// them, while trusted live-pointer recovery is explicitly unsafe.
     pub fn from_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
         let vtype_raw = u16::from_le_bytes([bytes[0], bytes[1]]);
         let Some(vtype) = VarType::from_u16(vtype_raw) else {
@@ -154,26 +335,37 @@ impl VariantCore {
                 "malformed VARIANT wire bytes: non-zero reserved words for {vtype:?}"
             ));
         }
-        Ok(Self {
-            vtype,
-            reserved1,
-            reserved2,
-            reserved3,
-            data: VariantData { bytes: payload },
-        })
+        Ok(Self::from_parts(
+            vtype, reserved1, reserved2, reserved3, payload,
+        ))
     }
 }
 
+fn exposed_pointer_to_bytes<T>(ptr: *const T) -> [u8; 8] {
+    // `VariantCore` deliberately carries the x64 address representation as eight
+    // bytes. Exposing provenance here records that a later
+    // `with_exposed_provenance` recovery may use this allocation's provenance. The
+    // owning Variant must keep the allocation/reference live between these calls.
+    u64::try_from(ptr.expose_provenance())
+        .expect("Variant pointer address must fit the x64 carrier")
+        .to_le_bytes()
+}
+
+fn exposed_pointer_address(bytes: [u8; 8]) -> usize {
+    usize::try_from(u64::from_le_bytes(bytes))
+        .expect("Variant x64 pointer carrier must fit the target address space")
+}
+
 fn raw_bstr_ptr_to_bytes(ptr: *mut u16) -> [u8; 8] {
-    (ptr as usize as u64).to_le_bytes()
+    exposed_pointer_to_bytes(ptr.cast_const())
 }
 
 fn raw_iunknown_ptr_to_bytes(ptr: *mut RawRuntimeIUnknown) -> [u8; 8] {
-    (ptr as usize as u64).to_le_bytes()
+    exposed_pointer_to_bytes(ptr.cast_const())
 }
 
 fn raw_safearray_ptr_to_bytes(ptr: *mut core::ffi::c_void) -> [u8; 8] {
-    (ptr as usize as u64).to_le_bytes()
+    exposed_pointer_to_bytes(ptr.cast_const())
 }
 
 #[derive(Debug)]
@@ -192,23 +384,23 @@ impl RecordPayload {
 }
 
 fn raw_record_payload_ptr_to_bytes(ptr: *const RecordPayload) -> [u8; 8] {
-    (ptr as usize as u64).to_le_bytes()
+    exposed_pointer_to_bytes(ptr)
 }
 
 fn bytes_to_raw_bstr(bytes: [u8; 8]) -> *mut u16 {
-    u64::from_le_bytes(bytes) as usize as *mut u16
+    core::ptr::with_exposed_provenance_mut(exposed_pointer_address(bytes))
 }
 
 fn bytes_to_raw_iunknown(bytes: [u8; 8]) -> *mut RawRuntimeIUnknown {
-    u64::from_le_bytes(bytes) as usize as *mut RawRuntimeIUnknown
+    core::ptr::with_exposed_provenance_mut(exposed_pointer_address(bytes))
 }
 
 fn bytes_to_raw_safearray(bytes: [u8; 8]) -> *mut core::ffi::c_void {
-    u64::from_le_bytes(bytes) as usize as *mut core::ffi::c_void
+    core::ptr::with_exposed_provenance_mut(exposed_pointer_address(bytes))
 }
 
 fn bytes_to_raw_record_payload(bytes: [u8; 8]) -> *const RecordPayload {
-    u64::from_le_bytes(bytes) as usize as *const RecordPayload
+    core::ptr::with_exposed_provenance(exposed_pointer_address(bytes))
 }
 
 fn alloc_raw_bstr_from_bstr(text: &BStr) -> Result<*mut u16, String> {
@@ -225,6 +417,23 @@ unsafe fn raw_bstr_to_bstr(ptr: *mut u16) -> BStr {
     cloned
 }
 
+/// Owning runtime Variant.
+///
+/// Runtime values retain their historical single-thread ownership boundary.
+/// Cross-thread object/carrier transfer requires an explicit, reviewed runtime
+/// protocol rather than an accidental auto-trait derived from scalar payloads.
+///
+/// ```compile_fail
+/// use oxvba_runtime::Variant;
+/// fn require_send<T: Send>() {}
+/// require_send::<Variant>();
+/// ```
+///
+/// ```compile_fail
+/// use oxvba_runtime::Variant;
+/// fn require_sync<T: Sync>() {}
+/// require_sync::<Variant>();
+/// ```
 #[repr(transparent)]
 pub struct Variant {
     core: VariantCore,
@@ -240,17 +449,22 @@ impl Variant {
     }
 
     pub fn unallocated_array(element_vartype: u16) -> Self {
-        let mut core = VariantCore::from_bytes(VarType::ArrayVariant, [0; 8]);
-        core.reserved1 = if element_vartype == 0 {
+        let element_vartype = if element_vartype == 0 {
             VT_VARIANT_VALUE
         } else {
             element_vartype
         };
-        Self::from_core(core)
+        Self::from_core(VariantCore::from_parts(
+            VarType::ArrayVariant,
+            element_vartype,
+            0,
+            0,
+            [0; 8],
+        ))
     }
 
     pub fn vtype(&self) -> VarType {
-        self.core.vtype
+        self.core.vtype()
     }
 
     pub fn core(&self) -> VariantCore {
@@ -258,15 +472,15 @@ impl Variant {
     }
 
     pub fn reserved1(&self) -> u16 {
-        self.core.reserved1
+        self.core.reserved1()
     }
 
     pub fn reserved2(&self) -> u16 {
-        self.core.reserved2
+        self.core.reserved2()
     }
 
     pub fn reserved3(&self) -> u16 {
-        self.core.reserved3
+        self.core.reserved3()
     }
 
     pub fn data_bytes(&self) -> [u8; 8] {
@@ -288,6 +502,12 @@ impl Variant {
         self.core.to_wire_bytes()
     }
 
+    /// Decode an untrusted wire value into an owning Variant when no process-local
+    /// pointer carrier is involved.
+    ///
+    /// String, Object, ArrayVariant, and Record tags are rejected even when their
+    /// address bytes are zero. Callers with a live process-local source must use
+    /// [`Self::from_trusted_wire_bytes`] and satisfy its unsafe preconditions.
     pub fn from_wire_bytes(bytes: [u8; 16]) -> Result<Self, String> {
         let core = VariantCore::from_wire_bytes(bytes)?;
         match core.vtype {
@@ -467,13 +687,13 @@ impl Variant {
         let mut bytes = [0u8; 8];
         bytes[0..4].copy_from_slice(&value.lo.to_le_bytes());
         bytes[4..8].copy_from_slice(&value.mid.to_le_bytes());
-        Self::from_core(VariantCore {
-            vtype: VarType::Decimal,
-            reserved1: value.scale_sign,
-            reserved2: (value.hi & 0xFFFF) as u16,
-            reserved3: (value.hi >> 16) as u16,
-            data: VariantData { bytes },
-        })
+        Self::from_core(VariantCore::from_parts(
+            VarType::Decimal,
+            value.scale_sign,
+            (value.hi & 0xFFFF) as u16,
+            (value.hi >> 16) as u16,
+            bytes,
+        ))
     }
 
     pub fn as_decimal96(&self) -> Option<Decimal96> {
@@ -1344,11 +1564,15 @@ mod tests {
             .expect("layout"),
         );
         let mut record = VbaRecord::new_default(layout).expect("record");
-        let field = record.layout().fields()[0].clone();
+        let field = record.field_handle(0).expect("record field handle");
         // SAFETY: `field` is this record's own `Long` field, so `field_mut_ptr` yields
         // an in-bounds, `i32`-aligned slot to overwrite.
         unsafe {
-            record.field_mut_ptr(&field).cast::<i32>().write(41);
+            record
+                .field_mut_ptr(&field)
+                .expect("record field pointer")
+                .cast::<i32>()
+                .write(41);
         }
         let original = Variant::from_vba_record(record);
         let cloned = original.clone();

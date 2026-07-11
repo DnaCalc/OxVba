@@ -4,7 +4,7 @@
 use crate::model::ComInvocationStrategy;
 use crate::{
     error::{HalError, HalResult},
-    model::CapabilityId,
+    model::{CapabilityId, HalProfileId},
     traits::{
         ComHal, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest,
         TypeLibResolvedIdentity,
@@ -17,16 +17,32 @@ use oxvba_com::WindowsComBridgeDispatchError;
 use oxvba_com::{
     ComCallbackPayload, ComCallbackToken, ComInvokeRequest, ComMemberToken, ComObjectDescriptor,
     ComObjectTransportKind, ComSubscriptionToken, DynamicCallKind, DynamicCallRequest,
-    DynamicMemberSelector, build_typelib_metadata, known_typelib_identity_for_prog_id_name,
+    DynamicMemberSelector, known_typelib_identity_for_prog_id_name,
     legacy_runtime_arg_values as com_legacy_runtime_arg_values,
-    member_token_and_spec_from_typelib_metadata_name,
     platform::portable::{PortableDispatch, PortableObjectResult},
+};
+#[cfg(not(target_os = "windows"))]
+use oxvba_com::{
+    build_typelib_metadata, member_token_and_spec_from_typelib_metadata_name,
     resolve_typelib_identity_for_prog_id_name,
 };
 use oxvba_runtime::{ObjectRef, VarType, Variant, variant_to_vba_string};
 use std::sync::Arc;
 
 use super::StandardHostServices;
+
+const DYNAMIC_NAME_UNRESOLVED_LABEL: &str = "COM-E-DYNAMIC-NAME-UNRESOLVED";
+
+fn dynamic_member_name_unresolved(profile: HalProfileId, name: &str) -> HalError {
+    HalError::adapter_fault(
+        profile,
+        CapabilityId::ComActivationDispatch,
+        "dispatch_invoke",
+        format!(
+            "{DYNAMIC_NAME_UNRESOLVED_LABEL}: dynamic member name `{name}` requires authoritative metadata resolution before COM lowering"
+        ),
+    )
+}
 
 /// A `GetObject` argument as an optional, trimmed, non-empty class/ProgID string. An
 /// `Empty`/`Null`/`Error` (omitted) variant — or a blank string — yields `None`.
@@ -132,6 +148,7 @@ fn portable_dispatch_for_object(
     Ok(state.portable_objects_by_handle.get(&object.raw()).cloned())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn projection_member_token_by_name(
     host: &StandardHostServices,
     object: &ObjectRef,
@@ -745,14 +762,7 @@ impl ComHal for StandardHostServices {
                             invoke_kind_hint: request.call_kind_hint.map(Into::into),
                         }
                     } else {
-                        return Err(HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "dispatch_invoke",
-                            format!(
-                                "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` did not resolve through authoritative object metadata"
-                            ),
-                        ));
+                        return Err(dynamic_member_name_unresolved(self.profile, name));
                     }
                 }
                 #[cfg(not(target_os = "windows"))]
@@ -767,14 +777,7 @@ impl ComHal for StandardHostServices {
                             invoke_kind_hint: request.call_kind_hint.map(Into::into),
                         }
                     } else {
-                        return Err(HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "dispatch_invoke",
-                            format!(
-                                "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` requires authoritative metadata resolution before COM lowering"
-                            ),
-                        ));
+                        return Err(dynamic_member_name_unresolved(self.profile, name));
                     }
                 }
             }
@@ -833,14 +836,7 @@ impl ComHal for StandardHostServices {
                             invoke_kind_hint: request.call_kind_hint.map(Into::into),
                         }
                     } else {
-                        return Err(HalError::adapter_fault(
-                            self.profile,
-                            capability,
-                            "dispatch_invoke",
-                            format!(
-                                "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `{name}` did not resolve through authoritative object metadata"
-                            ),
-                        ));
+                        return Err(dynamic_member_name_unresolved(self.profile, name));
                     }
                 }
                 DynamicMemberSelector::Token(_)
@@ -1256,5 +1252,47 @@ impl ComHal for StandardHostServices {
         {
             (0, 0)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DYNAMIC_NAME_UNRESOLVED_LABEL, dynamic_member_name_unresolved};
+    use crate::{
+        error::HalErrorKind,
+        model::{CapabilityId, HalProfileId},
+    };
+
+    #[test]
+    fn dynamic_member_name_unresolved_diagnostic_is_stable() {
+        let error = dynamic_member_name_unresolved(HalProfileId::Linux, "Visible");
+
+        assert_eq!(error.kind, HalErrorKind::AdapterFault);
+        assert_eq!(error.stable_code, "HAL-E-ADAPTER-FAULT");
+        assert_eq!(error.profile, HalProfileId::Linux);
+        assert_eq!(error.capability, CapabilityId::ComActivationDispatch);
+        assert_eq!(error.operation, "dispatch_invoke");
+        assert_eq!(error.host_error_code, None);
+        assert_eq!(
+            error.message,
+            "COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `Visible` requires authoritative metadata resolution before COM lowering"
+        );
+
+        let diagnostic = error.to_diagnostic();
+        assert_eq!(diagnostic.code.as_str(), "HAL-E-ADAPTER-FAULT");
+        assert_eq!(diagnostic.message, error.message);
+        assert!(
+            diagnostic
+                .message
+                .starts_with(DYNAMIC_NAME_UNRESOLVED_LABEL)
+        );
+        assert_eq!(
+            diagnostic.metadata.get("capability").map(String::as_str),
+            Some("ComActivationDispatch")
+        );
+        assert_eq!(
+            diagnostic.metadata.get("operation").map(String::as_str),
+            Some("dispatch_invoke")
+        );
     }
 }

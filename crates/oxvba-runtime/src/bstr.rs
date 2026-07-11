@@ -1,11 +1,11 @@
 use core::ptr::NonNull;
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(miri)))]
 use windows_sys::Win32::Foundation::{
     SysAllocStringByteLen, SysAllocStringLen, SysFreeString, SysStringByteLen,
 };
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(not(target_os = "windows"), miri))]
 const BSTR_PREFIX_BYTES: usize = core::mem::size_of::<u32>();
 const BSTR_UNIT_BYTES: usize = core::mem::size_of::<u16>();
 
@@ -251,7 +251,7 @@ impl core::fmt::Display for BStr {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(not(target_os = "windows"), miri))]
 fn raw_bstr_layout_bytes(len_bytes: usize) -> Result<std::alloc::Layout, String> {
     let payload_bytes = len_bytes
         .checked_add(BSTR_UNIT_BYTES)
@@ -264,7 +264,7 @@ fn raw_bstr_layout_bytes(len_bytes: usize) -> Result<std::alloc::Layout, String>
 }
 
 fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", not(miri)))]
     {
         let len = u32::try_from(units.len())
             .map_err(|_| "BSTR payload length should fit in u32 code-unit count".to_string())?;
@@ -278,7 +278,7 @@ fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
         crate::live_counters::bstr_allocated();
         Ok(raw.cast_mut())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(not(target_os = "windows"), miri))]
     {
         let len_bytes = units
             .len()
@@ -295,7 +295,7 @@ fn alloc_raw_bstr_from_units(units: &[u16]) -> Result<*mut u16, String> {
 fn alloc_raw_bstr_from_bytes(bytes: &[u8]) -> Result<*mut u16, String> {
     let len_bytes = u32::try_from(bytes.len())
         .map_err(|_| "BSTR payload length should fit in u32 byte count".to_string())?;
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", not(miri)))]
     {
         // SAFETY: `bytes` is a live slice and `len_bytes` was checked above to equal
         // `bytes.len()`, so SysAllocStringByteLen copies exactly that many initialized
@@ -307,7 +307,7 @@ fn alloc_raw_bstr_from_bytes(bytes: &[u8]) -> Result<*mut u16, String> {
         crate::live_counters::bstr_allocated();
         Ok(raw.cast_mut())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(not(target_os = "windows"), miri))]
     {
         let layout = raw_bstr_layout_bytes(bytes.len())?;
         // SAFETY: `layout` from `raw_bstr_layout_bytes` always has non-zero size (the
@@ -337,13 +337,13 @@ unsafe fn raw_bstr_len_bytes(ptr: *mut u16) -> u32 {
     if ptr.is_null() {
         return 0;
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", not(miri)))]
     {
         // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at
         // a live BSTR, so SysStringByteLen may read its 4-byte byte-length prefix.
         unsafe { SysStringByteLen(ptr) }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(not(target_os = "windows"), miri))]
     {
         // SAFETY: per this fn's contract, the non-null `ptr` is the payload pointer of a
         // live allocation from `alloc_raw_bstr_from_units`, whose base sits
@@ -382,13 +382,13 @@ unsafe fn free_raw_bstr(ptr: *mut u16) {
         return;
     }
     crate::live_counters::bstr_freed();
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", not(miri)))]
     {
         // SAFETY: `ptr` was checked non-null above and, per this fn's contract, the caller
         // transfers ownership of a live Sys-allocated BSTR, so it is freed exactly once.
         unsafe { SysFreeString(ptr) };
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(not(target_os = "windows"), miri))]
     {
         // SAFETY: `ptr` was checked non-null above and, per this fn's contract, points at
         // a live BSTR payload, so its length prefix is readable.

@@ -166,6 +166,29 @@ fn assert_clean_fixture(report: &BalanceFixtureReport) {
     );
 }
 
+fn assert_policy_fixture(report: &BalanceFixtureReport) {
+    assert_eq!(
+        report.result.completion,
+        FixtureCompletion::Raised,
+        "{report:?}"
+    );
+    assert_eq!(
+        report.full_err,
+        FullErrObservation {
+            number: 5,
+            source: "VBAProject".to_string(),
+            description: "operation blocked by host policy".to_string(),
+            last_dll_error: 0,
+        },
+        "host-policy fixture did not retain the full policy error"
+    );
+    assert_eq!(report.result.message.as_deref(), Some("VBA error 5"));
+    assert!(
+        report.carrier_deltas.is_zero(),
+        "host-policy fixture carrier imbalance: {report:?}"
+    );
+}
+
 #[test]
 fn balance_fixture_subprocess_protocol() {
     let reports: BTreeMap<_, _> = ALL_BALANCE_FIXTURES
@@ -205,41 +228,7 @@ fn balance_fixture_subprocess_protocol() {
     let policy = reports
         .get(POLICY_ERROR_BALANCE_FIXTURE)
         .expect("host-policy fixture report");
-    assert_eq!(
-        policy.result.completion,
-        FixtureCompletion::Raised,
-        "{policy:?}"
-    );
-    assert_eq!(policy.full_err.number, 5, "{policy:?}");
-    assert_eq!(
-        policy.full_err,
-        FullErrObservation {
-            number: 5,
-            source: "VBAProject".to_string(),
-            description: "operation blocked by host policy".to_string(),
-            last_dll_error: 0,
-        },
-        "host-policy fixture did not retain the full policy error"
-    );
-    assert_eq!(policy.result.message.as_deref(), Some("VBA error 5"));
-    assert_eq!(
-        policy.carrier_deltas.object_boxes, 0,
-        "host-policy fixture object delta changed: {policy:?}"
-    );
-    assert_eq!(
-        policy.carrier_deltas.safearrays, 0,
-        "host-policy fixture SAFEARRAY delta changed: {policy:?}"
-    );
-    assert_eq!(
-        policy.carrier_deltas.record_buffers, 0,
-        "host-policy fixture record delta changed: {policy:?}"
-    );
-    // bd-59co.2.2.6 owns the known policy-error BSTR leak. This bead deliberately
-    // characterizes it through the new isolated protocol instead of repairing it.
-    assert_eq!(
-        policy.carrier_deltas.bstrs, 1,
-        "host-policy BSTR residual changed; bd-59co.2.2.6 must adjudicate it: {policy:?}"
-    );
+    assert_policy_fixture(policy);
 
     let unknown = "missing-fixture";
     let output = invoke_fixture_child(unknown);
@@ -251,6 +240,41 @@ fn balance_fixture_subprocess_protocol() {
     assert!(
         stderr.contains(unknown),
         "unknown-fixture failure omitted its identity: {stderr}"
+    );
+}
+
+#[test]
+fn policy_error_bstr_balance() {
+    const REPEATS: usize = 4;
+
+    let serial: Vec<_> = (0..REPEATS)
+        .map(|_| run_fixture_child(POLICY_ERROR_BALANCE_FIXTURE))
+        .collect();
+    for report in &serial {
+        assert_policy_fixture(report);
+    }
+
+    let barrier = Arc::new(Barrier::new(REPEATS));
+    let children: Vec<_> = (0..REPEATS)
+        .map(|_| {
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                run_fixture_child(POLICY_ERROR_BALANCE_FIXTURE)
+            })
+        })
+        .collect();
+    let parallel: Vec<_> = children
+        .into_iter()
+        .map(|child| child.join().expect("policy balance worker panicked"))
+        .collect();
+    for report in &parallel {
+        assert_policy_fixture(report);
+    }
+    assert!(
+        serial.iter().all(|report| report == &serial[0])
+            && parallel.iter().all(|report| report == &serial[0]),
+        "repeated and concurrent host-policy reports diverged"
     );
 }
 

@@ -24,6 +24,7 @@ Record explicit planning-stage open questions for the 407..v416 early-binding w
 
 ## Closure Criteria
 
-Questions can move to esolved when:
+Questions can move to
+esolved when:
 - a normative source anchor is added, or
 - an implementation-defined policy is approved and documented with executable conformance expectations.

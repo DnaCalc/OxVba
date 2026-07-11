@@ -391,11 +391,18 @@ fn record_payload_offset(layout: &VbaRecordLayout, index: usize) -> usize {
 }
 
 fn raw_iunknown_ptr_to_bytes(ptr: *mut RawRuntimeIUnknown) -> [u8; 8] {
-    (ptr as usize as u64).to_le_bytes()
+    // Dispatch/Unknown SAFEARRAY elements have an exact eight-byte x64 pointer
+    // carrier. Explicit exposure permits recovery after the representation is
+    // copied as bytes, while the array's retained reference keeps the object live.
+    u64::try_from(ptr.expose_provenance())
+        .expect("SAFEARRAY object address must fit the x64 carrier")
+        .to_le_bytes()
 }
 
 fn bytes_to_raw_iunknown(bytes: [u8; 8]) -> *mut RawRuntimeIUnknown {
-    u64::from_le_bytes(bytes) as usize as *mut RawRuntimeIUnknown
+    let address = usize::try_from(u64::from_le_bytes(bytes))
+        .expect("SAFEARRAY x64 object carrier must fit the target address space");
+    core::ptr::with_exposed_provenance_mut(address)
 }
 
 fn variant_i64(value: &Variant) -> Result<i64, String> {
@@ -2136,9 +2143,13 @@ mod tests {
         );
         let make_record = |value: i32| {
             let mut record = VbaRecord::new_default(layout.clone()).expect("record");
-            let field = record.layout().fields()[0].clone();
+            let field = record.field_handle(0).expect("record field handle");
             unsafe {
-                record.field_mut_ptr(&field).cast::<i32>().write(value);
+                record
+                    .field_mut_ptr(&field)
+                    .expect("record field pointer")
+                    .cast::<i32>()
+                    .write(value);
             }
             record
         };

@@ -828,14 +828,14 @@ pub fn retained_parked_termination_object(instance_id: i32) -> Option<ObjectRef>
         // SAFETY: `owner` came from the `parked` map, which owns the box that `compat_release`
         // parked instead of freeing — it stays allocated until `finish_pending_termination` or
         // `reset_pending_terminations` removes it — so this is a live `CompatObjectBase`.
-        // `compat_add_ref` retains it for the returned `ObjectRef`, and the `unknown` field
-        // pointer projected from the non-null box pointer cannot be null.
+        // `compat_add_ref` retains it for the returned `ObjectRef`. `CompatObjectBase` is
+        // `repr(C)` with `unknown` first, so casting the allocation pointer yields that same
+        // address while retaining provenance for the complete box (needed by AddRef/Release).
         unsafe {
             (*owner).running_termination.set(true);
-            compat_add_ref((&mut (*owner).unknown as *mut RawRuntimeIUnknown).cast());
-            Some(ObjectRef(NonNull::new_unchecked(
-                &mut (*owner).unknown as *mut RawRuntimeIUnknown,
-            )))
+            let unknown = owner.cast::<RawRuntimeIUnknown>();
+            compat_add_ref(unknown.cast());
+            Some(ObjectRef(NonNull::new_unchecked(unknown)))
         }
     })
 }
@@ -1057,10 +1057,11 @@ impl ObjectRef {
         });
         let raw = Box::into_raw(boxed);
         crate::live_counters::object_box_allocated();
-        // SAFETY: `raw` came from `Box::into_raw` of the freshly allocated `CompatObjectBase`
-        // above, so projecting a pointer to its first field (`unknown`) is in-bounds and
-        // non-null; the box stays alive until the refcount started at 1 here drains to zero.
-        let unknown = unsafe { &mut (*raw).unknown as *mut RawRuntimeIUnknown };
+        // `raw` came from `Box::into_raw` of the freshly allocated `CompatObjectBase` above.
+        // `repr(C)` puts `unknown` first, so this cast has the field's exact address while
+        // retaining provenance for the complete allocation; AddRef/Release need that full-box
+        // provenance when they recover `CompatObjectBase` and touch the adjacent refcount.
+        let unknown = raw.cast::<RawRuntimeIUnknown>();
         Self(NonNull::new(unknown).expect("compat object unknown pointer must be non-null"))
     }
 
@@ -2556,8 +2557,11 @@ mod tests {
             ref_count: AtomicU32::new(1),
         });
         let raw = Box::into_raw(boxed);
+        // SAFETY: `FakeForeignObject` is `repr(C)` with `unknown` first. Casting the
+        // allocation pointer preserves full-object provenance needed by the fake vtable's
+        // adjacent refcount access, and ownership transfers to the returned ObjectRef.
         unsafe {
-            ObjectRef::from_raw_iunknown_owned(&mut (*raw).unknown as *mut RawRuntimeIUnknown)
+            ObjectRef::from_raw_iunknown_owned(raw.cast::<RawRuntimeIUnknown>())
                 .expect("fake foreign object pointer is non-null")
         }
     }

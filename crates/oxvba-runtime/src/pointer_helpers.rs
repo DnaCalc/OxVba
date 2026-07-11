@@ -39,52 +39,39 @@ const VT_UINT: u16 = 23;
 #[derive(Debug)]
 // Pointer helpers expose real Windows BSTR cells by cloning the canonical
 // runtime BSTR payload.
-struct OwnedBstr(BSTR);
+struct OwnedBstr(Option<BStr>);
 
 #[cfg(target_os = "windows")]
 impl OwnedBstr {
     fn from_bstr(text: &BStr) -> Result<Self, String> {
-        let bstr = text.clone_raw_bstr()?;
-        if bstr.is_null() {
-            return Ok(Self(std::ptr::null_mut()));
+        if text.raw_bstr().is_null() {
+            return Ok(Self(None));
         }
-        Ok(Self(bstr))
+        Ok(Self(Some(BStr::from_bytes(text.payload_bytes())?)))
     }
 
     fn from_text(text: &str) -> Result<Self, String> {
-        Self::from_bstr(&BStr::from(text))
+        Ok(Self(Some(BStr::from(text))))
     }
 
     fn as_ptr(&self) -> *mut c_void {
-        self.0.cast_mut().cast()
+        self.raw_bstr().cast_mut().cast()
     }
 
-    fn into_raw(self) -> BSTR {
-        let raw = self.0;
-        std::mem::forget(self);
+    fn raw_bstr(&self) -> BSTR {
+        self.0
+            .as_ref()
+            .map(BStr::raw_bstr)
+            .unwrap_or(std::ptr::null_mut())
+    }
+
+    fn into_raw(mut self) -> BSTR {
+        let Some(value) = self.0.take() else {
+            return std::ptr::null_mut();
+        };
+        let raw = value.raw_bstr();
+        std::mem::forget(value);
         raw
-    }
-}
-
-#[cfg(target_os = "windows")]
-// SAFETY: `OwnedBstr` exclusively owns its BSTR (a fresh `clone_raw_bstr`
-// allocation; `into_raw` forgets `self` before transferring ownership). A BSTR
-// is a plain OLE-heap allocation with no thread affinity, and `SysFreeString`
-// may be called from any thread, so moving the sole owner across threads (as
-// the global `Mutex<PointerRegistry>` requires) is sound.
-unsafe impl Send for OwnedBstr {}
-
-#[cfg(target_os = "windows")]
-impl Drop for OwnedBstr {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            // SAFETY: `self.0` was checked non-null above and is a live BSTR
-            // allocated by `clone_raw_bstr`; this wrapper is its only owner
-            // (`into_raw` forgets `self` before handing the pointer away, so
-            // a transferred BSTR never reaches this Drop), making this the
-            // single free of the allocation.
-            unsafe { SysFreeString(self.0) };
-        }
     }
 }
 
@@ -94,13 +81,18 @@ impl Drop for OwnedBstr {
 // the cell itself and whichever BSTR pointer a native call leaves in that cell.
 struct OwnedBstrCell {
     cell: Box<BSTR>,
+    original: Option<BStr>,
 }
 
 #[cfg(target_os = "windows")]
 impl OwnedBstrCell {
     fn from_bstr(text: &BStr) -> Result<Self, String> {
-        let cell = Box::new(OwnedBstr::from_bstr(text)?.into_raw());
-        Ok(Self { cell })
+        let mut owner = OwnedBstr::from_bstr(text)?;
+        let cell = Box::new(owner.raw_bstr());
+        Ok(Self {
+            cell,
+            original: owner.0.take(),
+        })
     }
 
     fn as_ptr(&mut self) -> *mut c_void {
@@ -111,18 +103,34 @@ impl OwnedBstrCell {
 #[cfg(target_os = "windows")]
 impl Drop for OwnedBstrCell {
     fn drop(&mut self) {
-        if !(*self.cell).is_null() {
-            // SAFETY: `*self.cell` was checked non-null above. The cell owns
-            // whichever BSTR pointer it currently holds: either our original
-            // `clone_raw_bstr` allocation, or the replacement a native call
-            // wrote through the VarPtr(String) cell (ownership transfers with
-            // the LPBSTR write per the BSTR out-param convention). Per
-            // docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md the consuming
-            // native call has completed before the pin is dropped, so no
-            // native code still uses the pointer; nulling the cell afterwards
-            // makes the free unrepeatable.
-            unsafe { SysFreeString(*self.cell) };
-            *self.cell = std::ptr::null_mut();
+        let current = std::mem::replace(&mut *self.cell, std::ptr::null_mut());
+        let Some(original) = self.original.take() else {
+            if !current.is_null() {
+                // SAFETY: A non-null cell with no original OxVba owner can only
+                // contain a native replacement whose ownership transferred to
+                // this cell. The consuming call has completed before pin drop.
+                unsafe { SysFreeString(current) };
+            }
+            return;
+        };
+        let original_raw = original.raw_bstr();
+        if current == original_raw {
+            // The cell still contains its original canonical owner. Dropping
+            // through `BStr` performs both the OS free and live-counter debit.
+            drop(original);
+            return;
+        }
+
+        // The native LPBSTR write consumed/freed the original before replacing
+        // the cell. Reconcile that original tracked allocation without freeing
+        // it twice. The replacement was allocated by native code, so it must be
+        // freed below without debiting the OxVba BSTR counter.
+        crate::live_counters::bstr_freed();
+        std::mem::forget(original);
+        if !current.is_null() {
+            // SAFETY: `current` is the native replacement now solely owned by
+            // this cell, and the consuming native call has completed.
+            unsafe { SysFreeString(current) };
         }
     }
 }
@@ -526,22 +534,12 @@ impl PointerRegistry {
         match entry {
             #[cfg(target_os = "windows")]
             PointerEntry::Bstr(value) => {
-                // SAFETY: Registry entries are keyed by the address `as_ptr()`
-                // returned at insert, which for `Bstr` is `value.0` itself;
-                // `pointer == 0` returned early above, so `value.0` is
-                // non-null. The entry owns the BSTR and nothing frees it
-                // before `free_pins` removes the entry (the registry guard is
-                // held for this whole borrow), so SysStringByteLen reads a live
-                // allocation's 4-byte byte-length prefix at ptr-4.
-                let len =
-                    unsafe { windows_sys::Win32::Foundation::SysStringByteLen(value.0) } as usize;
-                // SAFETY: Same live, non-null, exclusively owned BSTR as
-                // above; `len` is the payload byte count derived from the
-                // length prefix, so `value.0 .. value.0 + len` lies inside the
-                // allocation and is readable. Embedded NULs and odd byte
-                // lengths are legal because the length is prefix-derived.
-                let bytes = unsafe { std::slice::from_raw_parts(value.0.cast::<u8>(), len) };
-                Ok(Variant::from_string(BStr::from_bytes(bytes)?))
+                let Some(value) = value.0.as_ref() else {
+                    return Ok(Variant::from_string(BStr::empty()));
+                };
+                Ok(Variant::from_string(BStr::from_bytes(
+                    value.payload_bytes(),
+                )?))
             }
             #[cfg(target_os = "windows")]
             PointerEntry::BstrCell(value) => {

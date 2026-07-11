@@ -12,7 +12,7 @@
 #![cfg(target_os = "windows")]
 
 use oxvba_hal::model::HostPolicy;
-use oxvba_host::{Engine, HostConfig};
+use oxvba_host::{DiagnosticPhase, Engine, HostConfig};
 use oxvba_runtime::{VarType, Variant};
 
 /// Run a source module on the vm3 backend under the interactive-dev policy (which
@@ -531,9 +531,11 @@ fn native_declare_rejects_jit_without_falling_back() {
              result = NativeSqrt(4)\n\
              End Sub",
         )
-        .expect_err("JIT execution is not implemented; it must not silently fall back");
-    assert!(
-        err.message().contains("JIT execution"),
-        "unexpected diagnostic: {err}"
-    );
+        .expect_err("native Declare should remain an explicit JIT decline");
+    let diagnostic = err.diagnostic();
+    assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+    assert_eq!(diagnostic.code.as_str(), "RUN-E-JIT-UNSUPPORTED");
+    assert_eq!(diagnostic.phase.as_str(), "runtime");
+    assert_eq!(diagnostic.severity.as_str(), "error");
+    assert_eq!(diagnostic.vba_error_number, None);
 }

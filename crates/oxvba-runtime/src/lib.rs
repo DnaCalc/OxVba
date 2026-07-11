@@ -54,7 +54,7 @@ pub use object_ref::{
     retained_parked_termination_object, take_pending_terminations,
 };
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
-pub use variant::{VarType, Variant, VariantCore};
+pub use variant::{VarType, Variant, VariantCore, VariantData};
 pub use vba_date::{
     VBA_EPOCH_DAYS_FROM_UNIX, civil_from_days, days_from_civil, format_general_date,
     format_write_date, serial_to_hms, serial_to_ymd, ymd_to_serial,
@@ -65,5 +65,7 @@ pub use vba_radix::{
     vba_radix_width,
 };
 pub use vba_record::{
-    VbaRecord, VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
+    MAX_VBA_RECORD_FIXED_ARRAY_RANK, MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH,
+    MAX_VBA_RECORD_LAYOUT_GRAPH_VISITS, MAX_VBA_RECORD_SIZE, VbaRecord, VbaRecordFieldHandle,
+    VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
 };

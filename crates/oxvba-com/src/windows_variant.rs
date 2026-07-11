@@ -1556,13 +1556,14 @@ fn ensure_vba_record_layout_matches_descriptor(
     for (index, (descriptor_field, runtime_field)) in
         descriptor_layout.fields.iter().zip(fields).enumerate()
     {
-        if descriptor_field.offset as usize != runtime_field.offset {
+        if descriptor_field.offset as usize != runtime_field.offset() {
             return Err(format!(
                 "SAFEARRAY(VT_RECORD) native VBA record field {index} offset mismatch: descriptor {}, runtime {}",
-                descriptor_field.offset, runtime_field.offset
+                descriptor_field.offset,
+                runtime_field.offset()
             ));
         }
-        if !record_field_kind_matches(&runtime_field.kind, &descriptor_field.kind) {
+        if !record_field_kind_matches(runtime_field.kind(), &descriptor_field.kind) {
             return Err(format!(
                 "SAFEARRAY(VT_RECORD) native VBA record field `{}` kind is not descriptor-compatible",
                 descriptor_field.name
@@ -2512,17 +2513,17 @@ mod tests {
             fields: vec![
                 TypeLibRecordField {
                     name: "X".to_string(),
-                    offset: fields[0].offset as u32,
+                    offset: fields[0].offset() as u32,
                     kind: TypeLibRecordFieldKind::I32,
                 },
                 TypeLibRecordField {
                     name: "Name".to_string(),
-                    offset: fields[1].offset as u32,
+                    offset: fields[1].offset() as u32,
                     kind: TypeLibRecordFieldKind::BStr,
                 },
                 TypeLibRecordField {
                     name: "Any".to_string(),
-                    offset: fields[2].offset as u32,
+                    offset: fields[2].offset() as u32,
                     kind: TypeLibRecordFieldKind::Variant,
                 },
             ],
@@ -2843,9 +2844,13 @@ mod tests {
             .expect("layout"),
         );
         let mut record = VbaRecord::new_default(layout.clone()).expect("record");
-        let field = record.layout().fields()[0].clone();
+        let field = record.field_handle(0).expect("record field handle");
         unsafe {
-            record.field_mut_ptr(&field).cast::<i32>().write(42);
+            record
+                .field_mut_ptr(&field)
+                .expect("record field pointer")
+                .cast::<i32>()
+                .write(42);
         }
         let array = SafeArray::from_vba_records_nd(
             vec![oxvba_runtime::safe_array::SafeArrayBound { count: 1, lower: 0 }],
