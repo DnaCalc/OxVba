@@ -11,7 +11,8 @@
 
 ## Findings
 - All declared evidence paths resolve.
-- No stale-note marker tokens were detected (TODO remove, obsolete, legacy projection, emoved subset).
+- No stale-note marker tokens were detected (TODO remove, obsolete, legacy projection, 
+emoved subset).
 - Structural summary: coverage_rows=87, library_rows=19.
 
 ## Follow-up

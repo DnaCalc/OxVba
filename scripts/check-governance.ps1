@@ -3,6 +3,12 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    Write-Host "[governance] line-endings"
+    & "$PSScriptRoot/validate-line-endings.ps1"
+
+    Write-Host "[governance] line-ending-mutations"
+    & "$PSScriptRoot/test-line-endings.ps1"
+
     Write-Host "[governance] docs-check"
     & "$PSScriptRoot/docs-check.ps1"
 

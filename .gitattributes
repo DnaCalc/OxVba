@@ -1,0 +1,54 @@
+# OxVba repository line-ending contract V1.
+#
+# Git-detected text is stored and checked out as LF on every platform. The
+# explicit families below make source, snapshots, documentation, evidence, and
+# control files fail closed instead of relying on content auto-detection.
+* text=auto eol=lf
+
+# Rust, VBA, tooling, and project source.
+*.rs text eol=lf
+*.toml text eol=lf
+*.bas text eol=lf
+*.cls text eol=lf
+*.frm text eol=lf
+*.vbp text eol=lf
+*.basproj text eol=lf
+*.cs text eol=lf
+*.csproj text eol=lf
+*.c text eol=lf
+*.idl text eol=lf
+*.lean text eol=lf
+*.js text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.psm1 text eol=lf
+*.psd1 text eol=lf
+
+# Authoritative snapshots, documentation, evidence, and configuration.
+*.snap text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.log text eol=lf
+*.csv text eol=lf
+*.psv text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.html text eol=lf
+*.reg text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.git-blame-ignore-revs text eol=lf
+formal/lean/lean-toolchain text eol=lf
+
+# Tracked product, Office, COM, database, and native fixture artifacts.
+*.accdb binary
+*.dll binary
+*.oxb binary
+*.tlb binary
+*.xlam binary
+*.xlsm binary
+
+# Captured UTF-16/terminal evidence is opaque transport, despite its suffix.
+docs/evidence/conformance/com/COM_LANE_L2E_LOG_OxVba.TestEventServer_20260309T000005Z.txt binary
