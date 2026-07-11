@@ -113,7 +113,7 @@
     },
     {
       "path": "scripts/test-linux-ci-environment.ps1",
-      "sha256": "dd3da5625640d41946a57d1eea20eae48bc379624d7d841a9c78451a4d207634"
+      "sha256": "df6e9dfe68e4235df602288fe758e427c0f5962cc7a600df235e806d35606c26"
     },
     {
       "path": "scripts/validate-linux-ci-environment.ps1",

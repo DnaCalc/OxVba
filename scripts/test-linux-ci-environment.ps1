@@ -1,5 +1,7 @@
 param(
-    [string]$RepositoryRoot = ""
+    [string]$RepositoryRoot = "",
+    [ValidateSet("Repository", "Pending", "Sealed")]
+    [string]$FixtureLedgerState = "Repository"
 )
 
 Set-StrictMode -Version Latest
@@ -55,6 +57,10 @@ function New-Fixture {
     foreach ($source in @($contract.source_files)) {
         Copy-ControlledFile -FromRoot $repoRoot -ToRoot $root -RelativePath ([string]$source.path)
     }
+    switch ($FixtureLedgerState) {
+        "Pending" { Set-PendingLedger -Root $root }
+        "Sealed" { Set-SealedLedger -Root $root }
+    }
     return $root
 }
 
@@ -96,6 +102,54 @@ function Update-TextFile {
     [IO.File]::WriteAllText($Path, $text.Replace($Old, $New, [StringComparison]::Ordinal), $utf8)
 }
 
+function Get-UniqueLinuxLedgerRow {
+    param([Parameter(Mandatory = $true)][object[]]$Rows)
+
+    $linux = @($Rows | Where-Object { [string]$_.role -eq "linux-ci" })
+    if ($linux.Count -ne 1) { throw "test fixture has no unique role=linux-ci row" }
+    return $linux[0]
+}
+
+function Write-LedgerRows {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][object[]]$Rows
+    )
+
+    $manifestPath = Join-Path $Root $environmentRelative
+    $csv = $Rows | ConvertTo-Csv -NoTypeInformation
+    [IO.File]::WriteAllLines($manifestPath, $csv, $utf8)
+}
+
+function Set-PendingLedger {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $manifestPath = Join-Path $Root $environmentRelative
+    $rows = @(Import-Csv -LiteralPath $manifestPath)
+    $row = Get-UniqueLinuxLedgerRow -Rows $rows
+    $row.environment_id = "linux-x64-ci-pending-v1"
+    $row.role = "linux-ci"
+    $row.profile = "core"
+    $row.target_arch = "x64"
+    $row.os_build = "planned-pinned-runner-image"
+    $row.office_product = "n/a"
+    $row.office_version = "n/a"
+    $row.office_build = "n/a"
+    $row.office_channel = "n/a"
+    $row.office_bitness = "n/a"
+    $row.locale = "C.UTF-8"
+    $row.snapshot_or_image = "planned-runner-image-digest"
+    $row.reset_policy = "fresh-ephemeral-job-per-run"
+    $row.fixture_manifest = "pending-CORE-1-fixture-manifest"
+    $row.fixture_hash = "pending-CORE-1-fixture-hash"
+    $row.owned_process_policy = "owned-test-process-cleanup"
+    $row.uia_modal_policy = "n/a-no-Excel-UIA"
+    $row.evidence_state = "planned-blocking"
+    $row.owner_bead = "bd-59co.2.2.8"
+    $row.notes = "Immutable Linux x64 CI image must be pinned by digest and supplies the portable compiler VM3 JIT and governance release lane"
+    Write-LedgerRows -Root $Root -Rows $rows
+}
+
 function Set-SealedLedger {
     param([Parameter(Mandatory = $true)][string]$Root)
 
@@ -104,9 +158,7 @@ function Set-SealedLedger {
     $contractHash = Get-CanonicalHash -Path $contractPath
     $manifestPath = Join-Path $Root $environmentRelative
     $rows = @(Import-Csv -LiteralPath $manifestPath)
-    $linux = @($rows | Where-Object role -eq "linux-ci")
-    if ($linux.Count -ne 1) { throw "test fixture has no unique linux-ci row" }
-    $row = $linux[0]
+    $row = Get-UniqueLinuxLedgerRow -Rows $rows
     $imageDigest = "sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b"
     $resetPolicy = "github-hosted-new-vm-per-job;fresh-digest-pinned-job-container;clean-checkout;no-actions-cache;owned-state-under-RUNNER_TEMP;delete-owned-processes-and-state-only"
     $row.environment_id = [string]$contract.environment_id
@@ -129,8 +181,65 @@ function Set-SealedLedger {
     $row.evidence_state = "planned-blocking"
     $row.owner_bead = "bd-59co.2.2.11"
     $row.notes = "Immutable Linux x64 execution contract is sealed; the host label is scheduling only; the canonical baseline transcript remains pending under bd-59co.2.2.11"
-    $csv = $rows | ConvertTo-Csv -NoTypeInformation
-    [IO.File]::WriteAllLines($manifestPath, $csv, $utf8)
+    Write-LedgerRows -Root $Root -Rows $rows
+}
+
+function Set-LinuxLedgerField {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Field,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value
+    )
+
+    $manifestPath = Join-Path $Root $environmentRelative
+    $rows = @(Import-Csv -LiteralPath $manifestPath)
+    $row = Get-UniqueLinuxLedgerRow -Rows $rows
+    if ($row.PSObject.Properties.Name -cnotcontains $Field) {
+        throw "test fixture linux-ci row has no exact field '$Field'"
+    }
+    $row.$Field = $Value
+    Write-LedgerRows -Root $Root -Rows $rows
+}
+
+function Get-LinuxLedgerIdentity {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $rows = @(Import-Csv -LiteralPath (Join-Path $Root $environmentRelative))
+    $row = Get-UniqueLinuxLedgerRow -Rows $rows
+    return [pscustomobject]@{
+        environment_id = [string]$row.environment_id
+        evidence_state = [string]$row.evidence_state
+        owner_bead = [string]$row.owner_bead
+        snapshot_or_image = [string]$row.snapshot_or_image
+    }
+}
+
+function Assert-LedgerIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][ValidateSet("pre-handoff-pending", "sealed-execution-pending")][string]$State,
+        [Parameter(Mandatory = $true)][string]$EnvironmentId,
+        [Parameter(Mandatory = $true)][string]$EvidenceState,
+        [Parameter(Mandatory = $true)][string]$OwnerBead,
+        [Parameter(Mandatory = $true)][string]$SnapshotOrImage
+    )
+
+    $identity = Get-LinuxLedgerIdentity -Root $Root
+    foreach ($pair in @(
+        @("environment_id", $EnvironmentId), @("evidence_state", $EvidenceState),
+        @("owner_bead", $OwnerBead), @("snapshot_or_image", $SnapshotOrImage)
+    )) {
+        if ([string]$identity.($pair[0]) -cne [string]$pair[1]) {
+            throw "test fixture $State identity field '$($pair[0])' must be '$($pair[1])', found '$($identity.($pair[0]))'"
+        }
+    }
+    return [pscustomobject]@{
+        state = $State
+        environment_id = $identity.environment_id
+        evidence_state = $identity.evidence_state
+        owner_bead = $identity.owner_bead
+        snapshot_or_image = $identity.snapshot_or_image
+    }
 }
 
 function Invoke-Validator {
@@ -168,11 +277,33 @@ $tempBase = Join-Path $systemTemp ("oxvba-linux-ci-environment-" + [guid]::NewGu
 
 try {
     $pending = New-Fixture -Name "positive-pending-ledger"
+    Set-PendingLedger -Root $pending
+    $pendingIdentity = Assert-LedgerIdentity `
+        -Root $pending `
+        -State "pre-handoff-pending" `
+        -EnvironmentId "linux-x64-ci-pending-v1" `
+        -EvidenceState "planned-blocking" `
+        -OwnerBead "bd-59co.2.2.8" `
+        -SnapshotOrImage "planned-runner-image-digest"
     Invoke-Validator -Root $pending
 
     $sealed = New-Fixture -Name "positive-sealed-ledger"
     Set-SealedLedger -Root $sealed
+    $sealedIdentity = Assert-LedgerIdentity `
+        -Root $sealed `
+        -State "sealed-execution-pending" `
+        -EnvironmentId "linux-x64-ci-rust-1.94.1-bookworm-amd64-v1" `
+        -EvidenceState "planned-blocking" `
+        -OwnerBead "bd-59co.2.2.11" `
+        -SnapshotOrImage "docker.io/library/rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b"
     Invoke-Validator -Root $sealed
+    if ($pendingIdentity.state -ceq $sealedIdentity.state -or
+        $pendingIdentity.environment_id -ceq $sealedIdentity.environment_id -or
+        $pendingIdentity.owner_bead -ceq $sealedIdentity.owner_bead -or
+        $pendingIdentity.snapshot_or_image -ceq $sealedIdentity.snapshot_or_image) {
+        throw "pending and sealed positive ledger fixtures are not semantically distinct"
+    }
+    Write-Host "linux-ci-environment positives: ok (pending=$($pendingIdentity.environment_id)/$($pendingIdentity.evidence_state)/$($pendingIdentity.owner_bead) sealed=$($sealedIdentity.environment_id)/$($sealedIdentity.evidence_state)/$($sealedIdentity.owner_bead))"
 
     Invoke-ExpectedFailure -Name "ubuntu-latest" -MessagePattern "runs-on" -Mutation {
         param($root)
@@ -286,16 +417,21 @@ try {
     }
     Invoke-ExpectedFailure -Name "ledger-mutable-alias" -MessagePattern "neither the exact pending handoff nor sealed" -Mutation {
         param($root)
-        $path = Join-Path $root $environmentRelative
-        Update-TextFile -Path $path -Old "linux-x64-ci-pending-v1" -New "ubuntu-latest"
+        Set-LinuxLedgerField -Root $root -Field "environment_id" -Value "ubuntu-latest"
     }
-    Invoke-ExpectedFailure -Name "ledger-owner-drift" -MessagePattern "pending linux-ci ledger owner_bead" -Mutation {
+    Invoke-ExpectedFailure -Name "ledger-owner-drift" -MessagePattern "linux-ci ledger owner_bead" -Mutation {
         param($root)
-        $path = Join-Path $root $environmentRelative
-        Update-TextFile -Path $path -Old "bd-59co.2.2.8,Immutable Linux" -New "bd-59co.2.2.11,Immutable Linux"
+        $identity = Get-LinuxLedgerIdentity -Root $root
+        $wrongOwner = if ($identity.environment_id -eq "linux-x64-ci-pending-v1") {
+            "bd-59co.2.2.11"
+        }
+        else {
+            "bd-59co.2.2.8"
+        }
+        Set-LinuxLedgerField -Root $root -Field "owner_bead" -Value $wrongOwner
     }
 
-    Write-Host "test-linux-ci-environment: ok (positive=2 mutations=20)"
+    Write-Host "test-linux-ci-environment: ok (fixture_ledger_state=$FixtureLedgerState positive=2 mutations=20)"
 }
 finally {
     if (Test-Path -LiteralPath $tempBase -PathType Container) {
