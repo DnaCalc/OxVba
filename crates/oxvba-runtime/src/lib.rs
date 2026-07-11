@@ -65,6 +65,7 @@ pub use vba_radix::{
     vba_radix_width,
 };
 pub use vba_record::{
-    MAX_VBA_RECORD_FIXED_ARRAY_RANK, MAX_VBA_RECORD_SIZE, VbaRecord, VbaRecordFieldHandle,
+    MAX_VBA_RECORD_FIXED_ARRAY_RANK, MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH,
+    MAX_VBA_RECORD_LAYOUT_GRAPH_VISITS, MAX_VBA_RECORD_SIZE, VbaRecord, VbaRecordFieldHandle,
     VbaRecordFieldKind, VbaRecordFieldLayout, VbaRecordFieldSpec, VbaRecordLayout,
 };
