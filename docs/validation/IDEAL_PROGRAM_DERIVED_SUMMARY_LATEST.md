@@ -10,7 +10,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Profile | Matrices | Rows | Planned | In progress | Implemented subset | Implemented full | Verified | Archived |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| core | 5 | 55 | 54 | 0 | 0 | 0 | 1 | 0 |
+| core | 5 | 59 | 58 | 0 | 0 | 0 | 1 | 0 |
 | windows-x64 | 6 | 57 | 57 | 0 | 0 | 0 | 0 | 0 |
 | ide | 4 | 77 | 77 | 0 | 0 | 0 | 0 | 0 |
 
@@ -18,17 +18,17 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Matrix | Profile | Role | Owner epic | Rows | Verified | Open | Trace relationships |
 |---|---|---|---|---:|---:|---:|---:|
-| CORE-READINESS | core | primary | bd-59co.2.1 | 20 | 1 | 19 | 29 |
+| CORE-READINESS | core | primary | bd-59co.2.1 | 24 | 1 | 23 | 55 |
 | VBA-LIBRARY | core | primary | bd-59co.2.5 | 7 | 0 | 7 | 7 |
 | OXIR-BACKENDS | core | primary | bd-59co.2.6 | 12 | 0 | 12 | 12 |
 | OXIMAGE-CONTRACT | core | primary | bd-59co.2.6 | 8 | 0 | 8 | 8 |
 | EXCEL-ORACLE | core | evidence | bd-59co.2.11 | 8 | 0 | 8 | 10 |
-| WIN-COM-CLIENT | windows-x64 | primary | bd-59co.3.4 | 9 | 0 | 9 | 10 |
-| WIN-COM-EVENTS | windows-x64 | primary | bd-59co.3.6 | 7 | 0 | 7 | 12 |
-| WIN-COM-SERVER | windows-x64 | primary | bd-59co.3.7 | 7 | 0 | 7 | 8 |
-| WIN-NATIVE-IMPORT | windows-x64 | primary | bd-59co.3.10 | 8 | 0 | 8 | 13 |
-| WIN-NATIVE-EXPORT | windows-x64 | primary | bd-59co.3.13 | 8 | 0 | 8 | 9 |
-| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 0 | 18 | 23 |
+| WIN-COM-CLIENT | windows-x64 | primary | bd-59co.3.4 | 9 | 0 | 9 | 27 |
+| WIN-COM-EVENTS | windows-x64 | primary | bd-59co.3.6 | 7 | 0 | 7 | 25 |
+| WIN-COM-SERVER | windows-x64 | primary | bd-59co.3.7 | 7 | 0 | 7 | 20 |
+| WIN-NATIVE-IMPORT | windows-x64 | primary | bd-59co.3.10 | 8 | 0 | 8 | 27 |
+| WIN-NATIVE-EXPORT | windows-x64 | primary | bd-59co.3.13 | 8 | 0 | 8 | 21 |
+| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 0 | 18 | 73 |
 | LS-BASELINE | ide | primary | bd-59co.4.1 | 29 | 0 | 29 | 31 |
 | LS-REFERENCES | ide | primary | bd-59co.4.7 | 10 | 0 | 10 | 12 |
 | LSP-METHODS | ide | projection | bd-59co.4.11 | 30 | 0 | 30 | 33 |
@@ -45,7 +45,11 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | CORE-ANALYSIS-STRICT-EDITOR | CORE-READINESS | strict and editor analysis equivalence | valid source produces identical identities types calls and diagnostics in both modes | planned | remaining-accepted-scope | bd-59co.2.4.1 |
 | CORE-TYPED-BINDING | CORE-READINESS | typed calls arguments references and providers | ByVal ByRef Optional named omitted ParamArray returns arrays UDTs and objects | planned | remaining-accepted-scope | bd-59co.2.4.1 |
 | CORE-COMP-NUMERIC-MODE | CORE-READINESS | VBA-compatible NumericMode selection | provable fixed numeric lanes and overflow coercion | planned | remaining-accepted-scope | bd-59co.2.4.3 |
-| CORE-BASELINE-UNSAFE-CLIPPY | CORE-READINESS | strict clean-build unsafe audit | SafeArray and VBA record unsafe statements | planned | remaining-accepted-scope | bd-59co.2.2.3 |
+| CORE-BASELINE-UNSAFE-CLIPPY | CORE-READINESS | strict clean-build unsafe audit | SafeArray VBA record and current HAL strict-warning sites | planned | remaining-accepted-scope | bd-59co.2.2.12 |
+| CORE-BASELINE-EOL-SNAPSHOT | CORE-READINESS | cross-platform line ending and snapshot determinism | source and golden artifacts remain semantically and byte stable across LF and CRLF checkouts | planned | remaining-accepted-scope | bd-59co.2.2.12 |
+| CORE-BASELINE-BALANCE-LIFECYCLE | CORE-READINESS | fixture-isolated carrier balance and policy-error cleanup | named subprocess fixtures report exact BSTR object SAFEARRAY record and related carrier deltas | planned | remaining-accepted-scope | bd-59co.2.2.12 |
+| CORE-BASELINE-HOST-JIT-DIAGNOSTICS | CORE-READINESS | current host behavior and stable JIT diagnostics | supported Collection execution and declined native shapes use structured contract fields | planned | remaining-accepted-scope | bd-59co.2.2.12 |
+| CORE-BASELINE-CROSS-PLATFORM-GATES | CORE-READINESS | versioned Windows and Linux ordinary gate baseline | pinned environments canonical runner strict checks parallel and serial differentials | planned | remaining-accepted-scope | bd-59co.2.2.12 |
 | CORE-RUNTIME-HELPER-SESSION | CORE-READINESS | owned runtime helper ABI and project sessions | versioned descriptors typed wrappers lifecycle error and reset | planned | remaining-accepted-scope | bd-59co.2.7.1 |
 | CORE-VM3-REFERENCE | CORE-READINESS | complete VM3 reference interpreter | all admitted verified Core and OxIR vocabulary plus entries links errors recursion and sessions | planned | remaining-accepted-scope | bd-59co.2.8.1 |
 | CORE-JIT-LOWERING | CORE-READINESS | ideal JIT lowering and call architecture | inspectable lowering plan typed entries direct calls universal thunk ByRef errors and recursion | planned | remaining-accepted-scope | bd-59co.2.9.1 |
@@ -100,7 +104,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | WCC-EARLY-COMPLEX | WIN-COM-CLIENT | early-bound COM client | ByRef arrays records interfaces inheritance and QI identity | planned | remaining-accepted-scope | bd-59co.3.5 |
 | WCC-EARLY-CUSTOM | WIN-COM-CLIENT | early-bound COM client | custom interface signatures HRESULT out retval and inheritance | planned | remaining-accepted-scope | bd-59co.3.5 |
 | WCC-EARLY-OUTPROC | WIN-COM-CLIENT | early-bound COM client | out-of-proc typed proxy marshalling and apartment behavior | planned | remaining-accepted-scope | bd-59co.3.5 |
-| WCC-EXCEL-AUTHORITY | WIN-COM-CLIENT | 64-bit Excel/VBA COM client compatibility authority | controlled late-dispatch and early-vtable compile and runtime observations including results full Err effects transport lifecycle and balance | planned | remaining-accepted-scope | bd-59co.3.15.2 |
+| WCC-EXCEL-AUTHORITY | WIN-COM-CLIENT | 64-bit Excel/VBA COM client compatibility authority | controlled late-dispatch and early-vtable compile and runtime observations including results full Err effects transport lifecycle and balance | planned | remaining-accepted-scope | bd-59co.3.15.32 |
 | WCE-PLAN-INCOMING | WIN-COM-EVENTS | incoming COM events | synchronous cancellable scalar ByRef event | planned | remaining-accepted-scope | bd-59co.3.6.4 |
 | WCE-INCOMING-COMPLEX | WIN-COM-EVENTS | incoming COM events | object interface array and record event arguments | planned | remaining-accepted-scope | bd-59co.3.6.4 |
 | WCE-INCOMING-CUSTOM | WIN-COM-EVENTS | incoming COM events | custom native-vtable source-interface sink | planned | remaining-accepted-scope | bd-59co.3.6.4 |
@@ -146,8 +150,8 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | WAC-WINDOWS-DESCRIPTORS | WIN-ABI-CARRIER | Windows x64 interop descriptor vocabulary | verified OxImage Windows descriptors only; raw metadata or unverified decoded artifacts cannot elaborate a plan | planned | remaining-accepted-scope | bd-59co.3.3.1 |
 | WAC-CLEAN-CERT-ENV | WIN-ABI-CARRIER | clean pinned release certification environment | pinned Windows x64 actual Excel64 clean snapshot locale fixtures and hashes | planned | remaining-accepted-scope | bd-59co.3.15.3 |
 | WAC-RELEASE-CERT | WIN-ABI-CARRIER | Windows native client and Excel certification | all mandatory COM native carrier lifecycle locale deployment and cleanup rows | planned | remaining-accepted-scope | bd-59co.3.15.2 |
-| WAC-EXCEL-COM-CERT | WIN-ABI-CARRIER | Excel64 COM client server and event certification | late dispatch early vtable serving incoming and outgoing events cancellable ByRef reentry apartments and cleanup | planned | remaining-accepted-scope | bd-59co.3.15.2 |
-| WAC-EXCEL-NATIVE-CERT | WIN-ABI-CARRIER | Excel64 Declare callback and native-output certification | PtrSafe imports pointers callbacks wrapped exports genuine DLL and EXE outputs deployment and cleanup | planned | remaining-accepted-scope | bd-59co.3.15.2 |
+| WAC-EXCEL-COM-CERT | WIN-ABI-CARRIER | Excel64 COM client server and event certification | late dispatch early vtable serving incoming and outgoing events cancellable ByRef reentry apartments and cleanup | planned | remaining-accepted-scope | bd-59co.3.15.32 |
+| WAC-EXCEL-NATIVE-CERT | WIN-ABI-CARRIER | Excel64 Declare callback and native-output certification | PtrSafe imports pointers callbacks wrapped exports genuine DLL and EXE outputs deployment and cleanup | planned | remaining-accepted-scope | bd-59co.3.15.33 |
 | WAC-PROFILE-TERMINAL | WIN-ABI-CARRIER | Windows x64 profile terminal | all required delivery epics matrices environments safety deployment and documentation | planned | remaining-accepted-scope | bd-59co.3.16.1 |
 | LSB-AUTHORITY-ROLLOUT | LS-BASELINE | language-service authority and rollout | historical deleted stack separated from current clean-stack owners and matrices | planned | remaining-accepted-scope | bd-59co.4.1.1 |
 | LSB-WORKSPACE-SNAPSHOT | LS-BASELINE | workspace project document and snapshot lifecycle | real projects overlays immutable snapshots and reloads | planned | remaining-accepted-scope | bd-59co.4.3.1 |

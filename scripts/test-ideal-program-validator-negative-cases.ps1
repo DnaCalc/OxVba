@@ -433,6 +433,12 @@ try {
         param($issue)
         $issue.status = "in_progress"
     }
+    # Keep this negative case stable after the real successor rollout closes:
+    # the synthetic ancestor dependency must point at an unresolved issue.
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.2.1" -Mutation {
+        param($issue)
+        $issue.status = "open"
+    }
     Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1" -Mutation {
         param($issue)
         $issue.dependencies = @($issue.dependencies) + @([pscustomobject]@{

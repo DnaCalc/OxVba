@@ -5,9 +5,9 @@ AUTH-VBA-001,in-scope,core|windows-x64|ide,bd-59co.2.1|bd-59co.3.15|bd-59co.4.13
 BUILD-CLASS-001,in-scope,windows-x64,bd-59co.3.12|bd-59co.3.13,n/a,WIN-NATIVE-EXPORT,Wrapped and native outputs remain distinct claim classes
 BUILD-NATIVE-001,in-scope,windows-x64,bd-59co.3.13,n/a,WIN-NATIVE-EXPORT,Genuine x64 DLL and EXE export ABI is mandatory
 BUILD-PACKAGE-001,in-scope,core|windows-x64,bd-59co.2.6|bd-59co.3.12,n/a,OXIMAGE-CONTRACT|WIN-NATIVE-EXPORT,All package targets begin from a verified OxImage
-COM-CLIENT-001,in-scope,windows-x64,bd-59co.3.4|bd-59co.3.5,n/a,WIN-COM-CLIENT,Late and early x64 COM client parity is mandatory
-COM-EVENT-001,in-scope,windows-x64,bd-59co.3.6|bd-59co.3.9,n/a,WIN-COM-EVENTS,Incoming and outgoing x64 COM event parity is mandatory
-COM-SERVE-001,in-scope,windows-x64,bd-59co.3.7|bd-59co.3.8,bd-59co.3.9,WIN-COM-EVENTS|WIN-COM-SERVER,x64 late early and dual COM serving is mandatory
+COM-CLIENT-001,in-scope,windows-x64,bd-59co.3.4|bd-59co.3.5,bd-59co.3.15,WIN-COM-CLIENT,Late and early x64 COM client parity is mandatory and WIN-14 consumes exact producer evidence for certification
+COM-EVENT-001,in-scope,windows-x64,bd-59co.3.6|bd-59co.3.9,bd-59co.3.15,WIN-COM-EVENTS,Incoming and outgoing x64 COM event parity is mandatory and WIN-14 consumes exact producer evidence for certification
+COM-SERVE-001,in-scope,windows-x64,bd-59co.3.7|bd-59co.3.8,bd-59co.3.9|bd-59co.3.15,WIN-COM-EVENTS|WIN-COM-SERVER,x64 late early and dual COM serving is mandatory and WIN-14 consumes exact producer evidence for certification
 COMP-ANALYSIS-001,in-scope,core|ide,bd-59co.2.4,bd-59co.2.11|bd-59co.2.3|bd-59co.4.2,CORE-READINESS|EXCEL-ORACLE|LS-BASELINE,AnalysisResultV1 is the shared strict and editor fact contract
 COMP-BIND-001,in-scope,core|windows-x64|ide,bd-59co.2.4,bd-59co.2.5|bd-59co.2.6|bd-59co.3.10|bd-59co.3.2|bd-59co.3.5|bd-59co.4.6|bd-59co.4.7,CORE-READINESS|VBA-LIBRARY|OXIR-BACKENDS|WIN-NATIVE-IMPORT|WIN-ABI-CARRIER|LS-BASELINE|LS-REFERENCES,Typed binding decisions include the authoritative typelib metadata producer shared by compiler interop and editor consumers
 COMP-DIAG-001,in-scope,core|windows-x64|ide,bd-59co.2.4,bd-59co.3.10|bd-59co.4.4,CORE-READINESS|WIN-NATIVE-IMPORT|LS-BASELINE,Stable source-located phase-correct diagnostics are mandatory
@@ -36,12 +36,12 @@ LS-BASIC-001,in-scope,ide,bd-59co.4.4|bd-59co.4.5|bd-59co.4.6|bd-59co.4.8|bd-59c
 LS-FACT-001,in-scope,core|ide,bd-59co.2.4|bd-59co.4.2,bd-59co.4.5,CORE-READINESS|LS-BASELINE,Compiler facts become immutable snapshot facts without reconstruction
 LS-LSP-001,in-scope,ide,bd-59co.4.11,bd-59co.4.12,LS-BASELINE|LSP-METHODS,LSP is a thin negotiated projection with direct-result equivalence
 LS-WORKSPACE-001,in-scope,ide,bd-59co.4.3,bd-59co.4.10|bd-59co.4.13|bd-59co.4.7,LS-BASELINE|LS-REFERENCES|LS-PERFORMANCE,Real project closures overlays invalidation and stale suppression are mandatory
-NATIVE-IMPORT-001,in-scope,windows-x64,bd-59co.3.10|bd-59co.3.11,n/a,WIN-NATIVE-IMPORT,VBA7 x64 Declare pointers and callback lifetimes are mandatory
+NATIVE-IMPORT-001,in-scope,windows-x64,bd-59co.3.10|bd-59co.3.11,bd-59co.3.15,WIN-NATIVE-IMPORT,VBA7 x64 Declare pointers and callback lifetimes are mandatory and WIN-14 consumes exact producer evidence for certification
 PORT-CORE-001,in-scope,core|ide,bd-59co.2.12,bd-59co.2.11|bd-59co.4.10,CORE-READINESS|LS-PERFORMANCE,Portable compiler runtime and language-service behavior is required on Linux and Windows x64 while actual browser and WASM certification remains governed by PROFILE-EXT-001
 PROFILE-CORE-001,in-scope,core,bd-59co.2.12,bd-59co.2.11|bd-59co.2.5|bd-59co.2.6,CORE-READINESS|VBA-LIBRARY|OXIR-BACKENDS|OXIMAGE-CONTRACT,Core dual-runtime profile is one umbrella terminal gate
 PROFILE-EXT-001,deferred-extended,extended,n/a,n/a,n/a,Only explicitly named extended surfaces are outside this umbrella
 PROFILE-IDE-001,in-scope,ide,bd-59co.4.14,n/a,LS-BASELINE,IDE foundation profile is one umbrella terminal gate
-PROFILE-TOOL-001,in-scope,core|windows-x64,bd-59co.2.6|bd-59co.3.12|bd-59co.3.13|bd-59co.3.16,n/a,OXIMAGE-CONTRACT|WIN-NATIVE-EXPORT,Verified distributable OxImage plus distinct Windows wrapped and genuine native output classes
+PROFILE-TOOL-001,in-scope,core|windows-x64,bd-59co.2.6|bd-59co.3.12|bd-59co.3.13|bd-59co.3.16,bd-59co.3.15,OXIMAGE-CONTRACT|WIN-NATIVE-EXPORT,Verified distributable OxImage plus distinct Windows wrapped and genuine native output classes with WIN-14 as certification consumer
 PROFILE-WIN-001,in-scope,windows-x64,bd-59co.3.1|bd-59co.3.16,bd-59co.3.15,WIN-ABI-CARRIER,Windows profile is explicitly x64-only and is one umbrella terminal gate; portable Core oracle rows do not certify Windows COM or native delivery
 PROJ-REF-001,in-scope,core|windows-x64|ide,bd-59co.2.4,bd-59co.2.6|bd-59co.3.2|bd-59co.3.5|bd-59co.4.13|bd-59co.4.3|bd-59co.4.7,CORE-READINESS|OXIR-BACKENDS|OXIMAGE-CONTRACT|WIN-ABI-CARRIER|LS-BASELINE|LS-REFERENCES,Deterministic exact project and reference closure includes the authoritative Windows typelib metadata producer and all consumer kinds
 RUNTIME-ABI-001,in-scope,core|windows-x64,bd-59co.2.7,bd-59co.2.9|bd-59co.3.11|bd-59co.3.3,CORE-READINESS|OXIR-BACKENDS|WIN-NATIVE-IMPORT|WIN-ABI-CARRIER,Versioned typed panic-contained helper ABI is mandatory
