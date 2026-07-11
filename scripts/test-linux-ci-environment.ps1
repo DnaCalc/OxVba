@@ -19,8 +19,11 @@ $environmentRelative = "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv"
 function Get-CanonicalHash {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    $text = $utf8.GetString([IO.File]::ReadAllBytes($Path))
-    $bytes = $utf8.GetBytes($text.Replace("`r`n", "`n").Replace("`r", "`n"))
+    $text = $utf8.GetString([IO.File]::ReadAllBytes($Path)).Replace("`r`n", "`n")
+    if ($text.Contains("`r", [StringComparison]::Ordinal)) {
+        throw "test fixture controlled text contains a bare carriage return: $Path"
+    }
+    $bytes = $utf8.GetBytes($text)
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
 }
 
@@ -47,6 +50,7 @@ function New-Fixture {
     [void](New-Item -ItemType Directory -Path $root -Force)
     Copy-ControlledFile -FromRoot $repoRoot -ToRoot $root -RelativePath $contractRelative
     Copy-ControlledFile -FromRoot $repoRoot -ToRoot $root -RelativePath $environmentRelative
+    Copy-ControlledFile -FromRoot $repoRoot -ToRoot $root -RelativePath "scripts/check-governance.ps1"
     $contract = Get-Content -LiteralPath (Join-Path $root $contractRelative) -Raw | ConvertFrom-Json
     foreach ($source in @($contract.source_files)) {
         Copy-ControlledFile -FromRoot $repoRoot -ToRoot $root -RelativePath ([string]$source.path)
@@ -236,6 +240,12 @@ try {
         $contract.scheduler.image_version = "latest"
         Write-Contract -Root $root -Contract $contract
     }
+    Invoke-ExpectedFailure -Name "runner-authority-null" -MessagePattern "scheduler.execution_authority" -Mutation {
+        param($root)
+        $contract = Get-Content -LiteralPath (Join-Path $root $contractRelative) -Raw | ConvertFrom-Json
+        $contract.scheduler.execution_authority = $null
+        Write-Contract -Root $root -Contract $contract
+    }
     Invoke-ExpectedFailure -Name "contract-image-tag" -MessagePattern "execution_image.reference" -Mutation {
         param($root)
         $contract = Get-Content -LiteralPath (Join-Path $root $contractRelative) -Raw | ConvertFrom-Json
@@ -253,6 +263,16 @@ try {
         $contract = Get-Content -LiteralPath (Join-Path $root $contractRelative) -Raw | ConvertFrom-Json
         $contract.source_files[0].sha256 = "1" * 64
         Write-Contract -Root $root -Contract $contract
+    }
+    Invoke-ExpectedFailure -Name "bare-carriage-return" -MessagePattern "bare carriage return" -Mutation {
+        param($root)
+        $path = Join-Path $root ".github/workflows/ci.yml"
+        [byte[]]$original = [IO.File]::ReadAllBytes($path)
+        [byte[]]$suffix = $utf8.GetBytes("# bare-cr") + [byte[]](13)
+        [byte[]]$combined = [byte[]]::new($original.Length + $suffix.Length)
+        [Array]::Copy($original, 0, $combined, 0, $original.Length)
+        [Array]::Copy($suffix, 0, $combined, $original.Length, $suffix.Length)
+        [IO.File]::WriteAllBytes($path, $combined)
     }
     Invoke-ExpectedFailure -Name "duplicate-json-key" -MessagePattern "duplicate JSON property 'contract_id'" -Mutation {
         param($root)
@@ -275,7 +295,7 @@ try {
         Update-TextFile -Path $path -Old "bd-59co.2.2.8,Immutable Linux" -New "bd-59co.2.2.11,Immutable Linux"
     }
 
-    Write-Host "test-linux-ci-environment: ok (positive=2 mutations=18)"
+    Write-Host "test-linux-ci-environment: ok (positive=2 mutations=20)"
 }
 finally {
     if (Test-Path -LiteralPath $tempBase -PathType Container) {

@@ -100,10 +100,6 @@
       "sha256": "bdc6ff1f7a0859dafdf4c54f70e151bb118d2e978e83bbec166365d4cd01de52"
     },
     {
-      "path": "scripts/check-governance.ps1",
-      "sha256": "8e252bc465d2578d3bfc0c84f0db76775a031fd5d78f3b649c7dfa552ff6c512"
-    },
-    {
       "path": "scripts/install-pinned-pwsh.sh",
       "sha256": "f822fe27bc75cb435773ad1b9ea1dbd3d28a5a873c0d3c9a612b13d0ff3fe6cf"
     },
@@ -117,11 +113,11 @@
     },
     {
       "path": "scripts/test-linux-ci-environment.ps1",
-      "sha256": "9e99ea7b7a19a7339721ef2fe9b829bd723393d612b624c55fd27931bfc65978"
+      "sha256": "dd3da5625640d41946a57d1eea20eae48bc379624d7d841a9c78451a4d207634"
     },
     {
       "path": "scripts/validate-linux-ci-environment.ps1",
-      "sha256": "2e1d83a719d047152380d0d53ee53d13bfcf2aa9a124907976a6c48be11addc9"
+      "sha256": "366a8de58ff65e997e9e8327f8a4616f5a8115d509c92ef5804958d95991cc03"
     }
   ],
   "availability": {

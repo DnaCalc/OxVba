@@ -35,8 +35,11 @@ function Resolve-RepoPath {
 function Get-CanonicalTextBytes {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    $text = $utf8.GetString([IO.File]::ReadAllBytes($Path))
-    return $utf8.GetBytes($text.Replace("`r`n", "`n").Replace("`r", "`n"))
+    $text = $utf8.GetString([IO.File]::ReadAllBytes($Path)).Replace("`r`n", "`n")
+    if ($text.Contains("`r", [StringComparison]::Ordinal)) {
+        throw "linux-ci-environment: controlled text contains a bare carriage return: $Path"
+    }
+    return $utf8.GetBytes($text)
 }
 
 function Get-Sha256Hex {
@@ -136,8 +139,8 @@ function Assert-ExactValue {
         [Parameter(Mandatory = $true)][string]$Owner
     )
 
-    if ($Actual -is [bool] -or $Expected -is [bool]) {
-        if ([bool]$Actual -ne [bool]$Expected) {
+    if ($Expected -is [bool]) {
+        if ($Actual -isnot [bool] -or [bool]$Actual -ne [bool]$Expected) {
             throw "linux-ci-environment: $Owner must be '$Expected', found '$Actual'"
         }
         return
@@ -345,7 +348,6 @@ Assert-ExactValue $contract.availability.reason "The immutable execution contrac
 
 $expectedSourcePaths = @(
     ".github/workflows/ci.yml",
-    "scripts/check-governance.ps1",
     "scripts/install-pinned-pwsh.sh",
     "scripts/run-hal-conformance-wasm32.ps1",
     "scripts/setup-kani.ps1",
@@ -355,6 +357,24 @@ $expectedSourcePaths = @(
 $sourceRows = @($contract.source_files)
 if ($sourceRows.Count -ne $expectedSourcePaths.Count) {
     throw "linux-ci-environment: contract.source_files must contain exactly $($expectedSourcePaths.Count) rows"
+}
+
+$governanceAbs = Resolve-RepoPath -Root $repoRoot -Path "scripts/check-governance.ps1" -Owner "governance wiring"
+if (-not (Test-Path -LiteralPath $governanceAbs -PathType Leaf)) {
+    throw "linux-ci-environment: governance aggregator is missing"
+}
+$governanceText = $utf8.GetString([IO.File]::ReadAllBytes($governanceAbs)).Replace("`r`n", "`n")
+if ($governanceText.Contains("`r", [StringComparison]::Ordinal)) {
+    throw "linux-ci-environment: governance aggregator contains a bare carriage return"
+}
+foreach ($requiredInvocation in @(
+    '& "$PSScriptRoot/validate-linux-ci-environment.ps1"',
+    '& "$PSScriptRoot/test-linux-ci-environment.ps1"'
+)) {
+    $count = [regex]::Matches($governanceText, "(?m)^\s*$([regex]::Escape($requiredInvocation))\s*$").Count
+    if ($count -ne 1) {
+        throw "linux-ci-environment: governance aggregator must invoke exactly once: $requiredInvocation"
+    }
 }
 for ($index = 0; $index -lt $sourceRows.Count; $index++) {
     $row = $sourceRows[$index]
