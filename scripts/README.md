@@ -1,6 +1,8 @@
 # scripts/
 
 - `meta-check.ps1`: one-command readiness check for this repository.
+- `run-core-profile-gates.ps1`: validates and projects the versioned Windows/Linux x64 Core gate plan in `ci/core-profile/gates-v1.json`; `-List`/`-DryRun` are deterministic and side-effect free, while `-Mode NoArtifacts -RunId <id>` executes explicit platform lanes sequentially with per-command timeouts, hostile snapshot-update environment removal, live-manifest binding, a repo-scoped cross-process Cargo lock, propagated evidence identity, and self-validated output below `temp/no-artifacts/core-profile-gates/<id>/`.
+- `test-core-profile-gates.ps1`: exercises deterministic list/dry-run output, distinct manifest/no-artifact modes, hostile inherited bless/update variables, command failure and timeout propagation, live-manifest and evidence tampering, stale evidence, missing tools, closed-schema/container-shape plan mutations, forbidden snapshot-mutation routes, and cross-process Cargo no-overlap.
 - `check-governance.ps1`: single governance pass for current-program structure/truth plus the retained doctrine, deferred-gate, PMR, and integration checks.
 - `docs-check.ps1`: verifies the current authority documents and Ideal program manifest exist; historical MACH/vNNN plans are not required.
 - `run-smoke.ps1`: executes the smoke VBA sample through the CLI and prints retained value output.
