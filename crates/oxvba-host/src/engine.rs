@@ -1109,7 +1109,7 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiagnosticPhase, Engine, HostConfig};
+    use super::{Engine, HostConfig};
     use oxvba_bundle::ProjectMemberKind;
     use oxvba_oxir::OxImage;
     use oxvba_runtime::Variant;
@@ -1132,19 +1132,20 @@ mod tests {
     }
 
     #[test]
-    fn jit_unsupported_phase_diagnostic_exposes_stable_code() {
+    fn jit_new_collection_executes_supported_shape() {
         let engine = Engine::new(HostConfig::jit());
-        let err = engine
+        let snapshot = engine
             .execute_source_with_variant_snapshot_clean(
                 "Sub Main()\n\
                  Dim c As Collection\n\
                  Set c = New Collection\n\
                  End Sub\n",
             )
-            .expect_err("unsupported JIT shape should return a diagnostic");
-        assert_eq!(err.phase(), DiagnosticPhase::Runtime);
-        assert_eq!(err.diagnostic().code.as_str(), "RUN-E-JIT-UNSUPPORTED");
-        assert!(err.message().contains("unsupported"));
+            .expect("New Collection is a supported JIT shape");
+        assert!(
+            snapshot.iter().any(|value| value.as_object_ref().is_some()),
+            "expected the Collection local to contain an object, got {snapshot:?}"
+        );
     }
 
     #[test]

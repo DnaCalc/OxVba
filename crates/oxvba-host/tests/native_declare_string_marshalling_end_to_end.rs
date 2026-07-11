@@ -1,7 +1,7 @@
 #[cfg(target_os = "windows")]
 mod windows_native_declare_string_e2e {
     use oxvba_hal::model::HostPolicy;
-    use oxvba_host::{Engine, HostConfig};
+    use oxvba_host::{DiagnosticPhase, Engine, HostConfig};
     use oxvba_runtime::Variant;
 
     fn run_windows_host_backed(source: &str, jit_requested: bool) -> Option<Vec<Variant>> {
@@ -10,11 +10,13 @@ mod windows_native_declare_string_e2e {
             engine.set_host_policy(HostPolicy::interactive_dev());
             let err = engine
                 .execute_source_with_variant_snapshot_clean(source)
-                .expect_err("JIT request should not silently fall back to VM execution");
-            assert!(
-                err.message().contains("JIT execution"),
-                "unexpected JIT unavailable diagnostic: {err}"
-            );
+                .expect_err("native Declare should remain an explicit JIT decline");
+            let diagnostic = err.diagnostic();
+            assert_eq!(err.phase(), DiagnosticPhase::Runtime);
+            assert_eq!(diagnostic.code.as_str(), "RUN-E-JIT-UNSUPPORTED");
+            assert_eq!(diagnostic.phase.as_str(), "runtime");
+            assert_eq!(diagnostic.severity.as_str(), "error");
+            assert_eq!(diagnostic.vba_error_number, None);
             return None;
         }
 
