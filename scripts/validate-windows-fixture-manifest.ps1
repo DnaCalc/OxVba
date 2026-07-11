@@ -46,15 +46,25 @@ function Assert-WindowsFixtureControlledSourcePath {
     }
 }
 
-function Assert-WindowsFixtureCurrentArtifactPath {
+function Assert-WindowsFixtureCurrentControlledPathPolicy {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ExpectedPath,
+        [Parameter(Mandatory = $true)][ValidateSet("artifact", "environment capture")][string]$Kind,
         [Parameter(Mandatory = $true)][string]$Owner
     )
 
-    if ($Path -match '(?i)^(?:docs/evidence|synthesis|target|\.external|\.git|\.beads)(?:/|$)' -or
-        $Path -match '(?i)(?:^|/)(?:archive|historical|old|latest|current)(?:/|$)') {
-        throw "validate-windows-fixture-manifest: $Owner current artifact path '$Path' is historical or mutable"
+    Assert-IdealRelativePath -Path $Path -Owner "$Owner current $Kind path"
+    $normalized = $Path.Trim().Replace('\', '/')
+    if (Test-WindowsFixtureMutableIdentity -Value $normalized) {
+        throw "validate-windows-fixture-manifest: $Owner current $Kind path '$Path' uses a mutable alias"
+    }
+    if ($normalized -match '(?i)^(?:docs/evidence|docs/generated|synthesis|target|\.external|\.git|\.beads)(?:/|$)' -or
+        $normalized -match '(?i)(?:^|/)(?:archive|historical|old)(?:/|$)') {
+        throw "validate-windows-fixture-manifest: $Owner current $Kind path '$Path' is historical or generated"
+    }
+    if ($normalized -cne $ExpectedPath) {
+        throw "validate-windows-fixture-manifest: $Owner current $Kind path must equal immutable controlled path '$ExpectedPath'"
     }
 }
 
@@ -89,6 +99,15 @@ try {
 
     $issues = Read-IdealIssues -RepoRoot $repoRoot -IssuesPath $IssuesPath
     $issueById = $issues.IssueById
+    $environmentRows = @(Import-Csv -LiteralPath (Resolve-IdealRepoPath -RepoRoot $repoRoot -Path "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv"))
+    $environmentById = @{}
+    foreach ($environment in $environmentRows) {
+        $environmentId = [string]$environment.environment_id
+        if ($environmentById.ContainsKey($environmentId)) {
+            throw "validate-windows-fixture-manifest: duplicate canonical environment '$environmentId'"
+        }
+        $environmentById[$environmentId] = $environment
+    }
     $seenKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $seenRowIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $seenFixtureIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -139,6 +158,62 @@ try {
             [string]$row.built_artifact_id -cne "x64-$([string]$row.fixture_id)-artifact-v1") {
             throw "validate-windows-fixture-manifest: row '$key' recipe/artifact identity is not the immutable x64 identity"
         }
+        foreach ($field in @(
+            "built_artifact_class", "built_artifact_root", "built_artifact_name",
+            "built_artifact_type", "built_artifact_components"
+        )) {
+            if ([string]$row.$field -cne [string]$expected.$field) {
+                throw "validate-windows-fixture-manifest: row '$key' field '$field' differs from its explicit artifact contract"
+            }
+        }
+        if ([string]$row.built_artifact_root -notmatch '^artifacts/windows-x64/controlled-fixtures/v1/[a-z0-9-]+/[a-z0-9-]+$' -or
+            (Test-WindowsFixtureMutableIdentity -Value ([string]$row.built_artifact_root))) {
+            throw "validate-windows-fixture-manifest: row '$key' artifact root is not immutable and controlled"
+        }
+        switch ([string]$row.built_artifact_class) {
+            "pe-dll-x64" {
+                if ([string]$row.built_artifact_name -ne "fixture.dll" -or
+                    [string]$row.built_artifact_type -ne "pe32plus-amd64-dll" -or
+                    [string]$row.built_artifact_components -ne "n/a") {
+                    throw "validate-windows-fixture-manifest: row '$key' PE DLL artifact contract is malformed"
+                }
+            }
+            "pe-exe-x64" {
+                if ([string]$row.built_artifact_name -ne "fixture.exe" -or
+                    [string]$row.built_artifact_type -ne "pe32plus-amd64-exe" -or
+                    [string]$row.built_artifact_components -ne "n/a") {
+                    throw "validate-windows-fixture-manifest: row '$key' PE EXE artifact contract is malformed"
+                }
+            }
+            "fixture-bundle-json-v1" {
+                if ([string]$row.built_artifact_name -ne "fixture-bundle.json" -or
+                    [string]$row.built_artifact_type -ne "oxvba-windows-x64-fixture-bundle-v1" -or
+                    [string]$row.built_artifact_components -eq "n/a") {
+                    throw "validate-windows-fixture-manifest: row '$key' fixture-bundle artifact contract is malformed"
+                }
+            }
+            default {
+                throw "validate-windows-fixture-manifest: row '$key' has unsupported built_artifact_class '$($row.built_artifact_class)'"
+            }
+        }
+        foreach ($field in @(
+            "environment_role", "environment_profile", "environment_target_arch",
+            "environment_office_bitness", "environment_evidence_state",
+            "environment_capture_root", "environment_capture_name", "environment_capture_schema"
+        )) {
+            if ([string]$row.$field -cne [string]$expected.$field) {
+                throw "validate-windows-fixture-manifest: row '$key' field '$field' differs from its canonical environment contract"
+            }
+        }
+        if ([string]$row.environment_profile -ne "windows-x64" -or
+            [string]$row.environment_target_arch -ne "x64" -or
+            [string]$row.environment_office_bitness -ne "64" -or
+            [string]$row.environment_role -notin @("dev-oracle", "certification-vm") -or
+            [string]$row.environment_capture_root -notmatch '^artifacts/windows-x64/controlled-environments/v1/[a-z0-9-]+$' -or
+            [string]$row.environment_capture_name -ne "environment-capture.json" -or
+            [string]$row.environment_capture_schema -ne "oxvba-windows-x64-environment-capture-v1") {
+            throw "validate-windows-fixture-manifest: row '$key' environment contract is not a versioned Windows x64 Office64 capture"
+        }
         foreach ($identityField in @("fixture_id", "recipe_id", "built_artifact_id", "environment_id")) {
             $identity = [string]$row.$identityField
             if ($identity -match $forbiddenIdentityPattern) {
@@ -147,6 +222,9 @@ try {
             if ($identity -match $forbiddenTargetPattern) {
                 throw "validate-windows-fixture-manifest: row '$key' $identityField '$identity' is non-x64"
             }
+        }
+        if (-not $environmentById.ContainsKey([string]$row.environment_id)) {
+            throw "validate-windows-fixture-manifest: row '$key' references unknown canonical environment '$($row.environment_id)'"
         }
         if ([string]$row.execution_recipe -notlike "target=x64; office-bitness=$([string]$row.office_bitness); fixture=$([string]$row.fixture_id); process=$([string]$row.process_shape); apartment=$([string]$row.apartment_shape);*" -or
             [string]$row.execution_recipe -notmatch 'capture=six-axis\(result,full-Err,side-effects,lifecycle-order,transport,balance\)' -or
@@ -204,8 +282,37 @@ try {
                     throw "validate-windows-fixture-manifest: row '$key' current built artifact hash/owner is malformed"
                 }
                 $artifactPath = ([string]$row.built_artifact_path).Trim().Replace('\', '/')
-                Assert-IdealRelativePath -Path $artifactPath -Owner "row '$key' built artifact path"
-                Assert-WindowsFixtureCurrentArtifactPath -Path $artifactPath -Owner "row '$key'"
+                $expectedArtifactPath = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+                Assert-WindowsFixtureCurrentControlledPathPolicy `
+                    -Path $artifactPath `
+                    -ExpectedPath $expectedArtifactPath `
+                    -Kind "artifact" `
+                    -Owner "row '$key'"
+                $artifactAbsolute = Assert-WindowsFixtureContainedPath `
+                    -RepositoryRoot $repoRoot `
+                    -RelativePath $artifactPath `
+                    -ControlledRoot ([string]$row.built_artifact_root) `
+                    -Owner "row '$key' built artifact"
+                switch ([string]$row.built_artifact_class) {
+                    "pe-dll-x64" {
+                        Assert-WindowsFixturePeFile -Path $artifactAbsolute -ExpectedKind "pe-dll-x64" -Owner "row '$key' built artifact"
+                    }
+                    "pe-exe-x64" {
+                        Assert-WindowsFixturePeFile -Path $artifactAbsolute -ExpectedKind "pe-exe-x64" -Owner "row '$key' built artifact"
+                    }
+                    "fixture-bundle-json-v1" {
+                        Assert-WindowsFixtureBundleArtifact `
+                            -RepositoryRoot $repoRoot `
+                            -RelativePath $artifactPath `
+                            -ArtifactRoot ([string]$row.built_artifact_root) `
+                            -MatrixId $matrixId `
+                            -RowId $rowId `
+                            -FixtureId ([string]$row.fixture_id) `
+                            -ArtifactId ([string]$row.built_artifact_id) `
+                            -ExpectedComponents ([string]$row.built_artifact_components) `
+                            -Owner "row '$key' built artifact"
+                    }
+                }
                 $actualArtifactHash = Get-WindowsFixtureRawFileHash -RepositoryRoot $repoRoot -RelativePath $artifactPath
                 if ([string]$row.built_artifact_hash -cne $actualArtifactHash) {
                     throw "validate-windows-fixture-manifest: row '$key' built_artifact_hash is forged or stale"
@@ -228,7 +335,19 @@ try {
                     throw "validate-windows-fixture-manifest: row '$key' current environment hash/owner is malformed"
                 }
                 $capturePath = ([string]$row.environment_capture_path).Trim().Replace('\', '/')
-                Assert-IdealRelativePath -Path $capturePath -Owner "row '$key' environment capture path"
+                $expectedCapturePath = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+                Assert-WindowsFixtureCurrentControlledPathPolicy `
+                    -Path $capturePath `
+                    -ExpectedPath $expectedCapturePath `
+                    -Kind "environment capture" `
+                    -Owner "row '$key'"
+                Assert-WindowsFixtureEnvironmentCapture `
+                    -RepositoryRoot $repoRoot `
+                    -RelativePath $capturePath `
+                    -CaptureRoot ([string]$row.environment_capture_root) `
+                    -Environment $environmentById[[string]$row.environment_id] `
+                    -ExpectedSchema ([string]$row.environment_capture_schema) `
+                    -Owner "row '$key' environment capture"
                 $captureHash = Get-WindowsFixtureCanonicalSourceFileHash -RepositoryRoot $repoRoot -RelativePath $capturePath
                 if ([string]$row.environment_hash -cne $captureHash) {
                     throw "validate-windows-fixture-manifest: row '$key' environment_hash is forged or stale"

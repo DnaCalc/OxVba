@@ -93,6 +93,282 @@ function Update-ManifestRow {
     $rows | Export-Csv -LiteralPath $path -NoTypeInformation -Encoding UTF8 -UseQuotes Always
 }
 
+function Update-MatrixRow {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$MatrixId,
+        [Parameter(Mandatory = $true)][string]$RowId,
+        [Parameter(Mandatory = $true)][scriptblock]$Mutation
+    )
+
+    if (-not $matrixContracts.Contains($MatrixId)) {
+        throw "Windows fixture manifest test does not know matrix '$MatrixId'"
+    }
+    $path = Resolve-IdealRepoPath -RepoRoot $FixtureRoot -Path ([string]$matrixContracts[$MatrixId])
+    $rows = @(Import-Csv -LiteralPath $path)
+    $matches = @($rows | Where-Object { [string]$_.row_id -eq $RowId })
+    if ($matches.Count -ne 1) {
+        throw "Windows fixture manifest test expected one matrix row '$MatrixId|$RowId', found $($matches.Count)"
+    }
+    & $Mutation $matches[0]
+    $rows | Export-Csv -LiteralPath $path -NoTypeInformation -Encoding UTF8 -UseQuotes Always
+}
+
+function Get-ManifestRow {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$RowId
+    )
+
+    $path = Resolve-IdealRepoPath -RepoRoot $FixtureRoot -Path $manifestRelativePath
+    $matches = @(Import-Csv -LiteralPath $path | Where-Object { [string]$_.row_id -eq $RowId })
+    if ($matches.Count -ne 1) {
+        throw "Windows fixture manifest test expected one row '$RowId', found $($matches.Count)"
+    }
+    return $matches[0]
+}
+
+function Write-TestBytes {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$RelativePath,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes
+    )
+
+    $absolute = Resolve-IdealRepoPath -RepoRoot $FixtureRoot -Path $RelativePath
+    $parent = Split-Path -Parent $absolute
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+        [void](New-Item -ItemType Directory -Path $parent -Force)
+    }
+    [IO.File]::WriteAllBytes($absolute, $Bytes)
+    return $absolute
+}
+
+function Write-TestUtf8 {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$RelativePath,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text
+    )
+
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Text)
+    return Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $RelativePath -Bytes $bytes
+}
+
+function Write-TestJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$RelativePath,
+        [Parameter(Mandatory = $true)]$Value
+    )
+
+    $text = $Value | ConvertTo-Json -Depth 8
+    return Write-TestUtf8 -FixtureRoot $FixtureRoot -RelativePath $RelativePath -Text ($text + "`n")
+}
+
+function Set-TestUInt16 {
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][int]$Offset,
+        [Parameter(Mandatory = $true)][uint16]$Value
+    )
+
+    [BitConverter]::GetBytes($Value).CopyTo($Bytes, $Offset)
+}
+
+function Set-TestUInt32 {
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][int]$Offset,
+        [Parameter(Mandatory = $true)][uint32]$Value
+    )
+
+    [BitConverter]::GetBytes($Value).CopyTo($Bytes, $Offset)
+}
+
+function New-MinimalTestPe {
+    param(
+        [uint16]$Machine = 0x8664,
+        [bool]$Dll = $true,
+        [uint16]$OptionalMagic = 0x020B
+    )
+
+    $bytes = [byte[]]::new(1024)
+    $bytes[0] = 0x4D
+    $bytes[1] = 0x5A
+    $peOffset = 0x80
+    Set-TestUInt32 -Bytes $bytes -Offset 0x3C -Value $peOffset
+    $bytes[$peOffset] = 0x50
+    $bytes[$peOffset + 1] = 0x45
+    Set-TestUInt16 -Bytes $bytes -Offset ($peOffset + 4) -Value $Machine
+    Set-TestUInt16 -Bytes $bytes -Offset ($peOffset + 6) -Value 1
+    Set-TestUInt16 -Bytes $bytes -Offset ($peOffset + 20) -Value 0x00F0
+    $characteristics = [uint16]0x0002
+    if ($Dll) {
+        $characteristics = [uint16]($characteristics -bor 0x2000)
+    }
+    Set-TestUInt16 -Bytes $bytes -Offset ($peOffset + 22) -Value $characteristics
+    $optionalOffset = $peOffset + 24
+    Set-TestUInt16 -Bytes $bytes -Offset $optionalOffset -Value $OptionalMagic
+    Set-TestUInt32 -Bytes $bytes -Offset ($optionalOffset + 56) -Value 0x2000
+    Set-TestUInt32 -Bytes $bytes -Offset ($optionalOffset + 60) -Value 0x200
+    $sectionOffset = $optionalOffset + 0xF0
+    [Text.Encoding]::ASCII.GetBytes(".text") | ForEach-Object -Begin { $index = 0 } -Process {
+        $bytes[$sectionOffset + $index] = $_
+        $index++
+    }
+    Set-TestUInt32 -Bytes $bytes -Offset ($sectionOffset + 8) -Value 0x100
+    Set-TestUInt32 -Bytes $bytes -Offset ($sectionOffset + 12) -Value 0x1000
+    Set-TestUInt32 -Bytes $bytes -Offset ($sectionOffset + 16) -Value 0x200
+    Set-TestUInt32 -Bytes $bytes -Offset ($sectionOffset + 20) -Value 0x200
+    Set-TestUInt32 -Bytes $bytes -Offset ($sectionOffset + 36) -Value 0x60000020
+    $bytes[0x200] = 0xC3
+    return $bytes
+}
+
+function Set-ManifestBuiltArtifactCurrent {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$RowId,
+        [Parameter(Mandatory = $true)][string]$ArtifactPath
+    )
+
+    $manifestRow = Get-ManifestRow -FixtureRoot $FixtureRoot -RowId $RowId
+    $matrixId = [string]$manifestRow.matrix_id
+    $hash = Get-WindowsFixtureRawFileHash -RepositoryRoot $FixtureRoot -RelativePath $ArtifactPath
+    Update-MatrixRow -FixtureRoot $FixtureRoot -MatrixId $matrixId -RowId $RowId -Mutation {
+        param($row)
+        $row.fixture_hash = $hash
+    }
+    Update-ManifestRow -FixtureRoot $FixtureRoot -RowId $RowId -Mutation {
+        param($row)
+        $row.built_artifact_state = "current"
+        $row.built_artifact_path = $ArtifactPath
+        $row.built_artifact_hash = $hash
+        $row.built_artifact_owner_bead = "n/a"
+    }
+}
+
+function Set-ManifestEnvironmentCurrent {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$RowId,
+        [Parameter(Mandatory = $true)][string]$CapturePath
+    )
+
+    $manifestRow = Get-ManifestRow -FixtureRoot $FixtureRoot -RowId $RowId
+    $matrixId = [string]$manifestRow.matrix_id
+    $hash = Get-WindowsFixtureCanonicalSourceFileHash -RepositoryRoot $FixtureRoot -RelativePath $CapturePath
+    Update-MatrixRow -FixtureRoot $FixtureRoot -MatrixId $matrixId -RowId $RowId -Mutation {
+        param($row)
+        $row.environment_hash = $hash
+    }
+    Update-ManifestRow -FixtureRoot $FixtureRoot -RowId $RowId -Mutation {
+        param($row)
+        $row.environment_state = "current"
+        $row.environment_capture_path = $CapturePath
+        $row.environment_hash = $hash
+        $row.environment_owner_bead = "n/a"
+    }
+}
+
+function New-TestEnvironmentCapture {
+    param(
+        [Parameter(Mandatory = $true)]$Environment
+    )
+
+    $isCertification = [string]$Environment.role -eq "certification-vm"
+    return [pscustomobject][ordered]@{
+        schema_id = "oxvba-windows-x64-environment-capture-v1"
+        schema_version = 1
+        capture_id = "$([string]$Environment.environment_id)-capture-v1"
+        environment_id = [string]$Environment.environment_id
+        role = [string]$Environment.role
+        profile = [string]$Environment.profile
+        target_arch = [string]$Environment.target_arch
+        os_build = [string]$Environment.os_build
+        office_product = [string]$Environment.office_product
+        office_version = [string]$Environment.office_version
+        office_build = [string]$Environment.office_build
+        office_channel = [string]$Environment.office_channel
+        office_bitness = [string]$Environment.office_bitness
+        locale = [string]$Environment.locale
+        snapshot_or_image = [string]$Environment.snapshot_or_image
+        reset_policy = [string]$Environment.reset_policy
+        reset_policy_hash = Get-WindowsFixtureResetPolicyHash -ResetPolicy ([string]$Environment.reset_policy)
+        evidence_state = [string]$Environment.evidence_state
+        certification_authority = $isCertification
+        noncertifying = -not $isCertification
+    }
+}
+
+function New-TestBundleArtifact {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)]$ManifestRow
+    )
+
+    $artifactRoot = [string]$ManifestRow.built_artifact_root
+    $componentKinds = @([string]$ManifestRow.built_artifact_components -split '\|')
+    $components = [Collections.Generic.List[object]]::new()
+    for ($index = 0; $index -lt $componentKinds.Count; $index++) {
+        $kind = $componentKinds[$index]
+        $ordinal = $index + 1
+        $componentId = switch ($kind) {
+            "pe-dll-x64" { "server-$ordinal-v1" }
+            "pe-exe-x64" { "host-$ordinal-v1" }
+            "msft-tlb-v1" { "typelib-$ordinal-v1" }
+            "vba-source-utf8-v1" { "client-$ordinal-v1" }
+            default { throw "Windows fixture manifest test cannot materialize bundle kind '$kind'" }
+        }
+        $extension = switch ($kind) {
+            "pe-dll-x64" { ".dll" }
+            "pe-exe-x64" { ".exe" }
+            "msft-tlb-v1" { ".tlb" }
+            "vba-source-utf8-v1" { ".bas" }
+        }
+        $componentRelative = "components/$componentId$extension"
+        $componentRepoPath = "$artifactRoot/$componentRelative"
+        switch ($kind) {
+            "pe-dll-x64" {
+                [byte[]]$peBytes = New-MinimalTestPe -Dll $true
+                [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Bytes $peBytes)
+            }
+            "pe-exe-x64" {
+                [byte[]]$peBytes = New-MinimalTestPe -Dll $false
+                [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Bytes $peBytes)
+            }
+            "msft-tlb-v1" {
+                [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Bytes ([byte[]](0x4D, 0x53, 0x46, 0x54, 1, 0, 0, 0)))
+            }
+            "vba-source-utf8-v1" {
+                [void](Write-TestUtf8 -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Text "Attribute VB_Name = `"FixtureClient`"`nOption Explicit`n")
+            }
+        }
+        $components.Add([pscustomobject][ordered]@{
+            component_id = $componentId
+            kind = $kind
+            relative_path = $componentRelative
+            sha256 = Get-WindowsFixtureRawFileHash -RepositoryRoot $FixtureRoot -RelativePath $componentRepoPath
+        })
+    }
+
+    $bundle = [pscustomobject][ordered]@{
+        schema_id = "oxvba-windows-x64-fixture-bundle-v1"
+        schema_version = 1
+        matrix_id = [string]$ManifestRow.matrix_id
+        row_id = [string]$ManifestRow.row_id
+        fixture_id = [string]$ManifestRow.fixture_id
+        artifact_id = [string]$ManifestRow.built_artifact_id
+        target_arch = "x64"
+        artifact_class = "fixture-bundle-json-v1"
+        components = @($components)
+    }
+    $bundlePath = "$artifactRoot/$([string]$ManifestRow.built_artifact_name)"
+    [void](Write-TestJson -FixtureRoot $FixtureRoot -RelativePath $bundlePath -Value $bundle)
+    return $bundlePath
+}
+
 function Invoke-ExpectedFailure {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -147,6 +423,48 @@ try {
     [IO.File]::WriteAllText($eolSource, $canonicalText.Replace("`n", "`r`n"), [Text.UTF8Encoding]::new($false))
     & $validator -RepositoryRoot $eolFixture
     Write-Host "windows-fixture-manifest-positive: ok (canonical-LF-hash-accepts-CRLF-checkout)"
+
+    $dllFixture = New-WindowsFixtureManifestTestRoot
+    $dllRow = Get-ManifestRow -FixtureRoot $dllFixture -RowId "WCC-PLAN-LATE"
+    $dllPath = "$([string]$dllRow.built_artifact_root)/$([string]$dllRow.built_artifact_name)"
+    [byte[]]$dllBytes = New-MinimalTestPe -Dll $true
+    [void](Write-TestBytes -FixtureRoot $dllFixture -RelativePath $dllPath -Bytes $dllBytes)
+    Set-ManifestBuiltArtifactCurrent -FixtureRoot $dllFixture -RowId "WCC-PLAN-LATE" -ArtifactPath $dllPath
+    & $validator -RepositoryRoot $dllFixture
+    Write-Host "windows-fixture-manifest-positive: ok (current-controlled-pe32plus-amd64-dll)"
+
+    $exeFixture = New-WindowsFixtureManifestTestRoot
+    $exeRow = Get-ManifestRow -FixtureRoot $exeFixture -RowId "WAC-BSTR-LAYOUT"
+    $exePath = "$([string]$exeRow.built_artifact_root)/$([string]$exeRow.built_artifact_name)"
+    [byte[]]$exeBytes = New-MinimalTestPe -Dll $false
+    [void](Write-TestBytes -FixtureRoot $exeFixture -RelativePath $exePath -Bytes $exeBytes)
+    Set-ManifestBuiltArtifactCurrent -FixtureRoot $exeFixture -RowId "WAC-BSTR-LAYOUT" -ArtifactPath $exePath
+    & $validator -RepositoryRoot $exeFixture
+    Write-Host "windows-fixture-manifest-positive: ok (current-controlled-pe32plus-amd64-exe)"
+
+    $bundleFixture = New-WindowsFixtureManifestTestRoot
+    $bundleRow = Get-ManifestRow -FixtureRoot $bundleFixture -RowId "WCC-EXCEL-AUTHORITY"
+    $bundlePath = New-TestBundleArtifact -FixtureRoot $bundleFixture -ManifestRow $bundleRow
+    Set-ManifestBuiltArtifactCurrent -FixtureRoot $bundleFixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $bundlePath
+    & $validator -RepositoryRoot $bundleFixture
+    Write-Host "windows-fixture-manifest-positive: ok (current-controlled-exact-bundle-schema)"
+
+    $environmentFixture = New-WindowsFixtureManifestTestRoot
+    $environmentPath = Resolve-IdealRepoPath -RepoRoot $environmentFixture -Path $environmentRelativePath
+    $environmentRows = @(Import-Csv -LiteralPath $environmentPath)
+    $devEnvironments = @($environmentRows | Where-Object { [string]$_.environment_id -eq "win-x64-dev-oracle-2026-07" })
+    if ($devEnvironments.Count -ne 1) {
+        throw "Windows fixture manifest test expected one development oracle environment"
+    }
+    $devEnvironments[0].snapshot_or_image = "dev-oracle-2026-07@sha256:" + ("a" * 64)
+    $environmentRows | Export-Csv -LiteralPath $environmentPath -NoTypeInformation -Encoding UTF8 -UseQuotes Always
+    $environmentRow = Get-ManifestRow -FixtureRoot $environmentFixture -RowId "WAC-BSTR-LAYOUT"
+    $capturePath = "$([string]$environmentRow.environment_capture_root)/$([string]$environmentRow.environment_capture_name)"
+    $capture = New-TestEnvironmentCapture -Environment $devEnvironments[0]
+    [void](Write-TestJson -FixtureRoot $environmentFixture -RelativePath $capturePath -Value $capture)
+    Set-ManifestEnvironmentCurrent -FixtureRoot $environmentFixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $capturePath
+    & $validator -RepositoryRoot $environmentFixture
+    Write-Host "windows-fixture-manifest-positive: ok (current-versioned-environment-capture-bound-to-canonical-row)"
 
     Invoke-ExpectedFailure -Name "missing-row" -MessagePattern "expected exactly 57 rows, found 56" -Mutation {
         param($fixture)
@@ -210,6 +528,59 @@ try {
         [IO.File]::WriteAllBytes($absolute, [byte[]](1, 2, 3, 4))
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.source_recipe_paths = $relative }
     }
+    Invoke-ExpectedFailure -Name "artifact-source-text-masquerade" -MessagePattern "missing DOS MZ header" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [void](Write-TestUtf8 -FixtureRoot $fixture -RelativePath $path -Text "Attribute VB_Name = `"NotABinary`"`n")
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-mutable-alias" -MessagePattern "uses a mutable alias" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/latest.dll"
+        [byte[]]$bytes = New-MinimalTestPe -Dll $true
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-historical-generated-path" -MessagePattern "historical or generated" -Mutation {
+        param($fixture)
+        $path = "docs/evidence/historical-fixture.dll"
+        [byte[]]$bytes = New-MinimalTestPe -Dll $true
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-path-escape" -MessagePattern "repository-relative path" -Mutation {
+        param($fixture)
+        $manifestRow = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $hash = "sha256:" + ("2" * 64)
+        Update-MatrixRow -FixtureRoot $fixture -MatrixId ([string]$manifestRow.matrix_id) -RowId "WCC-PLAN-LATE" -Mutation {
+            param($row)
+            $row.fixture_hash = $hash
+        }
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -Mutation {
+            param($row)
+            $row.built_artifact_state = "current"
+            $row.built_artifact_path = "$([string]$row.built_artifact_root)/../escape.dll"
+            $row.built_artifact_hash = $hash
+            $row.built_artifact_owner_bead = "n/a"
+        }
+    }
+    Invoke-ExpectedFailure -Name "artifact-x86-pe" -MessagePattern "PE machine must be AMD64/x64" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [byte[]]$bytes = New-MinimalTestPe -Machine 0x014C -Dll $true -OptionalMagic 0x010B
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-bundle-wrong-schema" -MessagePattern "exact schema" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value ([pscustomobject]@{ schema_id = "arbitrary-text-container" }))
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $path
+    }
     Invoke-ExpectedFailure -Name "pending-artifact-unowned" -MessagePattern "missing or unknown pending owner" -Mutation {
         param($fixture)
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.built_artifact_owner_bead = "n/a" }
@@ -218,12 +589,126 @@ try {
         param($fixture)
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.environment_owner_bead = "n/a" }
     }
+    Invoke-ExpectedFailure -Name "environment-arbitrary-text" -MessagePattern "not valid environment-capture JSON" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        [void](Write-TestUtf8 -FixtureRoot $fixture -RelativePath $path -Text "arbitrary environment notes are not a capture")
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-mutable-alias" -MessagePattern "uses a mutable alias" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/latest.json"
+        [void](Write-TestUtf8 -FixtureRoot $fixture -RelativePath $path -Text "{}")
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-wrong-id" -MessagePattern "environment/capture identity" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        $capture.environment_id = "win-x64-other-2026-07"
+        $capture.capture_id = "win-x64-other-2026-07-capture-v1"
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-wrong-bitness" -MessagePattern "bind x64 and Office64" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        $capture.office_bitness = "32"
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-wrong-target" -MessagePattern "bind x64 and Office64" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        $capture.target_arch = "x86"
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-wrong-role" -MessagePattern "role does not match" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        $capture.role = "certification-vm"
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-path-escape" -MessagePattern "repository-relative path" -Mutation {
+        param($fixture)
+        $manifestRow = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $hash = "sha256:" + ("3" * 64)
+        Update-MatrixRow -FixtureRoot $fixture -MatrixId ([string]$manifestRow.matrix_id) -RowId "WAC-BSTR-LAYOUT" -Mutation {
+            param($row)
+            $row.environment_hash = $hash
+        }
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation {
+            param($row)
+            $row.environment_state = "current"
+            $row.environment_capture_path = "$([string]$row.environment_capture_root)/../escape.json"
+            $row.environment_hash = $hash
+            $row.environment_owner_bead = "n/a"
+        }
+    }
+    Invoke-ExpectedFailure -Name "environment-mutable-image" -MessagePattern "environment/image identity is mutable" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-dev-certifying-flags" -MessagePattern "dev-oracle capture must remain explicitly noncertifying" -Mutation {
+        param($fixture)
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environmentRows = @(Import-Csv -LiteralPath $environmentPath)
+        $environment = @($environmentRows | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $environment.snapshot_or_image = "dev-oracle-2026-07@sha256:" + ("b" * 64)
+        $environmentRows | Export-Csv -LiteralPath $environmentPath -NoTypeInformation -Encoding UTF8 -UseQuotes Always
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        $capture.certification_authority = $true
+        $capture.noncertifying = $false
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-reset-policy-hash" -MessagePattern "reset_policy_hash does not bind" -Mutation {
+        param($fixture)
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environmentRows = @(Import-Csv -LiteralPath $environmentPath)
+        $environment = @($environmentRows | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $environment.snapshot_or_image = "dev-oracle-2026-07@sha256:" + ("c" * 64)
+        $environmentRows | Export-Csv -LiteralPath $environmentPath -NoTypeInformation -Encoding UTF8 -UseQuotes Always
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        $capture.reset_policy_hash = "sha256:" + ("d" * 64)
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
     Invoke-ExpectedFailure -Name "blank-cleanup" -MessagePattern "has blank 'cleanup_recipe'" -Mutation {
         param($fixture)
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.cleanup_recipe = "" }
     }
 
-    Write-Host "test-windows-fixture-manifest: ok (positive=3 negative=15 rows=57 capability_credit=none)"
+    Write-Host "test-windows-fixture-manifest: ok (positive=6 negative=31 rows=57 capability_credit=none)"
 }
 finally {
     if (Test-Path -LiteralPath $tempBase -PathType Container) {
