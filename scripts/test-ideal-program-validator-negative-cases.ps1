@@ -47,6 +47,31 @@ function New-IdealValidatorFixture {
     foreach ($owner in @(Import-Csv -LiteralPath (Join-Path $fixtureRoot "docs/validation/IDEAL_MATRIX_OWNERSHIP_V1.csv"))) {
         Copy-FixtureFile -FixtureRoot $fixtureRoot -RelativePath ([string]$owner.path)
     }
+
+    # Negative cases must not inherit whichever worker claims or completed
+    # rollout transitions happen to be live in the authoritative repository.
+    # CORE-0 is the stable synthetic scheduling anchor used below, so reopen
+    # that anchor and start every fixture with no active claim. Each case then
+    # opts into the exact closed/active states it is intended to exercise.
+    $issuesPath = Join-Path $fixtureRoot ".beads/issues.jsonl"
+    $fixtureAnchorIds = @(
+        "bd-59co.2.1",
+        "bd-59co.2.1.1",
+        "bd-59co.2.1.2",
+        "bd-59co.2.1.3"
+    )
+    $normalizedIssues = foreach ($line in @(Get-Content -LiteralPath $issuesPath)) {
+        $issue = $line | ConvertFrom-Json
+        if ([string]$issue.id -in $fixtureAnchorIds -or [string]$issue.status -eq "in_progress") {
+            $issue.status = "open"
+        }
+        if ([string]$issue.id -in $fixtureAnchorIds) {
+            [void]$issue.PSObject.Properties.Remove("closed_at")
+            [void]$issue.PSObject.Properties.Remove("close_reason")
+        }
+        $issue | ConvertTo-Json -Depth 100 -Compress
+    }
+    Set-Content -LiteralPath $issuesPath -Value $normalizedIssues -Encoding UTF8
     return $fixtureRoot
 }
 

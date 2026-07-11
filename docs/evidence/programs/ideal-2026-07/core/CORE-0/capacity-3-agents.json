@@ -1,0 +1,55 @@
+{
+  "generated_at": "2026-07-11T02:48:00Z",
+  "data_hash": "1e4aa5af57a19d59",
+  "output_format": "json",
+  "version": "v0.15.2",
+  "agents": 3,
+  "label": "ideal-2026-07",
+  "open_issue_count": 120,
+  "total_minutes": 91051,
+  "total_days": 189.68958333333333,
+  "serial_minutes": 10337,
+  "parallel_minutes": 80714,
+  "parallelizable_pct": 88.6470219986601,
+  "estimated_days": 77.58541666666666,
+  "critical_path_length": 11,
+  "critical_path": [
+    "bd-59co",
+    "bd-59co.2",
+    "bd-59co.2.2",
+    "bd-59co.2.3",
+    "bd-59co.2.4",
+    "bd-59co.3.10",
+    "bd-59co.3.11",
+    "bd-59co.3.11.1",
+    "bd-9sed.17",
+    "bd-59co.3.11.2",
+    "bd-59co.3.11.4"
+  ],
+  "actionable_count": 1,
+  "actionable": [
+    "bd-59co"
+  ],
+  "bottlenecks": [
+    {
+      "id": "bd-59co.3",
+      "blocks_count": 16
+    },
+    {
+      "id": "bd-59co.2.4",
+      "blocks_count": 14
+    },
+    {
+      "id": "bd-59co.4",
+      "blocks_count": 14
+    },
+    {
+      "id": "bd-59co.3.2",
+      "blocks_count": 13
+    },
+    {
+      "id": "bd-59co.3.3",
+      "blocks_count": 13
+    }
+  ]
+}
