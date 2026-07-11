@@ -65,11 +65,55 @@ impl OwnedBstr {
             .unwrap_or(std::ptr::null_mut())
     }
 
-    fn into_raw(mut self) -> BSTR {
-        self.0
-            .take()
-            .map(BStr::into_raw_bstr)
-            .unwrap_or(std::ptr::null_mut())
+    /// Transfer this canonical BSTR owner into a fresh Windows VARIANT and
+    /// attach the independent accounting token before returning.
+    ///
+    /// # Safety
+    /// `variant` must point to a writable, zero/VT_EMPTY-initialized VARIANT
+    /// cell not currently owning a payload. `accounting` must belong to that
+    /// same cell and contain no prior BSTR transfer token.
+    unsafe fn transfer_into_variant(
+        mut self,
+        variant: *mut VARIANT,
+        accounting: &mut Option<TrackedBstrAccountingToken>,
+    ) -> Result<(), String> {
+        if accounting.is_some() {
+            return Err("Windows VARIANT already carries a tracked BSTR transfer".to_string());
+        }
+        let Some(value) = self.0.take() else {
+            // SAFETY: guaranteed by this method's fresh writable-cell contract.
+            unsafe {
+                (*variant).Anonymous.Anonymous.Anonymous.bstrVal = std::ptr::null_mut();
+                (*variant).Anonymous.Anonymous.vt = VT_BSTR;
+            }
+            return Ok(());
+        };
+
+        // No fallible operation follows this ownership transfer. The pointer
+        // is installed in the destination before the accounting token is
+        // attached; both writes target the caller's valid fresh cell.
+        let raw = value.into_raw_bstr();
+        // SAFETY: guaranteed by this method's fresh writable-cell contract.
+        unsafe {
+            (*variant).Anonymous.Anonymous.Anonymous.bstrVal = raw;
+            (*variant).Anonymous.Anonymous.vt = VT_BSTR;
+        }
+        *accounting = Some(TrackedBstrAccountingToken);
+        Ok(())
+    }
+}
+
+/// Counter ownership for one canonical BSTR allocation transferred into a
+/// Windows VARIANT. Windows owns and frees the native payload after transfer;
+/// this token owns only the matching OxVba live-counter debit.
+#[cfg(target_os = "windows")]
+#[derive(Debug)]
+struct TrackedBstrAccountingToken;
+
+#[cfg(target_os = "windows")]
+impl Drop for TrackedBstrAccountingToken {
+    fn drop(&mut self) {
+        crate::live_counters::bstr_freed();
     }
 }
 
@@ -148,12 +192,17 @@ unsafe impl Send for OwnedBstrCell {}
 // `VarPtr(Variant)` materializes a Windows-observable VARIANT cell from the
 // canonical semantic Variant carrier; the raw VARIANT is still a boundary
 // projection rather than the canonical runtime container itself.
-struct OwnedVariant(VARIANT);
+struct OwnedVariant {
+    cell: VARIANT,
+    tracked_bstr: Option<TrackedBstrAccountingToken>,
+}
 
 #[cfg(target_os = "windows")]
 impl std::fmt::Debug for OwnedVariant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OwnedVariant").finish_non_exhaustive()
+        f.debug_struct("OwnedVariant")
+            .field("tracked_bstr", &self.tracked_bstr.is_some())
+            .finish_non_exhaustive()
     }
 }
 
@@ -163,17 +212,27 @@ impl OwnedVariant {
         // SAFETY: The all-zero bit pattern is a valid VARIANT — vt == VT_EMPTY
         // with no owned payload, the same state `VariantInit` produces; every
         // union field (integers, raw pointers) admits the zero bit pattern.
-        let mut variant: VARIANT = unsafe { std::mem::zeroed() };
-        // SAFETY: `&mut variant` points to a writable VARIANT local that was
+        let mut owner = Self {
+            // SAFETY: the all-zero bit pattern is a valid VT_EMPTY VARIANT.
+            cell: unsafe { std::mem::zeroed() },
+            tracked_bstr: None,
+        };
+        // SAFETY: `&mut owner.cell` points to a writable VARIANT local that was
         // just zeroed to VT_EMPTY, so the callee overwrites no pre-owned
         // payload; it stores only payloads matching the vt it sets, which
         // `OwnedVariant`'s Drop later releases via VariantClear.
-        unsafe { set_windows_variant_from_variant(&mut variant, value)? };
-        Ok(Self(variant))
+        unsafe {
+            set_windows_variant_from_variant(&mut owner.cell, value, &mut owner.tracked_bstr)?
+        };
+        Ok(owner)
     }
 
     fn as_ptr(&mut self) -> *mut c_void {
-        (&mut self.0 as *mut VARIANT).cast()
+        (&mut self.cell as *mut VARIANT).cast()
+    }
+
+    fn as_const_ptr(&self) -> *const VARIANT {
+        &self.cell
     }
 }
 
@@ -208,7 +267,7 @@ unsafe fn set_windows_variant_array_arg(
     // default (`Empty`) elements sized to the bounds — an empty array when the
     // descriptor carries no bounds either. These flow through the same
     // SAFEARRAY-creation paths below as a real payload.
-    let values: Vec<Variant> = match array.variant_elements() {
+    let values: Vec<Variant> = match array.try_variant_elements()? {
         Some(values) => values,
         None => {
             let count = array
@@ -237,18 +296,21 @@ unsafe fn set_windows_variant_array_arg(
         }
         let mut indices: Vec<i32> = bounds.iter().map(|b| b.lower).collect();
         for value in values {
-            let mut element: VARIANT = std::mem::zeroed();
-            if let Err(detail) = set_windows_variant_from_variant(&mut element, &value) {
-                let _ = VariantClear(&mut element);
-                let _ = SafeArrayDestroy(psa.cast_const());
-                return Err(detail);
-            }
+            let element = match OwnedVariant::from_variant(&value) {
+                Ok(element) => element,
+                Err(detail) => {
+                    let _ = SafeArrayDestroy(psa.cast_const());
+                    return Err(detail);
+                }
+            };
             let hr = SafeArrayPutElement(
                 psa.cast_const(),
                 indices.as_ptr(),
-                (&element as *const VARIANT).cast(),
+                element.as_const_ptr().cast(),
             );
-            let _ = VariantClear(&mut element);
+            // SafeArrayPutElement copies the VARIANT payload; the temporary
+            // still owns its source and accounting token and is cleared now.
+            drop(element);
             if hr < 0 {
                 let _ = SafeArrayDestroy(psa.cast_const());
                 return Err(format!(
@@ -281,20 +343,25 @@ unsafe fn set_windows_variant_array_arg(
         return Err("SafeArrayCreateVector(VT_VARIANT) returned null".to_string());
     }
     for (offset, value) in values.iter().enumerate() {
-        let mut element: VARIANT = std::mem::zeroed();
-        if let Err(detail) = set_windows_variant_from_variant(&mut element, value) {
-            let _ = VariantClear(&mut element);
-            let _ = SafeArrayDestroy(psa.cast_const());
-            return Err(detail);
-        }
-        let index = i32::try_from(offset)
-            .map_err(|_| "SAFEARRAY index exceeds supported i32 range".to_string())?;
-        let hr = SafeArrayPutElement(
-            psa.cast_const(),
-            &index,
-            (&element as *const VARIANT).cast(),
-        );
-        let _ = VariantClear(&mut element);
+        let element = match OwnedVariant::from_variant(value) {
+            Ok(element) => element,
+            Err(detail) => {
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err(detail);
+            }
+        };
+        let index = match i32::try_from(offset) {
+            Ok(index) => index,
+            Err(_) => {
+                drop(element);
+                let _ = SafeArrayDestroy(psa.cast_const());
+                return Err("SAFEARRAY index exceeds supported i32 range".to_string());
+            }
+        };
+        let hr = SafeArrayPutElement(psa.cast_const(), &index, element.as_const_ptr().cast());
+        // SafeArrayPutElement copies the VARIANT payload; clear the temporary
+        // and settle its transfer token independently of the SAFEARRAY copy.
+        drop(element);
         if hr < 0 {
             let _ = SafeArrayDestroy(psa.cast_const());
             return Err(format!(
@@ -313,7 +380,10 @@ unsafe fn set_windows_variant_array_arg(
 unsafe fn set_windows_variant_from_variant(
     variant: *mut VARIANT,
     value: &Variant,
+    tracked_bstr: &mut Option<TrackedBstrAccountingToken>,
 ) -> Result<(), String> {
+    // This projection is only valid for the fresh VT_EMPTY cell and matching
+    // empty accounting slot constructed by OwnedVariant::from_variant.
     match value.vtype() {
         crate::VarType::Empty => {
             (*variant).Anonymous.Anonymous.vt = VT_EMPTY;
@@ -394,12 +464,12 @@ unsafe fn set_windows_variant_from_variant(
                 value.as_currency_scaled_i64().expect("currency payload");
         }
         crate::VarType::String => {
-            (*variant).Anonymous.Anonymous.vt = VT_BSTR;
             let text = value
-                .as_bstr()
+                .try_as_bstr()?
                 .ok_or_else(|| "canonical string Variant lost owned BSTR payload".to_string())?;
-            (*variant).Anonymous.Anonymous.Anonymous.bstrVal =
-                OwnedBstr::from_bstr(&text)?.into_raw();
+            // SAFETY: this function's caller supplies the fresh writable
+            // VARIANT cell and the matching empty accounting slot.
+            unsafe { OwnedBstr::from_bstr(&text)?.transfer_into_variant(variant, tracked_bstr)? };
         }
         crate::VarType::Decimal => {
             let bytes = value.to_wire_bytes();
@@ -419,7 +489,7 @@ unsafe fn set_windows_variant_from_variant(
             };
         }
         crate::VarType::ArrayVariant => {
-            let Some(array) = value.as_safearray() else {
+            let Some(array) = value.try_as_safearray()? else {
                 return Err(
                     "VarPtr over Variant containing null SAFEARRAY payload is not yet supported"
                         .to_string(),
@@ -442,16 +512,21 @@ unsafe fn set_windows_variant_from_variant(
 #[cfg(target_os = "windows")]
 impl Drop for OwnedVariant {
     fn drop(&mut self) {
-        // SAFETY: `self.0` was fully initialized by `from_variant` (zeroed to
+        // SAFETY: `self.cell` was fully initialized by `from_variant` (zeroed to
         // VT_EMPTY, then populated by `set_windows_variant_from_variant`). The
         // VARIANT owns its BSTR/SAFEARRAY/IUnknown payload until VariantClear,
         // and this cell is that payload's sole owner (the registry holds the
         // entry until `free_pins` removes it, after the consuming native call
         // per docs/spec/OXVBA_POINTER_HELPERS_CONTRACT_V1.md), so this releases
-        // the payload exactly once; VariantClear on VT_EMPTY is a no-op.
+        // the current payload exactly once; VariantClear on VT_EMPTY is a no-op.
+        // The transfer token is independent of the cell's current pointer/type:
+        // native code may already have cleared the original and installed null
+        // or a replacement. Settle the original tracked allocation only after
+        // VariantClear has released whichever valid native value remains.
         unsafe {
-            let _ = VariantClear(&mut self.0);
+            let _ = VariantClear(&mut self.cell);
         }
+        drop(self.tracked_bstr.take());
     }
 }
 
