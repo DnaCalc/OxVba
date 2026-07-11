@@ -1344,11 +1344,15 @@ mod tests {
             .expect("layout"),
         );
         let mut record = VbaRecord::new_default(layout).expect("record");
-        let field = record.layout().fields()[0].clone();
+        let field = record.field_handle(0).expect("record field handle");
         // SAFETY: `field` is this record's own `Long` field, so `field_mut_ptr` yields
         // an in-bounds, `i32`-aligned slot to overwrite.
         unsafe {
-            record.field_mut_ptr(&field).cast::<i32>().write(41);
+            record
+                .field_mut_ptr(&field)
+                .expect("record field pointer")
+                .cast::<i32>()
+                .write(41);
         }
         let original = Variant::from_vba_record(record);
         let cloned = original.clone();

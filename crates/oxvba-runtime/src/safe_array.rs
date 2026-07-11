@@ -2136,9 +2136,13 @@ mod tests {
         );
         let make_record = |value: i32| {
             let mut record = VbaRecord::new_default(layout.clone()).expect("record");
-            let field = record.layout().fields()[0].clone();
+            let field = record.field_handle(0).expect("record field handle");
             unsafe {
-                record.field_mut_ptr(&field).cast::<i32>().write(value);
+                record
+                    .field_mut_ptr(&field)
+                    .expect("record field pointer")
+                    .cast::<i32>()
+                    .write(value);
             }
             record
         };
