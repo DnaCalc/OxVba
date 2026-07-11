@@ -96,7 +96,13 @@ $journalDirectory = Join-Path $outer 'oxvba-owned-resource-journals'
 $runDirectory = Join-Path $outer 'oxvba-owned-resource-runs'
 $fileSentinel = Join-Path $outer 'neighbor-sentinel.txt'
 $junctionTarget = Join-Path $outer 'junction-target'
-$registryPath = "HKCU\Software\OxVbaOwnedResourcePolicy\$testId"
+$registryNamespacePath = 'HKCU\Software\OxVbaOwnedResourcePolicy'
+$registryPath = "$registryNamespacePath\$testId"
+$absentNamespacePath = "HKCU\Software\OxVbaOwnedAbsent-$testId"
+$absentRegistryPath = "$absentNamespacePath\leaf"
+$conflictNamespacePath = "HKCU\Software\OxVbaOwnedConflict-$testId"
+$conflictRegistryPath = "$conflictNamespacePath\leaf"
+$conflictAncestorValueName = "ancestor-neighbor-$testId"
 $ownedValueName = "owned-$testId"
 $neighborValueName = "neighbor-$testId"
 $neighborValue = "neighbor-value-$testId"
@@ -104,6 +110,12 @@ $executable = [IO.Path]::GetFullPath((Get-Command pwsh -ErrorAction Stop).Source
 $currentProcessStart = Get-WindowsOwnedProcessStartUtc -ProcessId $PID
 $logicalSentinel = [pscustomobject][ordered]@{ identity = "logical-$testId"; state = 'unchanged'; version = 1 }
 $logicalSentinelDigest = Get-WindowsOwnedSha256Text -Text ($logicalSentinel | ConvertTo-Json -Compress)
+$registryNamespaceExisted = Test-WindowsOwnedRegistryKeyExists -Path $registryNamespacePath
+$absentNamespaceExisted = Test-WindowsOwnedRegistryKeyExists -Path $absentNamespacePath
+$conflictNamespaceExisted = Test-WindowsOwnedRegistryKeyExists -Path $conflictNamespacePath
+if ($absentNamespaceExisted -or $conflictNamespaceExisted) {
+    throw 'synthetic registry namespace GUID collision'
+}
 
 [void](New-Item -ItemType Directory -Path $outer)
 [void](New-Item -ItemType Directory -Path $junctionTarget)
@@ -283,6 +295,7 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     Assert-PolicyTrue -Condition (-not (Get-WindowsOwnedRegistryValueSnapshot -Path $registryPath -ValueName $ownedValueName).exists) -Message 'owned HKCU value was removed'
     Assert-PolicyTrue -Condition (-not (Test-WindowsOwnedProcessIdentity -ProcessId ([int]$processResource.descriptor.pid) -StartUtc ([string]$processResource.descriptor.process_start_utc))) -Message 'owned child exact PID/start is no longer live'
     Assert-PolicyEqual -Actual (Get-WindowsOwnedRegistryValueSnapshot -Path $registryPath -ValueName $neighborValueName) -Expected $registrySentinel -Message 'neighbor registry sentinel is byte-for-byte unchanged'
+    Assert-PolicyTrue -Condition (Test-WindowsOwnedRegistryKeyExists -Path $registryNamespacePath) -Message 'registry ancestor that pre-existed the journal mutation is preserved'
     Assert-PolicyTrue -Condition ((Get-FileHash -LiteralPath $fileSentinel -Algorithm SHA256).Hash -ceq $fileSentinelDigest) -Message 'neighbor file sentinel is unchanged'
     Assert-PolicyTrue -Condition (Test-WindowsOwnedProcessIdentity -ProcessId $PID -StartUtc $currentProcessStart) -Message 'unowned process sentinel is unchanged and live'
     Assert-PolicyTrue -Condition ((Get-WindowsOwnedSha256Text -Text ($logicalSentinel | ConvertTo-Json -Compress)) -ceq $logicalSentinelDigest) -Message 'logical sentinel is unchanged'
@@ -333,6 +346,58 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     [IO.File]::WriteAllBytes($driftPath, $driftExpectedBytes)
     [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $driftJournalPath)
     Assert-PolicyTrue -Condition (-not (Test-Path -LiteralPath $driftPath)) -Message 'conflict is recoverable after exact expected state is restored'
+
+    $absentAncestorJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
+        -AllowedRegistryPaths @($absentRegistryPath)
+    [void](Register-TestJournal -JournalPath $absentAncestorJournalPath)
+    $absentRegistryResourceId = Set-WindowsOwnedRegistryValue -JournalPath $absentAncestorJournalPath `
+        -Path $absentRegistryPath -ValueName owned -Value 'absent-ancestor-owned'
+    $absentAncestorJournal = Read-WindowsOwnedResourceJournal -JournalPath $absentAncestorJournalPath
+    $absentRegistryResource = Get-WindowsOwnedRecordedResource -Journal $absentAncestorJournal -ResourceId $absentRegistryResourceId -Kind registry
+    Assert-PolicyTrue -Condition ([string]$absentRegistryResource.descriptor.existing_ancestor_path -ceq 'HKCU\Software' -and
+        (@($absentRegistryResource.descriptor.absent_ancestor_paths) -join '|') -ceq "$absentNamespacePath|$absentRegistryPath") `
+        -Message 'prepared registry record captures the exact absent ancestor chain below HKCU\Software'
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $absentAncestorJournalPath)
+    Assert-PolicyTrue -Condition (-not (Test-WindowsOwnedRegistryKeyExists -Path $absentNamespacePath)) -Message 'exact absent registry namespace and leaf are removed deepest-first when empty'
+
+    $conflictAncestorJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
+        -AllowedRegistryPaths @($conflictRegistryPath)
+    [void](Register-TestJournal -JournalPath $conflictAncestorJournalPath)
+    [void](Set-WindowsOwnedRegistryValue -JournalPath $conflictAncestorJournalPath `
+        -Path $conflictRegistryPath -ValueName owned -Value 'ancestor-conflict-owned')
+    $conflictAncestorKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+        (Get-WindowsOwnedRegistrySubKey -Path $conflictNamespacePath -AllowAncestor), $true)
+    try {
+        $conflictAncestorKey.SetValue($conflictAncestorValueName, 'preserve-me', [Microsoft.Win32.RegistryValueKind]::String)
+        $conflictAncestorKey.Flush()
+    }
+    finally {
+        $conflictAncestorKey.Dispose()
+    }
+    Expect-PolicyRejection -Name 'newly populated created registry ancestor' -MessagePattern 'now populated|conflicts' -Action {
+        Invoke-WindowsOwnedResourceCleanup -JournalPath $conflictAncestorJournalPath
+    }
+    $conflictAncestorKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+        (Get-WindowsOwnedRegistrySubKey -Path $conflictNamespacePath -AllowAncestor), $false)
+    try {
+        $conflictAncestorPreserved = $null -ne $conflictAncestorKey -and
+            [string]$conflictAncestorKey.GetValue($conflictAncestorValueName, $null) -ceq 'preserve-me'
+    }
+    finally {
+        if ($null -ne $conflictAncestorKey) { $conflictAncestorKey.Dispose() }
+    }
+    Assert-PolicyTrue -Condition $conflictAncestorPreserved -Message 'populated recorded ancestor is preserved and reported as a cleanup conflict'
+    $conflictAncestorKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+        (Get-WindowsOwnedRegistrySubKey -Path $conflictNamespacePath -AllowAncestor), $true)
+    try {
+        $conflictAncestorKey.DeleteValue($conflictAncestorValueName, $false)
+        $conflictAncestorKey.Flush()
+    }
+    finally {
+        $conflictAncestorKey.Dispose()
+    }
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $conflictAncestorJournalPath)
+    Assert-PolicyTrue -Condition (-not (Test-WindowsOwnedRegistryKeyExists -Path $conflictNamespacePath)) -Message 'ancestor conflict retry removes only the now-empty recorded ancestor chain'
 
     $staleParentPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
         -AllowedExecutablePaths @($executable) -OrchestratorApartment STA -ReentryPolicy reject
@@ -419,6 +484,20 @@ finally {
     if ($null -ne $script:junctionPath -and (Test-Path -LiteralPath $script:junctionPath)) {
         try { [IO.Directory]::Delete($script:junctionPath, $false) } catch { }
     }
+    try {
+        $conflictKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+            (Get-WindowsOwnedRegistrySubKey -Path $conflictNamespacePath -AllowAncestor), $true)
+        if ($null -ne $conflictKey) {
+            try {
+                $conflictKey.DeleteValue($conflictAncestorValueName, $false)
+                $conflictKey.Flush()
+            }
+            finally {
+                $conflictKey.Dispose()
+            }
+        }
+    }
+    catch { }
     foreach ($journalPath in @($script:journalPaths | Select-Object -Unique)) {
         if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) { continue }
         try {
@@ -453,6 +532,15 @@ finally {
         }
     }
     catch { }
+    foreach ($ownedAbsentNamespace in @(
+        [pscustomobject]@{ path = $registryNamespacePath; existed = $registryNamespaceExisted },
+        [pscustomobject]@{ path = $absentNamespacePath; existed = $absentNamespaceExisted },
+        [pscustomobject]@{ path = $conflictNamespacePath; existed = $conflictNamespaceExisted }
+    )) {
+        if (-not [bool]$ownedAbsentNamespace.existed) {
+            try { [void](Remove-WindowsOwnedAbsentRegistryAncestors -AbsentAncestorPaths @([string]$ownedAbsentNamespace.path)) } catch { }
+        }
+    }
 
     if (Test-Path -LiteralPath $fileSentinel -PathType Leaf) {
         [IO.File]::Delete($fileSentinel)

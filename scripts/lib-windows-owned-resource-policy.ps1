@@ -124,6 +124,28 @@ function ConvertTo-WindowsOwnedRegistryPath {
     return $normalized
 }
 
+function ConvertTo-WindowsOwnedRegistryAncestorPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string]$Owner = 'registry ancestor path'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path.IndexOfAny([char[]]'*?[]') -ge 0 -or
+        $Path -match '(?:^|[\\/])\.\.(?:[\\/]|$)') {
+        throw "$Owner must be one exact non-wildcard HKCU path"
+    }
+    $normalized = $Path.Trim().Replace('/', '\').Replace('HKCU:\', 'HKCU\').Replace('HKEY_CURRENT_USER\', 'HKCU\')
+    while ($normalized.Contains('\\')) {
+        $normalized = $normalized.Replace('\\', '\')
+    }
+    $normalized = $normalized.TrimEnd('\')
+    if ($normalized -notmatch '^HKCU\\Software\\[^\\]+(?:\\.*)?$' -or
+        $normalized -in @('HKCU\Software\Classes', 'HKCU\Software\Classes\CLSID', 'HKCU\Software\Classes\TypeLib', 'HKCU\Software\Classes\Interface', 'HKCU\Software\Classes\AppID')) {
+        throw "$Owner must be an exact path below HKCU\Software, not a hive/category root"
+    }
+    return $normalized
+}
+
 function Test-WindowsOwnedStringSetEqual {
     param([string[]]$Left, [string[]]$Right)
 
@@ -676,7 +698,7 @@ function Assert-WindowsOwnedResourceDescriptor {
             }
         }
         'registry' {
-            Assert-WindowsOwnedExactProperties -Value $Resource.descriptor -Expected @('path', 'value_name', 'mutation_mode') -Owner "$owner registry descriptor"
+            Assert-WindowsOwnedExactProperties -Value $Resource.descriptor -Expected @('path', 'value_name', 'mutation_mode', 'existing_ancestor_path', 'absent_ancestor_paths') -Owner "$owner registry descriptor"
             $path = ConvertTo-WindowsOwnedRegistryPath -Path ([string]$Resource.descriptor.path) -Owner "$owner registry path"
             Assert-WindowsOwnedExactIdentityText -Value ([string]$Resource.descriptor.value_name) -Owner "$owner registry value"
             if ([string]$Resource.descriptor.mutation_mode -cne 'exact-value' -or
@@ -687,6 +709,33 @@ function Assert-WindowsOwnedResourceDescriptor {
             Assert-WindowsOwnedSnapshotSchema -Snapshot $Resource.expected -Owner "$owner registry expected"
             if (-not [bool]$Resource.expected.exists) {
                 throw "$owner registry mutation must journal one exact resulting value"
+            }
+            $existingAncestor = if ([string]$Resource.descriptor.existing_ancestor_path -ceq 'HKCU\Software') {
+                'HKCU\Software'
+            }
+            else {
+                ConvertTo-WindowsOwnedRegistryAncestorPath -Path ([string]$Resource.descriptor.existing_ancestor_path) -Owner "$owner existing registry ancestor"
+            }
+            if (-not ($path -ieq $existingAncestor -or $path.StartsWith($existingAncestor + '\', [StringComparison]::OrdinalIgnoreCase))) {
+                throw "$owner existing registry ancestor must be an exact prefix of the owned leaf"
+            }
+            $previousAncestor = $existingAncestor
+            $seenAncestors = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($ancestorPathValue in @($Resource.descriptor.absent_ancestor_paths)) {
+                $ancestorPath = ConvertTo-WindowsOwnedRegistryAncestorPath -Path ([string]$ancestorPathValue) -Owner "$owner absent registry ancestor"
+                $expectedParent = $ancestorPath.Substring(0, $ancestorPath.LastIndexOf('\'))
+                if ([string]$ancestorPathValue -cne $ancestorPath -or
+                    -not $seenAncestors.Add($ancestorPath) -or
+                    $expectedParent -ine $previousAncestor -or
+                    -not ($path -ieq $ancestorPath -or $path.StartsWith($ancestorPath + '\', [StringComparison]::OrdinalIgnoreCase))) {
+                    throw "$owner absent registry ancestors must be canonical, unique, shallow-to-deep prefixes of the owned leaf"
+                }
+                $previousAncestor = $ancestorPath
+            }
+            $ancestorCount = @($Resource.descriptor.absent_ancestor_paths).Count
+            if (([bool]$Resource.before.key_exists -and ($ancestorCount -ne 0 -or $existingAncestor -ine $path)) -or
+                (-not [bool]$Resource.before.key_exists -and ($ancestorCount -eq 0 -or $previousAncestor -ine $path))) {
+                throw "$owner must record the exact absent registry ancestor chain before mutation"
             }
         }
         'process' {
@@ -952,10 +1001,59 @@ function ConvertFrom-WindowsOwnedRegistryData {
 }
 
 function Get-WindowsOwnedRegistrySubKey {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [switch]$AllowAncestor
+    )
+
+    $normalized = if ($AllowAncestor) {
+        ConvertTo-WindowsOwnedRegistryAncestorPath -Path $Path
+    }
+    else {
+        ConvertTo-WindowsOwnedRegistryPath -Path $Path
+    }
+    return $normalized.Substring('HKCU\'.Length)
+}
+
+function Test-WindowsOwnedRegistryKeyExists {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    $normalized = ConvertTo-WindowsOwnedRegistryPath -Path $Path
-    return $normalized.Substring('HKCU\'.Length)
+    $subKey = Get-WindowsOwnedRegistrySubKey -Path $Path -AllowAncestor
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subKey, $false)
+    if ($null -eq $key) {
+        return $false
+    }
+    $key.Dispose()
+    return $true
+}
+
+function Get-WindowsOwnedRegistryAncestorPlan {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $leaf = ConvertTo-WindowsOwnedRegistryPath -Path $Path
+    $relative = $leaf.Substring('HKCU\Software\'.Length)
+    $parts = @($relative -split '\\')
+    $current = 'HKCU\Software'
+    $existing = $current
+    $seenAbsent = $false
+    $absent = [Collections.Generic.List[string]]::new()
+    foreach ($part in $parts) {
+        $current = "$current\$part"
+        if (Test-WindowsOwnedRegistryKeyExists -Path $current) {
+            if ($seenAbsent) {
+                throw "registry ancestor plan changed while it was being captured at '$current'"
+            }
+            $existing = $current
+        }
+        else {
+            $seenAbsent = $true
+            $absent.Add($current)
+        }
+    }
+    return [pscustomobject][ordered]@{
+        existing_ancestor_path = $existing
+        absent_ancestor_paths = @($absent)
+    }
 }
 
 function Get-WindowsOwnedRegistryValueSnapshot {
@@ -1039,29 +1137,37 @@ function Set-WindowsOwnedRegistryValueRaw {
     }
 }
 
-function Remove-WindowsOwnedEmptyRegistryKeyIfCreated {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)]$Before
-    )
+function Remove-WindowsOwnedAbsentRegistryAncestors {
+    param([string[]]$AbsentAncestorPaths = @())
 
-    if ([bool]$Before.key_exists) {
-        return
+    $ordered = @($AbsentAncestorPaths)
+    [Array]::Reverse($ordered)
+    $removed = [Collections.Generic.List[string]]::new()
+    foreach ($path in $ordered) {
+        $normalized = ConvertTo-WindowsOwnedRegistryAncestorPath -Path $path -Owner 'owned registry ancestor cleanup'
+        $subKey = Get-WindowsOwnedRegistrySubKey -Path $normalized -AllowAncestor
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subKey, $false)
+        if ($null -eq $key) {
+            continue
+        }
+        try {
+            $empty = $key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0
+        }
+        finally {
+            $key.Dispose()
+        }
+        if (-not $empty) {
+            throw "owned created registry ancestor '$normalized' is now populated; exact cleanup refuses deletion"
+        }
+        try {
+            [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($subKey, $false)
+        }
+        catch {
+            throw "owned created registry ancestor '$normalized' changed during exact empty-key cleanup"
+        }
+        $removed.Add($normalized)
     }
-    $subKey = Get-WindowsOwnedRegistrySubKey -Path $Path
-    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subKey, $false)
-    if ($null -eq $key) {
-        return
-    }
-    try {
-        $empty = $key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0
-    }
-    finally {
-        $key.Dispose()
-    }
-    if ($empty) {
-        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($subKey, $false)
-    }
+    return @($removed)
 }
 
 function Set-WindowsOwnedRegistryValue {
@@ -1082,7 +1188,14 @@ function Set-WindowsOwnedRegistryValue {
     }
     $before = Get-WindowsOwnedRegistryValueSnapshot -Path $normalized -ValueName $ValueName
     $expected = New-WindowsOwnedRegistryValueSnapshot -Value $Value -Kind $Kind -KeyExists $true
-    $descriptor = [pscustomobject][ordered]@{ path = $normalized; value_name = $ValueName; mutation_mode = 'exact-value' }
+    $ancestorPlan = Get-WindowsOwnedRegistryAncestorPlan -Path $normalized
+    $descriptor = [pscustomobject][ordered]@{
+        path = $normalized
+        value_name = $ValueName
+        mutation_mode = 'exact-value'
+        existing_ancestor_path = [string]$ancestorPlan.existing_ancestor_path
+        absent_ancestor_paths = @($ancestorPlan.absent_ancestor_paths)
+    }
     $resourceId = Add-WindowsOwnedPreparedResource -JournalPath $JournalPath -Kind registry -Descriptor $descriptor -Before $before -Expected $expected
     Set-WindowsOwnedRegistryValueRaw -Path $normalized -ValueName $ValueName -Snapshot $expected
     Set-WindowsOwnedResourceActive -JournalPath $JournalPath -ResourceId $resourceId
@@ -1342,15 +1455,27 @@ function Invoke-WindowsOwnedSingleResourceCleanup {
             $path = ConvertTo-WindowsOwnedRegistryPath -Path ([string]$Resource.descriptor.path) -Owner 'owned registry cleanup'
             $name = [string]$Resource.descriptor.value_name
             $actual = Get-WindowsOwnedRegistryValueSnapshot -Path $path -ValueName $name
+            $absentAncestors = @($Resource.descriptor.absent_ancestor_paths)
             if (Test-WindowsOwnedObjectEqual -Left $actual -Right $Resource.before) {
-                return 'already-before'
+                [void](Remove-WindowsOwnedAbsentRegistryAncestors -AbsentAncestorPaths $absentAncestors)
+                return 'already-before-and-remove-exact-empty-created-ancestors'
             }
-            if (-not (Test-WindowsOwnedObjectEqual -Left $actual -Right $Resource.expected)) {
+            if (Test-WindowsOwnedObjectEqual -Left $actual -Right $Resource.expected) {
+                Set-WindowsOwnedRegistryValueRaw -Path $path -ValueName $name -Snapshot $Resource.before
+            }
+            elseif (-not [bool]$actual.exists -and -not [bool]$Resource.before.exists -and $absentAncestors.Count -gt 0) {
+                # Crash window after the exact value inverse but before empty
+                # created-ancestor removal. Continue only through recorded keys.
+            }
+            else {
                 throw "owned registry value '$path::$name' drifted from both its before and expected snapshots"
             }
-            Set-WindowsOwnedRegistryValueRaw -Path $path -ValueName $name -Snapshot $Resource.before
-            Remove-WindowsOwnedEmptyRegistryKeyIfCreated -Path $path -Before $Resource.before
-            return 'restore-exact-registry-value'
+            [void](Remove-WindowsOwnedAbsentRegistryAncestors -AbsentAncestorPaths $absentAncestors)
+            $restored = Get-WindowsOwnedRegistryValueSnapshot -Path $path -ValueName $name
+            if (-not (Test-WindowsOwnedObjectEqual -Left $restored -Right $Resource.before)) {
+                throw "owned registry value '$path::$name' did not reach its exact before snapshot"
+            }
+            return 'restore-exact-registry-value-and-empty-created-ancestors'
         }
         'process' {
             $pidValue = [int]$Resource.descriptor.pid
