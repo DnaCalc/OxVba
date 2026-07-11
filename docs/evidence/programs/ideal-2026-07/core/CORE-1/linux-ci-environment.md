@@ -5,6 +5,7 @@ Bead: `bd-59co.2.2.8`
 Base: `c0ff1de7a61dce2df6c83eff730582f2fd6f969b`
 Implementation commit: `d9a471b5703c79e06d1702ff292165a5b41fa9eb`
 Hardening commit: `22fc9de46828dc8595313c89c3207dc5601a49c7`
+Post-handoff fixture repair: `730ae06b4bc7d5733d7aa94ce187752f8f7dc48d`
 Clause: `CONF-QUALITY-001`
 Matrix route: `CORE-READINESS/CORE-BASELINE-CROSS-PLATFORM-GATES`
 
@@ -106,7 +107,7 @@ states and any semantic or byte change to its controlled inputs.
 | `scripts/install-pinned-pwsh.sh` | `f822fe27bc75cb435773ad1b9ea1dbd3d28a5a873c0d3c9a612b13d0ff3fe6cf` |
 | `scripts/run-hal-conformance-wasm32.ps1` | `0d64e4b56cd7ed9ccba60e45e3233df717530dcd9efb14b32f30f3b01088f570` |
 | `scripts/setup-kani.ps1` | `9d84171fb604de2bece6c7efaa990feb7d46632c32e054667e0756145bffe8e8` |
-| `scripts/test-linux-ci-environment.ps1` | `dd3da5625640d41946a57d1eea20eae48bc379624d7d841a9c78451a4d207634` |
+| `scripts/test-linux-ci-environment.ps1` | `df6e9dfe68e4235df602288fe758e427c0f5962cc7a600df235e806d35606c26` |
 | `scripts/validate-linux-ci-environment.ps1` | `366a8de58ff65e997e9e8327f8a4616f5a8115d509c92ef5804958d95991cc03` |
 
 The shared `scripts/check-governance.ps1` aggregator is deliberately not hashed:
@@ -118,7 +119,7 @@ identity change or permit the wiring to disappear.
 The canonical SHA-256 of `ci/linux-x64/contract-v1.json` is:
 
 ```text
-62910789b69c2806303c29bc6e9083bc7a9316c83510505add70b2393fa159f5
+47621bd8c70984908bc3c0b448d33da560410fb54566cab9400f082858df1e2b
 ```
 
 This is the exact `fixture_hash` for the controller-owned environment row.
@@ -126,9 +127,12 @@ This is the exact `fixture_hash` for the controller-owned environment row.
 ## Fail-closed verification
 
 `test-linux-ci-environment.ps1` builds isolated process-unique repositories
-below the system temp root. Both the current pending-ledger handoff and the
-sealed-ledger handoff pass. Twenty independent mutations fail for the intended
-reason:
+below the system temp root. It finds the unique `role=linux-ci` row and
+structurally serializes two explicit positive fixtures independent of the
+repository's current canonical row: pre-handoff pending identity owned by `.8`,
+and sealed contract identity owned by `.11`. It asserts their distinct derived
+states, environment IDs, owners and image identities before invoking the
+validator. Both pass. Twenty independent mutations fail for the intended reason:
 
 - `ubuntu-latest`, container tag, wrong container digest and runner release
   drift;
@@ -141,7 +145,10 @@ reason:
 - bare carriage return, duplicate and mis-cased JSON properties;
 - mutable ledger identity and ledger-owner drift.
 
-The contract parser rejects duplicate properties before `ConvertFrom-Json`,
+The ledger alias and owner-drift mutations also address the unique row by field;
+they do not search for a literal CSV fragment. The same 20 cases pass when every
+negative fixture starts from either an explicit pending row or an explicit
+sealed row. The contract parser rejects duplicate properties before `ConvertFrom-Json`,
 requires case-exact closed schemas, and verifies both exact values and the
 controlled source bytes. Mutation cleanup refuses any path outside the owned
 random system-temp directory.
@@ -152,8 +159,11 @@ random system-temp directory.
 ./scripts/validate-linux-ci-environment.ps1
 PASS: contract and controlled source hashes; pending controller handoff.
 
-./scripts/test-linux-ci-environment.ps1
-PASS: 2 positive states, 20 fail-closed mutations.
+./scripts/test-linux-ci-environment.ps1 -FixtureLedgerState Pending
+PASS: distinct pending/sealed positives and all 20 fail-closed mutations; every negative fixture starts from the pre-handoff canonical form.
+
+./scripts/test-linux-ci-environment.ps1 -FixtureLedgerState Sealed
+PASS: distinct pending/sealed positives and all 20 fail-closed mutations; every negative fixture starts from the integrated sealed canonical form.
 
 ./scripts/validate-linux-ci-environment.ps1 -VerifyExternalProvenance
 PASS: official runner, OCI, Rust, action, PowerShell, Kani and Wasmtime identities.
@@ -195,7 +205,7 @@ controller must replace the current `linux-ci` row in
 `IDEAL_ENVIRONMENT_MANIFEST_V1.csv` with this exact row (header omitted):
 
 ```csv
-"linux-x64-ci-rust-1.94.1-bookworm-amd64-v1","linux-ci","core","x64","debian-12-bookworm-amd64@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","n/a","n/a","n/a","n/a","n/a","C.UTF-8","docker.io/library/rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","github-hosted-new-vm-per-job;fresh-digest-pinned-job-container;clean-checkout;no-actions-cache;owned-state-under-RUNNER_TEMP;delete-owned-processes-and-state-only","ci/linux-x64/contract-v1.json","sha256:62910789b69c2806303c29bc6e9083bc7a9316c83510505add70b2393fa159f5","github-hosted-new-VM-per-job;fresh-job-container;no-actions-cache;record-and-clean-owned-processes-and-RUNNER_TEMP-state-only","n/a-no-Excel-UIA","planned-blocking","bd-59co.2.2.11","Immutable Linux x64 execution contract is sealed; the host label is scheduling only; the canonical baseline transcript remains pending under bd-59co.2.2.11"
+"linux-x64-ci-rust-1.94.1-bookworm-amd64-v1","linux-ci","core","x64","debian-12-bookworm-amd64@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","n/a","n/a","n/a","n/a","n/a","C.UTF-8","docker.io/library/rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","github-hosted-new-vm-per-job;fresh-digest-pinned-job-container;clean-checkout;no-actions-cache;owned-state-under-RUNNER_TEMP;delete-owned-processes-and-state-only","ci/linux-x64/contract-v1.json","sha256:47621bd8c70984908bc3c0b448d33da560410fb54566cab9400f082858df1e2b","github-hosted-new-VM-per-job;fresh-job-container;no-actions-cache;record-and-clean-owned-processes-and-RUNNER_TEMP-state-only","n/a-no-Excel-UIA","planned-blocking","bd-59co.2.2.11","Immutable Linux x64 execution contract is sealed; the host label is scheduling only; the canonical baseline transcript remains pending under bd-59co.2.2.11"
 ```
 
 The row intentionally remains `planned-blocking`; `bd-59co.2.2.11` is the open
