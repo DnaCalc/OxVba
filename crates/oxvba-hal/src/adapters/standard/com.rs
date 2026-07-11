@@ -3,7 +3,7 @@
 #[cfg(target_os = "windows")]
 use crate::model::ComInvocationStrategy;
 use crate::{
-    error::{HalError, HalErrorKind, HalResult},
+    error::{HalError, HalResult},
     model::{CapabilityId, HalProfileId},
     traits::{
         ComHal, TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest,
@@ -31,23 +31,17 @@ use std::sync::Arc;
 
 use super::StandardHostServices;
 
-const DYNAMIC_NAME_UNRESOLVED_CODE: &str = "COM-E-DYNAMIC-NAME-UNRESOLVED";
+const DYNAMIC_NAME_UNRESOLVED_LABEL: &str = "COM-E-DYNAMIC-NAME-UNRESOLVED";
 
 fn dynamic_member_name_unresolved(profile: HalProfileId, name: &str) -> HalError {
-    HalError {
-        kind: HalErrorKind::AdapterFault,
-        stable_code: DYNAMIC_NAME_UNRESOLVED_CODE,
+    HalError::adapter_fault(
         profile,
-        capability: CapabilityId::ComActivationDispatch,
-        operation: "dispatch_invoke",
-        // Keep the stable code in Err.Description as well as the structured HAL field:
-        // VM execution currently transports the description, while direct HAL consumers
-        // receive `stable_code` separately.
-        message: format!(
-            "{DYNAMIC_NAME_UNRESOLVED_CODE}: dynamic member name `{name}` requires authoritative metadata resolution before COM lowering"
+        CapabilityId::ComActivationDispatch,
+        "dispatch_invoke",
+        format!(
+            "{DYNAMIC_NAME_UNRESOLVED_LABEL}: dynamic member name `{name}` requires authoritative metadata resolution before COM lowering"
         ),
-        host_error_code: None,
-    }
+    )
 }
 
 /// A `GetObject` argument as an optional, trimmed, non-empty class/ProgID string. An
@@ -1263,7 +1257,7 @@ impl ComHal for StandardHostServices {
 
 #[cfg(test)]
 mod tests {
-    use super::{DYNAMIC_NAME_UNRESOLVED_CODE, dynamic_member_name_unresolved};
+    use super::{DYNAMIC_NAME_UNRESOLVED_LABEL, dynamic_member_name_unresolved};
     use crate::{
         error::HalErrorKind,
         model::{CapabilityId, HalProfileId},
@@ -1274,7 +1268,7 @@ mod tests {
         let error = dynamic_member_name_unresolved(HalProfileId::Linux, "Visible");
 
         assert_eq!(error.kind, HalErrorKind::AdapterFault);
-        assert_eq!(error.stable_code, DYNAMIC_NAME_UNRESOLVED_CODE);
+        assert_eq!(error.stable_code, "HAL-E-ADAPTER-FAULT");
         assert_eq!(error.profile, HalProfileId::Linux);
         assert_eq!(error.capability, CapabilityId::ComActivationDispatch);
         assert_eq!(error.operation, "dispatch_invoke");
@@ -1285,7 +1279,13 @@ mod tests {
         );
 
         let diagnostic = error.to_diagnostic();
-        assert_eq!(diagnostic.code.as_str(), DYNAMIC_NAME_UNRESOLVED_CODE);
+        assert_eq!(diagnostic.code.as_str(), "HAL-E-ADAPTER-FAULT");
+        assert_eq!(diagnostic.message, error.message);
+        assert!(
+            diagnostic
+                .message
+                .starts_with(DYNAMIC_NAME_UNRESOLVED_LABEL)
+        );
         assert_eq!(
             diagnostic.metadata.get("capability").map(String::as_str),
             Some("ComActivationDispatch")
