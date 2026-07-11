@@ -28,15 +28,22 @@ Automation. It does not implement or certify any Windows capability row.
 
 ## Immutable implementation identity
 
-Implementation/test commit:
-`c809b18812b51249c59596b943eb5488e22495f6`
-(`test(win0): enforce owned Windows resources`).
+Implementation/test commits:
+
+- `c809b18812b51249c59596b943eb5488e22495f6`
+  (`test(win0): enforce owned Windows resources`); and
+- `f82b5c46adad122aa48b72c6d63af538e0f5b48c`
+  (`fix(win0): journal registry ancestor ownership`).
+
+The second commit closes the exact empty-namespace residue found during final
+host-state review. It makes implicitly created registry ancestors first-class
+prepared resources and adds absent/pre-existing/populated-ancestor proofs.
 
 | artifact | SHA-256 |
 |---|---|
-| `scripts/lib-windows-owned-resource-policy.ps1` | `f3dc82b66410057c4402c16c4cb1773db05f0ee95a530827c3243ffb483e46bd` |
-| `scripts/test-windows-owned-resource-policy.ps1` | `fc67c03ef6b6ffb9f142754980324f7e4f2e17919411536d6d8bac71bb1ba2ea` |
-| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence commit | `47617a103d16d5402b5e1694f114a69293a1469e1b17d0e7a5df4b9d5205c528` |
+| `scripts/lib-windows-owned-resource-policy.ps1` | `b6e0034dbaa3909ebf428ce53437a9c4016625951218ced70d3d33c49207941b` |
+| `scripts/test-windows-owned-resource-policy.ps1` | `5a7cb1fb7551979c8fd14f058f875bf09af120450c58a3da85377127bd696510` |
+| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence repair commit | `7a97ad40490ea608f97639a027c817473b87836e549468aaca193f3de5406880` |
 
 The journal schema is
 `oxvba-windows-owned-resource-journal-v1`, version `1`. Journals use strict
@@ -55,7 +62,7 @@ pwsh -NoProfile -File ./scripts/test-windows-owned-resource-policy.ps1
 Result:
 
 ```text
-PASS: Windows owned-resource policy (37 assertions; 28 fail-closed mutations; real HKCU/file/child; logical COM/UIA only)
+PASS: Windows owned-resource policy (42 assertions; 29 fail-closed mutations; real HKCU/file/child; logical COM/UIA only)
 ```
 
 The final run completed on the Windows development host. Every real
@@ -73,7 +80,7 @@ resource sequence, and prepared event atomically before these mutation calls:
 | resource | pre-mutation record | mutation |
 |---|---|---|
 | file | absent before; expected length and SHA-256 | `FileMode.CreateNew`, write-through flush |
-| HKCU value | exact key/value before; kind and base64 expected bytes | exact `SetValue` and key flush |
+| HKCU value | exact key/value before; kind/bytes; deepest existing ancestor and complete absent chain | exact `SetValue` and key flush |
 | process | executable/arguments/activation/parent/timeout; PID `0` | start inert child |
 
 For the process, the suite additionally proves the active record contains the
@@ -95,8 +102,9 @@ Unadvise before callback retirement, with apartment retirement later.
 Real cleanup is fail-closed:
 
 - files are removed only when path, expected length, and SHA-256 match;
-- registry cleanup restores only the exact allowlisted HKCU value snapshot and
-  retains a non-owned neighbor value/key;
+- registry cleanup restores only the exact allowlisted HKCU value snapshot,
+  removes only recorded absent ancestors while empty, and retains every
+  pre-existing or populated neighbor key/value;
 - processes are stopped only when recorded PID, process start UTC, and
   executable path all match;
 - dialogs require the exact recorded process plus UIA runtime ID and native
@@ -108,9 +116,29 @@ The completed journal is hashed, cleanup is called again, and the journal hash
 remains byte-identical. The same byte-idempotence check passes for stale-owner
 recovery.
 
+### Registry ancestor ownership repair
+
+The final suite uses three distinct registry shapes:
+
+1. an entirely absent unique namespace and leaf, whose prepared descriptor
+   records `HKCU\Software` as the deepest existing boundary plus both absent
+   keys; cleanup removes leaf then namespace and proves the namespace absent;
+2. a namespace/leaf that pre-exists the policy mutation because it contains the
+   neighbor sentinel; cleanup removes only the owned value and proves the
+   existing ancestor and sentinel remain exact; and
+3. an initially absent namespace that receives a neighbor value after the
+   owned value is created; cleanup removes the exact owned value/empty leaf,
+   refuses the now-populated ancestor, preserves its neighbor, and records a
+   conflict. After the exact synthetic neighbor is removed, retry deletes only
+   the recorded now-empty namespace and completes.
+
+No subtree deletion is used. Final host-state audit reports no
+`oxvba-owned-policy-test-*` temporary root and no empty
+`HKCU\Software\OxVbaOwnedResourcePolicy` namespace residue.
+
 ## Fail-closed mutation coverage
 
-The 28 negative probes include:
+The 29 negative probes include:
 
 - duplicate run ID collision;
 - stale recovery while the exact owner remains live;
@@ -125,7 +153,8 @@ The 28 negative probes include:
 - unrecorded dialog process and wildcard UIA identity;
 - journal digest tampering, a recomputed-digest repository-root escape, and
   valid JSON with a duplicate property;
-- changed owned-file conflict; and
+- changed owned-file conflict, newly populated created-registry-ancestor
+  conflict; and
 - normal cleanup of a journal whose exact owner has exited.
 
 Each rejection occurs before the forbidden mutation. Digest, schema, duplicate,
@@ -160,8 +189,10 @@ Before mutation, the suite captures four independent sentinels:
 
 All four comparisons pass after cleanup and again at the end. The owned HKCU
 value, owned payload/stale files, and exact child PID/start are absent after
-their rollback. Test-infrastructure teardown removes its known exact sentinel,
-journal, and empty-directory paths; it does not use recursive resource cleanup.
+their rollback. Every namespace absent before the run is absent afterward;
+pre-existing ancestors remain. Test-infrastructure teardown removes its known
+exact sentinel, journal, registry-ancestor, and empty-directory paths; it does
+not use recursive resource cleanup.
 
 ## Validation record and inherited governance gate
 
@@ -171,7 +202,7 @@ journal, and empty-directory paths; it does not use recursive resource cleanup.
 | real file lifecycle smoke plus byte-idempotent cleanup | pass |
 | real HKCU value lifecycle smoke | pass |
 | real hidden child plus logical apartment/callback/connection/dialog smoke | pass |
-| full owned-resource acceptance suite | pass, 37 assertions / 28 rejections |
+| full owned-resource acceptance suite | pass, 42 assertions / 29 rejections |
 | `git diff --check` | pass |
 | `pwsh -NoProfile -File ./scripts/check-governance.ps1` | branch-baseline stop at `pmr-event-snippets` |
 
@@ -196,8 +227,10 @@ Fresh-eyes review rechecked accidental broad selectors, path canonicalization,
 reparse traversal, journal validation before cleanup, process reuse, executable
 identity, prepared-state crash windows, registry-neighbor retention, callback
 ordering, stale/live-owner discrimination, conflict behavior, and idempotence.
-No blanket process/dialog/registry/file cleanup or unowned mutation remains in
-the executable policy path.
+It found the initially unjournaled empty parent namespace left by `CreateSubKey`;
+the follow-up repair journals the full absent chain and the three-shape mutation
+suite proves its cleanup boundary. No blanket process/dialog/registry/file
+cleanup or unowned mutation remains in the executable policy path.
 
 Residual work remains downstream: real Excel/VBA, COM, UIA, native, VM3/JIT,
 registration, and clean-VM evidence drivers must adopt this policy (or prove an

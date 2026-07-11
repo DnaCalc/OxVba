@@ -39,7 +39,7 @@ Ownership is not inferred from a friendly name. The minimum ownership tuple is:
 |---|---|
 | run | run ID, owner PID, owner process start UTC, journal path |
 | file | canonical absolute path, before snapshot, expected length and SHA-256 |
-| registry value | normalized HKCU key path, exact value name, kind and encoded bytes |
+| registry value | normalized HKCU key path, exact value name, kind/bytes, deepest existing ancestor and exact absent chain |
 | process | resource ID, PID, process start UTC and executable path |
 | dialog/UIA | process resource ID, PID/start, UIA runtime ID and native handle |
 | apartment | owner process, managed thread, model, initialization owner, pump and reentry policy |
@@ -131,9 +131,23 @@ category roots such as `...\Classes\CLSID`, subtree selectors, value-name
 wildcards, and HKLM are rejected.
 
 The before/expected snapshots record key existence, value existence, registry
-kind, and canonical base64 data. Cleanup may restore or delete only that exact
-value. A key absent before the run may be deleted only when that exact key is
-empty; it MUST NOT be deleted if a neighbor value or child key exists.
+kind, and canonical base64 data. Before mutation, the prepared descriptor MUST
+also record:
+
+- `existing_ancestor_path`: the deepest exact registry key that already exists,
+  with `HKCU\Software` as the lowest permitted boundary; and
+- `absent_ancestor_paths`: every absent key from the next child through the
+  allowlisted leaf, in canonical shallow-to-deep order.
+
+The absent chain is part of ownership; implicit `CreateSubKey` ancestors are not
+an unjournaled side effect. Cleanup may restore or delete only the exact value,
+then visit only the recorded absent ancestors in deepest-first order. Each such
+key may be deleted only while it is empty. A pre-existing ancestor is never in
+the deletion list and MUST be preserved. A recorded created ancestor that now
+contains any neighbor value or subkey is a cleanup conflict: cleanup preserves
+it, stops deleting its ancestors, and reports the exact path. Recovery from a
+crash between value restoration and ancestor removal resumes through the same
+recorded empty-key chain; it does not scan for related keys.
 
 HKCU-first means a test MUST use this exact user-scoped route whenever the
 behavior can be tested there. Machine registration required by a downstream
@@ -274,6 +288,8 @@ Conformance evidence MUST show:
 - prepared-before-mutation ordering for file, registry, and child process;
 - child PID/start/executable recorded before activation;
 - exact HKCU value, confined file, and hidden harmless child creation/cleanup;
+- exact absent registry-ancestor capture/removal, pre-existing ancestor
+  preservation, and populated-created-ancestor conflict refusal;
 - repo/temp escape, wildcard, controlled-root, and reparse rejection;
 - blanket process/dialog/registry/file selector rejection;
 - explicit apartment/reentry/callback/connection/dialog identities;
