@@ -23,6 +23,53 @@ $programManifest = Get-Content -LiteralPath (Join-Path $repoRoot $programManifes
 $ownershipRelativePath = [string]$programManifest.matrix_ownership
 $environmentRelativePath = [string]$programManifest.environment_manifest
 $matrixContracts = Get-WindowsFixtureMatrixContracts
+$toolchainAssetsPath = Join-Path $PSScriptRoot "testdata/windows-fixture-toolchain/assets-v1.json"
+$toolchainAssets = Get-Content -LiteralPath $toolchainAssetsPath -Raw | ConvertFrom-Json
+if ([string]$toolchainAssets.schema_id -ne "oxvba-windows-fixture-admission-test-assets-v1") {
+    throw "Windows fixture manifest test asset manifest has the wrong schema"
+}
+foreach ($source in @($toolchainAssets.source_files)) {
+    $sourceName = [string]$source.path
+    $sourcePath = Join-Path (Split-Path -Parent $toolchainAssetsPath) $sourceName
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        throw "Windows fixture manifest test asset source '$sourceName' is missing"
+    }
+    $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($sourceHash -cne [string]$source.sha256) {
+        throw "Windows fixture manifest test asset source '$sourceName' differs from recorded provenance"
+    }
+}
+
+function Get-TestToolchainAssetBytes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("pe-dll-x64", "pe-exe-x64", "msft-tlb-v1")]
+        [string]$Kind
+    )
+
+    $matches = @($toolchainAssets.assets.PSObject.Properties | Where-Object Name -ceq $Kind)
+    if ($matches.Count -ne 1) {
+        throw "Windows fixture manifest test has no unique toolchain asset '$Kind'"
+    }
+    $asset = $matches[0].Value
+    try {
+        [byte[]]$bytes = [Convert]::FromBase64String([string]$asset.base64)
+    }
+    catch {
+        throw "Windows fixture manifest test asset '$Kind' is not valid base64"
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = [Convert]::ToHexString($sha.ComputeHash($bytes)).ToLowerInvariant()
+    }
+    finally {
+        $sha.Dispose()
+    }
+    if ($bytes.Length -ne [int]$asset.length -or $hash -cne [string]$asset.sha256) {
+        throw "Windows fixture manifest test asset '$Kind' length/hash differs from controlled provenance"
+    }
+    return ,$bytes
+}
 
 function Copy-FixtureFile {
     param(
@@ -166,6 +213,24 @@ function Write-TestJson {
     return Write-TestUtf8 -FixtureRoot $FixtureRoot -RelativePath $RelativePath -Text ($text + "`n")
 }
 
+function Replace-TestUtf8Text {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$RelativePath,
+        [Parameter(Mandatory = $true)][string]$OldValue,
+        [Parameter(Mandatory = $true)][string]$NewValue
+    )
+
+    $absolute = Resolve-IdealRepoPath -RepoRoot $FixtureRoot -Path $RelativePath
+    $text = [IO.File]::ReadAllText($absolute, [Text.UTF8Encoding]::new($false, $true))
+    $first = $text.IndexOf($OldValue, [StringComparison]::Ordinal)
+    $last = $text.LastIndexOf($OldValue, [StringComparison]::Ordinal)
+    if ($first -lt 0 -or $first -ne $last) {
+        throw "Windows fixture manifest test replacement expected one exact token '$OldValue'"
+    }
+    [void](Write-TestUtf8 -FixtureRoot $FixtureRoot -RelativePath $RelativePath -Text $text.Replace($OldValue, $NewValue))
+}
+
 function Set-TestUInt16 {
     param(
         [Parameter(Mandatory = $true)][byte[]]$Bytes,
@@ -186,7 +251,7 @@ function Set-TestUInt32 {
     [BitConverter]::GetBytes($Value).CopyTo($Bytes, $Offset)
 }
 
-function New-MinimalTestPe {
+function New-SyntheticTestPeHeader {
     param(
         [uint16]$Machine = 0x8664,
         [bool]$Dll = $true,
@@ -331,15 +396,16 @@ function New-TestBundleArtifact {
         $componentRepoPath = "$artifactRoot/$componentRelative"
         switch ($kind) {
             "pe-dll-x64" {
-                [byte[]]$peBytes = New-MinimalTestPe -Dll $true
+                [byte[]]$peBytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
                 [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Bytes $peBytes)
             }
             "pe-exe-x64" {
-                [byte[]]$peBytes = New-MinimalTestPe -Dll $false
+                [byte[]]$peBytes = Get-TestToolchainAssetBytes -Kind "pe-exe-x64"
                 [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Bytes $peBytes)
             }
             "msft-tlb-v1" {
-                [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Bytes ([byte[]](0x4D, 0x53, 0x46, 0x54, 1, 0, 0, 0)))
+                [byte[]]$typeLibBytes = Get-TestToolchainAssetBytes -Kind "msft-tlb-v1"
+                [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Bytes $typeLibBytes)
             }
             "vba-source-utf8-v1" {
                 [void](Write-TestUtf8 -FixtureRoot $FixtureRoot -RelativePath $componentRepoPath -Text "Attribute VB_Name = `"FixtureClient`"`nOption Explicit`n")
@@ -367,6 +433,27 @@ function New-TestBundleArtifact {
     $bundlePath = "$artifactRoot/$([string]$ManifestRow.built_artifact_name)"
     [void](Write-TestJson -FixtureRoot $FixtureRoot -RelativePath $bundlePath -Value $bundle)
     return $bundlePath
+}
+
+function Set-TestBundleComponentBytes {
+    param(
+        [Parameter(Mandatory = $true)][string]$FixtureRoot,
+        [Parameter(Mandatory = $true)][string]$BundlePath,
+        [Parameter(Mandatory = $true)][string]$Kind,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes
+    )
+
+    $bundleAbsolute = Resolve-IdealRepoPath -RepoRoot $FixtureRoot -Path $BundlePath
+    $bundle = Get-Content -LiteralPath $bundleAbsolute -Raw | ConvertFrom-Json
+    $components = @($bundle.components | Where-Object { [string]$_.kind -ceq $Kind })
+    if ($components.Count -ne 1) {
+        throw "Windows fixture manifest test expected one '$Kind' component in '$BundlePath'"
+    }
+    $artifactRoot = Split-Path -Parent $BundlePath
+    $componentPath = "$artifactRoot/$([string]$components[0].relative_path)".Replace('\', '/')
+    [void](Write-TestBytes -FixtureRoot $FixtureRoot -RelativePath $componentPath -Bytes $Bytes)
+    $components[0].sha256 = Get-WindowsFixtureRawFileHash -RepositoryRoot $FixtureRoot -RelativePath $componentPath
+    [void](Write-TestJson -FixtureRoot $FixtureRoot -RelativePath $BundlePath -Value $bundle)
 }
 
 function Invoke-ExpectedFailure {
@@ -397,6 +484,9 @@ function Invoke-ExpectedFailure {
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\', '/')
 $tempBase = Join-Path $tempRoot ("oxvba-windows-fixture-manifest-" + [Guid]::NewGuid().ToString("N"))
 $resolvedTempBase = [IO.Path]::GetFullPath($tempBase)
+$windowsLoaderNegativeCount = if (
+    [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)
+) { 1 } else { 0 }
 if (-not $resolvedTempBase.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Windows fixture manifest test temp root escaped the system temp directory"
 }
@@ -427,7 +517,7 @@ try {
     $dllFixture = New-WindowsFixtureManifestTestRoot
     $dllRow = Get-ManifestRow -FixtureRoot $dllFixture -RowId "WCC-PLAN-LATE"
     $dllPath = "$([string]$dllRow.built_artifact_root)/$([string]$dllRow.built_artifact_name)"
-    [byte[]]$dllBytes = New-MinimalTestPe -Dll $true
+    [byte[]]$dllBytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
     [void](Write-TestBytes -FixtureRoot $dllFixture -RelativePath $dllPath -Bytes $dllBytes)
     Set-ManifestBuiltArtifactCurrent -FixtureRoot $dllFixture -RowId "WCC-PLAN-LATE" -ArtifactPath $dllPath
     & $validator -RepositoryRoot $dllFixture
@@ -436,7 +526,7 @@ try {
     $exeFixture = New-WindowsFixtureManifestTestRoot
     $exeRow = Get-ManifestRow -FixtureRoot $exeFixture -RowId "WAC-BSTR-LAYOUT"
     $exePath = "$([string]$exeRow.built_artifact_root)/$([string]$exeRow.built_artifact_name)"
-    [byte[]]$exeBytes = New-MinimalTestPe -Dll $false
+    [byte[]]$exeBytes = Get-TestToolchainAssetBytes -Kind "pe-exe-x64"
     [void](Write-TestBytes -FixtureRoot $exeFixture -RelativePath $exePath -Bytes $exeBytes)
     Set-ManifestBuiltArtifactCurrent -FixtureRoot $exeFixture -RowId "WAC-BSTR-LAYOUT" -ArtifactPath $exePath
     & $validator -RepositoryRoot $exeFixture
@@ -448,6 +538,13 @@ try {
     Set-ManifestBuiltArtifactCurrent -FixtureRoot $bundleFixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $bundlePath
     & $validator -RepositoryRoot $bundleFixture
     Write-Host "windows-fixture-manifest-positive: ok (current-controlled-exact-bundle-schema)"
+
+    $typeLibFixture = New-WindowsFixtureManifestTestRoot
+    $typeLibRow = Get-ManifestRow -FixtureRoot $typeLibFixture -RowId "WAC-TYPELIB-METADATA"
+    $typeLibBundlePath = New-TestBundleArtifact -FixtureRoot $typeLibFixture -ManifestRow $typeLibRow
+    Set-ManifestBuiltArtifactCurrent -FixtureRoot $typeLibFixture -RowId "WAC-TYPELIB-METADATA" -ArtifactPath $typeLibBundlePath
+    & $validator -RepositoryRoot $typeLibFixture
+    Write-Host "windows-fixture-manifest-positive: ok (current-toolchain-generated-msft-typelib-bundle)"
 
     $environmentFixture = New-WindowsFixtureManifestTestRoot
     $environmentPath = Resolve-IdealRepoPath -RepoRoot $environmentFixture -Path $environmentRelativePath
@@ -528,25 +625,34 @@ try {
         [IO.File]::WriteAllBytes($absolute, [byte[]](1, 2, 3, 4))
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.source_recipe_paths = $relative }
     }
-    Invoke-ExpectedFailure -Name "artifact-source-text-masquerade" -MessagePattern "missing DOS MZ header" -Mutation {
+    Invoke-ExpectedFailure -Name "artifact-source-text-masquerade" -MessagePattern "structurally valid bounded PE image" -Mutation {
         param($fixture)
         $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
         $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
-        [void](Write-TestUtf8 -FixtureRoot $fixture -RelativePath $path -Text "Attribute VB_Name = `"NotABinary`"`n")
+        $sourceText = "Attribute VB_Name = `"NotABinary`"`n" + (("' controlled source text masquerade`n") * 40)
+        [void](Write-TestUtf8 -FixtureRoot $fixture -RelativePath $path -Text $sourceText)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-synthetic-header-blob" -MessagePattern "file/section alignments are invalid|structurally valid bounded PE image" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [byte[]]$bytes = New-SyntheticTestPeHeader -Dll $true
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
         Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
     }
     Invoke-ExpectedFailure -Name "artifact-mutable-alias" -MessagePattern "uses a mutable alias" -Mutation {
         param($fixture)
         $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
         $path = "$([string]$row.built_artifact_root)/latest.dll"
-        [byte[]]$bytes = New-MinimalTestPe -Dll $true
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
         [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
         Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
     }
     Invoke-ExpectedFailure -Name "artifact-historical-generated-path" -MessagePattern "historical or generated" -Mutation {
         param($fixture)
         $path = "docs/evidence/historical-fixture.dll"
-        [byte[]]$bytes = New-MinimalTestPe -Dll $true
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
         [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
         Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
     }
@@ -570,16 +676,151 @@ try {
         param($fixture)
         $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
         $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
-        [byte[]]$bytes = New-MinimalTestPe -Machine 0x014C -Dll $true -OptionalMagic 0x010B
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
+        $peOffset = [int][BitConverter]::ToUInt32($bytes, 0x3C)
+        Set-TestUInt16 -Bytes $bytes -Offset ($peOffset + 4) -Value 0x014C
         [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
         Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
     }
-    Invoke-ExpectedFailure -Name "artifact-bundle-wrong-schema" -MessagePattern "exact schema" -Mutation {
+    Invoke-ExpectedFailure -Name "artifact-wrong-pe-class" -MessagePattern "DLL/EXE characteristics do not match" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-exe-x64"
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-truncated-pe" -MessagePattern "raw data|structurally valid bounded PE image" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
+        [byte[]]$truncated = $bytes[0..1199]
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $truncated)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-invalid-pe-alignment" -MessagePattern "file/section alignments are invalid" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
+        $peOffset = [int][BitConverter]::ToUInt32($bytes, 0x3C)
+        Set-TestUInt32 -Bytes $bytes -Offset ($peOffset + 24 + 36) -Value 0x300
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-overlapping-pe-sections" -MessagePattern "overlap" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
+        $peOffset = [int][BitConverter]::ToUInt32($bytes, 0x3C)
+        $optionalSize = [int][BitConverter]::ToUInt16($bytes, $peOffset + 20)
+        $sectionTable = $peOffset + 24 + $optionalSize
+        $firstRawPointer = [BitConverter]::ToUInt32($bytes, $sectionTable + 20)
+        Set-TestUInt32 -Bytes $bytes -Offset ($sectionTable + 40 + 20) -Value $firstRawPointer
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-corrupt-pe-image-size" -MessagePattern "escapes SizeOfImage|aggregate section sizes" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+        $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
+        $peOffset = [int][BitConverter]::ToUInt32($bytes, 0x3C)
+        Set-TestUInt32 -Bytes $bytes -Offset ($peOffset + 24 + 56) -Value 0x2000
+        [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+    }
+    if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)) {
+        Invoke-ExpectedFailure -Name "artifact-structural-but-windows-unloadable" -MessagePattern "Windows LoadLibraryExW.*rejected" -Mutation {
+            param($fixture)
+            $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-PLAN-LATE"
+            $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
+            [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "pe-dll-x64"
+            $peOffset = [int][BitConverter]::ToUInt32($bytes, 0x3C)
+            $flagsOffset = $peOffset + 24 + 70
+            $flags = [BitConverter]::ToUInt16($bytes, $flagsOffset)
+            Set-TestUInt16 -Bytes $bytes -Offset $flagsOffset -Value ([uint16]($flags -bor 0x0080))
+            [void](Write-TestBytes -FixtureRoot $fixture -RelativePath $path -Bytes $bytes)
+            Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-PLAN-LATE" -ArtifactPath $path
+        }
+    }
+    else {
+        Write-Host "windows-fixture-manifest-negative: skipped (artifact-structural-but-windows-unloadable; Windows-only loader gate)"
+    }
+    Invoke-ExpectedFailure -Name "artifact-bundle-wrong-schema" -MessagePattern "exact case-sensitive schema" -Mutation {
         param($fixture)
         $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY"
         $path = "$([string]$row.built_artifact_root)/$([string]$row.built_artifact_name)"
         [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value ([pscustomobject]@{ schema_id = "arbitrary-text-container" }))
         Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-bundle-duplicate-root-field" -MessagePattern "duplicate JSON property 'schema_id'" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY"
+        $path = New-TestBundleArtifact -FixtureRoot $fixture -ManifestRow $row
+        Replace-TestUtf8Text `
+            -FixtureRoot $fixture `
+            -RelativePath $path `
+            -OldValue '  "schema_id": "oxvba-windows-x64-fixture-bundle-v1",' `
+            -NewValue "  `"schema_id`": `"attacker-controlled`",`n  `"schema_id`": `"oxvba-windows-x64-fixture-bundle-v1`","
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-bundle-miscased-root-field" -MessagePattern "exact case-sensitive schema" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY"
+        $path = New-TestBundleArtifact -FixtureRoot $fixture -ManifestRow $row
+        Replace-TestUtf8Text -FixtureRoot $fixture -RelativePath $path -OldValue '"schema_id"' -NewValue '"Schema_id"'
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-bundle-duplicate-component-field" -MessagePattern "duplicate JSON property 'component_id'" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY"
+        $path = New-TestBundleArtifact -FixtureRoot $fixture -ManifestRow $row
+        Replace-TestUtf8Text `
+            -FixtureRoot $fixture `
+            -RelativePath $path `
+            -OldValue '      "component_id": "server-1-v1",' `
+            -NewValue "      `"component_id`": `"attacker-v1`",`n      `"component_id`": `"server-1-v1`","
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-bundle-miscased-component-field" -MessagePattern "exact case-sensitive schema" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY"
+        $path = New-TestBundleArtifact -FixtureRoot $fixture -ManifestRow $row
+        Replace-TestUtf8Text -FixtureRoot $fixture -RelativePath $path -OldValue '"component_id": "server-1-v1"' -NewValue '"Component_id": "server-1-v1"'
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-typelib-eight-byte-stub" -MessagePattern "length is outside" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-TYPELIB-METADATA"
+        $path = New-TestBundleArtifact -FixtureRoot $fixture -ManifestRow $row
+        Set-TestBundleComponentBytes -FixtureRoot $fixture -BundlePath $path -Kind "msft-tlb-v1" -Bytes ([byte[]](0x4D, 0x53, 0x46, 0x54, 2, 0, 1, 0))
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WAC-TYPELIB-METADATA" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-typelib-truncated" -MessagePattern "segment directory|out of bounds|missing" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-TYPELIB-METADATA"
+        $path = New-TestBundleArtifact -FixtureRoot $fixture -ManifestRow $row
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "msft-tlb-v1"
+        [byte[]]$truncated = $bytes[0..1199]
+        Set-TestBundleComponentBytes -FixtureRoot $fixture -BundlePath $path -Kind "msft-tlb-v1" -Bytes $truncated
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WAC-TYPELIB-METADATA" -ArtifactPath $path
+    }
+    Invoke-ExpectedFailure -Name "artifact-typelib-segment-corruption" -MessagePattern "segment directory|out of bounds|overlapping" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-TYPELIB-METADATA"
+        $path = New-TestBundleArtifact -FixtureRoot $fixture -ManifestRow $row
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "msft-tlb-v1"
+        $typeInfoCount = [BitConverter]::ToUInt32($bytes, 0x20)
+        $directoryOffset = 0x54 + (4 * $typeInfoCount)
+        Set-TestUInt32 `
+            -Bytes $bytes `
+            -Offset ($directoryOffset + 4) `
+            -Value ([Convert]::ToUInt32("FFFFFFFC", 16))
+        Set-TestBundleComponentBytes -FixtureRoot $fixture -BundlePath $path -Kind "msft-tlb-v1" -Bytes $bytes
+        Set-ManifestBuiltArtifactCurrent -FixtureRoot $fixture -RowId "WAC-TYPELIB-METADATA" -ArtifactPath $path
     }
     Invoke-ExpectedFailure -Name "pending-artifact-unowned" -MessagePattern "missing or unknown pending owner" -Mutation {
         param($fixture)
@@ -594,6 +835,32 @@ try {
         $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
         $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
         [void](Write-TestUtf8 -FixtureRoot $fixture -RelativePath $path -Text "arbitrary environment notes are not a capture")
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-duplicate-field" -MessagePattern "duplicate JSON property 'environment_id'" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Replace-TestUtf8Text `
+            -FixtureRoot $fixture `
+            -RelativePath $path `
+            -OldValue '  "environment_id": "win-x64-dev-oracle-2026-07",' `
+            -NewValue "  `"environment_id`": `"attacker-environment-v1`",`n  `"environment_id`": `"win-x64-dev-oracle-2026-07`","
+        Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
+    }
+    Invoke-ExpectedFailure -Name "environment-miscased-field" -MessagePattern "exact case-sensitive schema" -Mutation {
+        param($fixture)
+        $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
+        $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
+        $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
+        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $capture = New-TestEnvironmentCapture -Environment $environment
+        [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
+        Replace-TestUtf8Text -FixtureRoot $fixture -RelativePath $path -OldValue '"environment_id"' -NewValue '"Environment_id"'
         Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
     }
     Invoke-ExpectedFailure -Name "environment-mutable-alias" -MessagePattern "uses a mutable alias" -Mutation {
@@ -708,7 +975,8 @@ try {
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.cleanup_recipe = "" }
     }
 
-    Write-Host "test-windows-fixture-manifest: ok (positive=6 negative=31 rows=57 capability_credit=none)"
+    $negativeCount = 46 + $windowsLoaderNegativeCount
+    Write-Host "test-windows-fixture-manifest: ok (positive=7 negative=$negativeCount windows_loader_negative=$windowsLoaderNegativeCount rows=57 capability_credit=none)"
 }
 finally {
     if (Test-Path -LiteralPath $tempBase -PathType Container) {

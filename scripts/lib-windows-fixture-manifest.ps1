@@ -457,10 +457,82 @@ function Assert-WindowsFixtureExactJsonProperties {
     if ($null -eq $Value -or $Value -is [Array] -or @($Value.PSObject.Properties).Count -eq 0) {
         throw "$Owner must be a JSON object"
     }
-    $actual = @($Value.PSObject.Properties.Name | Sort-Object)
-    $expectedSorted = @($Expected | Sort-Object)
-    if (@(Compare-Object -ReferenceObject $expectedSorted -DifferenceObject $actual).Count -ne 0) {
-        throw "$Owner does not match its exact schema (expected=$($expectedSorted -join '|'); actual=$($actual -join '|'))"
+    $actualSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($propertyName in @($Value.PSObject.Properties.Name)) {
+        [void]$actualSet.Add([string]$propertyName)
+    }
+    $expectedSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($propertyName in $Expected) {
+        [void]$expectedSet.Add($propertyName)
+    }
+    if (-not $actualSet.SetEquals($expectedSet)) {
+        $actual = @($actualSet | Sort-Object -CaseSensitive)
+        $expectedSorted = @($expectedSet | Sort-Object -CaseSensitive)
+        throw "$Owner does not match its exact case-sensitive schema (expected=$($expectedSorted -join '|'); actual=$($actual -join '|'))"
+    }
+}
+
+function Assert-WindowsFixtureJsonPropertyUniqueness {
+    param(
+        [Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    switch ($Element.ValueKind) {
+        ([Text.Json.JsonValueKind]::Object) {
+            $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($property in $Element.EnumerateObject()) {
+                if (-not $seen.Add($property.Name)) {
+                    throw "$Owner contains duplicate JSON property '$($property.Name)'"
+                }
+                Assert-WindowsFixtureJsonPropertyUniqueness `
+                    -Element $property.Value `
+                    -Owner "$Owner.$($property.Name)"
+            }
+        }
+        ([Text.Json.JsonValueKind]::Array) {
+            $index = 0
+            foreach ($item in $Element.EnumerateArray()) {
+                Assert-WindowsFixtureJsonPropertyUniqueness -Element $item -Owner "$Owner[$index]"
+                $index++
+            }
+        }
+    }
+}
+
+function ConvertFrom-WindowsFixtureAuditedJson {
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][string]$Owner,
+        [Parameter(Mandatory = $true)][string]$FormatName
+    )
+
+    $options = [Text.Json.JsonDocumentOptions]::new()
+    $options.AllowTrailingCommas = $false
+    $options.CommentHandling = [Text.Json.JsonCommentHandling]::Disallow
+    try {
+        $memory = [ReadOnlyMemory[byte]]::new($Bytes)
+        $document = [Text.Json.JsonDocument]::Parse($memory, $options)
+    }
+    catch {
+        throw "$Owner is not valid $FormatName JSON"
+    }
+    try {
+        if ($document.RootElement.ValueKind -ne [Text.Json.JsonValueKind]::Object) {
+            throw "$Owner must be a $FormatName JSON object"
+        }
+        Assert-WindowsFixtureJsonPropertyUniqueness -Element $document.RootElement -Owner $Owner
+    }
+    finally {
+        $document.Dispose()
+    }
+
+    $text = ConvertTo-WindowsFixtureCanonicalText -Bytes $Bytes -Owner $Owner
+    try {
+        return $text | ConvertFrom-Json
+    }
+    catch {
+        throw "$Owner could not be materialized after strict $FormatName JSON validation"
     }
 }
 
@@ -513,6 +585,106 @@ function Read-WindowsFixtureUInt32 {
     return [BitConverter]::ToUInt32($Bytes, $Offset)
 }
 
+function Test-WindowsFixturePowerOfTwo {
+    param([uint64]$Value)
+
+    return $Value -gt 0 -and ($Value -band ($Value - 1)) -eq 0
+}
+
+function Get-WindowsFixtureAlignedValue {
+    param(
+        [Parameter(Mandatory = $true)][uint64]$Value,
+        [Parameter(Mandatory = $true)][uint64]$Alignment,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    if (-not (Test-WindowsFixturePowerOfTwo -Value $Alignment)) {
+        throw "$Owner alignment '$Alignment' is not a power of two"
+    }
+    $remainder = $Value % $Alignment
+    if ($remainder -eq 0) {
+        return $Value
+    }
+    $increment = $Alignment - $remainder
+    if ($Value -gt [uint64]::MaxValue - $increment) {
+        throw "$Owner alignment calculation overflows"
+    }
+    return [uint64]($Value + $increment)
+}
+
+function Initialize-WindowsFixtureNativeProbe {
+    if ($null -eq ("OxVbaFixtureAdmissionNativeV1" -as [type])) {
+        [void](Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class OxVbaFixtureAdmissionNativeV1
+{
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr LoadLibraryExW(string path, IntPtr file, uint flags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool FreeLibrary(IntPtr module);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr CreateFileW(
+        string path, uint access, uint share, IntPtr security, uint creation,
+        uint attributes, IntPtr template);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr CreateFileMappingW(
+        IntPtr file, IntPtr security, uint protect, uint maximumHigh,
+        uint maximumLow, string name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("oleaut32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    public static extern int LoadTypeLibEx(string path, int registrationKind, out IntPtr typeLib);
+}
+'@)
+    }
+}
+
+function Assert-WindowsFixtureWindowsPeLoadable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    if (-not [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)) {
+        return
+    }
+    Initialize-WindowsFixtureNativeProbe
+
+    $module = [OxVbaFixtureAdmissionNativeV1]::LoadLibraryExW($Path, [IntPtr]::Zero, 0x00000001)
+    if ($module -eq [IntPtr]::Zero) {
+        $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw "$Owner is structurally PE32+ but Windows LoadLibraryExW(DONT_RESOLVE_DLL_REFERENCES) rejected it (Win32=$errorCode)"
+    }
+    [void][OxVbaFixtureAdmissionNativeV1]::FreeLibrary($module)
+
+    $genericRead = [Convert]::ToUInt32("80000000", 16)
+    $fileHandle = [OxVbaFixtureAdmissionNativeV1]::CreateFileW(
+        $Path, $genericRead, 0x00000005, [IntPtr]::Zero, 3, 0x00000080, [IntPtr]::Zero)
+    if ($fileHandle -eq [IntPtr](-1)) {
+        $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw "$Owner could not be opened for SEC_IMAGE_NO_EXECUTE validation (Win32=$errorCode)"
+    }
+    try {
+        $mapping = [OxVbaFixtureAdmissionNativeV1]::CreateFileMappingW(
+            $fileHandle, [IntPtr]::Zero, 0x11000002, 0, 0, $null)
+        if ($mapping -eq [IntPtr]::Zero) {
+            $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            throw "$Owner was rejected by Windows SEC_IMAGE_NO_EXECUTE mapping (Win32=$errorCode)"
+        }
+        [void][OxVbaFixtureAdmissionNativeV1]::CloseHandle($mapping)
+    }
+    finally {
+        [void][OxVbaFixtureAdmissionNativeV1]::CloseHandle($fileHandle)
+    }
+}
+
 function Assert-WindowsFixturePeFile {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -524,76 +696,209 @@ function Assert-WindowsFixturePeFile {
     if (-not [IO.Path]::GetExtension($Path).Equals($expectedExtension, [StringComparison]::OrdinalIgnoreCase)) {
         throw "$Owner must use extension '$expectedExtension' for type '$ExpectedKind'"
     }
-    $bytes = [IO.File]::ReadAllBytes($Path)
-    if ($bytes.Length -lt 0x40 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
-        throw "$Owner is not a PE file (missing DOS MZ header)"
+    $fileLength = [uint64](Get-Item -LiteralPath $Path).Length
+    if ($fileLength -lt 512 -or $fileLength -gt [uint32]::MaxValue) {
+        throw "$Owner PE file length is outside the bounded 32-bit image envelope"
     }
-    $peOffset = [int](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x3C -Owner $Owner)
-    if ($peOffset -lt 0x40 -or $peOffset + 24 -gt $bytes.Length -or
-        $bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset + 1] -ne 0x45 -or
-        $bytes[$peOffset + 2] -ne 0 -or $bytes[$peOffset + 3] -ne 0) {
-        throw "$Owner is not a PE file (invalid PE signature offset or signature)"
-    }
-    $machine = Read-WindowsFixtureUInt16 -Bytes $bytes -Offset ($peOffset + 4) -Owner $Owner
-    if ($machine -ne 0x8664) {
-        throw "$Owner PE machine must be AMD64/x64 (0x8664), found 0x$($machine.ToString('X4'))"
-    }
-    $sections = Read-WindowsFixtureUInt16 -Bytes $bytes -Offset ($peOffset + 6) -Owner $Owner
-    $optionalSize = Read-WindowsFixtureUInt16 -Bytes $bytes -Offset ($peOffset + 20) -Owner $Owner
-    $characteristics = Read-WindowsFixtureUInt16 -Bytes $bytes -Offset ($peOffset + 22) -Owner $Owner
-    if ($sections -le 0 -or $optionalSize -lt 0x70) {
-        throw "$Owner PE header has no sections or a truncated optional header"
-    }
-    $optionalOffset = $peOffset + 24
-    $optionalMagic = Read-WindowsFixtureUInt16 -Bytes $bytes -Offset $optionalOffset -Owner $Owner
-    if ($optionalMagic -ne 0x20B) {
-        throw "$Owner must be PE32+ x64 (optional magic 0x020B), found 0x$($optionalMagic.ToString('X4'))"
-    }
-    $sectionTableEnd = $optionalOffset + $optionalSize + ([int]$sections * 40)
-    if ($sectionTableEnd -gt $bytes.Length) {
-        throw "$Owner PE section table is truncated"
-    }
-    $sizeOfHeaders = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($optionalOffset + 60) -Owner $Owner
-    if ($sizeOfHeaders -lt $sectionTableEnd -or $sizeOfHeaders -gt $bytes.Length) {
-        throw "$Owner PE SizeOfHeaders does not cover the parsed headers"
-    }
-    $sizeOfImage = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($optionalOffset + 56) -Owner $Owner
-    if ($sizeOfImage -le $sizeOfHeaders) {
-        throw "$Owner PE SizeOfImage does not describe a mapped image"
-    }
-    $sectionTableOffset = $optionalOffset + $optionalSize
-    $hasExecutableCode = $false
-    for ($sectionIndex = 0; $sectionIndex -lt $sections; $sectionIndex++) {
-        $sectionOffset = $sectionTableOffset + ($sectionIndex * 40)
-        $sectionNameBytes = @($bytes[$sectionOffset..($sectionOffset + 7)])
-        if (@($sectionNameBytes | Where-Object { $_ -ne 0 }).Count -eq 0) {
-            throw "$Owner PE section[$sectionIndex] has no name"
+
+    $stream = [IO.File]::OpenRead($Path)
+    $reader = $null
+    try {
+        try {
+            $reader = [Reflection.PortableExecutable.PEReader]::new($stream)
+            $headers = $reader.PEHeaders
         }
-        $virtualSize = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($sectionOffset + 8) -Owner $Owner
-        $rawSize = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($sectionOffset + 16) -Owner $Owner
-        $rawPointer = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($sectionOffset + 20) -Owner $Owner
-        $sectionCharacteristics = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($sectionOffset + 36) -Owner $Owner
-        if ($rawSize -gt 0 -and
-            ($rawPointer -lt $sizeOfHeaders -or [uint64]$rawPointer + [uint64]$rawSize -gt [uint64]$bytes.Length)) {
-            throw "$Owner PE section[$sectionIndex] raw data escapes the file"
+        catch {
+            throw "$Owner is not a structurally valid bounded PE image"
         }
-        if (($sectionCharacteristics -band 0x00000020) -ne 0 -and
-            ($sectionCharacteristics -band 0x20000000) -ne 0 -and
-            ($virtualSize -gt 0 -or $rawSize -gt 0)) {
-            $hasExecutableCode = $true
+        if ($null -eq $headers) {
+            throw "$Owner is not a structurally valid bounded PE image"
+        }
+        if ($headers.IsCoffOnly -or $null -eq $headers.PEHeader) {
+            throw "$Owner is a COFF object rather than a mapped PE image"
+        }
+        $coff = $headers.CoffHeader
+        $pe = $headers.PEHeader
+        if ($coff.Machine -ne [Reflection.PortableExecutable.Machine]::Amd64) {
+            throw "$Owner PE machine must be AMD64/x64 (0x8664), found '$($coff.Machine)'"
+        }
+        if ($pe.Magic -ne [Reflection.PortableExecutable.PEMagic]::PE32Plus) {
+            throw "$Owner must be PE32+ x64, found '$($pe.Magic)'"
+        }
+        if (($coff.Characteristics -band [Reflection.PortableExecutable.Characteristics]::ExecutableImage) -eq 0) {
+            throw "$Owner PE is not marked executable"
+        }
+        $isDll = ($coff.Characteristics -band [Reflection.PortableExecutable.Characteristics]::Dll) -ne 0
+        if (($ExpectedKind -eq "pe-dll-x64" -and -not $isDll) -or
+            ($ExpectedKind -eq "pe-exe-x64" -and $isDll)) {
+            throw "$Owner PE DLL/EXE characteristics do not match '$ExpectedKind'"
+        }
+
+        $fileAlignment = [uint64]$pe.FileAlignment
+        $sectionAlignment = [uint64]$pe.SectionAlignment
+        if (-not (Test-WindowsFixturePowerOfTwo -Value $fileAlignment) -or
+            $fileAlignment -lt 512 -or $fileAlignment -gt 65536 -or
+            -not (Test-WindowsFixturePowerOfTwo -Value $sectionAlignment) -or
+            $sectionAlignment -lt $fileAlignment -or
+            ($sectionAlignment -lt 4096 -and $sectionAlignment -ne $fileAlignment)) {
+            throw "$Owner PE file/section alignments are invalid"
+        }
+        if ($pe.ImageBase % 65536 -ne 0 -or $pe.NumberOfRvaAndSizes -ne 16) {
+            throw "$Owner PE image base or data-directory count is invalid"
+        }
+        if ($coff.NumberOfSections -le 0 -or $coff.NumberOfSections -ne $headers.SectionHeaders.Length) {
+            throw "$Owner PE section count is invalid"
+        }
+        $sectionTableEnd = [uint64]$headers.CoffHeaderStartOffset + 20 +
+            [uint64]$coff.SizeOfOptionalHeader + ([uint64]$coff.NumberOfSections * 40)
+        $sizeOfHeaders = [uint64]$pe.SizeOfHeaders
+        $sizeOfImage = [uint64]$pe.SizeOfImage
+        if ($sizeOfHeaders -lt $sectionTableEnd -or $sizeOfHeaders -gt $fileLength -or
+            $sizeOfHeaders % $fileAlignment -ne 0 -or $sizeOfImage -le $sizeOfHeaders -or
+            $sizeOfImage % $sectionAlignment -ne 0) {
+            throw "$Owner PE header/image sizes or alignment are invalid"
+        }
+
+        $rawRanges = [Collections.Generic.List[object]]::new()
+        $virtualRanges = [Collections.Generic.List[object]]::new()
+        $mappedRanges = [Collections.Generic.List[object]]::new()
+        $sectionNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $highestVirtualEnd = $sizeOfHeaders
+        $computedCodeSize = [uint64]0
+        $computedInitializedSize = [uint64]0
+        $hasExecutableCode = $false
+        foreach ($section in $headers.SectionHeaders) {
+            if ([string]::IsNullOrWhiteSpace($section.Name) -or -not $sectionNames.Add($section.Name) -or
+                $section.VirtualAddress -lt 0 -or $section.VirtualSize -lt 0 -or
+                $section.PointerToRawData -lt 0 -or $section.SizeOfRawData -lt 0) {
+                throw "$Owner PE has a blank/duplicate section name or negative section field"
+            }
+            $virtualAddress = [uint64]$section.VirtualAddress
+            $virtualSize = [uint64]$section.VirtualSize
+            $rawPointer = [uint64]$section.PointerToRawData
+            $rawSize = [uint64]$section.SizeOfRawData
+            $mappedSize = [Math]::Max($virtualSize, $rawSize)
+            if ($mappedSize -eq 0 -or $virtualAddress % $sectionAlignment -ne 0 -or
+                $virtualAddress -lt (Get-WindowsFixtureAlignedValue -Value $sizeOfHeaders -Alignment $sectionAlignment -Owner $Owner)) {
+                throw "$Owner PE section '$($section.Name)' has invalid virtual mapping"
+            }
+            $virtualEnd = $virtualAddress + $mappedSize
+            if ($virtualEnd -gt $sizeOfImage -or $virtualEnd -lt $virtualAddress) {
+                throw "$Owner PE section '$($section.Name)' escapes SizeOfImage"
+            }
+            $virtualRanges.Add([pscustomobject]@{ Start = $virtualAddress; End = $virtualEnd; Name = $section.Name })
+            $mappedRanges.Add([pscustomobject]@{ Start = $virtualAddress; End = $virtualEnd; Name = $section.Name })
+            $alignedVirtualEnd = Get-WindowsFixtureAlignedValue -Value $virtualEnd -Alignment $sectionAlignment -Owner $Owner
+            if ($alignedVirtualEnd -gt $highestVirtualEnd) {
+                $highestVirtualEnd = $alignedVirtualEnd
+            }
+
+            if ($rawSize -gt 0) {
+                $rawEnd = $rawPointer + $rawSize
+                if ($rawPointer -lt $sizeOfHeaders -or $rawPointer % $fileAlignment -ne 0 -or
+                    $rawSize % $fileAlignment -ne 0 -or $rawEnd -gt $fileLength -or $rawEnd -lt $rawPointer) {
+                    throw "$Owner PE section '$($section.Name)' has invalid or out-of-file raw data"
+                }
+                $rawRanges.Add([pscustomobject]@{ Start = $rawPointer; End = $rawEnd; Name = $section.Name })
+            }
+
+            $sectionFlags = $section.SectionCharacteristics
+            if (($sectionFlags -band [Reflection.PortableExecutable.SectionCharacteristics]::ContainsCode) -ne 0) {
+                $computedCodeSize += $rawSize
+            }
+            if (($sectionFlags -band [Reflection.PortableExecutable.SectionCharacteristics]::ContainsInitializedData) -ne 0) {
+                $computedInitializedSize += $rawSize
+            }
+            if (($sectionFlags -band [Reflection.PortableExecutable.SectionCharacteristics]::ContainsCode) -ne 0 -and
+                ($sectionFlags -band [Reflection.PortableExecutable.SectionCharacteristics]::MemExecute) -ne 0 -and
+                $rawSize -gt 0) {
+                $hasExecutableCode = $true
+            }
+        }
+        foreach ($ranges in @($rawRanges, $virtualRanges)) {
+            $ordered = @($ranges | Sort-Object Start, End)
+            for ($index = 1; $index -lt $ordered.Count; $index++) {
+                if ([uint64]$ordered[$index].Start -lt [uint64]$ordered[$index - 1].End) {
+                    throw "$Owner PE sections '$($ordered[$index - 1].Name)' and '$($ordered[$index].Name)' overlap"
+                }
+            }
+        }
+        if (-not $hasExecutableCode -or $highestVirtualEnd -ne $sizeOfImage -or
+            [uint64]$pe.SizeOfCode -ne $computedCodeSize -or
+            [uint64]$pe.SizeOfInitializedData -ne $computedInitializedSize) {
+            throw "$Owner PE executable mapping or aggregate section sizes are inconsistent"
+        }
+
+        $entryPoint = [uint64]$pe.AddressOfEntryPoint
+        if (($ExpectedKind -eq "pe-exe-x64" -and $entryPoint -eq 0) -or $entryPoint -ge $sizeOfImage) {
+            throw "$Owner PE entry point is invalid for '$ExpectedKind'"
+        }
+        if ($entryPoint -ne 0) {
+            $entrySection = @($virtualRanges | Where-Object {
+                $entryPoint -ge [uint64]$_.Start -and $entryPoint -lt [uint64]$_.End
+            })
+            $executableSections = @($headers.SectionHeaders | Where-Object {
+                ($_.SectionCharacteristics -band [Reflection.PortableExecutable.SectionCharacteristics]::MemExecute) -ne 0
+            } | ForEach-Object Name)
+            if ($entrySection.Count -ne 1 -or $entrySection[0].Name -notin $executableSections) {
+                throw "$Owner PE entry point is not contained by one executable section"
+            }
+        }
+
+        $directories = @(
+            @{ Name = "export"; Entry = $pe.ExportTableDirectory },
+            @{ Name = "import"; Entry = $pe.ImportTableDirectory },
+            @{ Name = "resource"; Entry = $pe.ResourceTableDirectory },
+            @{ Name = "exception"; Entry = $pe.ExceptionTableDirectory },
+            @{ Name = "base-relocation"; Entry = $pe.BaseRelocationTableDirectory },
+            @{ Name = "debug"; Entry = $pe.DebugTableDirectory },
+            @{ Name = "copyright"; Entry = $pe.CopyrightTableDirectory },
+            @{ Name = "global-pointer"; Entry = $pe.GlobalPointerTableDirectory },
+            @{ Name = "tls"; Entry = $pe.ThreadLocalStorageTableDirectory },
+            @{ Name = "load-config"; Entry = $pe.LoadConfigTableDirectory },
+            @{ Name = "bound-import"; Entry = $pe.BoundImportTableDirectory },
+            @{ Name = "iat"; Entry = $pe.ImportAddressTableDirectory },
+            @{ Name = "delay-import"; Entry = $pe.DelayImportTableDirectory },
+            @{ Name = "clr"; Entry = $pe.CorHeaderTableDirectory }
+        )
+        foreach ($directory in $directories) {
+            $rva = [uint64]$directory.Entry.RelativeVirtualAddress
+            $size = [uint64]$directory.Entry.Size
+            if (($rva -eq 0) -xor ($size -eq 0)) {
+                throw "$Owner PE $($directory.Name) directory has a partial range"
+            }
+            if ($size -eq 0) {
+                continue
+            }
+            $end = $rva + $size
+            $owners = if ($rva -lt $sizeOfHeaders -and $end -le $sizeOfHeaders) {
+                @("headers")
+            }
+            else {
+                @($mappedRanges | Where-Object { $rva -ge [uint64]$_.Start -and $end -le [uint64]$_.End })
+            }
+            if ($end -gt $sizeOfImage -or $end -lt $rva -or $owners.Count -ne 1) {
+                throw "$Owner PE $($directory.Name) directory is not contained by one mapped range"
+            }
+        }
+        $certificateOffset = [uint64]$pe.CertificateTableDirectory.RelativeVirtualAddress
+        $certificateSize = [uint64]$pe.CertificateTableDirectory.Size
+        if (($certificateOffset -eq 0) -xor ($certificateSize -eq 0)) {
+            throw "$Owner PE certificate directory has a partial file range"
+        }
+        if ($certificateSize -gt 0 -and
+            ($certificateOffset % 8 -ne 0 -or $certificateOffset + $certificateSize -gt $fileLength)) {
+            throw "$Owner PE certificate directory escapes or is misaligned in the file"
         }
     }
-    if (-not $hasExecutableCode) {
-        throw "$Owner PE has no bounded executable code section"
+    finally {
+        if ($null -ne $reader) {
+            $reader.Dispose()
+        }
+        $stream.Dispose()
     }
-    if (($characteristics -band 0x0002) -eq 0) {
-        throw "$Owner PE is not marked executable"
-    }
-    $isDll = ($characteristics -band 0x2000) -ne 0
-    if (($ExpectedKind -eq "pe-dll-x64" -and -not $isDll) -or
-        ($ExpectedKind -eq "pe-exe-x64" -and $isDll)) {
-        throw "$Owner PE DLL/EXE characteristics do not match '$ExpectedKind'"
-    }
+
+    Assert-WindowsFixtureWindowsPeLoadable -Path $Path -Owner $Owner
 }
 
 function Assert-WindowsFixtureMsftTypeLib {
@@ -605,10 +910,221 @@ function Assert-WindowsFixtureMsftTypeLib {
     if (-not [IO.Path]::GetExtension($Path).Equals(".tlb", [StringComparison]::OrdinalIgnoreCase)) {
         throw "$Owner MSFT typelib must use extension '.tlb'"
     }
+    $fileLength = (Get-Item -LiteralPath $Path).Length
+    if ($fileLength -lt 1024 -or $fileLength -gt 16777216) {
+        throw "$Owner MSFT type library length is outside the controlled 1 KiB..16 MiB envelope"
+    }
     $bytes = [IO.File]::ReadAllBytes($Path)
-    if ($bytes.Length -lt 4 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x53 -or
-        $bytes[2] -ne 0x46 -or $bytes[3] -ne 0x54) {
-        throw "$Owner is not an MSFT-format type library"
+    if ($bytes.Length -lt 0x148 -or
+        (Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0 -Owner $Owner) -ne 0x5446534D -or
+        (Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 4 -Owner $Owner) -ne 0x00010002) {
+        throw "$Owner is not a complete MSFT-format type library"
+    }
+    $varFlags = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x14 -Owner $Owner
+    if (($varFlags -band 0x0F) -ne 3) {
+        throw "$Owner MSFT type library must declare SYS_WIN64"
+    }
+    $typeInfoCount = [uint64](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x20 -Owner $Owner)
+    $nameCount = [uint64](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x30 -Owner $Owner)
+    $nameCharacters = [uint64](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x34 -Owner $Owner)
+    $importInfoCount = [uint64](Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x50 -Owner $Owner)
+    $libraryVersion = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x18 -Owner $Owner
+    if ($typeInfoCount -ne 1 -or $libraryVersion -ne 1 -or
+        $nameCount -ne 3 -or $nameCharacters -ne 66) {
+        throw "$Owner MSFT header counts are invalid or unbounded"
+    }
+    $baseDirectoryOffset = [uint64]0x54 + ($typeInfoCount * 4)
+    $candidateDirectoryOffsets = @($baseDirectoryOffset)
+    if (($varFlags -band 0x100) -ne 0) {
+        $candidateDirectoryOffsets += ($baseDirectoryOffset + 4)
+    }
+
+    $validLayouts = [Collections.Generic.List[object]]::new()
+    foreach ($directoryOffsetValue in $candidateDirectoryOffsets) {
+        $directoryOffset = [uint64]$directoryOffsetValue
+        $directoryEnd = $directoryOffset + (15 * 16)
+        if ($directoryEnd -gt [uint64]$bytes.Length) {
+            continue
+        }
+        $segments = [Collections.Generic.List[object]]::new()
+        $layoutValid = $true
+        for ($segmentIndex = 0; $segmentIndex -lt 15; $segmentIndex++) {
+            $entryOffset = [int]($directoryOffset + ($segmentIndex * 16))
+            $segmentOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset $entryOffset -Owner $Owner
+            $segmentLength = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($entryOffset + 4) -Owner $Owner
+            $reserved1 = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($entryOffset + 8) -Owner $Owner
+            $reserved2 = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($entryOffset + 12) -Owner $Owner
+            if ($reserved1 -ne [uint32]::MaxValue -or $reserved2 -ne 0x0F) {
+                $layoutValid = $false
+                break
+            }
+            if ($segmentOffset -eq [uint32]::MaxValue) {
+                if ($segmentLength -ne 0) {
+                    $layoutValid = $false
+                    break
+                }
+                $segments.Add([pscustomobject]@{ Index = $segmentIndex; Offset = [uint64]0; Length = [uint64]0; End = [uint64]0 })
+                continue
+            }
+            $offset64 = [uint64]$segmentOffset
+            $length64 = [uint64]$segmentLength
+            $end64 = $offset64 + $length64
+            if ($length64 -eq 0 -or $offset64 -lt $directoryEnd -or $offset64 % 4 -ne 0 -or
+                $length64 % 4 -ne 0 -or $end64 -gt [uint64]$bytes.Length -or $end64 -lt $offset64) {
+                $layoutValid = $false
+                break
+            }
+            $segments.Add([pscustomobject]@{ Index = $segmentIndex; Offset = $offset64; Length = $length64; End = $end64 })
+        }
+        if (-not $layoutValid -or $segments.Count -ne 15) {
+            continue
+        }
+        $nonEmpty = @($segments | Where-Object Length -gt 0 | Sort-Object Offset, End)
+        for ($index = 1; $index -lt $nonEmpty.Count; $index++) {
+            if ([uint64]$nonEmpty[$index].Offset -lt [uint64]$nonEmpty[$index - 1].End) {
+                $layoutValid = $false
+                break
+            }
+        }
+        if ($layoutValid) {
+            $validLayouts.Add([pscustomobject]@{
+                DirectoryOffset = $directoryOffset
+                DirectoryEnd = $directoryEnd
+                Segments = @($segments)
+            })
+        }
+    }
+    if ($validLayouts.Count -ne 1) {
+        throw "$Owner MSFT segment directory is missing, ambiguous, overlapping, or out of bounds"
+    }
+    $layout = $validLayouts[0]
+    $segments = @($layout.Segments)
+    $typeInfoSegment = $segments[0]
+    if ($typeInfoSegment.Length -ne $typeInfoCount * 100) {
+        throw "$Owner MSFT TypeInfo segment does not match the header count"
+    }
+    $seenTypeInfoOffsets = [Collections.Generic.HashSet[uint32]]::new()
+    for ($index = 0; $index -lt $typeInfoCount; $index++) {
+        $offset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset (0x54 + ($index * 4)) -Owner $Owner
+        if ($offset % 100 -ne 0 -or [uint64]$offset + 100 -gt [uint64]$typeInfoSegment.Length -or
+            -not $seenTypeInfoOffsets.Add($offset)) {
+            throw "$Owner MSFT TypeInfo offset[$index] is duplicate, misaligned, or out of bounds"
+        }
+        $recordOffset = [int]([uint64]$typeInfoSegment.Offset + [uint64]$offset)
+        $typeKind = (Read-WindowsFixtureUInt32 -Bytes $bytes -Offset $recordOffset -Owner $Owner) -band 0x0F
+        $memberOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($recordOffset + 4) -Owner $Owner
+        $typeInfoGuidOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset ($recordOffset + 44) -Owner $Owner
+        if ($typeKind -ne 0 -or
+            $typeInfoGuidOffset -ne [uint32]::MaxValue -or
+            ($memberOffset -ne [uint32]::MaxValue -and
+                ([uint64]$memberOffset -lt [uint64]$layout.DirectoryEnd -or [uint64]$memberOffset -gt [uint64]$bytes.Length))) {
+            throw "$Owner MSFT TypeInfo record[$index] has an invalid kind or member-data offset"
+        }
+    }
+
+    if ($segments[4].Length -ne 0x80 -or
+        $segments[5].Length -le 0 -or $segments[5].Length % 24 -ne 0 -or
+        $segments[6].Length -ne 0x200 -or
+        $segments[7].Length -le 0 -or $segments[8].Length -le 0) {
+        throw "$Owner MSFT GUID/name/string tables are missing or malformed"
+    }
+    if (($importInfoCount -eq 0 -and $segments[1].Length -ne 0) -or
+        ($importInfoCount -gt 0 -and $segments[1].Length -ne $importInfoCount * 12)) {
+        throw "$Owner MSFT import-info table does not match the header count"
+    }
+
+    $guidOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x08 -Owner $Owner
+    $nameOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset 0x38 -Owner $Owner
+    foreach ($reference in @(
+        @{ Name = "library GUID"; Value = $guidOffset; Segment = $segments[5] },
+        @{ Name = "library name"; Value = $nameOffset; Segment = $segments[7] }
+    )) {
+        if ($reference.Value -eq [uint32]::MaxValue -or
+            [uint64]$reference.Value -ge [uint64]$reference.Segment.Length) {
+            throw "$Owner MSFT $($reference.Name) reference is out of bounds"
+        }
+    }
+    if ($guidOffset % 24 -ne 0 -or [uint64]$guidOffset + 24 -gt [uint64]$segments[5].Length) {
+        throw "$Owner MSFT library GUID entry is misaligned or truncated"
+    }
+    $guidBytes = [byte[]]::new(16)
+    [Array]::Copy($bytes, [int]([uint64]$segments[5].Offset + [uint64]$guidOffset), $guidBytes, 0, 16)
+    $libraryGuid = [Guid]::new($guidBytes)
+    if ($libraryGuid -ne [Guid]"47C202E7-AD2A-49D3-9289-45B68A62499D") {
+        throw "$Owner MSFT LIBID does not match the controlled fixture library"
+    }
+
+    $readName = {
+        param([uint32]$Offset, [string]$NameOwner)
+
+        $candidates = [Collections.Generic.List[string]]::new()
+        foreach ($headerLength in @(8, 12)) {
+            if ([uint64]$Offset + [uint64]$headerLength -gt [uint64]$segments[7].Length) {
+                continue
+            }
+            $lengthOffset = [int]([uint64]$segments[7].Offset + [uint64]$Offset + [uint64]$headerLength - 4)
+            $length = [uint64]$bytes[$lengthOffset]
+            if ($length -eq 0 -or [uint64]$Offset + [uint64]$headerLength + $length -gt [uint64]$segments[7].Length) {
+                continue
+            }
+            $nameBytes = [byte[]]::new([int]$length)
+            [Array]::Copy(
+                $bytes,
+                [int]([uint64]$segments[7].Offset + [uint64]$Offset + [uint64]$headerLength),
+                $nameBytes,
+                0,
+                [int]$length)
+            if (@($nameBytes | Where-Object { $_ -lt 0x20 -or $_ -gt 0x7E }).Count -eq 0) {
+                $candidates.Add([Text.Encoding]::ASCII.GetString($nameBytes))
+            }
+        }
+        $unique = @($candidates | Sort-Object -Unique -CaseSensitive)
+        if ($unique.Count -ne 1) {
+            throw "$Owner MSFT $NameOwner name entry is ambiguous, non-ASCII, or truncated"
+        }
+        return $unique[0]
+    }
+    $libraryName = & $readName $nameOffset "library"
+    if ($libraryName -cne "OxVbaFixtureAdmissionLib") {
+        throw "$Owner MSFT library name does not match the controlled fixture library"
+    }
+    $typeInfoNameOffset = Read-WindowsFixtureUInt32 `
+        -Bytes $bytes `
+        -Offset ([int]([uint64]$typeInfoSegment.Offset + 52)) `
+        -Owner $Owner
+    $typeInfoName = & $readName $typeInfoNameOffset "TypeInfo"
+    if ($typeInfoName -cne "FixtureAdmissionState") {
+        throw "$Owner MSFT TypeInfo name does not match the controlled fixture enum"
+    }
+    foreach ($offsetField in @(0x24, 0x3C)) {
+        $stringOffset = Read-WindowsFixtureUInt32 -Bytes $bytes -Offset $offsetField -Owner $Owner
+        if ($stringOffset -eq [uint32]::MaxValue) {
+            continue
+        }
+        if ([uint64]$stringOffset + 2 -gt [uint64]$segments[8].Length) {
+            throw "$Owner MSFT string reference is out of bounds"
+        }
+        $absoluteStringOffset = [int]([uint64]$segments[8].Offset + [uint64]$stringOffset)
+        $stringLength = Read-WindowsFixtureUInt16 -Bytes $bytes -Offset $absoluteStringOffset -Owner $Owner
+        if ([uint64]$stringOffset + 2 + [uint64]$stringLength -gt [uint64]$segments[8].Length) {
+            throw "$Owner MSFT string entry is truncated"
+        }
+    }
+
+    if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)) {
+        Initialize-WindowsFixtureNativeProbe
+        $typeLib = [IntPtr]::Zero
+        try {
+            $hresult = [OxVbaFixtureAdmissionNativeV1]::LoadTypeLibEx($Path, 2, [ref]$typeLib)
+            if ($hresult -lt 0 -or $typeLib -eq [IntPtr]::Zero) {
+                throw ("$Owner was rejected by LoadTypeLibEx(REGKIND_NONE) (HRESULT=0x{0:X8})" -f ([uint32]$hresult))
+            }
+        }
+        finally {
+            if ($typeLib -ne [IntPtr]::Zero) {
+                [void][Runtime.InteropServices.Marshal]::Release($typeLib)
+            }
+        }
     }
 }
 
@@ -643,13 +1159,10 @@ function Assert-WindowsFixtureBundleArtifact {
 
     $path = Assert-WindowsFixtureContainedPath -RepositoryRoot $RepositoryRoot -RelativePath $RelativePath -ControlledRoot $ArtifactRoot -Owner $Owner
     $bytes = [IO.File]::ReadAllBytes($path)
-    $text = ConvertTo-WindowsFixtureCanonicalText -Bytes $bytes -Owner $Owner
-    try {
-        $bundle = $text | ConvertFrom-Json
-    }
-    catch {
-        throw "$Owner is not valid fixture-bundle JSON"
-    }
+    $bundle = ConvertFrom-WindowsFixtureAuditedJson `
+        -Bytes $bytes `
+        -Owner $Owner `
+        -FormatName "fixture-bundle"
     Assert-WindowsFixtureExactJsonProperties -Value $bundle -Expected @(
         "schema_id", "schema_version", "matrix_id", "row_id", "fixture_id",
         "artifact_id", "target_arch", "artifact_class", "components"
@@ -751,13 +1264,10 @@ function Assert-WindowsFixtureEnvironmentCapture {
 
     $path = Assert-WindowsFixtureContainedPath -RepositoryRoot $RepositoryRoot -RelativePath $RelativePath -ControlledRoot $CaptureRoot -Owner $Owner
     $bytes = [IO.File]::ReadAllBytes($path)
-    $text = ConvertTo-WindowsFixtureCanonicalText -Bytes $bytes -Owner $Owner
-    try {
-        $capture = $text | ConvertFrom-Json
-    }
-    catch {
-        throw "$Owner is not valid environment-capture JSON"
-    }
+    $capture = ConvertFrom-WindowsFixtureAuditedJson `
+        -Bytes $bytes `
+        -Owner $Owner `
+        -FormatName "environment-capture"
     Assert-WindowsFixtureExactJsonProperties -Value $capture -Expected @(
         "schema_id", "schema_version", "capture_id", "environment_id", "role",
         "profile", "target_arch", "os_build", "office_product", "office_version",
