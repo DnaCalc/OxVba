@@ -7,11 +7,11 @@ Active program manifest: docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json
 Program root: bd-59co
 Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
-Queue certification: certified — PROGRAM-0 accepted; current-only queue contains `bd-59co.2.1.1`
+Queue certification: certified — current-only queue contains `bd-59co.2.1.2`
 Claim queue: br ready -l ideal-2026-07 -t task
-Current task: `bd-59co.2.1.1` (`CORE-0` rollout) — materialize the bounded authority, matrix, residual, environment and generated-summary children, then advance the first Core baseline path.
+Current task: `bd-59co.2.1.2` — repair and verify the exact Core semantic-authority and clean-room guidance set.
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
-Last completed task: `bd-59co.1` / PROGRAM-0 accepted the 189-row, 224-trace, 76-leaf graph after clean independent semantic and documentation reviews.
+Last completed task: `bd-59co.2.1.1` rolled out the two bounded CORE-0 support successors and repaired manifest effect and active-claim validation; the accepted graph now has 189 rows, 226 traces and 78 leaves.
 
 ## Accepted umbrella and worksets under AutoRun
 

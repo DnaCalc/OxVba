@@ -308,6 +308,154 @@ try {
             -TraceRowsByBead @{}
     }
 
+    $supportTrace = [pscustomobject]@{
+        relationship = "evidences"
+        matrix_id = "CORE-READINESS"
+        row_id = "CORE-AUTHORITY-CLEAN-SPEC-VBA"
+    }
+    Assert-IdealClosedRolloutTraceState `
+        -RolloutId "synthetic-support-rollout" `
+        -RolloutTraces @() `
+        -MatrixRowsById @{} `
+        -DeliveryLeafIds @() `
+        -SuccessorLeafIds @("synthetic-support") `
+        -RequireDeliveryLeaf $false `
+        -TraceRowsByBead @{ "synthetic-support" = @($supportTrace) }
+    Write-Host "positive-validator: ok (closed-support-rollout)"
+
+    Invoke-ExpectedFailure -Name "closed-capability-rollout-support-only" -MessagePattern "closed rollout.*no delivery leaf" -Action {
+        Assert-IdealClosedRolloutTraceState `
+            -RolloutId "synthetic-capability-rollout" `
+            -RolloutTraces @() `
+            -MatrixRowsById @{} `
+            -DeliveryLeafIds @() `
+            -SuccessorLeafIds @("synthetic-support") `
+            -RequireDeliveryLeaf $true `
+            -TraceRowsByBead @{ "synthetic-support" = @($supportTrace) }
+    }
+
+    $fixture = New-IdealValidatorFixture
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "in_progress"
+    }
+    & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
+        -RepositoryRoot $fixture `
+        -SkipReadyQueue `
+        -SkipCycleCheck
+    Write-Host "positive-validator: ok (unblocked-active-leaf)"
+
+    $fixture = New-IdealValidatorFixture
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "closed"
+    }
+    & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
+        -RepositoryRoot $fixture `
+        -SkipReadyQueue `
+        -SkipCycleCheck
+    & (Join-Path $PSScriptRoot "validate-bead-traceability.ps1") `
+        -RepositoryRoot $fixture
+    Write-Host "positive-validator: ok (manifest-support-epic-end-to-end)"
+
+    $fixture = New-IdealValidatorFixture
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.3" -Mutation {
+        param($issue)
+        $issue.labels = @($issue.labels | Where-Object { [string]$_ -ne "delivery" }) + @("support")
+    }
+    Invoke-ExpectedFailure -Name "manifest-epic-effect-drift" -MessagePattern "manifest effect delivery requires label 'delivery'" -Action {
+        & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
+            -RepositoryRoot $fixture `
+            -SkipReadyQueue `
+            -SkipCycleCheck
+    }
+
+    $fixture = New-IdealValidatorFixture
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "in_progress"
+        $issue.dependencies = @($issue.dependencies) + @([pscustomobject]@{
+            issue_id = "bd-59co.2.1.1"
+            depends_on_id = "bd-59co.2.1.2"
+            type = "blocks"
+            created_at = "2026-07-11T00:00:00Z"
+            created_by = "negative-validator"
+            metadata = "{}"
+            thread_id = ""
+        })
+    }
+    Invoke-ExpectedFailure -Name "blocked-active-leaf" -MessagePattern "active executable leaf bd-59co\.2\.1\.1 has unresolved blocker.*bd-59co\.2\.1\.2" -Action {
+        & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
+            -RepositoryRoot $fixture `
+            -SkipReadyQueue `
+            -SkipCycleCheck
+    }
+
+    $fixture = New-IdealValidatorFixture
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "in_progress"
+    }
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1" -Mutation {
+        param($issue)
+        $issue.dependencies = @($issue.dependencies) + @([pscustomobject]@{
+            issue_id = "bd-59co.2.1"
+            depends_on_id = "bd-59co.2.2.1"
+            type = "blocks"
+            created_at = "2026-07-11T00:00:00Z"
+            created_by = "negative-validator"
+            metadata = "{}"
+            thread_id = ""
+        })
+    }
+    Invoke-ExpectedFailure -Name "active-below-blocked-epic" -MessagePattern "active executable leaf bd-59co\.2\.1\.1 has unresolved blocker.*bd-59co\.2\.2\.1" -Action {
+        & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
+            -RepositoryRoot $fixture `
+            -SkipReadyQueue `
+            -SkipCycleCheck
+    }
+
+    $fixture = New-IdealValidatorFixture
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "in_progress"
+    }
+    foreach ($issueId in @("bd-59co.2.1.2", "bd-59co.2.1.3")) {
+        Update-FixtureIssue -FixtureRoot $fixture -IssueId $issueId -Mutation {
+            param($issue)
+            $issue.status = "in_progress"
+            $issue.dependencies = @($issue.dependencies | Where-Object { [string]$_.type -ne "blocks" })
+        }
+    }
+    $issuesPath = Join-Path $fixture ".beads/issues.jsonl"
+    $syntheticActive = [pscustomobject][ordered]@{
+        id = "bd-negative-active-four"
+        title = "Synthetic fourth active support leaf"
+        description = "Effect: support. Clauses: AUTH-CLEAN-001|AUTH-SPEC-001|AUTH-VBA-001|CONF-MATRIX-001|DOC-AUTH-001|DOC-TRACE-001. Canonical matrix row: CORE-READINESS/CORE-AUTHORITY-CLEAN-SPEC-VBA. command:./scripts/validate-workset-rollout.ps1. Expected observable: negative active-agent limit. artifact:docs/evidence/programs/ideal-2026-07/core/CORE-0/terminal.md. Residual behavior: negative fixture only."
+        acceptance_criteria = "The negative fixture reaches the active-agent limit check with exact evidence and no blocker."
+        status = "in_progress"
+        priority = 4
+        issue_type = "task"
+        estimated_minutes = 30
+        labels = @("ideal-2026-07", "profile-core", "epic-core-0", "support", "risk-low", "tier-luna", "resource-none")
+        dependencies = @([pscustomobject]@{
+            issue_id = "bd-negative-active-four"
+            depends_on_id = "bd-59co.2.1"
+            type = "parent-child"
+            created_at = "2026-07-11T00:00:00Z"
+            created_by = "negative-validator"
+            metadata = "{}"
+            thread_id = ""
+        })
+    }
+    Add-Content -LiteralPath $issuesPath -Value ($syntheticActive | ConvertTo-Json -Depth 100 -Compress) -Encoding UTF8
+    Invoke-ExpectedFailure -Name "active-agent-limit" -MessagePattern "active executable leaves exceed three-worker limit 3" -Action {
+        & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
+            -RepositoryRoot $fixture `
+            -SkipReadyQueue `
+            -SkipCycleCheck
+    }
+
     $fixture = New-IdealValidatorFixture
     $tracePath = Join-Path $fixture "docs/validation/IDEAL_MATRIX_BEAD_TRACEABILITY_V1.csv"
     $traceRows = @(Import-Csv -LiteralPath $tracePath)
@@ -386,11 +534,33 @@ try {
     }
 
     $fixture = New-IdealValidatorFixture
-    foreach ($issueId in @("bd-59co.2.2.2", "bd-h4oh.8", "bd-59co.2.4.3")) {
-        Update-FixtureIssue -FixtureRoot $fixture -IssueId $issueId -Mutation {
-            param($issue)
-            $issue.status = "in_progress"
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "open"
+    }
+    $issuesPath = Join-Path $fixture ".beads/issues.jsonl"
+    foreach ($suffix in 1..3) {
+        $syntheticRust = [pscustomobject][ordered]@{
+            id = "bd-negative-rust-writer-$suffix"
+            title = "Synthetic active Rust writer $suffix"
+            description = "Effect: support. Clauses: AUTH-CLEAN-001|AUTH-SPEC-001|AUTH-VBA-001|CONF-MATRIX-001|DOC-AUTH-001|DOC-TRACE-001. Canonical matrix row: CORE-READINESS/CORE-AUTHORITY-CLEAN-SPEC-VBA. command:./scripts/validate-workset-rollout.ps1. Expected observable: negative Rust-writer limit. artifact:docs/evidence/programs/ideal-2026-07/core/CORE-0/terminal.md. Residual behavior: negative fixture only."
+            acceptance_criteria = "The negative fixture reaches the Rust-writer resource limit with exact evidence and no blocker."
+            status = "in_progress"
+            priority = 4
+            issue_type = "task"
+            estimated_minutes = 30
+            labels = @("ideal-2026-07", "profile-core", "epic-core-0", "support", "risk-low", "tier-luna", "resource-rust-writer")
+            dependencies = @([pscustomobject]@{
+                issue_id = "bd-negative-rust-writer-$suffix"
+                depends_on_id = "bd-59co.2.1"
+                type = "parent-child"
+                created_at = "2026-07-11T00:00:00Z"
+                created_by = "negative-validator"
+                metadata = "{}"
+                thread_id = ""
+            })
         }
+        Add-Content -LiteralPath $issuesPath -Value ($syntheticRust | ConvertTo-Json -Depth 100 -Compress) -Encoding UTF8
     }
     Invoke-ExpectedFailure -Name "rust-writer-limit" -MessagePattern "active Rust writers exceed limit 2" -Action {
         & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
@@ -399,7 +569,7 @@ try {
             -SkipCycleCheck
     }
 
-    Write-Host "test-ideal-program-validator-negative-cases: ok (cases=19)"
+    Write-Host "test-ideal-program-validator-negative-cases: ok (cases=24)"
 }
 finally {
     if (Test-Path -LiteralPath $tempBase -PathType Container) {

@@ -101,11 +101,15 @@ function Read-IdealProgramManifest {
         foreach ($epic in $epics) {
             $code = [string]$epic.code
             $bead = [string]$epic.bead
+            $effect = if ($epic.PSObject.Properties.Name -contains "effect") { [string]$epic.effect } else { "" }
             if ([string]::IsNullOrWhiteSpace($code) -or -not $seenCodes.Add($code)) {
                 throw "ideal-program: profile '$profileName' has a blank or duplicate epic code '$code'"
             }
             if ([string]::IsNullOrWhiteSpace($bead) -or -not $seenEpicIds.Add($bead)) {
                 throw "ideal-program: profile '$profileName' has a blank or duplicate epic bead '$bead'"
+            }
+            if ($effect -notin @("delivery", "support")) {
+                throw "ideal-program: epic '$code' must declare exact effect delivery or support"
             }
             $actualCodes += $code
         }
@@ -244,6 +248,7 @@ function Get-IdealExpectedEpicRecords {
                 WorksetDoc = [string]$profile.workset_doc
                 Code = [string]$epic.code
                 EpicId = [string]$epic.bead
+                Effect = [string]$epic.effect
                 EpicLabel = "epic-$(([string]$epic.code).ToLowerInvariant())"
             }
         }
@@ -583,6 +588,8 @@ function Assert-IdealClosedRolloutTraceState {
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$RolloutTraces,
         [Parameter(Mandatory = $true)][hashtable]$MatrixRowsById,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$DeliveryLeafIds,
+        [AllowEmptyCollection()][string[]]$SuccessorLeafIds = @(),
+        [bool]$RequireDeliveryLeaf = $true,
         [Parameter(Mandatory = $true)][hashtable]$TraceRowsByBead
     )
 
@@ -599,20 +606,23 @@ function Assert-IdealClosedRolloutTraceState {
             }
         }
     }
-    if ($DeliveryLeafIds.Count -eq 0) {
-        throw "ideal-program: closed rollout $RolloutId has no delivery leaf with an exact row path"
+    $requiredLeafIds = if ($RequireDeliveryLeaf) { @($DeliveryLeafIds) } else { @($SuccessorLeafIds) }
+    $requiredLeafIds = @($requiredLeafIds)
+    if ($requiredLeafIds.Count -eq 0) {
+        $kind = if ($RequireDeliveryLeaf) { "delivery" } else { "support/control successor" }
+        throw "ideal-program: closed rollout $RolloutId has no $kind leaf with an exact row path"
     }
-    foreach ($deliveryLeafId in $DeliveryLeafIds) {
+    foreach ($successorLeafId in $requiredLeafIds) {
         $leafTraces = @()
-        if ($TraceRowsByBead.ContainsKey($deliveryLeafId)) {
-            $leafTraces = @($TraceRowsByBead[$deliveryLeafId])
+        if ($TraceRowsByBead.ContainsKey($successorLeafId)) {
+            $leafTraces = @($TraceRowsByBead[$successorLeafId])
         }
         $exactLeafTraces = @($leafTraces | Where-Object {
             -not [string]::IsNullOrWhiteSpace([string]$_.row_id) -and
             [string]$_.relationship -notin @("matrix-scaffold", "owns-planned-row")
         })
         if ($exactLeafTraces.Count -eq 0) {
-            throw "ideal-program: delivery leaf $deliveryLeafId under closed rollout $RolloutId lacks an exact row trace"
+            throw "ideal-program: successor leaf $successorLeafId under closed rollout $RolloutId lacks an exact row trace"
         }
     }
 }

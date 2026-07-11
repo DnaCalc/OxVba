@@ -76,6 +76,17 @@ try {
     $epicById = @{}
     $descendantsByEpic = @{}
     foreach ($epic in $expectedEpics) {
+        if (-not $issueById.ContainsKey($epic.EpicId)) {
+            throw "validate-bead-traceability: manifest execution epic '$($epic.EpicId)' does not exist"
+        }
+        $epicLabels = @(Get-IdealIssueLabels -Issue $issueById[$epic.EpicId])
+        if ($epic.Effect -eq "delivery" -and $epicLabels -notcontains "delivery") {
+            throw "validate-bead-traceability: execution epic '$($epic.EpicId)' manifest effect delivery requires label 'delivery'"
+        }
+        if ($epic.Effect -eq "support" -and
+            ($epicLabels -notcontains "support" -or $epicLabels -contains "delivery")) {
+            throw "validate-bead-traceability: execution epic '$($epic.EpicId)' manifest effect support requires support-only labels"
+        }
         $epicById[$epic.EpicId] = $epic
         $set = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($id in @(Get-IdealDescendantIds -RootId $epic.EpicId -ChildrenByParent $childrenByParent)) {
@@ -322,21 +333,26 @@ try {
         if ($traceRowsByBead.ContainsKey($rolloutId)) {
             $rolloutTraces = @($traceRowsByBead[$rolloutId])
         }
-        $deliveryLeaves = @(
+        $successorLeaves = @(
             Get-IdealDescendantIds -RootId $epic.EpicId -ChildrenByParent $childrenByParent |
                 Where-Object {
                     $id = [string]$_
                     $issue = $issueById[$id]
+                    $id -ne $rolloutId -and
                     [string]$issue.issue_type -ne "epic" -and
-                    (-not $childrenByParent.ContainsKey($id) -or @($childrenByParent[$id]).Count -eq 0) -and
-                    (Get-IdealIssueLabels -Issue $issue) -contains "delivery"
+                    (-not $childrenByParent.ContainsKey($id) -or @($childrenByParent[$id]).Count -eq 0)
                 }
         )
+        $deliveryLeaves = @($successorLeaves | Where-Object {
+            (Get-IdealIssueLabels -Issue $issueById[[string]$_]) -contains "delivery"
+        })
         Assert-IdealClosedRolloutTraceState `
             -RolloutId $rolloutId `
             -RolloutTraces $rolloutTraces `
             -MatrixRowsById $matrixRowsById `
             -DeliveryLeafIds $deliveryLeaves `
+            -SuccessorLeafIds $successorLeaves `
+            -RequireDeliveryLeaf ($epic.Effect -eq "delivery") `
             -TraceRowsByBead $traceRowsByBead
     }
 

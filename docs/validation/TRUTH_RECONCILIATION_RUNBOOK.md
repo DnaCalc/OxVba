@@ -28,7 +28,7 @@ Run reconciliation:
 6. the program has exactly three workset roots, 42 execution epics, one rollout leaf per epic, no cycles, and no stale/global-ready work
 7. executable leaves and epics have typed command, expected-observable and evidence destinations; leaves are bounded, residual-aware and traceable to matrices/rows, and every leaf contract clause appears in its trace-clause union
 8. matrix truth-state, x64 target, clause, residual-owner, and terminal taxonomy stays valid; producer traces cover every target-row clause while focused `evidences`/`projects` traces may be selective; verified rows carry resolvable actual evidence and classify result/full Err/side effects/lifecycle order/transport/balance
-9. closed rollouts have no scaffold/planned-row ownership, closed epics have delivery proof with all required rows verified, and LSP capabilities advertise only after decoded/direct equivalence is verified
+9. closed rollouts have no scaffold/planned-row ownership; capability epics have delivery proof, support-only epics have exact support proof and downstream delivery paths, all owned required rows are verified, and LSP capabilities advertise only after decoded/direct equivalence is verified
 10. before AutoRun, every owned matrix is nonempty with a required row and every execution epic has an explicit row connection
 11. the manifest-derived Ideal program summary is up to date
 

@@ -44,13 +44,15 @@ Completion discipline:
 - a workset is not complete while required beads remain open,
 - narrative progress text is never a substitute for bead state.
 - a workset is not considered properly rolled out until its necessary epics exist explicitly, even if some later child beads are still to be created by epic rollout beads.
-- a rollout cannot close while it still owns matrix scaffolds or planned rows; exact delivery-leaf row traces replace that temporary ownership,
-- an execution epic cannot close until delivery work exists, all required rows it owns or advances are verified, and no accepted residual remains in its subtree,
+- a rollout cannot close while it still owns matrix scaffolds or planned rows; exact successor row traces replace that temporary ownership,
+- a capability execution epic cannot close until delivery work exists, all required rows it owns or advances are verified, and no accepted residual remains in its subtree,
+- a manifest-declared support-only authority, review, rollout, or terminal epic may close on exact support outcomes when its owned rows are verified, its residuals are clear, and downstream capability delivery paths remain explicit; mutable labels do not redefine this classification,
 - do not mutate the bead graph concurrently; serialize `br` mutations through `scripts/invoke-br-serialized.ps1`.
 
 Ideal-program scheduling discipline:
 
 - the only executable claim queue is `br ready -l ideal-2026-07 -t task`; `bv` is used for scoped topology and capacity analysis, never as the source of a claim,
+- a healthy open program has at least one ready or already-claimed `in_progress` executable leaf; a claimed leaf counts only when its own and ancestor blockers are closed, and no more than three executable leaves may be active for the three-worker pool,
 - every executable leaf carries explicit `resource-*` scheduling metadata; `resource-none` means that no serialized machine lane is required and cannot be combined with another resource label,
 - admit at most two `resource-rust-writer` leaves concurrently,
 - admit at most one leaf at a time for each of `resource-cargo-workspace`, `resource-excel-vbe`, `resource-registry`, and `resource-vm-provision`,

@@ -186,6 +186,41 @@ function Get-OwningExpectedEpic {
     return @($owners)[0]
 }
 
+function Get-UnresolvedBlockerIds {
+    param(
+        [Parameter(Mandatory = $true)][string]$IssueId,
+        [Parameter(Mandatory = $true)][hashtable]$IssueById
+    )
+
+    $blockers = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $queue = [Collections.Generic.Queue[string]]::new()
+    $queue.Enqueue($IssueId)
+    while ($queue.Count -gt 0) {
+        $currentId = $queue.Dequeue()
+        if (-not $seen.Add($currentId) -or -not $IssueById.ContainsKey($currentId)) {
+            continue
+        }
+        $issue = $IssueById[$currentId]
+        if ($issue.PSObject.Properties.Name -contains "dependencies" -and $null -ne $issue.dependencies) {
+            foreach ($dependency in @($issue.dependencies)) {
+                if ([string]$dependency.type -eq "blocks") {
+                    $blockerId = [string]$dependency.depends_on_id
+                    if ([string]::IsNullOrWhiteSpace($blockerId) -or
+                        -not $IssueById.ContainsKey($blockerId) -or
+                        [string]$IssueById[$blockerId].status -ne "closed") {
+                        [void]$blockers.Add($(if ([string]::IsNullOrWhiteSpace($blockerId)) { "<missing>" } else { $blockerId }))
+                    }
+                }
+            }
+        }
+        foreach ($parentId in @(Get-IdealParentIds -Issue $issue)) {
+            $queue.Enqueue($parentId)
+        }
+    }
+    return @($blockers)
+}
+
 function Invoke-BrJson {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
@@ -304,6 +339,14 @@ try {
             -RequiredLabels @([string]$manifest.program_label, $record.ProfileLabel, $record.EpicLabel) `
             -Owner "execution epic $($record.EpicId)" `
             -AllowMultipleEffects
+        $epicLabels = @(Get-IdealIssueLabels -Issue $epic)
+        if ($record.Effect -eq "delivery" -and $epicLabels -notcontains "delivery") {
+            throw "validate-workset-rollout: execution epic $($record.EpicId) manifest effect delivery requires label 'delivery'"
+        }
+        if ($record.Effect -eq "support" -and
+            ($epicLabels -notcontains "support" -or $epicLabels -contains "delivery")) {
+            throw "validate-workset-rollout: execution epic $($record.EpicId) manifest effect support requires support-only labels"
+        }
 
         $description = if ($epic.PSObject.Properties.Name -contains "description") { [string]$epic.description } else { "" }
         $acceptance = if ($epic.PSObject.Properties.Name -contains "acceptance_criteria") { [string]$epic.acceptance_criteria } else { "" }
@@ -333,16 +376,24 @@ try {
             -Owner "rollout bead $($rollout.id)"
 
         if ([string]$rollout.status -eq "closed") {
-            $deliverySuccessors = @(
+            $executableSuccessors = @(
                 $directChildren |
                     Where-Object {
                         [string]$_.id -ne [string]$rollout.id -and
-                        [string]$_.issue_type -ne "epic" -and
-                        (Get-IdealIssueLabels -Issue $_) -contains "delivery"
+                        [string]$_.issue_type -ne "epic"
                     }
             )
-            if ($deliverySuccessors.Count -eq 0) {
-                throw "validate-workset-rollout: closed rollout $($rollout.id) has no direct executable delivery successor"
+            $requiredSuccessors = if ($record.Effect -eq "delivery") {
+                @($executableSuccessors | Where-Object { (Get-IdealIssueLabels -Issue $_) -contains "delivery" })
+            }
+            else {
+                @($executableSuccessors | Where-Object { (Get-IdealIssueLabels -Issue $_) -contains "support" })
+            }
+            if ($requiredSuccessors.Count -eq 0) {
+                if ($record.Effect -eq "delivery") {
+                    throw "validate-workset-rollout: closed rollout $($rollout.id) has no direct executable delivery successor"
+                }
+                throw "validate-workset-rollout: closed support-only rollout $($rollout.id) has no direct executable support successor"
             }
         }
 
@@ -361,8 +412,11 @@ try {
                         (Get-IdealIssueLabels -Issue $issueById[$descendantId]) -contains "delivery"
                     }
             )
-            if ($deliveryLeaves.Count -eq 0) {
+            if ($record.Effect -eq "delivery" -and $deliveryLeaves.Count -eq 0) {
                 throw "validate-workset-rollout: closed execution epic $($record.EpicId) cannot close on support leaves alone"
+            }
+            if ($record.Effect -eq "support" -and $epicDescendants.Count -eq 0) {
+                throw "validate-workset-rollout: closed support-only execution epic $($record.EpicId) has no executable support outcome"
             }
         }
     }
@@ -400,6 +454,15 @@ try {
             } |
             ForEach-Object { $issueById[[string]$_] }
     )
+    foreach ($activeLeaf in $activeExecutionLeaves) {
+        $unresolvedBlockers = @(Get-UnresolvedBlockerIds -IssueId ([string]$activeLeaf.id) -IssueById $issueById)
+        if ($unresolvedBlockers.Count -gt 0) {
+            throw "validate-workset-rollout: active executable leaf $($activeLeaf.id) has unresolved blocker(s), including ancestor blockers: $($unresolvedBlockers -join ',')"
+        }
+    }
+    if ($activeExecutionLeaves.Count -gt 3) {
+        throw "validate-workset-rollout: active executable leaves exceed three-worker limit 3: $(@($activeExecutionLeaves | ForEach-Object { [string]$_.id }) -join ',')"
+    }
     $resourceLimits = @(
         @{ Name = "Rust writers"; Maximum = 2; Match = { param($labels) $labels -contains "resource-rust-writer" } },
         @{ Name = "workspace Cargo gates"; Maximum = 1; Match = { param($labels) $labels -contains "resource-cargo-workspace" } },
@@ -494,12 +557,12 @@ try {
             }
         }
         $readyCount = $globalReady.Count
-        if ([string]$root.status -ne "closed" -and $readyCount -eq 0) {
-            throw "validate-workset-rollout: open program has no ready executable leaf"
+        if ([string]$root.status -ne "closed" -and ($readyCount + $activeExecutionLeaves.Count) -eq 0) {
+            throw "validate-workset-rollout: open program has no ready or active executable leaf"
         }
     }
 
-    $queueText = if ($SkipReadyQueue) { "skipped" } else { [string]$readyCount }
+    $queueText = if ($SkipReadyQueue) { "skipped" } else { "$readyCount active=$($activeExecutionLeaves.Count)" }
     Write-Host "validate-workset-rollout: ok (program=$($manifest.program_id) profiles=3 epics=$($expectedEpics.Count) rollouts=$($expectedEpics.Count) ready=$queueText)"
 }
 finally {
