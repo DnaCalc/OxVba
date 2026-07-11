@@ -1,8 +1,9 @@
 # VBA Expression And Call Semantics v1
 
-Status: working VBA semantic reference; implementation/evidence incomplete
+Status: current VBA semantic reference; implementation and evidence tracked in canonical matrices
 Date: 2026-05-26
-Scope owner: OxVBA compiler/VM/runtime/JIT/native-readiness
+Authority review: 2026-07-11
+Scope owner: VBA expression, assignment, property, and call semantics
 System clauses: `AUTH-SPEC-001`, `COMP-BIND-001`, `RUNTIME-EVAL-001`
 
 ## Purpose
@@ -16,9 +17,18 @@ answers "what happens when values, expressions, properties, and calls are
 evaluated?" Both documents are required inputs to compiler analysis, OxIR/OxImage,
 VM3/JIT evidence, backend lowering plans and COM/native descriptors.
 
-This is not a JIT-only contract. If a JIT needs a coercion, operator, call-site,
-default-member, or ByRef fact, that fact belongs in the executable semantic
-artifact first and must be observable by VM3 or VM3 evidence.
+This is not a JIT-only contract. Coercion, operator, call-site, default-member,
+and ByRef meaning are compiler-owned semantic facts shared by all consumers.
+Their concrete representation belongs to the active compiler and OxIR/OxImage
+contracts.
+
+Authority follows `CHARTER.md`, `OPERATIONS.md`, and
+[`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md). Public
+specifications and reproducible black-box Excel/VBA observations decide
+behavior. Current helper, VM3, JIT, or historical package observations are
+evidence or divergences only; they never become provisional expected behavior
+without that authority. Uncertainty remains an exact canonical spec/oracle row
+with an active owner.
 
 ## Source References
 
@@ -57,6 +67,10 @@ Local review anchors used by this draft:
   `0023..0028`, `0042`, `0050..0077`, `0173..0188`,
   `0202`, `0224`, `0227`, `0278..0287`.
 
+Rust-like structures below are non-normative illustrations of facts that must
+remain distinguishable. They do not prescribe DTO names, crate APIs, OxImage
+layout, VM frames, JIT ABI, or Windows transport structures.
+
 ## Relationship To The Type System
 
 `VBA_TYPE_SYSTEM_V1.md` owns:
@@ -75,16 +89,17 @@ This document owns:
 - Let/Set assignment, property access, and default-member effects;
 - procedure call argument mapping, optional/default handling, ParamArray shape,
   ByVal locals, ByRef aliasing, and ByRef/writeback evidence;
-- call-site descriptors consumed by VM, JIT, COM, native Declare, and exported
+- call-site descriptors consumed by VM3, JIT, COM, native Declare, and exported
   callable paths.
 
-The executable semantic package must carry both descriptor families. A declared
-type descriptor without call/coercion semantics is not enough for JIT lowering.
+The compiler fact set and verified executable semantics must preserve both
+fact families. A declared type without call/coercion meaning is insufficient
+for any backend.
 
 ## Expression Classification Model
 
-Every expression node lowered into package metadata should have an expression
-semantic descriptor:
+Every relevant expression must retain the following semantic facts; this shape
+is illustrative:
 
 ```rust
 pub struct ExpressionSemanticsDescriptor {
@@ -144,7 +159,7 @@ pub enum CoercionStaticStatus {
     Valid,
     Invalid,
     RequiresRuntimeCheck,
-    ImplementationDefined,
+    AuthorityPending,
 }
 ```
 
@@ -158,9 +173,11 @@ Let-coercion. `Set` assignment, `Property Set`, object parameters, `Nothing`,
 class/interface conformance, and COM object projection all depend on this
 separation.
 
-The package must preserve whether coercion was checked statically, requires a
-runtime helper, or is intentionally implementation-defined. A typed JIT fast
-path may inline only rows whose coercion behavior is proved or guarded.
+The semantic facts must preserve whether coercion was checked statically,
+requires a runtime helper, or still awaits public-specification or Excel/VBA
+adjudication. `AuthorityPending` cannot enter verified artifacts or executable
+backend admission. A typed JIT fast path may inline only authority-resolved rows
+whose coercion behavior is proved or guarded.
 
 ## Operator Semantics
 
@@ -196,10 +213,10 @@ concatenation depending on operand value types. The `&` operator is the forced
 string-concatenation path. Relational string comparisons must preserve the
 module `Option Compare` mode. `Is` is object identity, not value equality.
 
-The first implementation step is not to hand-code the full table in the JIT.
-The package must expose an operator descriptor or helper reference, and the VM
-must be able to run fixtures that prove the descriptor matches current
-interpreter behavior or identify a real VM limitation.
+An operator fast path is admissible only when its semantic row is authoritative
+and verified. VM3/JIT fixtures test that shared meaning against public
+specification or Excel/VBA evidence; current interpreter behavior cannot
+self-authorize the expected result.
 
 ## Assignment And Property Semantics
 
@@ -230,7 +247,7 @@ Property descriptors must preserve:
 - the rule that a property-LHS value parameter has runtime ByVal semantics even
   when its source mechanism is omitted or written as ByRef.
 
-Default-member binding is a distinct package fact. A Let-style context may need
+Default-member binding is a distinct semantic fact. A Let-style context may need
 to bind through an object's default value member, while a Set-style context
 assigns the object reference itself.
 
@@ -331,9 +348,9 @@ resolved call target, not as an untracked runtime fallback. Late-bound COM
 default members must carry the same named/default argument facts used by the
 COM descriptor.
 
-## OxIR/OxImage And VM3/JIT Requirements
+## Consumer Fact Obligations
 
-The verified OxIR/OxImage artifact must carry:
+The following semantic distinctions must survive into verified execution:
 
 - expression descriptors for coercion-sensitive expression nodes;
 - operator descriptors or helper IDs for every lowered operator;
@@ -345,56 +362,37 @@ The verified OxIR/OxImage artifact must carry:
 - boundary projection descriptors for COM, native Declare, and exported
   callables.
 
-VM3 consumes these descriptors where they affect execution, and differential
-evidence reports enough call/coercion metadata to prove the JIT used the same
-verified facts.
+The active compiler and OxIR/OxImage contracts own their representation. VM3
+and the JIT consume the same verified meaning, and differential evidence must
+show that both used the same call/coercion decisions.
 
 The JIT may specialize only when:
 
-- the relevant descriptor row is present in the package;
-- the VM can run the same package path or the gap is classified explicitly;
-- runtime helper/deopt paths preserve slot state, error state, object identity,
+- the relevant semantic row and verified facts are present;
+- VM3 admits and executes the same declared capability row;
+- runtime helper and fault paths preserve slot state, error state, object identity,
   cleanup, and ByRef alias/writeback behavior;
-- unsupported shapes produce deterministic diagnostics rather than silent VM
-  fallback.
+- unsupported target shapes are rejected before partial code generation rather
+  than silently falling back to VM3.
 
-## Spec Cross-Reference Review
+## Authority Cross-Reference And Closure Routing
 
-The semantic anchors and required facts remain current. References below to `OxBundle` v15 and old VM/package gaps are a historical 2026-05-26 implementation snapshot, not current architecture or status.
-
-Review result for this draft:
-
-| Area | Foundation/MS spec anchor | Required OxVba package fact | Current risk |
+| Area | Public authority anchor | Required semantic distinction | Canonical closure route |
 |---|---|---|---|
-| Declared types and non-types | MS-VBAL table 2/table 3, segments around `SEG-000632`, `SEG-000653`; type-system doc | `VbaTypeId`, value-state space, carrier | Current code still lacks one central package registry. |
-| Let-coercion | MS-VBAL 5.5.1, spec items `00185..00201`; seed table [`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv) | `CoercionDescriptor { kind: Let }` | `OxBundle` v15 carries selected descriptor ids and VM evidence; full truth table extraction and broad VM consumption remain incomplete. |
-| Set-coercion | MS-VBAL 5.5.2, spec items `00202..00206` | `CoercionDescriptor { kind: Set }` | `OxBundle` v15 carries selected `Set`/`Nothing` descriptor ids; object/class/interface/COM conformance must stay descriptor-backed. |
-| Operators | MS-VBAL 5.6.9, spec items `00219..00246`; `Option Compare` segments `SEG-001565..001571`; seed table [`../validation/VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv) | `OperatorSemanticsDescriptor` | `OxBundle` v15 carries selected helper-backed descriptor ids, including `And`/`Or`, branch predicates, `Option Compare`, and deferred `IIf`; full truth table extraction remains incomplete. |
-| Object/member binding | MS-VBAL Set/default-member/property/event anchors; seed table [`../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv`](../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv) | `ObjectMemberBindingDescriptor` and property/default-member/event descriptors | `OxBundle` v15 carries selected name/member/property/default-member descriptor ids and VM evidence; class/interface routes, COM dispatch, events, and VM member-binding consumption remain incomplete. |
-| Procedure signatures | MS-VBAL anchors `p:1418..1470`; `SEG-002047..002101` | `ProcedureSignatureDescriptor` and `ParameterDescriptor` | Existing metadata is useful but not full enough for package/JIT parity. |
-| Property signatures | MS-VBAL anchors `p:1482..1488`; `SEG-002107..002121` | property pairing and value-param descriptor | Property value-param ByVal runtime semantics must be explicit. |
-| Call-site mapping | MS-VBAL `SEG-002162..002189` | `CallSiteDescriptor` and `ArgumentBindingDescriptor` | ByRef alias/temp/default/ParamArray distinctions must not be inferred in JIT. |
-| Event invocation | MS-VBAL `CONF-...-0178`, `SEG-002488` | event signature compatibility descriptor | Event params are signature facts, not ordinary locals. |
-| COM projection | MS-OAUT VARIANT/BSTR/SAFEARRAY/IDispatch anchors listed above | boundary projection and helper ABI descriptors | COM wire descriptors must remain projections, not core type replacements. |
+| Declared types and value states | MS-VBAL table 2/table 3 around `SEG-000632`, `SEG-000653` | declared type, value-state space, carrier family | `CORE-READINESS/CORE-TYPED-BINDING` plus verified artifact rows |
+| Let/Set coercion | MS-VBAL 5.5.1/5.5.2, items `00185..00206` | coercion family, static legality, runtime result/error | Core typed-binding and structural differential/oracle rows |
+| Operators | MS-VBAL 5.6.9, items `00219..00246`; `Option Compare` `SEG-001565..001571` | operand/result types, Null/Error propagation, comparison mode | Core runtime-eval, VM3/JIT, and Excel-oracle rows |
+| Object/member binding | MS-VBAL Set/default-member/property/event anchors | resolved target, accessor/default-member choice, identity and call facts | Core typed-binding; COM transport remains in Windows rows |
+| Procedures and properties | MS-VBAL `SEG-002047..002121` | exact signature, accessor pairing, property value-parameter semantics | `CORE-READINESS/CORE-TYPED-BINDING` |
+| Call-site mapping | MS-VBAL `SEG-002162..002189` | ByRef alias/temp, Optional/default, ParamArray, named/omitted mapping | Core typed-binding, OxIR call/ByRef, and differential rows |
+| Event invocation | MS-VBAL `CONF-...-0178`, `SEG-002488` | event signature compatibility and argument mapping | Core compiler/VM rows; native event transport in Windows rows |
+| COM projection | MS-OAUT anchors listed above | boundary projection without replacing core semantics | Windows metadata, interop-plan, COM client/server/event rows |
 
-Open follow-up:
-
-- expand the v15 selected `CoercionDescriptor` rows into the full MS-VBAL
-  Let/Set truth table and keep table rows bound to package descriptor ids;
-- expand the first operator seed table into a compact MS-VBAL truth table for
-  numeric, string, Null, Empty, Error/CVErr, object, and Variant rows, building
-  on the v15 selected `OperatorSemanticsDescriptor` ids;
-- expand the v15 selected object/member binding descriptors into a package-owned
-  member registry with complete descriptor ids, property/default-member
-  pairing, dispatch cache policy, event graph semantics, and VM evidence;
-- audit current compiler/VM metadata against the signature descriptors in
-  `VBA_TYPE_SYSTEM_V1.md`;
-- extend VM-runnable fixtures beyond the VMR-04 seed, which now covers ByRef
-  alias versus ByRef expression temp, Optional default metadata, Optional
-  `Variant` missing-policy metadata, and empty/non-empty ParamArray shape;
-- migrate useful VMR-04 call-gap rows into the current compiler/OxIR readiness
-  matrices before changing call execution; the superseded completion map is
-  historical provenance only;
-- broaden fixtures beyond the v15 selected `Property Let` value-param and
-  default-member metadata rows to cover `Property Set`, object default-member
-  execution, and unsupported/member-ambiguity diagnostics.
+The seed coercion, operator, lifecycle, and object/member tables linked from
+[`VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md`](VBA_SEMANTIC_TABLES_AND_BINDING_REFERENCE_V1.md)
+are historical coverage inputs. Their prior helper, `OxBundle`, VM, or VMR
+observations receive no present implementation or expected-behavior credit.
+Any useful case must be replayed through the current stack and decided by its
+public authority or a reproducible Excel/VBA oracle capture. An uncovered case
+is split into the exact canonical row and owner above before this semantic
+surface can be called complete.

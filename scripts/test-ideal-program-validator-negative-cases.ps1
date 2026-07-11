@@ -337,6 +337,10 @@ try {
     $fixture = New-IdealValidatorFixture
     Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
         param($issue)
+        $issue.status = "closed"
+    }
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.2" -Mutation {
+        param($issue)
         $issue.status = "in_progress"
     }
     & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
@@ -373,10 +377,14 @@ try {
     $fixture = New-IdealValidatorFixture
     Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
         param($issue)
+        $issue.status = "closed"
+    }
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.2" -Mutation {
+        param($issue)
         $issue.status = "in_progress"
         $issue.dependencies = @($issue.dependencies) + @([pscustomobject]@{
-            issue_id = "bd-59co.2.1.1"
-            depends_on_id = "bd-59co.2.1.2"
+            issue_id = "bd-59co.2.1.2"
+            depends_on_id = "bd-59co.2.1.3"
             type = "blocks"
             created_at = "2026-07-11T00:00:00Z"
             created_by = "negative-validator"
@@ -384,7 +392,7 @@ try {
             thread_id = ""
         })
     }
-    Invoke-ExpectedFailure -Name "blocked-active-leaf" -MessagePattern "active executable leaf bd-59co\.2\.1\.1 has unresolved blocker.*bd-59co\.2\.1\.2" -Action {
+    Invoke-ExpectedFailure -Name "blocked-active-leaf" -MessagePattern "active executable leaf bd-59co\.2\.1\.2 has unresolved blocker.*bd-59co\.2\.1\.3" -Action {
         & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
             -RepositoryRoot $fixture `
             -SkipReadyQueue `
@@ -393,6 +401,10 @@ try {
 
     $fixture = New-IdealValidatorFixture
     Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "closed"
+    }
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.2" -Mutation {
         param($issue)
         $issue.status = "in_progress"
     }
@@ -408,7 +420,7 @@ try {
             thread_id = ""
         })
     }
-    Invoke-ExpectedFailure -Name "active-below-blocked-epic" -MessagePattern "active executable leaf bd-59co\.2\.1\.1 has unresolved blocker.*bd-59co\.2\.2\.1" -Action {
+    Invoke-ExpectedFailure -Name "active-below-blocked-epic" -MessagePattern "active executable leaf bd-59co\.2\.1\.2 has unresolved blocker.*bd-59co\.2\.2\.1" -Action {
         & (Join-Path $PSScriptRoot "validate-workset-rollout.ps1") `
             -RepositoryRoot $fixture `
             -SkipReadyQueue `
@@ -535,6 +547,10 @@ try {
 
     $fixture = New-IdealValidatorFixture
     Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.1" -Mutation {
+        param($issue)
+        $issue.status = "closed"
+    }
+    Update-FixtureIssue -FixtureRoot $fixture -IssueId "bd-59co.2.1.2" -Mutation {
         param($issue)
         $issue.status = "open"
     }

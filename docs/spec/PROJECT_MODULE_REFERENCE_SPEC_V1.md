@@ -1,17 +1,28 @@
 # Project Module Reference Spec v1
 
-Status: working VBA semantic reference; implementation/evidence incomplete
-Date: 2026-03-02
-Scope: OxVba compiler/host project graph semantics (Project, Module, Reference)
+Status: current VBA semantic reference; implementation/evidence tracked separately
+Date: 2026-03-02; authority alignment 2026-07-11
+Scope: OxVba project, module, provider and reference-closure semantics
 System clauses: `AUTH-SPEC-001`, `PROJ-REF-001`, `LS-WORKSPACE-001`
+Higher authority: [`../../CHARTER.md`](../../CHARTER.md),
+[`../../OPERATIONS.md`](../../OPERATIONS.md),
+[`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md)
+Current realization: [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
+Compiler contract:
+[`OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md)
 
 ## 1. Purpose
 
-Define a formal, implementation-ready contract for VBA project/module/reference behavior in OxVba, aligned to:
+Define the project/module/reference semantics that refine the OxVba system and
+compiler contracts. Public specifications and reproducible Excel/VBA
+observations decide VBA behavior. Repository code, tests, extracted source
+indexes and historical plans are implementation or provenance evidence; none is
+an independent semantic authority.
 
-- `CHARTER.md` priority order: robustness > compatibility > performance.
-- Foundation source doctrine (`docs/FOUNDATION_SPEC_REFERENCE.md`).
-- Current OxVba validation approach (clause catalogs, conformance lanes, deferred oracle gates).
+This document owns the conceptual project/reference model and its VBA-visible
+rules. The compiler contract owns the public `AnalysisResultV1` boundary. The
+Windows interop contract owns COM metadata and wire behavior. The language
+service consumes compiler facts and does not reconstruct this model.
 
 This spec is intentionally precise about:
 
@@ -20,55 +31,96 @@ This spec is intentionally precise about:
 - invariants,
 - deterministic failure modes,
 - implementation-defined boundaries,
-- HAL interaction boundaries.
+- compiler, host, Windows-interoperability and language-service boundaries.
 
-## 2. Normative Source Basis
+## 2. Authority And Source Basis
 
-Primary source set:
+The clean-room authority set is:
 
-- MS-VBAL extracted set:
-  - `../Foundation/reference/runs/20260301-ms-vbal-pass07/outputs/conformance_items.jsonl`
-  - `../Foundation/reference/runs/20260301-ms-vbal-pass07/outputs/docs/discovered-ms-vbal-250520-f945507e/spec_items.jsonl`
-- MS-OAUT extracted set:
-  - `../Foundation/reference/runs/20260301-ms-oaut-pass02/outputs/conformance_items.jsonl`
-- MS-OVBA extracted set:
-  - `../Foundation/reference/runs/20260301-ms-ovba-pass01/outputs/spec_items.jsonl`
-  - `../Foundation/reference/runs/20260301-ms-ovba-pass01/outputs/run_manifest.json`
+- the public Microsoft specifications `[MS-VBAL]`, `[MS-OVBA]` and
+  `[MS-OAUT]`, plus public Microsoft VBA documentation;
+- reproducible black-box observation of Excel/VBA for behavior the public
+  sources leave unclear or where the product and specification appear to
+  differ;
+- published research where relevant.
 
-Key source-quality note:
+The Foundation source map at
+[`../FOUNDATION_SPEC_REFERENCE.md`](../FOUNDATION_SPEC_REFERENCE.md) and the
+following extracted runs are searchable, pinned indexes into public material:
 
-- MS-VBAL and MS-OAUT runs contain large extracted conformance sets and are suitable for clause mapping.
-- Current MS-OVBA run is under-extracted (6 spec items, 0 conformance candidates). Sections 1.7/2 are marked normative, but section-level obligation extraction is missing and tracked as a hard requirement in this spec.
+- `../../../Foundation/reference/runs/20260301-ms-vbal-pass07/outputs/`;
+- `../../../Foundation/reference/runs/20260301-ms-oaut-pass02/outputs/`;
+- `../../../Foundation/reference/runs/20260301-ms-ovba-pass01/outputs/`.
 
-## 3. Formal State Model
+An extraction count or omission is evidence-pipeline status, not a VBA rule.
+Missing section-level extraction remains an evidence backlog item and must be
+resolved from public sources or an oracle observation before the affected row
+is verified; it cannot be filled from current OxVba behavior.
+
+## 3. Conceptual State Model
+
+The following is a logical contract, not a second compiler API or a required
+Rust storage layout. `AnalysisResultV1` publishes the corresponding immutable
+identities and facts.
 
 ## 3.1 Core Entities
 
 ```text
-ProjectGraph
-  projects: Map<ProjectId, ProjectNode>
+ProjectClosure
+  closure_id: ProjectClosureId
+  closure_digest: Digest
+  target: TargetIdentity
   active_project: ProjectId
+  projects: OrderedMap<ProjectId, ProjectNode>
+  providers: OrderedMap<ProviderId, ProviderSurface>
 
 ProjectNode
+  project_id: ProjectId
+  version_or_digest: VersionOrDigest
   project_name: Identifier
   project_kind: {Source, Host, Library}
   module_order: Vec<ModuleId>
   modules: Map<ModuleId, ModuleNode>
-  references: Vec<ProjectReference>
+  references: Vec<ReferenceEdge>
+  local_providers: Vec<ProviderId>
   conditional_constants: Map<Identifier, ConstValue>
+  provenance: ProjectProvenance
 
 ModuleNode
+  module_id: ModuleId
+  document_id: DocumentId
+  version_or_digest: VersionOrDigest
   module_name: Identifier
   module_kind: {Procedural, Class, Document, Form, Extension}
   header_attributes: ModuleAttributes
-  declaration_ast: ModuleDeclAst
-  code_ast: ModuleCodeAst
+  active_view: ActiveViewIdentity
+  syntax_identity: SyntaxIdentity
+  provenance: SourceProvenance
 
-ProjectReference
-  referenced_project_name: Identifier
+ReferenceEdge
+  reference_id: ReferenceId
   precedence_index: u32
-  reference_kind: {Project, TypeLibrary, HostInjected}
-  binding_state: {Unbound, Bound, Failed}
+  alias: Optional<Identifier>
+  reference_kind: {
+    SourceProject,
+    VerifiedOxImage,
+    VbaLibrary,
+    HostProvider,
+    ComTypeLibrary
+  }
+  target_provider: ProviderId
+  target_identity: ReferenceTargetIdentity
+  version_or_digest: VersionOrDigest
+  visibility: ReferenceVisibility
+  binding_state: {Resolved, Broken, Ambiguous}
+  provenance: ReferenceProvenance
+
+ProviderSurface
+  provider_id: ProviderId
+  version_or_digest: VersionOrDigest
+  origin: ProviderOrigin
+  public_symbols: StableSymbolSurface
+  provenance: ProviderProvenance
 
 ModuleAttributes
   vb_name: Identifier
@@ -78,6 +130,13 @@ ModuleAttributes
   vb_exposed: bool
   extras: Map<String, String>
 ```
+
+Source projects, verified OxImage references, the VBA library, host references,
+COM type libraries and source `Declare` declarations publish through one stable
+symbol/signature vocabulary. Source declarations, including `Declare`, are
+local providers rather than fabricated entries in the ordered external
+reference list. Provider origin changes visibility, mutability and navigation
+policy, not the binding algorithm.
 
 ## 3.2 Invariants
 
@@ -90,6 +149,16 @@ ModuleAttributes
 - INV-PMR-007: Procedural module variable declarations cannot include `WithEvents` (`CONF-...-0056`).
 - INV-PMR-008: Implements clauses in class modules satisfy interface coverage constraints (`CONF-...-0095..0098`).
 - INV-PMR-009: Public entity names that collide with project/module names require explicit qualification (`CONF-...-0053`, `...-0106`).
+- INV-PMR-010: Project, module, document, provider and reference identities are
+  collision-checked and distinguish changed inputs by version or digest.
+- INV-PMR-011: Broken and ambiguous references diagnose deterministically; no
+  provider is selected by filesystem, registry or load-order accident.
+- INV-PMR-012: Referenced source projects and verified OxImage references expose
+  equivalent VBA-visible public callable, class and data surfaces.
+- INV-PMR-013: `Option Private Module`, visibility and reference precedence are
+  enforced before a symbol becomes a bindable cross-project candidate.
+- INV-PMR-014: The language service consumes these compiler-owned identities and
+  facts; it does not build a second project graph or provider model.
 
 ## 4. Operation Contracts
 
@@ -131,30 +200,40 @@ Failures:
 
 Preconditions:
 
-- referenced project name is syntactically valid.
-- reference name does not duplicate existing reference target name.
+- the reference has an explicit kind, target identity and provenance;
+- any source-visible project or alias name is syntactically valid;
+- the reference does not duplicate an existing target identity in a way VBA
+  forbids.
 
 Postconditions:
 
-- reference appended with explicit precedence index.
+- the reference is appended with an explicit precedence index;
+- the target provider is resolved or the edge retains an explicit
+  `Broken`/`Ambiguous` state and diagnostic.
 
 Failures:
 
-- duplicate reference target name -> `PMR-E-REFERENCE-DUPLICATE-TARGET`.
+- duplicate reference target -> `PMR-E-REFERENCE-DUPLICATE-TARGET`;
+- unresolved target -> stable broken-reference diagnostic;
+- ambiguous identity/version/alias selection -> stable ambiguity diagnostic.
 
 ## 4.4 `resolve_qualified_name(project, module, name_expr)`
 
 Preconditions:
 
 - project and module are bound.
-- module AST + symbol tables are available.
+- the module's lossless syntax and compiler-owned provider environment are
+  available.
 
 Postconditions:
 
 - deterministic classification result:
   - local module symbol,
   - enclosing project symbol,
-  - referenced project symbol,
+  - referenced source or verified-image symbol,
+  - VBA library symbol,
+  - host or COM metadata symbol,
+  - source `Declare` symbol,
   - unresolved.
 
 Failures:
@@ -215,20 +294,37 @@ Runtime-facing behaviors constrained by this spec:
 - default-instance exposure semantics from class attributes (source anchors `SPEC-...-01266`, `...-01267` and sentence anchors around class-module semantics).
 - project reference precedence affecting runtime bind target selection (`SPEC-...-01230`).
 
-### 6.1 Class Semantic Contract (A1 scope)
+### 6.1 Class Semantic Contract
 
-The class semantic contract is locked at language/runtime level even when full COM ABI wiring is staged:
+Class semantics are language/runtime obligations independent of whether the
+object later crosses a COM boundary:
 
-- `Class_Initialize` executes before `Main` body effects become observable.
-- `Class_Terminate` executes after `Main` path completion for deterministic teardown paths.
-- `Property Let/Set` assignment routes to callable property procedures and preserves ByRef write route expectations.
-- project-aware class-event legality is compile-time executable for `WithEvents`/`Implements`/`RaiseEvent`, with stable PMR diagnostics for invalid patterns.
-- project-source `WithEvents` handler routing, subscription-order fan-out, rebinding order, and synchronous ByRef writeback are executable and oracle-backed; broader lifecycle cleanup and COM event parity remain tracked as event-model closure work.
+- `Class_Initialize` runs as part of instance initialization after storage is
+  allocated and before the creating operation returns a reference to the new
+  instance. This does not prohibit the initializer itself from publishing or
+  passing `Me`. Its ordering and failure behavior are relative to the creation
+  operation, not unconditionally to a procedure named `Main`.
+- `Class_Terminate` is invoked before object destruction. Invocation may occur
+  when the object becomes provably inaccessible or at a later implementation
+  point permitted by VBA. The handler may make the object accessible again,
+  but it runs at most once even if the resurrected object later becomes
+  inaccessible again. Its inherited error policy is the default policy, so the
+  handler must handle errors internally. Normal return, error unwinding,
+  project reset/disposal, reentrancy, resurrection and reference cycles require
+  explicit lifecycle evidence.
+- `Property Let` and `Property Set` assignment invoke the resolved property
+  procedure. The property value parameter has VBA's property-assignment ByVal
+  semantics; ordinary indexed/property parameters retain their separately
+  resolved ByVal/ByRef behavior.
+- `WithEvents`, `Implements` and `RaiseEvent` legality is decided at compile
+  time from project and class facts, with source-located diagnostics.
+- Event binding preserves source identity, handler-signature compatibility,
+  subscription/fan-out order, rebinding and teardown order. Synchronous ByRef
+  event arguments are written back before the originating call returns.
 
-Current executable evidence lives in host/compiler tests and is tracked in:
-
-- `docs/spec/PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md`
-- `docs/spec/CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md`
+VM3, JIT and Windows event adapters must observe the same project-owned class
+facts. Passing a source-only event test does not by itself verify native COM
+connection-point behavior.
 
 ## 7. Reference and Binding Semantics
 
@@ -236,6 +332,8 @@ Current executable evidence lives in host/compiler tests and is tracked in:
 
 - The reference list is ordered and semantically relevant (`SPEC-...-01230`).
 - Binder MUST treat lower index as higher precedence unless an explicit language rule overrides this.
+- Case-insensitive ambiguity at the same effective precedence is diagnosed; a
+  provider must not win because it happened to load first.
 
 ## 7.2 Project Categories
 
@@ -247,9 +345,19 @@ OxVba model must explicitly support:
 
 per source anchors (`SPEC-...-01234`, `...-01236`, `...-01237`).
 
+Those VBA project categories are distinct from provider/reference kinds.
+Referenced source projects, verified OxImage exports, the VBA library, host
+metadata, COM type libraries and `Declare` declarations all participate in the
+closure through their explicit provider identity and provenance.
+
 ## 7.3 Cross-project Entity Access
 
 - A project reference grants access to public entities in referenced projects (`SPEC-...-01232`).
+- `Option Private Module` and entity visibility are applied before exporting a
+  source or verified-image public surface.
+- A compiled reference must preserve public data, callable signatures,
+  classes/interfaces and other VBA-visible metadata; it cannot degrade to a
+  name-only facade.
 - Mechanisms for physically identifying referenced projects are implementation-defined (`SPEC-...-01233`) and must be explicitly documented in the implementation-defined register.
 
 ## 7.4 OAUT-facing Constraints for Reference-backed Automation Calls
@@ -260,59 +368,95 @@ For calls routed through OLE Automation surfaces, OxVba must preserve OAUT rules
 - `Invoke` packing and output obligations (`CONF-...-0614..0623`, `...-0627..0631`).
 - automation-compatible type constraints (`CONF-...-0468`, `...-0469`, `...-0483`, `...-0484`, `...-0530`).
 
-### 7.5 Semantic vs Adapter Responsibilities (A3 boundary)
+### 7.5 Semantic vs Adapter Responsibilities
 
 Semantic (language/runtime) obligations:
 
 - class lifecycle ordering, property routing, deterministic project diagnostics.
 
-Adapter/HAL obligations:
+Windows-adapter obligations:
 
-- actual COM activation/dispatch ABI behavior, policy gates, and host error projection.
+- authoritative type-library selection and stable metadata identity;
+- COM activation, dispatch/vtable transport, marshalling, cleanup and error
+  projection through a verified interop plan.
+
+HAL obligations:
+
+- capability discovery, host policy and delegation. HAL does not own name
+  resolution, COM dispatch semantics or canonical carrier layout.
 
 Claim rule:
 
-- class semantic compatibility can be `implemented-verified` without implying full COM ABI parity.
-- COM-boundary claims must remain `implemented-partial` or `specified-pending` until bridge conformance lanes close.
+- a required semantic row may become `verified` independently when its complete
+  observable and authority evidence are present;
+- that result does not verify COM transport or a profile aggregate;
+- COM rows retain `planned`, `in-progress`, `implemented-subset` or
+  `implemented-full` truth until their own required evidence permits
+  `verified`. Profile completion requires every required row and no accepted
+  residual.
 
-## 8. Interaction with Existing OxVba Pipeline
+## 8. Compiler, Artifact And Runtime Pipeline
 
-Required compiler-host integration shape:
+The required production shape is:
 
-1. Input layer:
-- host/CLI provides project manifest (project metadata + module set + references + conditional constants).
+```text
+decoded project inputs and reference declarations
+  -> deterministic ProjectClosure and provider surfaces
+  -> shared lossless syntax, declarations and typed binding
+  -> immutable AnalysisResultV1
+       -> optional CoreProgram for valid Strict analysis
+  -> Core IR
+  -> OxIR project programs
+  -> OxImage project closure
+  -> bounded decode and sealed verification
+  -> VerifiedOxImage
+       -> VM3 or JIT backend-neutral project session
+```
 
-2. Parse layer:
-- parse each module independently with preserved header attributes.
+Binding completes before Core IR. `AnalysisResultV1` retains stable project,
+module, document, provider, declaration/use-site, type/call, diagnostic and
+provenance facts. Core IR and OxIR preserve reference/import/export identities
+needed without source. OxImage records the ordered project closure and explicit
+entry project; raw or merely deserialized programs never reach product
+execution.
 
-3. Project bind layer:
-- build project graph,
-- validate invariants,
-- construct cross-module and cross-project symbol tables,
-- resolve qualified/unqualified names with deterministic precedence.
+VM3 and JIT consume the same verified project/reference and class metadata.
+Runtime and host layers do not repeat name resolution or reconstruct a public
+surface from source text.
 
-4. Lowering layer:
-- preserve enough metadata for runtime-class features (`WithEvents`, default instances, Implements dispatch tags).
+## 9. Boundary Ownership
 
-5. Runtime/host layer:
-- instantiate class default-instance metadata,
-- enforce project-level visibility at invocation boundaries,
-- route host-project and reference-backed entities through HAL or host integration contracts.
+The compiler/project layer owns:
 
-## 9. HAL Boundary and Responsibilities
+- project discovery from supplied inputs, stable identity and deterministic
+  closure construction;
+- source and verified-image public surfaces, reference precedence, visibility,
+  binding and diagnostics;
+- compiler facts consumed by runtime and language-service clients.
 
-Project/module/reference semantics are language-level first; however these interactions are HAL-adjacent and are tracked for HAL formalization:
+Host/HAL owns:
 
-- host project discovery/injection,
-- reference graph materialization from host environment,
-- open host project and extension-module attachment,
-- persistent storage import/export (MS-OVBA),
-- type library/importlib resolution where required by references.
+- host-project and host-provider injection;
+- capability/profile policy and delegation;
+- persistent-storage and open-project access where the host supplies it.
 
-Detailed HAL planning is defined in:
+Windows interop owns:
 
-- `docs/spec/PROJECT_MODULE_REFERENCE_HAL_INTEGRATION_V1.md`.
-- `docs/spec/PROJECT_MODULE_REFERENCE_TYPELIB_IMPORTLIB_HAL_DRAFT_V1.md`.
+- registered/file-backed type-library selection, GUID/version/LCID/platform
+  identity, aliases and broken-reference metadata;
+- COM activation/invocation/event/serving and wire behavior;
+- native loader and callback services under host policy.
+
+The language service consumes `AnalysisResultV1` and immutable snapshots. It
+may index reference facts and expose read-only virtual metadata, but it does not
+parse, rebind or create an editor-only project/reference model.
+
+These boundaries are refined by
+[`OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md)
+and
+[`OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md`](OXVBA_LANGUAGE_SERVICE_ARCHITECTURE_V1.md).
+Older PMR/HAL and class/COM planning documents are provenance only where they
+conflict with these contracts.
 
 ## 10. Error Model
 
@@ -322,40 +466,63 @@ Error classes:
 
 - syntax/header errors: parser diagnostics.
 - static semantic violations: binder/type checker diagnostics.
-- host/reference materialization failures: host/HAL structured error mapped to compile-time or runtime phase per policy.
+- broken, ambiguous or inaccessible compiler references: project/reference
+  diagnostics with source or metadata provenance.
+- unavailable runtime targets after a legal declaration, such as a missing DLL
+  export: runtime diagnostics rather than invented compile errors.
+- host materialization or policy failures: stable host outcomes mapped to the
+  VBA phase and error required for that operation.
 
 No silent fallback is allowed for violated MUST constraints.
 
-## 11. Verification Model
+## 11. Verification And Current Truth
 
-Clause catalog:
+This semantic contract is refined into independently closable rows. Current
+implementation and evidence state is owned by the active canonical matrices,
+not by narrative in this file:
 
-- `docs/spec/PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.md`
-- `docs/spec/PROJECT_MODULE_REFERENCE_CLAUSE_CATALOG_V1.csv`
+- [`../validation/CORE_COMPILER_VM_JIT_READINESS_MATRIX_V1.csv`](../validation/CORE_COMPILER_VM_JIT_READINESS_MATRIX_V1.csv)
+  for compiler analysis, typed binding and project/reference facts;
+- [`../validation/OXIMAGE_PACKAGE_CONTRACT_MATRIX_V1.csv`](../validation/OXIMAGE_PACKAGE_CONTRACT_MATRIX_V1.csv)
+  for verified artifact exports and references;
+- [`../validation/WINDOWS_ABI_CARRIER_MATRIX_V1.csv`](../validation/WINDOWS_ABI_CARRIER_MATRIX_V1.csv)
+  and the Windows COM matrices for authoritative type-library and interop rows;
+- [`../validation/LANGUAGE_SERVICE_REFERENCE_KIND_MATRIX_V1.csv`](../validation/LANGUAGE_SERVICE_REFERENCE_KIND_MATRIX_V1.csv)
+  for IDE reference-kind parity;
+- [`../validation/CURRENT_STACK_EXCEL_ORACLE_MATRIX_V1.csv`](../validation/CURRENT_STACK_EXCEL_ORACLE_MATRIX_V1.csv)
+  for current Excel/VBA evidence.
 
-Conformance suite plan:
+The PMR clause catalog and older conformance plans remain supporting source
+indexes and fixture provenance. They cannot override this contract or establish
+current completion by themselves.
 
-- `docs/spec/PROJECT_MODULE_REFERENCE_CONFORMANCE_V1.md`
-- `docs/spec/CLASS_MODULE_COM_ALIGNMENT_PLAN_V1.md` (class semantics now, full COM interop mechanics staged/deferred)
+Required evidence includes:
 
-Coverage/backlog tracker:
-
-- `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`
+- source and verified-image public-surface equivalence, including public data;
+- reference order, collision, visibility, `Option Private` and broken-reference
+  diagnostics;
+- stable identity/provenance across source, providers, artifacts and snapshots;
+- compile-time class/property/event legality and VM3/JIT structural runtime
+  observables;
+- Windows transport evidence for COM-specific rows, kept distinct from portable
+  project/class semantics.
 
 ## 12. Uncertainty and Implementation-defined Areas
 
-Explicitly implementation-defined from extracted source set:
+Explicitly implementation-defined by the cited public source rules:
 
 - project physical representation and storage mechanism (`SPEC-...-01231`).
 - mechanism used to identify referenced projects (`SPEC-...-01233`).
 - open host project module extension mechanism (`SPEC-...-01241`, `...-01299`).
 
-These MUST be tracked in implementation-defined and deferred-oracle artifacts before compatibility claims are raised to full parity.
+These MUST be tracked in implementation-defined and oracle/evidence artifacts
+before the affected row is verified. An uncertainty does not authorize current
+OxVba behavior as the target and does not silently narrow the accepted VBA
+scope.
 
-## 13. Immediate Next Steps
+## 13. Status Ownership
 
-1. Implement parser retention for module header attributes (`VB_Name`, `VB_PredeclaredId`, `VB_GlobalNamespace`, `VB_Creatable`, `VB_Exposed`).
-2. Introduce `ProjectGraph` binding stage and deterministic diagnostics for naming/qualification constraints.
-3. Add executable conformance fixtures for two-module and three-module reference precedence paths.
-4. Add OAUT-backed dispatch packaging checks at project-reference call boundary.
-5. Close MS-OVBA extraction gap in Foundation source runs and map section 2 obligations into clause IDs.
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md) records current realization and
+gaps. Active worksets, beads, canonical matrices and evidence artifacts own the
+delivery sequence and status. Historical implementation plans may explain why
+a rule was introduced, but they do not change the rule or prove it complete.

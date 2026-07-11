@@ -10,7 +10,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Profile | Matrices | Rows | Planned | In progress | Implemented subset | Implemented full | Verified | Archived |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| core | 5 | 55 | 55 | 0 | 0 | 0 | 0 | 0 |
+| core | 5 | 55 | 54 | 0 | 0 | 0 | 1 | 0 |
 | windows-x64 | 6 | 57 | 57 | 0 | 0 | 0 | 0 | 0 |
 | ide | 4 | 77 | 77 | 0 | 0 | 0 | 0 | 0 |
 
@@ -18,7 +18,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Matrix | Profile | Role | Owner epic | Rows | Verified | Open | Trace relationships |
 |---|---|---|---|---:|---:|---:|---:|
-| CORE-READINESS | core | primary | bd-59co.2.1 | 20 | 0 | 20 | 29 |
+| CORE-READINESS | core | primary | bd-59co.2.1 | 20 | 1 | 19 | 29 |
 | VBA-LIBRARY | core | primary | bd-59co.2.5 | 7 | 0 | 7 | 7 |
 | OXIR-BACKENDS | core | primary | bd-59co.2.6 | 12 | 0 | 12 | 12 |
 | OXIMAGE-CONTRACT | core | primary | bd-59co.2.6 | 8 | 0 | 8 | 8 |
@@ -38,7 +38,6 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Row | Matrix | Capability | Subset | Truth state | Residual disposition | Residual owner |
 |---|---|---|---|---|---|---|
-| CORE-AUTHORITY-CLEAN-SPEC-VBA | CORE-READINESS | clean-room specification and VBA authority | public specifications and reproducible Excel observations decide compatibility | planned | remaining-accepted-scope | bd-59co.2.1.2 |
 | CORE-SOURCE-IDENTITY-PROVENANCE | CORE-READINESS | source identity and provenance | original virtual generated and normalized spans retain stable identity | planned | remaining-accepted-scope | bd-59co.2.3.1 |
 | CORE-SOURCE-UTF8-SPANS | CORE-READINESS | UTF-8 compiler span contract | Unicode and CRLF byte spans remain exact and convertible | planned | remaining-accepted-scope | bd-59co.2.3.1 |
 | CORE-SYNTAX-CST | CORE-READINESS | lossless total CST | valid and incomplete VBA text parses without panic | planned | remaining-accepted-scope | bd-59co.2.3.1 |

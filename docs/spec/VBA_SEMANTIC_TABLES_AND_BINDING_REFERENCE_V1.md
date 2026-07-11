@@ -1,8 +1,9 @@
 # VBA Semantic Tables And Binding Reference v1
 
-Status: working VBA semantic/evidence reference; implementation incomplete
+Status: current VBA semantic/evidence reference; implementation state tracked in canonical matrices
 Date: 2026-05-26
-Scope owner: OxVBA compiler/VM/runtime/COM/native-readiness
+Authority review: 2026-07-11
+Scope owner: semantic table shapes and authority/evidence routing
 System clauses: `AUTH-SPEC-001`, `COMP-BIND-001`, `CONF-MATRIX-001`
 Companion semantics:
 [`VBA_TYPE_SYSTEM_V1.md`](VBA_TYPE_SYSTEM_V1.md),
@@ -15,6 +16,19 @@ OxIR plus metadata executable enough for VM3 and the JIT. This single
 reference covers the narrower topics that would otherwise become several small
 docs: coercion/operator truth tables, call-site descriptor audit, slot lifecycle
 and cleanup, and object/member binding.
+
+Authority follows `CHARTER.md`, `OPERATIONS.md`, and
+[`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md). Public
+specifications and reproducible black-box Excel/VBA observations decide each
+semantic row. Current compiler, helper, VM3, JIT, seed-table, or historical
+package behavior is evidence or a divergence only; it cannot supply the
+expected result without that authority. Unknown behavior remains an exact open
+canonical row with a spec/oracle owner.
+
+The text and code-like table shapes below are non-normative illustrations of
+semantic and evidence fields. They do not prescribe Rust DTOs, artifact layout,
+backend storage, or Windows transport. Active subsystem contracts own those
+representations.
 
 ## Source Anchors
 
@@ -50,7 +64,10 @@ runtime_error
 helper_id
 spec_anchor
 oracle_anchor
-current_vm_status
+vm3_state
+jit_state
+evidence_state
+residual_owner
 ```
 
 Required families:
@@ -81,7 +98,10 @@ runtime_error
 helper_id
 spec_anchor
 oracle_anchor
-current_vm_status
+vm3_state
+jit_state
+evidence_state
+residual_owner
 ```
 
 Required families:
@@ -94,9 +114,9 @@ Required families:
 - logical/bitwise: `Not`, `And`, `Or`, `Xor`, `Eqv`, `Imp`;
 - Null, Empty, Error/CVErr, object, and Variant edge rows.
 
-## Call-Site Descriptor Audit
+## Call-Site Semantic Audit
 
-Audit current compiler and VM metadata against this target:
+Every call-site coverage row must distinguish at least:
 
 ```text
 procedure_id
@@ -116,7 +136,7 @@ default_member_policy
 error_policy
 ```
 
-The first audit fixtures should cover:
+Required coverage includes:
 
 - ByRef variable aliasing;
 - ByRef expression/property/function temporary behavior;
@@ -144,7 +164,6 @@ copy_policy
 assign_policy
 drop_policy
 error_exit_policy
-deopt_policy
 byref_policy
 helper_cleanup_policy
 ```
@@ -161,7 +180,8 @@ Required carrier families:
 
 ## Object And Member Binding
 
-Object/member binding needs a package-level descriptor, not runtime-only lookup:
+Object/member binding must be resolved as a compiler-owned semantic fact, not
+invented by a backend-local runtime lookup:
 
 ```text
 binding_id
@@ -175,7 +195,7 @@ argument_binding_policy
 result_declared_type
 object_identity_policy
 cache_invalidation_policy
-fallback_or_unsupported_policy
+unsupported_policy
 ```
 
 Required rows:
@@ -190,183 +210,63 @@ Required rows:
 - early-bound COM dispatch/vtable strategy;
 - event source and `WithEvents` handler binding.
 
-## Historical Seed Table Targets (Superseded Implementation Snapshot)
+## Seed Table Authority And Divergence Disposition
 
-The semantic row shapes remain useful, but implementation references from this point to `OxBundle`, old VM package versions and VMR beads describe the 2026-05-26 stack. Current rows must be migrated to the canonical compiler/OxIR/VM3/JIT matrices before they support a completion claim.
+The following checked-in seed tables are historical coverage inventories, not
+canonical implementation or behavior truth:
 
-The first extraction pass should produce small, runnable seed sets rather than
-attempting full table coverage at once:
+- [`VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv)
+  covers identity, numeric/Boolean/String conversions, `Empty`, `Null`,
+  `Error`/`CVErr`, Decimal-in-Variant, and selected call-entry coercions;
+- [`VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv)
+  covers arithmetic, `+`, `&`, comparisons, truthiness, branch predicates,
+  Null/Empty/Error states, and `Option Compare`;
+- [`VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv`](../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv)
+  covers scalar, Variant, BSTR, SAFEARRAY, ObjectRef, UDT, ByRef temporary, and
+  external-boundary cleanup obligations;
+- [`VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv`](../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv)
+  covers `Set`/`Nothing`, property groups, default members, class/interface
+  routing, COM member projection, events, and `WithEvents`.
 
-- Coercion seed: `Empty`, `Null`, `Error`/`CVErr`, Boolean, `Long`, `Double`,
-  `String`, and `Variant` rows used by current helpers.
-- Operator seed: `+`, `&`, comparison, truthiness, and branch predicates over
-  `Long`, `Double`, `String`, Boolean, `Variant`, `Null`, and `Empty`.
-- Call seed: ByVal scalar, ByRef scalar alias, ByRef expression temporary,
-  Optional with default, Optional missing `Variant`, and empty/non-empty
-  `ParamArray`, named fixed arguments with positional ParamArray packs, and
-  current compile diagnostics for named/arity/ParamArray rejection forms. The
-  VMR-04 package fixtures now cover these as descriptor evidence, with ByVal
-  declared-type call-entry coercion and Optional missing `Variant` explicitly
-  classified in the completion-map VMR-04 call-gap ledger before
-  behavior-changing follow-up.
-- Lifecycle seed: primitive, `Variant`, Decimal-in-Variant payload, `BStr`,
-  `SafeArray`, `ObjectRef`, UDT fields, ByRef temporaries, and COM/native
-  boundary temporaries.
-- Object/member seed: `Set` object assignment, `Nothing`, default member in
-  `Let` context, `Property Get`/`Let`/`Set` shape, class/interface dispatch,
-  late-bound dispatch, early-bound COM, events, and `WithEvents`.
+Old helper names, `OxBundle` descriptors, VMR milestones, and VM/package tokens
+in those files describe superseded implementation observations. They receive no
+current completion credit and must not be copied into expected-result columns.
+Useful cases are replayed on the current compiler -> verified OxIR/OxImage ->
+VM3/JIT route and mapped to canonical rows.
 
-## Coercion Seed Table v1
+Several historical observations are especially important divergence inputs:
 
-The first checked-in coercion seed table is:
+- Boolean string conversion was observed through helpers with different
+  `True`/`False` versus `-1`/`0` results;
+- `Null` comparison was observed producing a deterministic false Boolean;
+- `&` was observed swallowing some text-conversion failures as empty text;
+- `Option Compare Text` was observed using ASCII-only lowercasing;
+- selected coercion, lifecycle, property/default-member, array/UDT, and COM
+  routes covered only bounded shapes.
 
-[`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv)
+None of those observations is the VBA target by default. Each must be decided
+from a public specification or reproducible Excel/VBA observation, then owned
+by the exact Core typed-binding/runtime/differential/oracle row or by the
+relevant Windows interop row. Until that happens, the row remains open and a
+VM3/JIT specialization may not rely on the historical result.
 
-This table is intentionally narrow. It records the current helper families that
-VM execution already depends on:
+## Minimum Semantic Row
 
-- identity and selected numeric widening in `oxvba_runtime::coerce_to`;
-- `Empty` to numeric/Boolean/string helper behavior;
-- Boolean numeric coercion where `True` is `-1` and `False` is `0`;
-- string/BSTR conversion via `variant_to_vba_string`;
-- VM compatibility helpers for text, numeric, `i32`, and `f64` conversion;
-- `Null` propagation and `CVErr` arithmetic errors in current VM arithmetic;
-- truthiness used by VM branch predicates;
-- `Decimal` as a Variant subtype/runtime carrier, including Decimal-to-`f64`
-  compatibility and string display;
-- the selected VMR-06 call-entry shape where package execution uses metadata
-  to coerce `ByVal Long` into a declared `Double` parameter at callee entry.
-  VM package evidence now records this selected shape with
-  `COERCE-CALL-BYVAL-DECLARED-TARGET`, `COERCE-LET-NUMERIC-WIDEN`, and runtime
-  helper `oxvba_runtime::coerce_to`.
-
-`OxBundle` v15 lifts selected helper-backed rows into package
-`CoercionDescriptor` facts, including identity, Variant preservation,
-`Empty`-to-target cases, numeric widening, Boolean numeric conversion,
-String/BSTR conversion, VM truthiness, Decimal Variant payloads, and selected
-property/Set and call-entry rows. The table still keeps many rows as seed/gap
-evidence rather than a complete truth table. The selected call-entry row remains
-intentionally narrow and does not generalize to other source/target types,
-expression forms,
-COM/native calls, or error-routing coercions. The table ids are observable
-evidence for selected rows, not a claim that all coercion decisions are
-package-owned or descriptor-consumed. The table also keeps helper-specific
-behavior separate when the current implementation has multiple conversion
-paths. For example,
-`variant_to_vba_string(Boolean)` returns
-`True`/`False`, while `runtime_variant_to_text(Boolean)` returns `-1`/`0` for
-several current VM helpers. A future descriptor-backed coercion pass must decide
-which source language context owns each path before routing execution through
-the table.
-
-## Operator Seed Table v1
-
-The first checked-in operator and branch predicate seed table is:
-
-[`../validation/VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv)
-
-This table records the current VM helper families for:
-
-- `+` over current integer-compatible, floating-compatible, Boolean, `Empty`,
-  numeric-string, and string/string paths;
-- `-`, `*`, `/`, `\`, `Mod`, `^`, and unary `-` over the current numeric
-  compatibility helpers;
-- forced concatenation with `&`, including the current helper's Null-as-empty
-  and text-conversion-error-to-empty behavior;
-- string and numeric comparisons under `StringCompareMode::Binary` and
-  `StringCompareMode::Text`;
-- `Null` and `Empty` comparison behavior in the current VM;
-- truthiness, `Not`/`And`/`Or`, and `JumpIfZero` branch predicates;
-- internal `i32` fast paths, explicitly marked as implementation fast paths
-  and not semantic proof.
-
-`OxBundle` v15 lifts selected rows into package `OperatorSemanticsDescriptor`
-facts with helper ids, operand/result declared types, `Option Compare` mode,
-value-state tags, and evaluation-order policy. This includes selected
-arithmetic, forced concatenation, comparisons, truthiness, `Not`/`And`/`Or`,
-branch predicate, internal fast-path, and explicit deferred `IIf` rows. Rows
-that look suspicious from a VBA compatibility perspective, such as `Null`
-comparison producing a deterministic false Boolean and `&` swallowing text
-conversion failures as empty text, remain classified as current helper behavior
-until a spec/oracle-backed behavior bead changes them. The `Option Compare
-Text` seed remains current-helper evidence for selected string comparisons:
-the VM normalizes text with ASCII lowercasing today, so full VBA
-locale/collation parity still needs table and oracle coverage.
-
-## Lifecycle Cleanup Seed Table v1
-
-The first checked-in lifecycle and cleanup seed table is:
-
-[`../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv`](../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv)
-
-This table records current runtime and VM evidence for:
-
-- primitive declared slots that have no owned cleanup;
-- declared `Variant` slots, including Decimal as a Variant payload rather than
-  ordinary declared storage;
-- variable and fixed-length string cleanup obligations;
-- dynamic arrays, SAFEARRAY element ownership, and `ParamArray` packs;
-- `ObjectRef` AddRef/Release ownership and object identity;
-- UDT primitive and owning fields, fixed strings, and fixed arrays;
-- ByRef alias/writeback and ByRef expression temporary policies;
-- COM dispatch temporaries, native Declare writeback buffers, and future deopt
-  cleanup materialization.
-
-Rows are current-state seed evidence, not package-owned lifecycle descriptors.
-The table deliberately keeps `metadata-missing`, `test-shortcoming`,
-`VM-limitation`, `interop-limitation`, and `oracle-required` gaps visible until
-VM evidence records lifecycle observations and descriptor-backed cleanup maps
-exist. `bd-iave.9.5` adds the first selected VM lifecycle evidence for
-`LIFE-UDT-FIELD-OWNING` over variable and fixed-length BSTR fields in UDT
-fixtures. A later behavior-changing VM or JIT path may use these rows only
-after the row has a canonical descriptor id and its branch, return, error,
-helper failure, boundary, and deopt cleanup obligations are fixture-backed.
-
-## Object Member Binding Seed Table v1
-
-The first checked-in object and member binding seed table is:
-
-[`../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv`](../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv)
-
-This table records current descriptor/evidence rows for:
-
-- `Set` object assignment and `Nothing`;
-- class method and implemented-interface member routes;
-- `Property Get`, `Property Let`, and `Property Set` accessor groups;
-- default-member binding in `Let` contexts;
-- `As New`/activation policy evidence;
-- late-bound COM `IDispatch::Invoke`, including selector and named/default
-  argument shape;
-- early-bound COM dispatch and the still-open vtable strategy;
-- `WithEvents` subscription routes and event handler/`RaiseEvent` signature
-  binding.
-
-These rows deliberately separate core object/member semantics from COM wire
-projection. For example, `Set` assignment owns object identity and lifetime at
-the semantic layer, while late-bound COM dispatch rows are boundary projection
-facts over that object model. `OxBundle` v15 lifts selected core rows into
-package `NameBindingDescriptor` and `ObjectMemberBindingDescriptor` facts for
-procedure-scope binding policy, property accessor names, `Property
-Get`/`Let`/`Set` shape, `Set` object assignment, selected `Nothing` handling,
-and default-member-in-`Let` metadata. The current rows are not a complete
-member binding registry: `With` context, imported members, full ambiguity
-diagnostics, dispatch cache invalidation, event graph semantics, COM result
-cleanup, and VM consumption remain open unless a row says otherwise.
-
-## Minimum Table Artifact
-
-Before full CSV automation, each seed table may be represented as a checked-in
-markdown table or embedded fixture manifest. The minimum useful row fields are:
+Whatever canonical representation an owning workset selects, a useful semantic
+row distinguishes:
 
 - stable row id;
-- source/spec anchor and optional Office oracle anchor;
-- current VM status;
-- expected evidence fields;
-- gap classification;
-- owning descriptor family.
+- public-spec anchor and, when needed, reproducible Office oracle anchor;
+- expected result/error and relevant side-effect, lifecycle, transport, and
+  balance observables;
+- VM3 and JIT evidence states without treating either as authority;
+- residual classification and active owner;
+- the semantic fact family consumed by the current subsystem contracts.
 
 ## Output Rule
 
-These tables are semantic inputs, not test decorations. A VM3 or JIT path may
-use a fast typed operation only when the corresponding current canonical row
-exists, is descriptor-backed, and has VM3 plus oracle/deferred evidence.
+These tables are semantic inputs, not test decorations or DTO specifications. A
+VM3 or JIT path may use a fast typed operation only when the corresponding
+canonical row is authoritative and verified and the active compiler/artifact
+contracts preserve the required facts. Deferred or historical evidence cannot
+authorize the path.
