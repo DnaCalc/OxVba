@@ -898,6 +898,38 @@ try {
         [IO.File]::WriteAllBytes($path, $truncated)
         Assert-WindowsFixtureMsftTypeLib -Path $path -Owner "fileLength-truncated member array"
     }
+    Invoke-ExpectedDirectFailure -Name "artifact-typelib-custom-data-interior-offset" -MessagePattern "exact custom-data record start" -Action {
+        [byte[]]$bytes = Get-TestToolchainAssetBytes -Kind "msft-tlb-v1"
+        $typeInfoCount = [BitConverter]::ToUInt32($bytes, 0x20)
+        $varFlags = [BitConverter]::ToUInt32($bytes, 0x14)
+        $directoryOffset = 0x54 + (4 * $typeInfoCount)
+        if (($varFlags -band 0x100) -ne 0) {
+            $directoryOffset += 4
+        }
+        $customDataGuidSegment = [BitConverter]::ToUInt32($bytes, $directoryOffset + (12 * 16))
+        Set-TestUInt32 -Bytes $bytes -Offset ($customDataGuidSegment + 4) -Value 6
+        $path = Join-Path $tempBase "custom-data-interior-offset.tlb"
+        [IO.File]::WriteAllBytes($path, $bytes)
+
+        if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)) {
+            Initialize-WindowsFixtureNativeProbe
+            $typeLib = [IntPtr]::Zero
+            try {
+                $hresult = [OxVbaFixtureAdmissionNativeV1]::LoadTypeLibEx($path, 2, [ref]$typeLib)
+                if ($hresult -lt 0 -or $typeLib -eq [IntPtr]::Zero) {
+                    $hresultBits = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]$hresult), 0)
+                    throw ("custom-data interior-offset mutation was unexpectedly rejected by LoadTypeLibEx (HRESULT=0x{0:X8})" -f $hresultBits)
+                }
+                Write-Host "windows-fixture-manifest-negative-setup: ok (custom-data interior offset accepted by LoadTypeLibEx)"
+            }
+            finally {
+                if ($typeLib -ne [IntPtr]::Zero) {
+                    [void][Runtime.InteropServices.Marshal]::Release($typeLib)
+                }
+            }
+        }
+        Assert-WindowsFixtureMsftTypeLib -Path $path -Owner "custom-data interior offset"
+    }
     Invoke-ExpectedFailure -Name "artifact-typelib-controller-digest-mismatch" -MessagePattern "controller-owned digest constraint" -Mutation {
         param($fixture)
         $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-TYPELIB-METADATA"
@@ -1059,7 +1091,7 @@ try {
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.cleanup_recipe = "" }
     }
 
-    $negativeCount = 53
+    $negativeCount = 54
     Write-Host "test-windows-fixture-manifest: ok (positive=8 negative=$negativeCount windows_loader_positive_minimum=$windowsLoaderPositiveCount rows=57 capability_credit=none)"
 }
 finally {

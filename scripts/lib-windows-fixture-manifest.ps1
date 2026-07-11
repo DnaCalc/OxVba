@@ -1217,20 +1217,26 @@ function Assert-WindowsFixtureMsftOwnedRecords {
         & $assertTypeDesc ([int32]$offset) "TypeDesc[$($offset / 8)]"
     }
 
-    $assertCustValue = {
-        param([int32]$Value, [string]$ReferenceOwner)
-        if ($Value -lt 0 -or [uint64]$Value + 2 -gt [uint64]$Segments[11].Length) {
-            throw "$Owner MSFT $ReferenceOwner does not identify a complete custom-data value"
+    # Segment 11 is a packed sequence of VARTYPE-tagged values. Parse the
+    # complete table once so later references must identify a record start,
+    # rather than merely point at bytes that happen to fit inside the segment.
+    $customDataValueStarts = [Collections.Generic.HashSet[int32]]::new()
+    $customDataValueIntervals = [Collections.Generic.List[object]]::new()
+    $customDataPosition = [uint64]0
+    while ($customDataPosition -lt [uint64]$Segments[11].Length) {
+        if ($customDataPosition % 4 -ne 0 -or
+            $customDataPosition + 2 -gt [uint64]$Segments[11].Length) {
+            throw "$Owner MSFT custom-data segment has a misaligned or trailing partial record"
         }
-        $absolute = [int]([uint64]$Segments[11].Offset + [uint64]$Value)
+        $absolute = [int]([uint64]$Segments[11].Offset + $customDataPosition)
         $vt = Read-WindowsFixtureUInt16 -Bytes $Bytes -Offset $absolute -Owner $Owner
-        $required = switch ($vt) {
+        $payloadSize = switch ($vt) {
             { $_ -in @(0, 1, 24) } { [uint64]2; break }
             { $_ -in @(2, 11) } { [uint64]4; break }
             { $_ -in @(5, 6, 7, 20, 21, 64) } { [uint64]10; break }
             8 {
-                if ([uint64]$Value + 6 -gt [uint64]$Segments[11].Length) {
-                    throw "$Owner MSFT $ReferenceOwner BSTR custom-data header is truncated"
+                if ($customDataPosition + 6 -gt [uint64]$Segments[11].Length) {
+                    throw "$Owner MSFT custom-data segment has a truncated BSTR record header"
                 }
                 [uint64]6 + [uint64](Read-WindowsFixtureUInt32 -Bytes $Bytes -Offset ($absolute + 2) -Owner $Owner)
                 break
@@ -1238,8 +1244,41 @@ function Assert-WindowsFixtureMsftOwnedRecords {
             14 { [uint64]18; break }
             default { [uint64]6 }
         }
-        if ([uint64]$Value + $required -gt [uint64]$Segments[11].Length) {
-            throw "$Owner MSFT $ReferenceOwner custom-data value is truncated"
+        if ($payloadSize -lt 2 -or
+            $customDataPosition + $payloadSize -lt $customDataPosition -or
+            $customDataPosition + $payloadSize -gt [uint64]$Segments[11].Length) {
+            throw "$Owner MSFT custom-data segment contains a truncated value record"
+        }
+        $recordSize = $payloadSize + ((4 - ($payloadSize % 4)) % 4)
+        $recordEnd = $customDataPosition + $recordSize
+        if ($recordEnd -lt $customDataPosition -or $recordEnd -gt [uint64]$Segments[11].Length) {
+            throw "$Owner MSFT custom-data segment ends with a trailing partial aligned record"
+        }
+        [void]$customDataValueStarts.Add([int32]$customDataPosition)
+        $customDataValueIntervals.Add([pscustomobject]@{
+            Start = [uint64]$customDataPosition
+            PayloadEnd = [uint64]($customDataPosition + $payloadSize)
+            End = [uint64]$recordEnd
+        })
+        $customDataPosition = $recordEnd
+    }
+    $expectedCustomDataStart = [uint64]0
+    foreach ($interval in $customDataValueIntervals) {
+        if ([uint64]$interval.Start -ne $expectedCustomDataStart -or
+            [uint64]$interval.PayloadEnd -gt [uint64]$interval.End -or
+            [uint64]$interval.End -le [uint64]$interval.Start) {
+            throw "$Owner MSFT custom-data record intervals contain a gap or overlap"
+        }
+        $expectedCustomDataStart = [uint64]$interval.End
+    }
+    if ($expectedCustomDataStart -ne [uint64]$Segments[11].Length) {
+        throw "$Owner MSFT custom-data segment has unowned trailing bytes"
+    }
+
+    $assertCustValue = {
+        param([int32]$Value, [string]$ReferenceOwner)
+        if ($Value -lt 0 -or -not $customDataValueStarts.Contains($Value)) {
+            throw "$Owner MSFT $ReferenceOwner does not identify an exact custom-data record start"
         }
     }
 
