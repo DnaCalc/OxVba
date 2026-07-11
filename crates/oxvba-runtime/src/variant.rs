@@ -378,7 +378,7 @@ impl RecordPayload {
     fn deep_clone(&self) -> Result<Self, String> {
         match self {
             Self::Com(record) => Ok(Self::Com(record.deep_clone()?)),
-            Self::Vba(record) => Ok(Self::Vba(record.clone())),
+            Self::Vba(record) => Ok(Self::Vba(record.try_clone()?)),
         }
     }
 }
@@ -1064,9 +1064,13 @@ impl Variant {
     }
 
     pub fn as_vba_record(&self) -> Option<VbaRecord> {
+        Some(self.vba_record_ref()?.clone())
+    }
+
+    pub(crate) fn vba_record_ref(&self) -> Option<&VbaRecord> {
         match self.as_record_payload()? {
             RecordPayload::Com(_) => None,
-            RecordPayload::Vba(record) => Some(record.clone()),
+            RecordPayload::Vba(record) => Some(record),
         }
     }
 
@@ -1153,41 +1157,59 @@ impl Variant {
             None => Err(format!("expected Record Variant, got {:?}", self.vtype())),
         }
     }
+
+    pub(crate) fn try_clone(&self) -> Result<Self, String> {
+        match self.vtype() {
+            VarType::String => {
+                crate::vba_record::owning_boundary("variant-bstr-clone")?;
+                let source = bytes_to_raw_bstr(self.data_bytes());
+                // SAFETY: a String Variant owns `source` (null or a live BSTR) for
+                // this borrow. Forgetting the temporary before propagating the
+                // clone result keeps source ownership with this Variant.
+                let borrowed = unsafe { BStr::from_raw_bstr(source) };
+                let cloned = borrowed.clone_raw_bstr();
+                core::mem::forget(borrowed);
+                let raw = cloned?;
+                Ok(Self::from_core(VariantCore::from_bytes(
+                    VarType::String,
+                    raw_bstr_ptr_to_bytes(raw),
+                )))
+            }
+            VarType::Object => {
+                crate::vba_record::owning_boundary("variant-object-clone")?;
+                Ok(match self.as_object_ref() {
+                    Some(object) => Self::from_object_ref(object),
+                    None => Self::from_core(self.core),
+                })
+            }
+            VarType::ArrayVariant => {
+                crate::vba_record::owning_boundary("variant-safearray-clone")?;
+                // The boundary above represents the current infallible public
+                // SAFEARRAY Clone adapter. Test injection does not enter its raw
+                // borrowed wrapper; that unwind contract remains bd-59co.2.2.17.
+                let array =
+                    crate::vba_record::without_nested_owning_boundaries(|| self.as_safearray());
+                Ok(match array {
+                    Some(array) => Self::from_safearray(array),
+                    None => Self::from_core(self.core),
+                })
+            }
+            VarType::Record => {
+                crate::vba_record::owning_boundary("variant-record-clone")?;
+                Ok(match self.as_record_payload() {
+                    Some(payload) => Self::from_record_payload(payload.deep_clone()?),
+                    None => Self::from_core(self.core),
+                })
+            }
+            _ => Ok(Self::from_core(self.core)),
+        }
+    }
 }
 
 impl Clone for Variant {
     fn clone(&self) -> Self {
-        match self.vtype() {
-            VarType::String => {
-                // SAFETY: this arm is reached only when vtype is String, so the payload is
-                // null or the live BSTR this Variant owns until drop; `raw_bstr_to_bstr`
-                // deep-clones it without disturbing that ownership.
-                let cloned = unsafe { raw_bstr_to_bstr(bytes_to_raw_bstr(self.data_bytes())) };
-                let raw = cloned.raw_bstr();
-                core::mem::forget(cloned);
-                Self::from_core(VariantCore::from_bytes(
-                    VarType::String,
-                    raw_bstr_ptr_to_bytes(raw),
-                ))
-            }
-            VarType::Object => match self.as_object_ref() {
-                Some(object) => Self::from_object_ref(object),
-                None => Self::from_core(self.core),
-            },
-            VarType::ArrayVariant => match self.as_safearray() {
-                Some(array) => Self::from_safearray(array),
-                None => Self::from_core(self.core),
-            },
-            VarType::Record => match self.as_record_payload() {
-                Some(payload) => Self::from_record_payload(
-                    payload
-                        .deep_clone()
-                        .expect("record Variant clone should deep-copy record payload"),
-                ),
-                None => Self::from_core(self.core),
-            },
-            _ => Self::from_core(self.core),
-        }
+        self.try_clone()
+            .expect("Variant clone should deep-copy owning payload")
     }
 }
 

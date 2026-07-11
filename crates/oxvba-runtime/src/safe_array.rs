@@ -46,6 +46,34 @@ pub const FADF_VARIANT_VALUE: u16 = 0x0800;
 const OXVBA_SAFEARRAY_OWNER_MAGIC: u32 = u32::from_le_bytes(*b"OVSA");
 const OXVBA_SAFEARRAY_OWNER_VERSION: u16 = 1;
 
+#[cfg(test)]
+std::thread_local! {
+    static PAYLOAD_ALLOCATION_EVENTS: core::cell::Cell<(usize, usize)> = const {
+        core::cell::Cell::new((0, 0))
+    };
+}
+
+#[cfg(test)]
+fn note_payload_allocation() {
+    PAYLOAD_ALLOCATION_EVENTS.with(|events| {
+        let (allocated, freed) = events.get();
+        events.set((allocated + 1, freed));
+    });
+}
+
+#[cfg(test)]
+fn note_payload_free() {
+    PAYLOAD_ALLOCATION_EVENTS.with(|events| {
+        let (allocated, freed) = events.get();
+        events.set((allocated, freed + 1));
+    });
+}
+
+#[cfg(test)]
+fn payload_allocation_events() -> (usize, usize) {
+    PAYLOAD_ALLOCATION_EVENTS.with(core::cell::Cell::get)
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SafeArrayBound {
@@ -213,7 +241,7 @@ impl SafeArrayElementKind {
 pub struct SafeArray(NonNull<RawSafeArray>);
 
 // SAFETY: ASSUMPTION — `SafeArray` exclusively owns its descriptor and payload
-// allocations (created in `alloc_header`/`alloc_payload_from_variants`, freed
+// allocations (created by the payload guard and `alloc_header`, freed
 // only in `Drop`), and scalar/BStr elements are plain data or independently
 // owned allocations, so those move freely between threads. Object
 // (VT_DISPATCH/VT_UNKNOWN) elements hold a retained reference whose
@@ -431,7 +459,7 @@ unsafe fn decode_element_variant(
     index: usize,
 ) -> Result<Variant, String> {
     // SAFETY: the caller guarantees `payload` is the live element buffer built
-    // by `alloc_payload_from_variants` for this same `kind`, holding more than
+    // by `prepare_payload_from_variants` for this same `kind`, holding more than
     // `index` fully initialized elements, so the offset stays inside that
     // allocation and `ptr` is aligned for the element type matched below.
     let ptr = unsafe { payload.add(payload_offset(kind, index)) };
@@ -518,7 +546,7 @@ unsafe fn encode_element_variant(
         // SAFETY: kind == Variant, so the in-bounds slot computed above has
         // `Variant` size/alignment; the slot is written exactly once into the
         // fresh zeroed buffer, so `write` correctly skips dropping old contents.
-        unsafe { ptr.cast::<Variant>().write(value.clone()) };
+        unsafe { ptr.cast::<Variant>().write(value.try_clone()?) };
         return Ok(());
     }
     match kind {
@@ -683,7 +711,7 @@ unsafe fn replace_element_variant(
         SafeArrayElementKind::Variant => {
             // SAFETY: kind == Variant, so the slot holds an initialized `Variant`;
             // `replace` writes the new clone and yields the old value to drop.
-            let old = unsafe { ptr.cast::<Variant>().replace(value.clone()) };
+            let old = unsafe { ptr.cast::<Variant>().replace(value.try_clone()?) };
             drop(old);
         }
         // SAFETY: kind == I1, so the slot is a live, aligned `i8` scalar.
@@ -840,104 +868,168 @@ unsafe fn free_payload(kind: SafeArrayElementKind, payload: *mut core::ffi::c_vo
         // `payload_layout(kind, count)`; all elements were dropped above and
         // nothing reads the buffer after this point.
         unsafe { std::alloc::dealloc(raw, layout) };
+        #[cfg(test)]
+        note_payload_free();
     }
 }
 
-fn alloc_payload_from_variants(
+enum PayloadConstructionKind {
+    Intrinsic(SafeArrayElementKind),
+    Record(Arc<VbaRecordLayout>),
+}
+
+/// Owns a raw SAFEARRAY payload from allocation until descriptor adoption.
+///
+/// `initialized` advances only after a complete element clone. Drop therefore
+/// destroys exactly the live prefix and deallocates the payload on every returned
+/// error or unwind, including one that occurs after the payload is complete but
+/// before `alloc_header` adopts its pointer.
+struct PayloadConstructionGuard {
+    raw: NonNull<u8>,
+    allocation: std::alloc::Layout,
+    kind: PayloadConstructionKind,
+    initialized: usize,
+    armed: bool,
+}
+
+impl PayloadConstructionGuard {
+    fn intrinsic(kind: SafeArrayElementKind, count: usize) -> Result<Self, String> {
+        let allocation = payload_layout(kind, count)?;
+        Self::allocate(
+            allocation,
+            PayloadConstructionKind::Intrinsic(kind),
+            "safearray-intrinsic-payload-allocation",
+            "failed to allocate SAFEARRAY payload",
+        )
+    }
+
+    fn record(layout: &Arc<VbaRecordLayout>, count: usize) -> Result<Self, String> {
+        let allocation = record_payload_layout(layout, count)?;
+        Self::allocate(
+            allocation,
+            PayloadConstructionKind::Record(Arc::clone(layout)),
+            "safearray-record-payload-allocation",
+            "failed to allocate SAFEARRAY record payload",
+        )
+    }
+
+    fn allocate(
+        allocation: std::alloc::Layout,
+        kind: PayloadConstructionKind,
+        boundary: &'static str,
+        allocation_error: &'static str,
+    ) -> Result<Self, String> {
+        crate::vba_record::owning_boundary(boundary)?;
+        // SAFETY: both payload layout helpers return a non-zero-size layout;
+        // the null allocation result is converted to a deterministic error.
+        let raw = unsafe { std::alloc::alloc_zeroed(allocation) };
+        let raw = NonNull::new(raw).ok_or_else(|| allocation_error.to_string())?;
+        #[cfg(test)]
+        note_payload_allocation();
+        Ok(Self {
+            raw,
+            allocation,
+            kind,
+            initialized: 0,
+            armed: true,
+        })
+    }
+
+    fn payload_ptr(&self) -> *mut core::ffi::c_void {
+        self.raw.as_ptr().cast()
+    }
+
+    fn mark_initialized(&mut self) {
+        self.initialized += 1;
+    }
+
+    fn mark_all_initialized(&mut self, count: usize) {
+        self.initialized = count;
+    }
+
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PayloadConstructionGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        match &self.kind {
+            PayloadConstructionKind::Intrinsic(kind) => {
+                for index in 0..self.initialized {
+                    // SAFETY: only completely encoded elements increment
+                    // `initialized`; each prefix element is dropped once here.
+                    unsafe { drop_element(*kind, self.raw.as_ptr(), index) };
+                }
+            }
+            PayloadConstructionKind::Record(layout) => {
+                for index in 0..self.initialized {
+                    // SAFETY: only complete `clone_into_raw` results increment the
+                    // prefix, so this is one drop of each live same-layout record.
+                    unsafe {
+                        VbaRecord::drop_raw(
+                            self.raw.as_ptr().add(record_payload_offset(layout, index)),
+                            layout,
+                        )
+                    };
+                }
+            }
+        }
+        // SAFETY: this armed guard uniquely owns the allocation; every initialized
+        // element was dropped above and the pointer has not been adopted by a header.
+        unsafe { std::alloc::dealloc(self.raw.as_ptr(), self.allocation) };
+        #[cfg(test)]
+        note_payload_free();
+    }
+}
+
+fn prepare_payload_from_variants(
     kind: SafeArrayElementKind,
     values: &[Variant],
-) -> Result<*mut core::ffi::c_void, String> {
+) -> Result<Option<PayloadConstructionGuard>, String> {
     if values.is_empty() {
-        return Ok(core::ptr::null_mut());
+        return Ok(None);
     }
-    let layout = payload_layout(kind, values.len())?;
-    // SAFETY: `layout` has non-zero size (`payload_layout` clamps the size to
-    // at least 1 byte), satisfying `alloc_zeroed`; the null failure case is
-    // handled immediately below.
-    let raw = unsafe { std::alloc::alloc_zeroed(layout) };
-    if raw.is_null() {
-        return Err("failed to allocate SAFEARRAY payload".to_string());
+    let mut payload = PayloadConstructionGuard::intrinsic(kind, values.len())?;
+    for (index, value) in values.iter().enumerate() {
+        crate::vba_record::owning_boundary("safearray-intrinsic-element-clone")?;
+        // SAFETY: the guard allocation has `values.len()` slots of `kind`; this
+        // index is written exactly once and counted only after complete success.
+        unsafe { encode_element_variant(kind, payload.raw.as_ptr(), index, value)? };
+        payload.mark_initialized();
     }
-    let mut initialized = 0usize;
-    while initialized < values.len() {
-        // SAFETY: `raw` is a live zeroed allocation laid out by
-        // `payload_layout(kind, values.len())` and `initialized < values.len()`,
-        // so the target slot is in-bounds, aligned, and written exactly once.
-        let encoded =
-            unsafe { encode_element_variant(kind, raw, initialized, &values[initialized]) };
-        if let Err(err) = encoded {
-            let mut index = 0usize;
-            while index < initialized {
-                // SAFETY: indices below `initialized` were successfully
-                // encoded, so each slot holds an initialized element dropped
-                // exactly once on this error path.
-                unsafe { drop_element(kind, raw, index) };
-                index += 1;
-            }
-            // SAFETY: `raw` came from `alloc_zeroed` with this same `layout`,
-            // the initialized prefix was dropped above, and the pointer never
-            // escaped this function, so this is the sole deallocation.
-            unsafe { std::alloc::dealloc(raw, layout) };
-            return Err(err);
-        }
-        initialized += 1;
-    }
-    Ok(raw.cast())
+    Ok(Some(payload))
 }
 
-fn alloc_record_payload_from_records(
+fn prepare_record_payload_from_records(
     layout: &Arc<VbaRecordLayout>,
     values: &[VbaRecord],
-) -> Result<*mut core::ffi::c_void, String> {
+) -> Result<Option<PayloadConstructionGuard>, String> {
     if values.is_empty() {
-        return Ok(core::ptr::null_mut());
+        return Ok(None);
     }
-    let payload_layout = record_payload_layout(layout, values.len())?;
-    // SAFETY: `record_payload_layout` returns a non-zero-size layout (each record is
-    // at least one byte × `values.len()`), satisfying `alloc_zeroed`; null is handled below.
-    let raw = unsafe { std::alloc::alloc_zeroed(payload_layout) };
-    if raw.is_null() {
-        return Err("failed to allocate SAFEARRAY record payload".to_string());
-    }
-    let mut initialized = 0usize;
-    while initialized < values.len() {
-        if values[initialized].layout().as_ref() != layout.as_ref() {
-            let mut index = 0usize;
-            while index < initialized {
-                // SAFETY: indices below `initialized` hold records already cloned into
-                // the buffer at `record_payload_offset(layout, index)`; drop each once.
-                unsafe {
-                    VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout)
-                };
-                index += 1;
-            }
-            // SAFETY: `raw` came from `alloc_zeroed` with `payload_layout`; the
-            // initialized prefix was dropped above and the pointer never escaped.
-            unsafe { std::alloc::dealloc(raw, payload_layout) };
+    let mut payload = PayloadConstructionGuard::record(layout, values.len())?;
+    for (index, value) in values.iter().enumerate() {
+        if value.layout().as_ref() != layout.as_ref() {
             return Err("SAFEARRAY record element layout mismatch".to_string());
         }
-        // SAFETY: `initialized < values.len()` and the buffer is laid out as
-        // `layout.size()`-strided records, so this offset is the in-bounds dst slot.
-        let dst = unsafe { raw.add(record_payload_offset(layout, initialized)) };
-        // SAFETY: `dst` is uninitialized (zeroed), aligned, `layout.size()`-byte
-        // storage matching `values[initialized]`'s layout — `clone_into_raw`'s contract.
-        if let Err(err) = unsafe { values[initialized].clone_into_raw(dst) } {
-            let mut index = 0usize;
-            while index < initialized {
-                // SAFETY: indices below `initialized` hold cloned records; drop each once.
-                unsafe {
-                    VbaRecord::drop_raw(raw.add(record_payload_offset(layout, index)), layout)
-                };
-                index += 1;
-            }
-            // SAFETY: sole deallocation of the `alloc_zeroed` buffer after dropping
-            // its initialized prefix; the pointer never escaped this function.
-            unsafe { std::alloc::dealloc(raw, payload_layout) };
-            return Err(err);
-        }
-        initialized += 1;
+        crate::vba_record::owning_boundary("safearray-record-element-clone")?;
+        // SAFETY: this is the in-bounds uninitialized `index`-th same-layout
+        // record slot. `clone_into_raw` leaves it untouched on failure.
+        unsafe {
+            value.clone_into_raw(
+                payload
+                    .raw
+                    .as_ptr()
+                    .add(record_payload_offset(layout, index)),
+            )?
+        };
+        payload.mark_initialized();
     }
-    Ok(raw.cast())
+    Ok(Some(payload))
 }
 
 /// # Safety
@@ -963,6 +1055,8 @@ unsafe fn free_record_payload(
         // SAFETY: `raw` came from `alloc_zeroed` with this same `payload_layout`;
         // all records were dropped above and nothing reads the buffer afterward.
         unsafe { std::alloc::dealloc(raw, payload_layout) };
+        #[cfg(test)]
+        note_payload_free();
     }
 }
 
@@ -985,6 +1079,7 @@ fn alloc_header(
             .unwrap_or(FADF_HAVEVARTYPE_VALUE)
     };
     let layout = owner_layout(bounds.len())?;
+    crate::vba_record::owning_boundary("safearray-header-adoption")?;
     // SAFETY: `layout` has non-zero size (owner prefix plus at least the
     // RawSafeArray header), satisfying `alloc_zeroed`; allocation failure is
     // handled by the NonNull check below.
@@ -1064,7 +1159,7 @@ impl SafeArray {
             format!("unsupported intrinsic SAFEARRAY element vartype 0x{element_vt:04X}")
         })?;
         let expected_len = bounds_total_len(&bounds)?;
-        let pv_data = match values {
+        let payload = match values {
             Some(values) => {
                 if values.len() != expected_len {
                     return Err(format!(
@@ -1073,21 +1168,17 @@ impl SafeArray {
                         expected_len
                     ));
                 }
-                alloc_payload_from_variants(kind, &values)?
+                prepare_payload_from_variants(kind, &values)?
             }
-            None => core::ptr::null_mut(),
+            None => None,
         };
-        let header = match alloc_header(&bounds, element_vt, kind.element_size(), pv_data, None) {
-            Ok(header) => header,
-            Err(err) => {
-                // SAFETY: `pv_data` is null (shape-only) or the payload just
-                // built by `alloc_payload_from_variants` with this `kind` and
-                // exactly `expected_len` initialized elements; it never escaped,
-                // so this is its sole release.
-                unsafe { free_payload(kind, pv_data, expected_len) };
-                return Err(err);
-            }
-        };
+        let pv_data = payload
+            .as_ref()
+            .map_or(core::ptr::null_mut(), PayloadConstructionGuard::payload_ptr);
+        let header = alloc_header(&bounds, element_vt, kind.element_size(), pv_data, None)?;
+        if let Some(payload) = payload {
+            payload.disarm();
+        }
         Ok(Self(header))
     }
 
@@ -1104,23 +1195,20 @@ impl SafeArray {
                 expected_len
             ));
         }
-        let pv_data = alloc_record_payload_from_records(&layout, &values)?;
-        let header = match alloc_header(
+        let payload = prepare_record_payload_from_records(&layout, &values)?;
+        let pv_data = payload
+            .as_ref()
+            .map_or(core::ptr::null_mut(), PayloadConstructionGuard::payload_ptr);
+        let header = alloc_header(
             &bounds,
             VT_RECORD_VALUE,
             layout.size(),
             pv_data,
             Some(layout.clone()),
-        ) {
-            Ok(header) => header,
-            Err(err) => {
-                // SAFETY: `pv_data` is the `alloc_record_payload_from_records` buffer
-                // of `expected_len` records of `layout`; the header failed to adopt it,
-                // so we free it here exactly once.
-                unsafe { free_record_payload(&layout, pv_data, expected_len) };
-                return Err(err);
-            }
-        };
+        )?;
+        if let Some(payload) = payload {
+            payload.disarm();
+        }
         Ok(Self(header))
     }
 
@@ -1154,28 +1242,22 @@ impl SafeArray {
             ));
         }
         let expected_len = bounds_total_len(&bounds)?;
-        let pv_data = if expected_len == 0 {
-            core::ptr::null_mut()
+        let payload = if expected_len == 0 {
+            None
         } else {
-            let layout = payload_layout(kind, expected_len)?;
-            // SAFETY: `payload_layout` returns a non-zero-size layout for non-empty
-            // arrays; the null allocation case is handled immediately below. For the
-            // supported scalar element kinds, all-zero bytes are the VBA default value.
-            let raw = unsafe { std::alloc::alloc_zeroed(layout) };
-            if raw.is_null() {
-                return Err("failed to allocate SAFEARRAY payload".to_string());
-            }
-            raw.cast()
+            let mut payload = PayloadConstructionGuard::intrinsic(kind, expected_len)?;
+            // All admitted scalar kinds have a complete all-zero default, so the
+            // entire prefix is live immediately after the zeroed allocation.
+            payload.mark_all_initialized(expected_len);
+            Some(payload)
         };
-        let header = match alloc_header(&bounds, element_vt, kind.element_size(), pv_data, None) {
-            Ok(header) => header,
-            Err(err) => {
-                // SAFETY: `pv_data` is null or the zeroed scalar payload allocated above
-                // for exactly `expected_len` elements of `kind`; it never escaped.
-                unsafe { free_payload(kind, pv_data, expected_len) };
-                return Err(err);
-            }
-        };
+        let pv_data = payload
+            .as_ref()
+            .map_or(core::ptr::null_mut(), PayloadConstructionGuard::payload_ptr);
+        let header = alloc_header(&bounds, element_vt, kind.element_size(), pv_data, None)?;
+        if let Some(payload) = payload {
+            payload.disarm();
+        }
         Ok(Self(header))
     }
 
@@ -1348,7 +1430,7 @@ impl SafeArray {
         let mut index = 0usize;
         while index < len {
             // SAFETY: `data` is the non-null payload built by
-            // `alloc_payload_from_variants` for exactly `self.len()` initialized
+            // `prepare_payload_from_variants` for exactly `self.len()` initialized
             // elements of this descriptor's `kind`, and `index < self.len()`.
             values.push(
                 unsafe { decode_element_variant(kind, data, index) }
@@ -1408,24 +1490,23 @@ impl SafeArray {
             return Err("SAFEARRAY has no materialized element payload".to_string());
         }
         if let Some(layout) = self.vba_record_layout() {
-            let Some(record) = value.as_vba_record() else {
+            let Some(source) = value.vba_record_ref() else {
                 return Err(format!(
                     "expected VBA record SAFEARRAY element, got {:?}",
                     value.vtype()
                 ));
             };
-            if record.layout().as_ref() != layout.as_ref() {
+            if source.layout().as_ref() != layout.as_ref() {
                 return Err("VBA record SAFEARRAY element layout mismatch".to_string());
             }
+            let mut replacement = source.try_clone()?;
             // SAFETY: `index < self.len()` (checked above) and `data` is the record
             // payload strided by `layout.size()`, so this offset is the in-bounds slot.
             let ptr = unsafe { data.add(record_payload_offset(&layout, index)) };
-            // SAFETY: `ptr` is the live `index`-th record slot of `layout`; drop its
-            // current contents, then deep-copy the same-layout `record` into it.
-            unsafe {
-                VbaRecord::drop_raw(ptr, &layout);
-                record.clone_into_raw(ptr)?;
-            }
+            // SAFETY: replacement is a complete same-layout owner and `ptr` is the
+            // live `index`-th record. The byte swap cannot fail; replacement then
+            // drops the prior element after the array already owns the new payload.
+            unsafe { replacement.swap_with_raw(ptr) };
             return Ok(());
         }
         // SAFETY: `data` is the non-null intrinsic payload of `self.len()` elements of
@@ -1697,13 +1778,13 @@ impl Drop for SafeArray {
         let data = unsafe { (*self.0.as_ptr()).pv_data };
         if let Some(layout) = self.vba_record_layout() {
             // SAFETY: `data` is null or the payload built by
-            // `alloc_record_payload_from_records` with this descriptor's
+            // `prepare_record_payload_from_records` with this descriptor's
             // layout and exactly `len` initialized elements.
             unsafe { free_record_payload(&layout, data, len) };
         } else {
             let kind = self.element_kind();
             // SAFETY: `data` is null or the payload built by
-            // `alloc_payload_from_variants` with this descriptor's `kind` and
+            // `prepare_payload_from_variants` with this descriptor's `kind` and
             // exactly `len` initialized elements; `drop` runs at most once, so
             // the elements and the buffer are released exactly once.
             unsafe { free_payload(kind, data, len) };
@@ -1816,18 +1897,250 @@ mod tests {
         VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE, VT_DECIMAL_VALUE,
         VT_DISPATCH_VALUE, VT_I2_VALUE, VT_I4_VALUE, VT_RECORD_VALUE, VT_UNKNOWN_VALUE,
         VT_VARIANT_VALUE, array_len_from_tag, array_tag_from_safe_array, header_prefix_ptr,
-        marshal_dispatch_argument, safe_array_from_tag,
+        marshal_dispatch_argument, payload_allocation_events, safe_array_from_tag,
+    };
+    use crate::live_counters::thread_live_handle_counts;
+    use crate::vba_record::{
+        OwningFailureMode, clear_owning_boundary_failure, inject_owning_boundary_failure,
+        record_buffer_event_counts, take_owning_boundary_trace,
     };
     use crate::{
         Decimal96, ObjectRef, Variant, VbaRecord, VbaRecordFieldKind, VbaRecordFieldSpec,
         VbaRecordLayout, bstr::BStr,
     };
-    use std::sync::Arc;
+    use std::{
+        panic::{AssertUnwindSafe, catch_unwind},
+        sync::Arc,
+    };
 
     fn offset_of<T, U>(field: fn(*const T) -> *const U) -> usize {
         let value = core::mem::MaybeUninit::<T>::uninit();
         let base = value.as_ptr();
         field(base) as usize - base as usize
+    }
+
+    fn transactional_record_layouts() -> (Arc<VbaRecordLayout>, Arc<VbaRecordLayout>) {
+        let inner = Arc::new(
+            VbaRecordLayout::new(vec![
+                VbaRecordFieldSpec::named("InnerText", VbaRecordFieldKind::String),
+                VbaRecordFieldSpec::named("InnerValue", VbaRecordFieldKind::Variant),
+            ])
+            .expect("transactional inner layout"),
+        );
+        let outer = Arc::new(
+            VbaRecordLayout::new(vec![
+                VbaRecordFieldSpec::named("Text", VbaRecordFieldKind::String),
+                VbaRecordFieldSpec::named("Value", VbaRecordFieldKind::Variant),
+                VbaRecordFieldSpec::named("Nested", VbaRecordFieldKind::Record(Arc::clone(&inner))),
+            ])
+            .expect("transactional record SAFEARRAY layout"),
+        );
+        (inner, outer)
+    }
+
+    fn transactional_record(
+        inner_layout: &Arc<VbaRecordLayout>,
+        outer_layout: &Arc<VbaRecordLayout>,
+        label: &str,
+        identity: i32,
+    ) -> VbaRecord {
+        let mut nested =
+            VbaRecord::new_default(Arc::clone(inner_layout)).expect("nested record value");
+        nested
+            .write_field_variant(0, &Variant::from_string(format!("{label} nested")))
+            .expect("nested String");
+        nested
+            .write_field_variant(
+                1,
+                &Variant::from_object_ref(ObjectRef::from_compat_identity(identity + 100)),
+            )
+            .expect("nested Variant");
+
+        let mut record =
+            VbaRecord::new_default(Arc::clone(outer_layout)).expect("outer record value");
+        record
+            .write_field_variant(0, &Variant::from_string(format!("{label} text")))
+            .expect("outer String");
+        record
+            .write_field_variant(
+                1,
+                &Variant::from_object_ref(ObjectRef::from_compat_identity(identity)),
+            )
+            .expect("outer Variant");
+        record
+            .write_field_variant(2, &Variant::from_vba_record(nested))
+            .expect("outer nested record");
+        record
+    }
+
+    fn assert_transactional_record(value: &Variant, label: &str, identity: i32) {
+        let record = value.vba_record_ref().expect("VBA record Variant");
+        assert_eq!(
+            record
+                .read_field_variant(0)
+                .expect("outer String read")
+                .as_bstr()
+                .expect("outer String")
+                .as_str(),
+            format!("{label} text")
+        );
+        assert_eq!(
+            record
+                .read_field_variant(1)
+                .expect("outer Variant read")
+                .as_object_ref()
+                .expect("outer Object")
+                .compat_identity(),
+            identity
+        );
+        let nested = record.read_field_variant(2).expect("nested record read");
+        let nested = nested.vba_record_ref().expect("nested VBA record");
+        assert_eq!(
+            nested
+                .read_field_variant(0)
+                .expect("nested String read")
+                .as_bstr()
+                .expect("nested String")
+                .as_str(),
+            format!("{label} nested")
+        );
+        assert_eq!(
+            nested
+                .read_field_variant(1)
+                .expect("nested Variant read")
+                .as_object_ref()
+                .expect("nested Object")
+                .compat_identity(),
+            identity + 100
+        );
+    }
+
+    fn transactional_record_array(
+        inner_layout: &Arc<VbaRecordLayout>,
+        outer_layout: &Arc<VbaRecordLayout>,
+        label: &str,
+        identity: i32,
+    ) -> SafeArray {
+        SafeArray::from_vba_records_nd(
+            vec![SafeArrayBound { count: 1, lower: 7 }],
+            Arc::clone(outer_layout),
+            vec![transactional_record(
+                inner_layout,
+                outer_layout,
+                label,
+                identity,
+            )],
+        )
+        .expect("record SAFEARRAY")
+    }
+
+    fn record_array_element_bytes(array: &SafeArray, layout: &VbaRecordLayout) -> Vec<u8> {
+        // SAFETY: this helper is restricted to the one-element record SAFEARRAY
+        // constructed above; its payload is non-null and exactly `layout.size()`.
+        let data = unsafe { (*array.0.as_ptr()).pv_data.cast::<u8>() };
+        assert!(!data.is_null());
+        // SAFETY: the descriptor owns one initialized record of this exact layout.
+        unsafe { core::slice::from_raw_parts(data, layout.size()) }.to_vec()
+    }
+
+    fn descriptor_fingerprint(
+        array: &SafeArray,
+    ) -> (usize, u16, u16, u32, u32, usize, Vec<SafeArrayBound>) {
+        // SAFETY: `array.0` is its live descriptor for the duration of this borrow.
+        let header = unsafe { &*array.0.as_ptr() };
+        (
+            array.0.as_ptr() as usize,
+            header.c_dims,
+            header.f_features,
+            header.cb_elements,
+            header.c_locks,
+            header.pv_data as usize,
+            array.raw_bounds(),
+        )
+    }
+
+    fn assert_payload_event_balance(before: (usize, usize), label: &str) {
+        let after = payload_allocation_events();
+        assert_eq!(
+            after.0 - before.0,
+            after.1 - before.1,
+            "{label} must free every raw payload allocation"
+        );
+    }
+
+    fn assert_payload_constructor_sweep<T>(
+        label: &str,
+        make_values: impl Fn() -> T,
+        construct: impl Fn(T) -> Result<SafeArray, String>,
+        element_boundary: &'static str,
+        expected_elements: usize,
+    ) {
+        let handles_before = thread_live_handle_counts();
+        let payloads_before = payload_allocation_events();
+        let values = make_values();
+        take_owning_boundary_trace();
+        let successful = construct(values).expect("uninjected SAFEARRAY payload construction");
+        let success_trace = take_owning_boundary_trace();
+        assert_eq!(successful.len(), expected_elements);
+        assert_eq!(success_trace.last(), Some(&"safearray-header-adoption"));
+        assert_eq!(
+            success_trace
+                .iter()
+                .filter(|boundary| **boundary == element_boundary)
+                .count(),
+            expected_elements,
+            "{label} trace must include every element-clone boundary"
+        );
+        drop(successful);
+        assert_eq!(
+            thread_live_handle_counts(),
+            handles_before,
+            "uninjected {label} construction must balance every owned handle"
+        );
+        assert_payload_event_balance(payloads_before, label);
+
+        for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+            for nth in 0..success_trace.len() {
+                let handles_before = thread_live_handle_counts();
+                let payloads_before = payload_allocation_events();
+                let values = make_values();
+                inject_owning_boundary_failure(nth, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| construct(values)));
+                clear_owning_boundary_failure();
+                let failure_trace = take_owning_boundary_trace();
+                assert_eq!(
+                    failure_trace.as_slice(),
+                    &success_trace[..=nth],
+                    "{label} {mode:?} sweep missed boundary {nth}"
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected {label} constructor error: {error}"
+                    ),
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("fallible {label} constructor unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Error, Ok(Ok(_))) => {
+                        panic!("injected {label} constructor error unexpectedly succeeded")
+                    }
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected {label} constructor panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(
+                    thread_live_handle_counts(),
+                    handles_before,
+                    "{label} {mode:?} boundary {nth} leaked an owned handle"
+                );
+                assert_payload_event_balance(
+                    payloads_before,
+                    &format!("{label} {mode:?} boundary {nth}"),
+                );
+            }
+        }
+        take_owning_boundary_trace();
     }
 
     #[test]
@@ -2190,6 +2503,155 @@ mod tests {
                 .as_i32(),
             Some(99)
         );
+    }
+
+    #[test]
+    fn safe_array_record_transactional_write_preserves_element_and_descriptor_until_commit() {
+        let before_buffers = record_buffer_event_counts();
+        {
+            let (inner_layout, outer_layout) = transactional_record_layouts();
+            let replacement = Variant::from_vba_record(transactional_record(
+                &inner_layout,
+                &outer_layout,
+                "new",
+                72,
+            ));
+
+            let mut successful =
+                transactional_record_array(&inner_layout, &outer_layout, "old", 71);
+            let descriptor_before = descriptor_fingerprint(&successful);
+            take_owning_boundary_trace();
+            successful
+                .set_variant_element(0, &replacement)
+                .expect("uninjected record SAFEARRAY replacement");
+            let success_trace = take_owning_boundary_trace();
+            assert!(
+                !success_trace.is_empty(),
+                "record SAFEARRAY replacement must expose owning boundaries"
+            );
+            assert_eq!(descriptor_fingerprint(&successful), descriptor_before);
+            assert_transactional_record(
+                &successful.variant_element(0).expect("new array element"),
+                "new",
+                72,
+            );
+            drop(successful);
+
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                for nth in 0..success_trace.len() {
+                    let mut target =
+                        transactional_record_array(&inner_layout, &outer_layout, "old", 71);
+                    let descriptor_before = descriptor_fingerprint(&target);
+                    let element_before = record_array_element_bytes(&target, &outer_layout);
+                    inject_owning_boundary_failure(nth, mode);
+                    let outcome = catch_unwind(AssertUnwindSafe(|| {
+                        target.set_variant_element(0, &replacement)
+                    }));
+                    clear_owning_boundary_failure();
+                    let failure_trace = take_owning_boundary_trace();
+                    assert_eq!(
+                        failure_trace.as_slice(),
+                        &success_trace[..=nth],
+                        "injected {mode:?} failure missed SAFEARRAY boundary {nth}"
+                    );
+                    match (mode, outcome) {
+                        (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                            error.contains("injected owning clone/allocation failure"),
+                            "unexpected record SAFEARRAY error: {error}"
+                        ),
+                        (OwningFailureMode::Error, Err(_)) => {
+                            panic!("injected record SAFEARRAY error unexpectedly unwound")
+                        }
+                        (OwningFailureMode::Panic, Err(_)) => {}
+                        (OwningFailureMode::Error, Ok(Ok(()))) => {
+                            panic!("injected record SAFEARRAY error unexpectedly committed")
+                        }
+                        (OwningFailureMode::Panic, Ok(result)) => {
+                            panic!("injected record SAFEARRAY panic did not unwind: {result:?}")
+                        }
+                    }
+                    assert_eq!(descriptor_fingerprint(&target), descriptor_before);
+                    assert_eq!(
+                        record_array_element_bytes(&target, &outer_layout),
+                        element_before,
+                        "record SAFEARRAY element bytes changed after {mode:?} boundary {nth}"
+                    );
+                    assert_transactional_record(
+                        &target
+                            .variant_element(0)
+                            .expect("old array element after failure"),
+                        "old",
+                        71,
+                    );
+                }
+            }
+        }
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
+        let after_buffers = record_buffer_event_counts();
+        assert_eq!(
+            after_buffers.0 - before_buffers.0,
+            after_buffers.1 - before_buffers.1,
+            "record SAFEARRAY success, error, and unwind paths must balance record owners"
+        );
+    }
+
+    #[test]
+    fn safe_array_payload_transactional_construction_cleans_prefix_and_header_failures() {
+        let (inner_layout, outer_layout) = transactional_record_layouts();
+
+        assert_payload_constructor_sweep(
+            "record payload",
+            || {
+                vec![
+                    transactional_record(&inner_layout, &outer_layout, "first", 81),
+                    transactional_record(&inner_layout, &outer_layout, "second", 82),
+                ]
+            },
+            |values| {
+                SafeArray::from_vba_records_nd(
+                    vec![SafeArrayBound {
+                        count: 2,
+                        lower: -1,
+                    }],
+                    Arc::clone(&outer_layout),
+                    values,
+                )
+            },
+            "safearray-record-element-clone",
+            2,
+        );
+
+        assert_payload_constructor_sweep(
+            "intrinsic Variant payload",
+            || {
+                vec![
+                    Variant::from_string("prefix BSTR"),
+                    Variant::from_object_ref(ObjectRef::from_compat_identity(91)),
+                    Variant::from_safearray(SafeArray::from_variants(vec![
+                        Variant::from_string("nested SAFEARRAY BSTR"),
+                        Variant::from_object_ref(ObjectRef::from_compat_identity(92)),
+                    ])),
+                    Variant::from_vba_record(transactional_record(
+                        &inner_layout,
+                        &outer_layout,
+                        "record Variant",
+                        93,
+                    )),
+                ]
+            },
+            |values| {
+                SafeArray::from_shape_and_variants(
+                    vec![SafeArrayBound { count: 4, lower: 3 }],
+                    values,
+                )
+            },
+            "safearray-intrinsic-element-clone",
+            4,
+        );
+
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
     }
 
     #[test]

@@ -35,6 +35,89 @@ std::thread_local! {
     static FIELD_POINTER_PROJECTIONS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
     static RECORD_BUFFER_EVENTS: core::cell::Cell<(usize, usize)> = const { core::cell::Cell::new((0, 0)) };
     static LAYOUT_FIELD_TABLE_RESERVATIONS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+    static OWNING_BOUNDARY_FAILURE: core::cell::Cell<Option<(usize, OwningFailureMode)>> = const { core::cell::Cell::new(None) };
+    static OWNING_BOUNDARY_TRACE: core::cell::RefCell<Vec<&'static str>> = const { core::cell::RefCell::new(Vec::new()) };
+    static OWNING_BOUNDARY_SUPPRESSION: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OwningFailureMode {
+    Error,
+    Panic,
+}
+
+#[cfg(test)]
+pub(crate) fn inject_owning_boundary_failure(nth: usize, mode: OwningFailureMode) {
+    OWNING_BOUNDARY_TRACE.with(|trace| trace.borrow_mut().clear());
+    OWNING_BOUNDARY_FAILURE.with(|failure| failure.set(Some((nth, mode))));
+}
+
+#[cfg(test)]
+pub(crate) fn clear_owning_boundary_failure() {
+    OWNING_BOUNDARY_FAILURE.with(|failure| failure.set(None));
+}
+
+#[cfg(test)]
+pub(crate) fn take_owning_boundary_trace() -> Vec<&'static str> {
+    OWNING_BOUNDARY_TRACE.with(|trace| core::mem::take(&mut *trace.borrow_mut()))
+}
+
+#[cfg(test)]
+pub(crate) fn owning_boundary(name: &'static str) -> Result<(), String> {
+    if OWNING_BOUNDARY_SUPPRESSION.with(core::cell::Cell::get) != 0 {
+        return Ok(());
+    }
+    OWNING_BOUNDARY_TRACE.with(|trace| trace.borrow_mut().push(name));
+    let failure = OWNING_BOUNDARY_FAILURE.with(|state| match state.get() {
+        Some((0, mode)) => {
+            state.set(None);
+            Some(mode)
+        }
+        Some((remaining, mode)) => {
+            state.set(Some((remaining - 1, mode)));
+            None
+        }
+        None => None,
+    });
+    match failure {
+        Some(OwningFailureMode::Error) => Err(format!(
+            "injected owning clone/allocation failure at {name}"
+        )),
+        Some(OwningFailureMode::Panic) => {
+            panic!("injected owning clone/allocation panic at {name}")
+        }
+        None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn without_nested_owning_boundaries<T>(operation: impl FnOnce() -> T) -> T {
+    struct Restore;
+
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            OWNING_BOUNDARY_SUPPRESSION.with(|depth| depth.set(depth.get() - 1));
+        }
+    }
+
+    OWNING_BOUNDARY_SUPPRESSION.with(|depth| depth.set(depth.get() + 1));
+    let restore = Restore;
+    let result = operation();
+    drop(restore);
+    result
+}
+
+#[cfg(not(test))]
+#[inline]
+pub(crate) fn without_nested_owning_boundaries<T>(operation: impl FnOnce() -> T) -> T {
+    operation()
+}
+
+#[cfg(not(test))]
+#[inline]
+pub(crate) fn owning_boundary(_name: &'static str) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(test)]
@@ -56,6 +139,11 @@ fn note_record_buffer_free() {
         let (allocated, freed) = events.get();
         events.set((allocated, freed + 1));
     });
+}
+
+#[cfg(test)]
+pub(crate) fn record_buffer_event_counts() -> (usize, usize) {
+    RECORD_BUFFER_EVENTS.with(core::cell::Cell::get)
 }
 
 #[cfg(test)]
@@ -448,6 +536,7 @@ impl VbaRecord {
             .checked_add(word_size - 1)
             .ok_or_else(|| "VBA record buffer word count overflow".to_string())?
             / word_size;
+        owning_boundary("record-buffer-allocation")?;
         let mut data = Vec::new();
         data.try_reserve_exact(words).map_err(|_| {
             format!(
@@ -456,18 +545,15 @@ impl VbaRecord {
             )
         })?;
         data.resize(words, 0);
-        let mut record = Self { layout, data };
+        let record = Self { layout, data };
         crate::live_counters::record_buffer_allocated();
         #[cfg(test)]
         note_record_buffer_allocation();
-        let init_layout = Arc::clone(&record.layout);
-        for (index, field) in init_layout.fields().iter().enumerate() {
-            // SAFETY: the buffer is sized to `layout.size()`, and each field offset
-            // and recursive fixed-array stride was computed by `VbaRecordLayout`.
-            unsafe {
-                init_field_at(record.field_mut_ptr_by_index(index)?, &field.kind)?;
-            }
-        }
+        // Every admitted field kind has a valid all-zero default: numeric/fixed
+        // storage is zero, String is a null BSTR, Variant is VT_EMPTY (tag zero),
+        // and Record/FixedArray recurse over those same defaults. The complete
+        // buffer is therefore initialized before `record` can escape, with no
+        // fallible per-field phase that could leave a partial owner.
         Ok(record)
     }
 
@@ -740,10 +826,12 @@ impl VbaRecord {
     /// least `self.layout().size()` bytes. The caller becomes responsible for
     /// eventually dropping the initialized raw record with [`Self::drop_raw`].
     pub unsafe fn clone_into_raw(&self, dst: *mut u8) -> Result<(), String> {
-        // SAFETY: forwards this method's `# Safety` contract — `dst` is writable,
-        // aligned, uninitialized storage of at least `self.layout().size()` bytes;
-        // `self.data_ptr()` is this record's own live payload with the same layout.
-        unsafe { clone_record_into_ptr(self.data_ptr(), dst, self.layout()) }
+        let replacement = self.try_clone()?;
+        // SAFETY: the caller supplied writable, aligned, uninitialized storage;
+        // `replacement` is a completely initialized same-layout owner. Moving its
+        // bytes touches `dst` only after every fallible clone has succeeded.
+        unsafe { replacement.move_into_raw(dst) };
+        Ok(())
     }
 
     /// Drop a raw record payload initialized according to `layout`.
@@ -795,34 +883,67 @@ impl VbaRecord {
         // `layout.size()`, and `Vec<u64>` storage satisfies the record's alignment.
         unsafe { Self::clone_from_raw(words.as_ptr().cast(), layout) }
     }
+
+    pub(crate) fn try_clone(&self) -> Result<Self, String> {
+        let layout = Arc::clone(&self.layout);
+        let mut clone = Self::new_default(Arc::clone(&layout))?;
+        for (index, field) in layout.fields().iter().enumerate() {
+            // SAFETY: source and destination are distinct, fully initialized
+            // same-layout buffers. Each owning replacement prepares before commit,
+            // so `clone` remains a valid default/partial-success owner on failure.
+            unsafe {
+                clone_field_into_live(
+                    self.field_ptr_by_index(index)?,
+                    clone.field_mut_ptr_by_index(index)?,
+                    &field.kind,
+                )?;
+            }
+        }
+        Ok(clone)
+    }
+
+    /// Swap this owned record payload with a live inline/raw payload of the same layout.
+    ///
+    /// # Safety
+    /// `other` must point to a distinct, writable, fully initialized payload laid out by
+    /// `self.layout()`. After return, `self` owns the prior `other` payload and the caller
+    /// owns the prior `self` payload at `other`.
+    pub(crate) unsafe fn swap_with_raw(&mut self, other: *mut u8) {
+        let size = self.layout().size();
+        let owned = self.data_mut_ptr();
+        // SAFETY: caller guarantees distinct same-layout initialized payloads;
+        // byte-wise swap transfers every owning field exactly once and cannot fail.
+        unsafe { ptr::swap_nonoverlapping(owned, other, size) };
+    }
+
+    /// Move this complete payload into uninitialized raw storage without dropping fields.
+    ///
+    /// # Safety
+    /// `dst` must be distinct, writable, aligned storage of at least `layout.size()` bytes.
+    unsafe fn move_into_raw(self, dst: *mut u8) {
+        let this = core::mem::ManuallyDrop::new(self);
+        // SAFETY: caller guarantees the distinct destination extent. `this` is a
+        // complete initialized owner, and copying the exact layout size transfers
+        // its complete byte image before any backing allocation is released.
+        unsafe { ptr::copy_nonoverlapping(this.data_ptr(), dst, this.layout().size()) };
+        // SAFETY: `this` will not run Drop. Read out the two ordinary owner fields
+        // exactly once so their backing allocations/references are released without
+        // dropping the record payload whose ownership just moved to `dst`.
+        let data = unsafe { ptr::read(&this.data) };
+        // SAFETY: same ManuallyDrop ownership transfer as for `data` above.
+        let layout = unsafe { ptr::read(&this.layout) };
+        drop(data);
+        drop(layout);
+        crate::live_counters::record_buffer_freed();
+        #[cfg(test)]
+        note_record_buffer_free();
+    }
 }
 
 impl Clone for VbaRecord {
     fn clone(&self) -> Self {
-        let layout = Arc::clone(&self.layout);
-        let mut clone = Self {
-            layout: Arc::clone(&layout),
-            data: vec![0; self.data.len()],
-        };
-        crate::live_counters::record_buffer_allocated();
-        #[cfg(test)]
-        note_record_buffer_allocation();
-        for (index, field) in layout.fields().iter().enumerate() {
-            // SAFETY: source and destination are distinct buffers with the same
-            // descriptor-backed layout.
-            unsafe {
-                clone_field_at(
-                    self.field_ptr_by_index(index)
-                        .expect("sealed source record field"),
-                    clone
-                        .field_mut_ptr_by_index(index)
-                        .expect("sealed destination record field"),
-                    &field.kind,
-                )
-                .expect("VBA record deep clone should succeed");
-            }
-        }
-        clone
+        self.try_clone()
+            .expect("VBA record deep clone should succeed")
     }
 }
 
@@ -851,86 +972,150 @@ impl core::fmt::Debug for VbaRecord {
     }
 }
 
-/// # Safety
-/// `ptr` must reference an uninitialized field slot sized and aligned for `kind`
-/// (i.e. a slot inside a buffer laid out by [`VbaRecordLayout`]).
-unsafe fn init_field_at(ptr: *mut u8, kind: &VbaRecordFieldKind) -> Result<(), String> {
-    match kind {
-        // SAFETY: per the contract the slot is sized/aligned for a `Variant`; the
-        // slot is uninitialized so `write` overwrites without dropping garbage.
-        VbaRecordFieldKind::Variant => unsafe { ptr.cast::<Variant>().write(Variant::empty()) },
-        // SAFETY: the slot is the pointer-sized/aligned BSTR carrier; writing the
-        // null sentinel initializes it as the empty-string state.
-        VbaRecordFieldKind::String => unsafe { ptr.cast::<*mut u16>().write(ptr::null_mut()) },
-        VbaRecordFieldKind::Record(layout) => {
-            for field in layout.fields() {
-                // SAFETY: `field.offset` lies within this nested record's slot (the
-                // offsets were produced by the same layout pass that sized it).
-                unsafe { init_field_at(ptr.add(field.offset), &field.kind)? };
-            }
-        }
-        VbaRecordFieldKind::FixedArray { element, bounds } => {
-            let len = fixed_array_total_len(bounds)?;
-            let (element_size, element_align) = element.storage_shape()?;
-            let stride = checked_align_to(element_size, element_align)?;
-            for i in 0..len {
-                // SAFETY: `i < len` and `stride` is the per-element storage size, so
-                // `i * stride` indexes the `i`-th element slot inside the array field.
-                unsafe { init_field_at(ptr.add(i * stride), element)? };
-            }
-        }
-        _ => {}
-    }
-    Ok(())
+/// Complete initialized owner for one inline field while a replacement is prepared.
+///
+/// Every admitted field kind has a valid all-zero default (the same invariant used by
+/// `VbaRecord::new_default`). Drop therefore always sees a complete live field, including
+/// when a later fallible clone returns or unwinds. `commit` swaps once and makes this guard
+/// own the old destination for ordinary cleanup.
+struct OwnedFieldBuffer<'a> {
+    kind: &'a VbaRecordFieldKind,
+    size: usize,
+    words: Vec<u64>,
 }
 
+impl<'a> OwnedFieldBuffer<'a> {
+    fn new_default(kind: &'a VbaRecordFieldKind) -> Result<Self, String> {
+        let (size, align) = kind.storage_shape()?;
+        if align > core::mem::align_of::<u64>() {
+            return Err(format!(
+                "record field alignment {align} exceeds transactional buffer alignment"
+            ));
+        }
+        owning_boundary("field-buffer-allocation")?;
+        let word_count = size.div_ceil(core::mem::size_of::<u64>());
+        let mut words = Vec::new();
+        words.try_reserve_exact(word_count).map_err(|_| {
+            format!("transactional record field allocation failed for {size} bytes")
+        })?;
+        words.resize(word_count, 0);
+        Ok(Self { kind, size, words })
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.words.as_mut_ptr().cast()
+    }
+
+    unsafe fn clone_from_raw(src: *const u8, kind: &'a VbaRecordFieldKind) -> Result<Self, String> {
+        let mut replacement = Self::new_default(kind)?;
+        let dst = replacement.as_mut_ptr();
+        match kind {
+            VbaRecordFieldKind::Record(layout) => {
+                for field in layout.fields() {
+                    // SAFETY: the sealed nested layout proves each matching source
+                    // and destination sub-field extent is in bounds and distinct.
+                    unsafe {
+                        clone_field_into_live(
+                            src.add(field.offset),
+                            dst.add(field.offset),
+                            &field.kind,
+                        )?
+                    };
+                }
+            }
+            VbaRecordFieldKind::FixedArray { element, bounds } => {
+                let len = fixed_array_total_len(bounds)?;
+                let (element_size, element_align) = element.storage_shape()?;
+                let stride = checked_align_to(element_size, element_align)?;
+                for index in 0..len {
+                    // SAFETY: `index < len` and the sealed array extent uses this
+                    // exact stride, selecting matching distinct live elements.
+                    unsafe {
+                        clone_field_into_live(
+                            src.add(index * stride),
+                            dst.add(index * stride),
+                            element,
+                        )?
+                    };
+                }
+            }
+            _ => {
+                // SAFETY: caller supplies a live source of `kind`; the replacement
+                // buffer is a distinct, complete all-zero default of the same kind.
+                unsafe { clone_field_into_live(src, dst, kind)? };
+            }
+        }
+        Ok(replacement)
+    }
+
+    /// Swap the prepared value into `dst`; this guard then owns the previous value.
+    ///
+    /// # Safety
+    /// `dst` must be a distinct, writable, initialized field of `self.kind`.
+    unsafe fn commit(mut self, dst: *mut u8) {
+        let size = self.size;
+        let src = self.as_mut_ptr();
+        // SAFETY: caller guarantees distinct same-kind fields of `self.size` bytes.
+        unsafe { ptr::swap_nonoverlapping(src, dst, size) };
+        // `self` drops the old destination after the slot already owns the replacement.
+    }
+}
+
+impl Drop for OwnedFieldBuffer<'_> {
+    fn drop(&mut self) {
+        let kind = self.kind;
+        let ptr = self.as_mut_ptr();
+        // SAFETY: construction starts with a complete valid all-zero default;
+        // transactional writes preserve validity, and commit only swaps another
+        // complete live field into this buffer.
+        unsafe { drop_field_at(ptr, kind) };
+    }
+}
+
+/// Clone `src` transactionally over a distinct initialized `dst` field.
+///
 /// # Safety
-/// `src` must reference a live field initialized for `kind`, and `dst` an
-/// uninitialized field slot of the same `kind`; the two slots must not overlap.
-unsafe fn clone_field_at(
+/// Both pointers must reference distinct live fields initialized for `kind`.
+unsafe fn clone_field_into_live(
     src: *const u8,
     dst: *mut u8,
     kind: &VbaRecordFieldKind,
 ) -> Result<(), String> {
     match kind {
         VbaRecordFieldKind::Variant => {
+            owning_boundary("variant-clone")?;
             // SAFETY: `src` holds a live `Variant` per the contract; borrowing it
             // shared to clone does not move or invalidate the source slot.
             let value = unsafe { &*src.cast::<Variant>() };
-            // SAFETY: `dst` is an uninitialized `Variant` slot; `write` stores the
-            // deep clone without dropping the (uninitialized) destination.
-            unsafe { dst.cast::<Variant>().write(value.clone()) };
+            let replacement = value.try_clone()?;
+            // SAFETY: replacement is complete before mutation; `dst` is a live
+            // Variant slot. Replace makes the new slot valid before old Drop runs.
+            let previous = unsafe { dst.cast::<Variant>().replace(replacement) };
+            drop(previous);
         }
         VbaRecordFieldKind::String => {
             // SAFETY: `src` holds the initialized BSTR carrier pointer for this field.
             let raw = unsafe { *src.cast::<*mut u16>() };
             let cloned = clone_bstr_raw(raw)?;
-            // SAFETY: `dst` is the uninitialized BSTR carrier slot; store the owned clone.
-            unsafe { dst.cast::<*mut u16>().write(cloned) };
-        }
-        VbaRecordFieldKind::Record(layout) => {
-            for field in layout.fields() {
-                // SAFETY: `field.offset` indexes the same sub-field in both the live
-                // `src` and uninitialized `dst` nested records (identical layouts).
-                unsafe {
-                    clone_field_at(src.add(field.offset), dst.add(field.offset), &field.kind)?
-                };
+            // SAFETY: cloned is fully owned before mutation and `dst` is a live
+            // pointer carrier. Replace keeps the slot initialized throughout.
+            let previous = unsafe { dst.cast::<*mut u16>().replace(cloned) };
+            if !previous.is_null() {
+                // SAFETY: the previous live String field owned this BSTR exactly once.
+                drop(unsafe { BStr::from_raw_bstr(previous) });
             }
         }
-        VbaRecordFieldKind::FixedArray { element, bounds } => {
-            let len = fixed_array_total_len(bounds)?;
-            let (element_size, element_align) = element.storage_shape()?;
-            let stride = checked_align_to(element_size, element_align)?;
-            for i in 0..len {
-                // SAFETY: `i < len` and `stride` is the element storage size, so
-                // `i * stride` selects matching element slots in `src` and `dst`.
-                unsafe { clone_field_at(src.add(i * stride), dst.add(i * stride), element)? };
-            }
+        VbaRecordFieldKind::Record(_) | VbaRecordFieldKind::FixedArray { .. } => {
+            // SAFETY: forwards this function's live-source contract. Preparation
+            // completes recursively in an owned guard before the one-shot swap.
+            let replacement = unsafe { OwnedFieldBuffer::clone_from_raw(src, kind)? };
+            // SAFETY: `dst` is the distinct live same-kind destination.
+            unsafe { replacement.commit(dst) };
         }
         _ => {
             let (size, _) = kind.storage_shape()?;
-            // SAFETY: scalar (Copy) fields: both slots are `size` bytes for `kind`
-            // and are non-overlapping distinct record buffers per the contract.
+            // SAFETY: Copy scalar fields may overwrite the live destination; both
+            // slots are `size` bytes and non-overlapping per the contract.
             unsafe { ptr::copy_nonoverlapping(src, dst, size) };
         }
     }
@@ -1071,12 +1256,14 @@ unsafe fn write_field_variant_at(
     value: &Variant,
 ) -> Result<(), String> {
     match kind {
-        // SAFETY: the slot holds a live `Variant`; drop it once, then write the new
-        // clone into the now-uninitialized slot — both ops target the same valid slot.
-        VbaRecordFieldKind::Variant => unsafe {
-            ptr.cast::<Variant>().drop_in_place();
-            ptr.cast::<Variant>().write(value.clone());
-        },
+        VbaRecordFieldKind::Variant => {
+            owning_boundary("variant-assignment-clone")?;
+            let replacement = value.try_clone()?;
+            // SAFETY: replacement is complete before mutation and `ptr` is a live
+            // Variant slot. Replace commits once before the prior owner drops.
+            let previous = unsafe { ptr.cast::<Variant>().replace(replacement) };
+            drop(previous);
+        }
         VbaRecordFieldKind::Integer => {
             let value = value
                 .as_i16()
@@ -1144,16 +1331,22 @@ unsafe fn write_field_variant_at(
             unsafe { ptr.cast::<f64>().write(value) };
         }
         VbaRecordFieldKind::String => {
-            let Some(text) = value.as_bstr() else {
+            if value.vtype() != crate::VarType::String {
                 return Err("String record field requires String value".to_string());
-            };
+            }
+            owning_boundary("string-assignment-clone")?;
+            let text = value
+                .as_bstr()
+                .expect("String Variant must retain its BSTR payload");
             let raw = text.raw_bstr();
             core::mem::forget(text);
-            // SAFETY: `ptr` is the live String field — drop its current BSTR first so
-            // it is not leaked, then store the owned BSTR we took from `value` above.
-            unsafe { drop_field_at(ptr, kind) };
-            // SAFETY: slot is the pointer-sized/aligned BSTR carrier, now uninitialized.
-            unsafe { ptr.cast::<*mut u16>().write(raw) };
+            // SAFETY: the replacement BSTR is fully owned before mutation and `ptr`
+            // is a live pointer carrier. Replace keeps the slot initialized.
+            let previous = unsafe { ptr.cast::<*mut u16>().replace(raw) };
+            if !previous.is_null() {
+                // SAFETY: the previous live String field owned this BSTR once.
+                drop(unsafe { BStr::from_raw_bstr(previous) });
+            }
         }
         VbaRecordFieldKind::FixedString { len } => {
             if value.vtype() == crate::VarType::Null {
@@ -1184,28 +1377,39 @@ unsafe fn write_field_variant_at(
             unsafe { ptr.cast::<i16>().write(if value { -1 } else { 0 }) };
         }
         VbaRecordFieldKind::Record(layout) => {
-            let Some(source) = value.as_vba_record() else {
+            let Some(source) = value.vba_record_ref() else {
                 return Err("nested record field requires VBA record value".to_string());
             };
             if source.layout().as_ref() != layout.as_ref() {
                 return Err("nested record field layout mismatch".to_string());
             }
-            // SAFETY: `ptr` is the live nested-record slot — drop its current fields,
-            // then deep-copy `source` (verified same `layout`) into the freed slot.
-            unsafe {
-                drop_field_at(ptr, kind);
-                clone_record_into_ptr(source.data_ptr(), ptr, layout)?;
-            }
+            // SAFETY: source is a live same-layout record and `ptr` is the live
+            // destination. The guard finishes all fallible cloning before commit.
+            let replacement = unsafe { OwnedFieldBuffer::clone_from_raw(source.data_ptr(), kind)? };
+            // SAFETY: `ptr` is the distinct live nested-record destination.
+            unsafe { replacement.commit(ptr) };
         }
         VbaRecordFieldKind::FixedArray { element, bounds } => {
             let len = fixed_array_total_len(bounds)?;
-            let Some(array) = value.as_safearray() else {
+            if value.vtype() != crate::VarType::ArrayVariant {
                 return Err("fixed-array record field assignment requires an array value".into());
+            }
+            owning_boundary("fixed-array-source-clone")?;
+            // The pre-boundary represents this infallible compatibility clone as
+            // one owning operation. Nested record hooks are exercised through the
+            // fallible record APIs themselves, without injecting inside a borrowed
+            // SAFEARRAY wrapper (owned borrowing is a separate contract lane).
+            let Some(array) = without_nested_owning_boundaries(|| value.as_safearray()) else {
+                return Err(
+                    "fixed-array record field assignment requires an allocated array".into(),
+                );
             };
-            let values = array.variant_elements().ok_or_else(|| {
-                "fixed-array record field assignment requires materialized array elements"
-                    .to_string()
-            })?;
+            owning_boundary("fixed-array-elements-clone")?;
+            let values =
+                without_nested_owning_boundaries(|| array.variant_elements()).ok_or_else(|| {
+                    "fixed-array record field assignment requires materialized array elements"
+                        .to_string()
+                })?;
             if values.len() != len {
                 return Err(format!(
                     "fixed-array record field assignment requires {len} elements, got {}",
@@ -1214,11 +1418,17 @@ unsafe fn write_field_variant_at(
             }
             let (element_size, element_align) = element.storage_shape()?;
             let stride = checked_align_to(element_size, element_align)?;
+            let mut replacement = OwnedFieldBuffer::new_default(kind)?;
+            let replacement_ptr = replacement.as_mut_ptr();
             for (i, value) in values.iter().enumerate() {
-                // SAFETY: `i < len` (length checked above) and `stride` is the element
-                // storage size, so `i * stride` targets the live `i`-th element slot.
-                unsafe { write_field_variant_at(ptr.add(i * stride), element, value)? };
+                // SAFETY: `i < len` and `stride` selects the live default `i`-th
+                // element in the replacement guard. Each element write is itself
+                // transactional; failure leaves the guard fully droppable.
+                unsafe { write_field_variant_at(replacement_ptr.add(i * stride), element, value)? };
             }
+            // SAFETY: `ptr` is the live fixed-array field; all replacement elements
+            // are complete, so one swap commits the whole field.
+            unsafe { replacement.commit(ptr) };
         }
     }
     Ok(())
@@ -1231,26 +1441,19 @@ unsafe fn clone_record_from_ptr(
     layout: Arc<VbaRecordLayout>,
 ) -> Result<VbaRecord, String> {
     let mut record = VbaRecord::new_default(layout.clone())?;
-    // SAFETY: `src` is the live source payload (caller contract); `record` is a
-    // freshly default-initialized destination with the identical `layout`.
-    unsafe { clone_record_into_ptr(src, record.data_mut_ptr(), &layout)? };
-    Ok(record)
-}
-
-/// # Safety
-/// `src` must reference a live payload laid out by `layout`, and `dst` a distinct,
-/// default-initialized payload of the same `layout`.
-unsafe fn clone_record_into_ptr(
-    src: *const u8,
-    dst: *mut u8,
-    layout: &VbaRecordLayout,
-) -> Result<(), String> {
     for field in layout.fields() {
-        // SAFETY: `field.offset` is in bounds of both same-layout payloads, and the
-        // src/dst records are distinct buffers so the field slots do not overlap.
-        unsafe { clone_field_at(src.add(field.offset), dst.add(field.offset), &field.kind)? };
+        // SAFETY: source is live per the caller contract; destination is a distinct
+        // complete all-zero default. Each field transaction leaves `record` valid
+        // if a later boundary returns or unwinds.
+        unsafe {
+            clone_field_into_live(
+                src.add(field.offset),
+                record.data_mut_ptr().add(field.offset),
+                &field.kind,
+            )?
+        };
     }
-    Ok(())
+    Ok(record)
 }
 
 unsafe fn borrow_bstr_raw(raw: *mut u16) -> BStr {
@@ -1263,6 +1466,7 @@ fn clone_bstr_raw(raw: *mut u16) -> Result<*mut u16, String> {
     if raw.is_null() {
         return Ok(ptr::null_mut());
     }
+    owning_boundary("bstr-clone")?;
     // SAFETY: `raw` is non-null (checked above) and is the live BSTR owned by the
     // record slot; we only borrow it to clone, then `forget` the borrowed wrapper
     // below so ownership stays with the original slot.
@@ -1480,12 +1684,17 @@ mod tests {
     use super::{
         FIELD_POINTER_PROJECTIONS, LAYOUT_FIELD_TABLE_RESERVATIONS,
         MAX_VBA_RECORD_FIXED_ARRAY_RANK, MAX_VBA_RECORD_LAYOUT_GRAPH_DEPTH, MAX_VBA_RECORD_SIZE,
-        RECORD_BUFFER_EVENTS, VbaRecord, VbaRecordFieldHandle, VbaRecordFieldKind as Kind,
-        VbaRecordFieldSpec as Field, VbaRecordLayout, checked_align_to, validate_field_kind_graph,
+        OwningFailureMode, RECORD_BUFFER_EVENTS, VbaRecord, VbaRecordFieldHandle,
+        VbaRecordFieldKind as Kind, VbaRecordFieldSpec as Field, VbaRecordLayout, checked_align_to,
+        clear_owning_boundary_failure, inject_owning_boundary_failure, take_owning_boundary_trace,
+        validate_field_kind_graph,
     };
-    use crate::safe_array::SafeArrayBound;
-    use crate::{Variant, bstr::BStr};
-    use std::sync::Arc;
+    use crate::safe_array::{SafeArray, SafeArrayBound};
+    use crate::{ObjectRef, Variant, bstr::BStr};
+    use std::{
+        panic::{AssertUnwindSafe, catch_unwind},
+        sync::Arc,
+    };
 
     fn bounds(lower: i32, len: usize) -> Vec<SafeArrayBound> {
         vec![SafeArrayBound {
@@ -1504,6 +1713,128 @@ mod tests {
 
     fn layout_field_table_reservations() -> usize {
         LAYOUT_FIELD_TABLE_RESERVATIONS.with(core::cell::Cell::get)
+    }
+
+    fn record_bytes(record: &VbaRecord) -> Vec<u8> {
+        // SAFETY: `data_ptr` exposes this record's live payload and `memory_len`
+        // is its exact initialized layout extent.
+        unsafe { core::slice::from_raw_parts(record.data_ptr(), record.memory_len()) }.to_vec()
+    }
+
+    fn owned_inner_layout() -> Arc<VbaRecordLayout> {
+        Arc::new(
+            VbaRecordLayout::new(vec![
+                Field::named("Text", Kind::String),
+                Field::named("Value", Kind::Variant),
+            ])
+            .expect("owning inner layout"),
+        )
+    }
+
+    fn owned_inner_record(layout: &Arc<VbaRecordLayout>, text: &str, identity: i32) -> VbaRecord {
+        let mut record = VbaRecord::new_default(Arc::clone(layout)).expect("inner record");
+        record
+            .write_field_variant(0, &Variant::from_string(text))
+            .expect("inner String write");
+        record
+            .write_field_variant(
+                1,
+                &Variant::from_object_ref(ObjectRef::from_compat_identity(identity)),
+            )
+            .expect("inner Variant write");
+        record
+    }
+
+    fn assert_owned_inner(record: &VbaRecord, text: &str, identity: i32) {
+        assert_eq!(
+            record
+                .read_field_variant(0)
+                .expect("inner String read")
+                .as_bstr()
+                .expect("inner String value")
+                .as_str(),
+            text
+        );
+        assert_eq!(
+            record
+                .read_field_variant(1)
+                .expect("inner Variant read")
+                .as_object_ref()
+                .expect("inner Object value")
+                .compat_identity(),
+            identity
+        );
+    }
+
+    fn assert_record_variant(value: &Variant, text: &str, identity: i32) {
+        assert_owned_inner(
+            value.vba_record_ref().expect("VBA record Variant"),
+            text,
+            identity,
+        );
+    }
+
+    fn assert_injected_field_write_sweep(
+        label: &str,
+        make_target: impl Fn() -> VbaRecord,
+        field: usize,
+        replacement: &Variant,
+        assert_old: impl Fn(&VbaRecord),
+        assert_new: impl Fn(&VbaRecord),
+    ) {
+        let mut successful = make_target();
+        take_owning_boundary_trace();
+        successful
+            .write_field_variant(field, replacement)
+            .expect("uninjected field replacement");
+        let success_trace = take_owning_boundary_trace();
+        assert!(
+            !success_trace.is_empty(),
+            "transactional {label} write must expose at least one failure boundary"
+        );
+        assert_new(&successful);
+        drop(successful);
+
+        for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+            for nth in 0..success_trace.len() {
+                let mut target = make_target();
+                let before = record_bytes(&target);
+                inject_owning_boundary_failure(nth, mode);
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    target.write_field_variant(field, replacement)
+                }));
+                clear_owning_boundary_failure();
+                let failure_trace = take_owning_boundary_trace();
+                assert_eq!(
+                    failure_trace.as_slice(),
+                    &success_trace[..=nth],
+                    "injected {mode:?} failure did not reach the expected {label} boundary {nth}"
+                );
+                match (mode, outcome) {
+                    (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                        error.contains("injected owning clone/allocation failure"),
+                        "unexpected injected error: {error}"
+                    ),
+                    (OwningFailureMode::Error, Err(_)) => {
+                        panic!("injected {label} error unexpectedly unwound")
+                    }
+                    (OwningFailureMode::Panic, Err(_)) => {}
+                    (OwningFailureMode::Error, Ok(Ok(()))) => {
+                        panic!("injected owning error unexpectedly committed")
+                    }
+                    (OwningFailureMode::Panic, Ok(result)) => {
+                        panic!("injected owning panic did not unwind: {result:?}")
+                    }
+                }
+                assert_eq!(
+                    record_bytes(&target),
+                    before,
+                    "{label} destination bytes changed after injected {mode:?} boundary {nth}"
+                );
+                assert_old(&target);
+            }
+        }
+        take_owning_boundary_trace();
     }
 
     #[test]
@@ -2209,6 +2540,364 @@ mod tests {
             .lset_from(&source)
             .expect_err("variable strings are not LSet byte-overlay compatible");
         assert_eq!(err, "Type mismatch");
+    }
+
+    #[test]
+    fn vba_record_transactional_write_preserves_every_owning_destination_until_commit() {
+        let before_buffers = record_buffer_events();
+        {
+            let variant_layout = Arc::new(
+                VbaRecordLayout::new(vec![Field::named("Value", Kind::Variant)])
+                    .expect("Variant field layout"),
+            );
+            let variant_replacement = Variant::from_safearray(SafeArray::from_variants(vec![
+                Variant::from_string("new payload"),
+                Variant::from_object_ref(ObjectRef::from_compat_identity(22)),
+            ]));
+            assert_injected_field_write_sweep(
+                "Variant",
+                || {
+                    let mut target =
+                        VbaRecord::new_default(Arc::clone(&variant_layout)).expect("target");
+                    target
+                        .write_field_variant(
+                            0,
+                            &Variant::from_object_ref(ObjectRef::from_compat_identity(11)),
+                        )
+                        .expect("old Variant");
+                    target
+                },
+                0,
+                &variant_replacement,
+                |target| {
+                    assert_eq!(
+                        target
+                            .read_field_variant(0)
+                            .expect("old Variant read")
+                            .as_object_ref()
+                            .expect("old Object")
+                            .compat_identity(),
+                        11
+                    );
+                },
+                |target| {
+                    let value = target.read_field_variant(0).expect("new Variant read");
+                    let elements = value
+                        .as_safearray()
+                        .expect("new SAFEARRAY")
+                        .variant_elements()
+                        .expect("new SAFEARRAY values");
+                    assert_eq!(
+                        elements[0].as_bstr().expect("new BSTR element").as_str(),
+                        "new payload"
+                    );
+                    assert_eq!(
+                        elements[1]
+                            .as_object_ref()
+                            .expect("new Object element")
+                            .compat_identity(),
+                        22
+                    );
+                },
+            );
+
+            let string_layout = Arc::new(
+                VbaRecordLayout::new(vec![Field::named("Text", Kind::String)])
+                    .expect("String field layout"),
+            );
+            let string_replacement = Variant::from_string("new text");
+            assert_injected_field_write_sweep(
+                "String",
+                || {
+                    let mut target =
+                        VbaRecord::new_default(Arc::clone(&string_layout)).expect("target");
+                    target
+                        .write_field_variant(0, &Variant::from_string("old text"))
+                        .expect("old String");
+                    target
+                },
+                0,
+                &string_replacement,
+                |target| {
+                    assert_eq!(
+                        target
+                            .read_field_variant(0)
+                            .expect("old String read")
+                            .as_bstr()
+                            .expect("old String")
+                            .as_str(),
+                        "old text"
+                    );
+                },
+                |target| {
+                    assert_eq!(
+                        target
+                            .read_field_variant(0)
+                            .expect("new String read")
+                            .as_bstr()
+                            .expect("new String")
+                            .as_str(),
+                        "new text"
+                    );
+                },
+            );
+
+            let inner_layout = owned_inner_layout();
+            let nested_layout = Arc::new(
+                VbaRecordLayout::new(vec![Field::named(
+                    "Nested",
+                    Kind::Record(Arc::clone(&inner_layout)),
+                )])
+                .expect("nested-record layout"),
+            );
+            let nested_replacement =
+                Variant::from_vba_record(owned_inner_record(&inner_layout, "new nested", 32));
+            assert_injected_field_write_sweep(
+                "nested Record",
+                || {
+                    let mut target =
+                        VbaRecord::new_default(Arc::clone(&nested_layout)).expect("target");
+                    target
+                        .write_field_variant(
+                            0,
+                            &Variant::from_vba_record(owned_inner_record(
+                                &inner_layout,
+                                "old nested",
+                                31,
+                            )),
+                        )
+                        .expect("old nested record");
+                    target
+                },
+                0,
+                &nested_replacement,
+                |target| {
+                    assert_record_variant(
+                        &target.read_field_variant(0).expect("old nested read"),
+                        "old nested",
+                        31,
+                    );
+                },
+                |target| {
+                    assert_record_variant(
+                        &target.read_field_variant(0).expect("new nested read"),
+                        "new nested",
+                        32,
+                    );
+                },
+            );
+
+            let fixed_layout = Arc::new(
+                VbaRecordLayout::new(vec![Field::named(
+                    "Items",
+                    Kind::FixedArray {
+                        element: Box::new(Kind::Record(Arc::clone(&inner_layout))),
+                        bounds: bounds(-1, 2),
+                    },
+                )])
+                .expect("fixed nested-record array layout"),
+            );
+            let fixed_replacement = Variant::from_safearray(SafeArray::from_variants(vec![
+                Variant::from_vba_record(owned_inner_record(&inner_layout, "new zero", 42)),
+                Variant::from_vba_record(owned_inner_record(&inner_layout, "new one", 43)),
+            ]));
+            assert_injected_field_write_sweep(
+                "fixed array of Record",
+                || {
+                    let mut target =
+                        VbaRecord::new_default(Arc::clone(&fixed_layout)).expect("target");
+                    target
+                        .write_array_field_element(
+                            0,
+                            0,
+                            &Variant::from_vba_record(owned_inner_record(
+                                &inner_layout,
+                                "old zero",
+                                40,
+                            )),
+                        )
+                        .expect("old fixed element zero");
+                    target
+                        .write_array_field_element(
+                            0,
+                            1,
+                            &Variant::from_vba_record(owned_inner_record(
+                                &inner_layout,
+                                "old one",
+                                41,
+                            )),
+                        )
+                        .expect("old fixed element one");
+                    target
+                },
+                0,
+                &fixed_replacement,
+                |target| {
+                    assert_record_variant(
+                        &target
+                            .read_array_field_element(0, 0)
+                            .expect("old fixed read")
+                            .expect("old fixed zero"),
+                        "old zero",
+                        40,
+                    );
+                    assert_record_variant(
+                        &target
+                            .read_array_field_element(0, 1)
+                            .expect("old fixed read")
+                            .expect("old fixed one"),
+                        "old one",
+                        41,
+                    );
+                },
+                |target| {
+                    assert_record_variant(
+                        &target
+                            .read_array_field_element(0, 0)
+                            .expect("new fixed read")
+                            .expect("new fixed zero"),
+                        "new zero",
+                        42,
+                    );
+                    assert_record_variant(
+                        &target
+                            .read_array_field_element(0, 1)
+                            .expect("new fixed read")
+                            .expect("new fixed one"),
+                        "new one",
+                        43,
+                    );
+                },
+            );
+
+            let raw_layout = Arc::new(
+                VbaRecordLayout::new(vec![
+                    Field::named("Text", Kind::String),
+                    Field::named("Value", Kind::Variant),
+                    Field::named("Nested", Kind::Record(Arc::clone(&inner_layout))),
+                    Field::named(
+                        "Items",
+                        Kind::FixedArray {
+                            element: Box::new(Kind::Record(Arc::clone(&inner_layout))),
+                            bounds: bounds(0, 2),
+                        },
+                    ),
+                ])
+                .expect("raw clone layout"),
+            );
+            let mut source = VbaRecord::new_default(Arc::clone(&raw_layout)).expect("raw source");
+            source
+                .write_field_variant(0, &Variant::from_string("raw text"))
+                .expect("raw String");
+            source
+                .write_field_variant(
+                    1,
+                    &Variant::from_safearray(SafeArray::from_variants(vec![
+                        Variant::from_string("raw payload"),
+                        Variant::from_object_ref(ObjectRef::from_compat_identity(51)),
+                    ])),
+                )
+                .expect("raw Variant");
+            source
+                .write_field_variant(
+                    2,
+                    &Variant::from_vba_record(owned_inner_record(&inner_layout, "raw nested", 52)),
+                )
+                .expect("raw nested");
+            source
+                .write_field_variant(
+                    3,
+                    &Variant::from_safearray(SafeArray::from_variants(vec![
+                        Variant::from_vba_record(owned_inner_record(&inner_layout, "raw zero", 53)),
+                        Variant::from_vba_record(owned_inner_record(&inner_layout, "raw one", 54)),
+                    ])),
+                )
+                .expect("raw fixed array");
+
+            let words = raw_layout.size().div_ceil(core::mem::size_of::<u64>());
+            let sentinel = 0xA5A5_A5A5_A5A5_A5A5u64;
+            let mut successful_raw = vec![sentinel; words];
+            take_owning_boundary_trace();
+            // SAFETY: `successful_raw` is aligned writable storage covering the
+            // complete record layout and is uninitialized from the record's view.
+            unsafe { source.clone_into_raw(successful_raw.as_mut_ptr().cast()) }
+                .expect("uninjected raw clone");
+            let raw_success_trace = take_owning_boundary_trace();
+            assert!(!raw_success_trace.is_empty());
+            // SAFETY: the preceding clone fully initialized this same-layout raw slot.
+            let cloned = unsafe {
+                VbaRecord::clone_from_raw(successful_raw.as_ptr().cast(), Arc::clone(&raw_layout))
+            }
+            .expect("materialize successful raw clone");
+            assert_eq!(
+                cloned
+                    .read_field_variant(0)
+                    .expect("raw String read")
+                    .as_bstr()
+                    .expect("raw String")
+                    .as_str(),
+                "raw text"
+            );
+            assert_record_variant(
+                &cloned.read_field_variant(2).expect("raw nested read"),
+                "raw nested",
+                52,
+            );
+            assert_record_variant(
+                &cloned
+                    .read_array_field_element(3, 1)
+                    .expect("raw fixed read")
+                    .expect("raw fixed one"),
+                "raw one",
+                54,
+            );
+            drop(cloned);
+            // SAFETY: successful_raw contains one live raw record and is dropped once.
+            unsafe { VbaRecord::drop_raw(successful_raw.as_mut_ptr().cast(), &raw_layout) };
+
+            for mode in [OwningFailureMode::Error, OwningFailureMode::Panic] {
+                for nth in 0..raw_success_trace.len() {
+                    let mut raw = vec![sentinel; words];
+                    let before = raw.clone();
+                    inject_owning_boundary_failure(nth, mode);
+                    let outcome = catch_unwind(AssertUnwindSafe(|| {
+                        // SAFETY: raw is aligned writable storage of sufficient extent.
+                        unsafe { source.clone_into_raw(raw.as_mut_ptr().cast()) }
+                    }));
+                    clear_owning_boundary_failure();
+                    let failure_trace = take_owning_boundary_trace();
+                    assert_eq!(failure_trace.as_slice(), &raw_success_trace[..=nth]);
+                    match (mode, outcome) {
+                        (OwningFailureMode::Error, Ok(Err(error))) => assert!(
+                            error.contains("injected owning clone/allocation failure"),
+                            "unexpected raw-clone error: {error}"
+                        ),
+                        (OwningFailureMode::Error, Err(_)) => {
+                            panic!("injected raw-clone error unexpectedly unwound")
+                        }
+                        (OwningFailureMode::Panic, Err(_)) => {}
+                        (OwningFailureMode::Error, Ok(Ok(()))) => {
+                            panic!("injected raw-clone error unexpectedly committed")
+                        }
+                        (OwningFailureMode::Panic, Ok(result)) => {
+                            panic!("injected raw-clone panic did not unwind: {result:?}")
+                        }
+                    }
+                    assert_eq!(
+                        raw, before,
+                        "partial raw construction escaped after {mode:?} boundary {nth}"
+                    );
+                }
+            }
+        }
+        clear_owning_boundary_failure();
+        take_owning_boundary_trace();
+        let after_buffers = record_buffer_events();
+        assert_eq!(
+            after_buffers.0 - before_buffers.0,
+            after_buffers.1 - before_buffers.1,
+            "all successful, error, and unwind paths must balance record owners"
+        );
     }
 
     #[test]
