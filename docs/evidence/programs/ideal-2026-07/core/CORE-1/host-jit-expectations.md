@@ -4,7 +4,7 @@ Date: 2026-07-11
 Bead: `bd-59co.2.2.7`
 Base: `dd413a1b1adbc4a5baf55a0400eccbdc99eb0a2d`
 Matrix route: `CORE-READINESS/CORE-BASELINE-HOST-JIT-DIAGNOSTICS`
-Clauses: `COMP-DIAG-001|HOST-HAL-001|JIT-PARITY-001|WIN-META-001|CONF-DIFF-001`
+Clauses: `COMP-DIAG-001|HOST-HAL-001|HAL-ERR-001|JIT-PARITY-001|WIN-META-001|CONF-DIFF-001`
 
 ## Result
 
@@ -20,20 +20,21 @@ message prose: host phase `Runtime`, code `RUN-E-JIT-UNSUPPORTED`, diagnostic
 phase `runtime`, severity `error`, and no VBA error number.
 
 Dynamic COM name-resolution failures now use one constructor on Windows and
-non-Windows. It emits `COM-E-DYNAMIC-NAME-UNRESOLVED` as the HAL diagnostic's
-structured `stable_code`, with `AdapterFault`, active profile,
+non-Windows. It uses `HalError::adapter_fault`, preserving the public HAL
+taxonomy as structured code `HAL-E-ADAPTER-FAULT`, with `AdapterFault`, active profile,
 `ComActivationDispatch`, `dispatch_invoke`, and no host error number as separate
-fields. Its semantic description remains:
+fields. `COM-E-DYNAMIC-NAME-UNRESOLVED` remains the semantic label in the exact
+VM-visible message:
 
 ```text
 COM-E-DYNAMIC-NAME-UNRESOLVED: dynamic member name `Visible` requires authoritative metadata resolution before COM lowering
 ```
 
-The code remains in `Err.Description` as well as the structured HAL field because
-the current VM fault transport carries the description but not the HAL diagnostic
-DTO. Centralizing the constructor removes the platform-only wording split and
-preserves the checked-in cross-platform golden bytes for this row; the snapshot
-was not changed for the `Visible` repair.
+The COM semantic label remains in `Err.Description`; it is not the structured HAL
+code. The current VM fault transport carries the description but not the HAL
+diagnostic DTO. Centralizing the constructor removes the platform-only wording
+split, preserves `HAL-ERR-001`, and preserves the checked-in cross-platform golden
+bytes for this row; the snapshot was not changed for the `Visible` repair.
 
 The repaired golden then exposed a stale `WithEvents` row. Updating that one row
 was authorized after its authority chain was confirmed:
@@ -62,9 +63,9 @@ Residuals, so this evidence does not claim cross-platform baseline completion.
    all-JIT-unavailable state. They now inspect the public structured diagnostic
    fields for the current per-shape JIT decline.
 3. Windows and non-Windows dynamic-name lowering duplicated error construction
-   and had diverged semantically. One shared constructor now owns code, fields,
-   wording, and the VM-visible description for both branches and for the Windows
-   ByRef/writeback route.
+   and had diverged semantically. One shared `HalError::adapter_fault` constructor
+   now owns the HAL taxonomy fields and the exact COM-labeled VM-visible
+   description for both branches and for the Windows ByRef/writeback route.
 4. The `WithEvents` golden row predated the accepted local-declaration legality
    check. The exact row now records the current bind error backed by the symbol,
    binder, MS-VBAL, and Excel-oracle evidence above.
@@ -73,11 +74,11 @@ Residuals, so this evidence does not claim cross-platform baseline completion.
 
 | axis | observation |
 |---|---|
-| result | JIT `New Collection` runs and returns a snapshot containing the Collection object. Native Declare remains VM3-supported and JIT-declined. Dynamic `Visible` resolution still raises; only diagnostic construction was unified. |
-| Full Err | `New Collection` succeeds and raises no runtime fault. A JIT native-Declare decline is a host `PhaseDiagnostic`, not a VBA `Err` mutation: code `RUN-E-JIT-UNSUPPORTED`, runtime/error, `vba_error_number=None`. The dynamic COM golden row remains VBA error `5`, `source="VBAProject"`, the shared description above, and `last_dll_error=0`. The compile-time `WithEvents` row retains default runtime Err state (`number=0`, empty source/description, `last_dll_error=0`). |
+| result | JIT `New Collection` runs and returns a snapshot containing the Collection object. Native Declare remains VM3-supported and JIT-declined. Dynamic `Visible` resolution still raises through structured HAL code `HAL-E-ADAPTER-FAULT` with the exact COM-labeled message; only diagnostic construction was unified. |
+| Full Err | `New Collection` succeeds and raises no runtime fault. A JIT native-Declare decline is a host `PhaseDiagnostic`, not a VBA `Err` mutation: code `RUN-E-JIT-UNSUPPORTED`, runtime/error, `vba_error_number=None`. The dynamic COM golden row remains VBA error `5`, `source="VBAProject"`, the shared `COM-E-DYNAMIC-NAME-UNRESOLVED` description above, and `last_dll_error=0`; the underlying `HAL-E-ADAPTER-FAULT` code is structured at the HAL boundary and is not a VBA Err field. The compile-time `WithEvents` row retains default runtime Err state (`number=0`, empty source/description, `last_dll_error=0`). |
 | side effects | The Collection probe creates only the local runtime object. JIT native-Declare decline happens before DLL invocation. All 14 Windows native tests and all 19 Windows string/pointer tests still ran their bounded VM3 native paths and cleanup. The COM repair changes error construction after metadata lookup fails; it does not add dispatch or activation. |
 | lifecycle/order | Collection creation precedes snapshot capture and the captured Variant owns the object until snapshot drop. Native JIT rejection occurs during target acceptance before generated execution or VM fallback. VM3 native neighboring tests retain their allocate/call/writeback/free ordering. Dynamic-name resolution tries the platform metadata route, then constructs the shared failure before COM lowering. |
-| transport | Collection uses the JIT/runtime Collection route. Native VM3 tests use `DynamicLinkHal`; JIT returns a structured host diagnostic with no VM3 transport. Dynamic COM starts from the same `DynamicCallRequest`; Windows and non-Windows resolution branches converge on the shared diagnostic constructor, and `Fault::from_hal` projects its description to VBA Err. |
+| transport | Collection uses the JIT/runtime Collection route. Native VM3 tests use `DynamicLinkHal`; JIT returns a structured host diagnostic with no VM3 transport. Dynamic COM starts from the same `DynamicCallRequest`; Windows and non-Windows resolution branches converge on `HalError::adapter_fault` (`HAL-E-ADAPTER-FAULT`), and `Fault::from_hal` projects the exact COM-labeled description to VBA Err. |
 | balance | This bead added no balance instrumentation and makes no new carrier-balance claim. The diagnostic helper allocates only its owned message. The Collection snapshot object is released normally on drop. The accepted policy-error BSTR repair at the base allowed the golden run to advance past its former balance failure, but the later parse-offset drift prevents a full golden/balance completion claim here. |
 
 ## Checks
@@ -96,7 +97,7 @@ cargo test -p oxvba-host --test native_declare_string_marshalling_end_to_end
 PASS: 19/19 Windows tests; no skip. Real native string/pointer/writeback coverage remained active and every JIT leg asserted structured decline fields.
 
 cargo test -p oxvba-hal dynamic_member_name_unresolved_diagnostic_is_stable -- --nocapture
-PASS: 1 named test; stable code, kind, profile, capability, operation, host-error field, wording, and diagnostic metadata.
+PASS: 1 named test; `HAL-E-ADAPTER-FAULT`, kind, profile, capability, operation, host-error field, exact `COM-E-DYNAMIC-NAME-UNRESOLVED` message, and diagnostic metadata.
 
 cargo test -p oxvba-hal
 PASS: 159/159 unit tests plus HAL binary/doc-test targets; includes Windows dynamic-name, native COM, typelib, event, and conformance neighbors.
@@ -143,10 +144,11 @@ BLOCKED OUTSIDE THIS BEAD: after the `Visible` repair and the one authorized sta
 - Broad strict Clippy remains independently blocked by the existing
   `oxvba-bundle` `CoreLongPtrWidth` derivable-default finding. Focused strict
   Clippy for the touched HAL and host crates is green.
-- The shared COM code is now structured at the HAL boundary, but VM execution
-  still carries the code inside `Err.Description` because `Fault::from_hal`
-  does not transport the diagnostic DTO. Removing that duplication would be a
-  broader runtime-diagnostic transport change and is not claimed here.
+- The shared public HAL code is `HAL-E-ADAPTER-FAULT`. VM execution carries the
+  semantic `COM-E-DYNAMIC-NAME-UNRESOLVED` label inside `Err.Description` because
+  `Fault::from_hal` does not transport the diagnostic DTO. Adding a distinct
+  structured COM subcode field would be a broader versioned diagnostic-transport
+  change and is not claimed here.
 - No residual public diagnostic conflict remains for the touched Collection,
   native-Declare, dynamic COM-name, or local-WithEvents expectations. The later
   parse-offset drift is explicitly unresolved rather than silently blessed.
