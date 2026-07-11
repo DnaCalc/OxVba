@@ -414,7 +414,7 @@ function Get-IdealExecutionMode {
         throw "ideal-program: missing execution control $AutorunPath"
     }
     $text = Get-Content -LiteralPath $autorunAbs -Raw
-    $match = [regex]::Match($text, '(?im)^Mode:\s*(?<mode>[^\r\n]+)$')
+    $match = [regex]::Match($text, '(?im)^Mode:[ \t]*(?<mode>[^\r\n]+)\r?$')
     if (-not $match.Success) {
         throw "ideal-program: execution control has no Mode field"
     }

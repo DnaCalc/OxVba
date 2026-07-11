@@ -30,6 +30,9 @@ try {
     Write-Host "[governance] validation-ownership"
     & "$PSScriptRoot/validate-validation-ownership.ps1"
 
+    Write-Host "[governance] windows-x64-control-surfaces"
+    & "$PSScriptRoot/validate-windows-x64-control-surfaces.ps1"
+
     Write-Host "[governance] contract-clause-disposition"
     & "$PSScriptRoot/validate-contract-clause-disposition.ps1"
 

@@ -13,6 +13,7 @@ try {
 
     & "$PSScriptRoot/validate-active-program-sync.ps1"
     & "$PSScriptRoot/validate-validation-ownership.ps1"
+    & "$PSScriptRoot/validate-windows-x64-control-surfaces.ps1"
     & "$PSScriptRoot/validate-contract-clause-disposition.ps1"
     & "$PSScriptRoot/validate-environment-manifest.ps1"
     & "$PSScriptRoot/validate-ideal-legacy-migration.ps1"

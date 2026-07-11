@@ -33,7 +33,7 @@ try {
             throw "profile-artifact-scope: missing $AutorunPath"
         }
         $autorunText = Get-Content -LiteralPath $autorunAbs -Raw
-        $modeMatch = [regex]::Match($autorunText, '(?im)^Mode:\s*([^\r\n]+)$')
+        $modeMatch = [regex]::Match($autorunText, '(?im)^Mode:[ \t]*([^\r\n]+)\r?$')
         if (-not $modeMatch.Success) {
             throw "profile-artifact-scope: unable to parse mode from $AutorunPath"
         }
