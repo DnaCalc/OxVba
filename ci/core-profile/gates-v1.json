@@ -11,11 +11,20 @@
     "no_artifact_root": "temp/no-artifacts/core-profile-gates",
     "plan_path": "plan.json",
     "run_manifest_path": "run-manifest.json",
+    "run_manifest_digest_path": "run-manifest.sha256",
     "summary_path": "summary.txt"
   },
   "cargo_lock": {
     "name_prefix": "oxvba-core-profile-cargo-v1",
     "acquire_timeout_seconds": 600
+  },
+  "supervision": {
+    "cleanup_reserve_ms": 500,
+    "native_source_path": "scripts/core-gate-process-supervisor.cs",
+    "windows_transport": "job-object-v1:suspended-assign-resume;kill-on-close;owned-file-stdout-stderr",
+    "linux_launcher_path": "/usr/bin/setsid",
+    "linux_supervisor_path": "scripts/core-gate-linux-supervisor.sh",
+    "linux_transport": "setsid-process-group-v1:term-kill;owned-file-stdout-stderr"
   },
   "gates": [
     {

@@ -14,7 +14,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 $utf8 = [Text.UTF8Encoding]::new($false, $true)
 
 function Get-Sha256Hex {
-    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][byte[]]$Bytes)
 
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
@@ -235,13 +235,325 @@ function Assert-NoReparseAncestor {
     }
 }
 
-function Get-CurrentPlatformId {
-    if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64) {
-        throw "core-profile-gates: only x64 execution is supported"
+function Assert-NoReparsePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Target,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    $resolvedRoot = [IO.Path]::GetFullPath($Root)
+    $resolvedTarget = [IO.Path]::GetFullPath($Target)
+    $rootAnchor = [IO.Path]::GetPathRoot($resolvedRoot)
+    $currentAncestor = $rootAnchor
+    $rootRemainder = $resolvedRoot.Substring($rootAnchor.Length)
+    foreach ($segment in $rootRemainder.Split(@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar), [StringSplitOptions]::RemoveEmptyEntries)) {
+        $currentAncestor = Join-Path $currentAncestor $segment
+        if ((Get-Item -LiteralPath $currentAncestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "core-profile-gates: $Owner traverses a reparse/symlink repository ancestor: $currentAncestor"
+        }
     }
-    if ($IsWindows) { return "windows-x64" }
-    if ($IsLinux) { return "linux-x64" }
-    throw "core-profile-gates: unsupported operating system; expected Windows x64 or Linux x64"
+    $relative = [IO.Path]::GetRelativePath($resolvedRoot, $resolvedTarget)
+    $current = $resolvedRoot
+    foreach ($segment in $relative.Split([IO.Path]::DirectorySeparatorChar, [StringSplitOptions]::RemoveEmptyEntries)) {
+        $current = Join-Path $current $segment
+        if (Test-Path -LiteralPath $current) {
+            if (((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "core-profile-gates: $Owner traverses a reparse/symlink path: $current"
+            }
+        }
+    }
+}
+
+function Get-ArchitectureIdentity {
+    $osArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+    $processArchitecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
+    $is64BitProcess = [Environment]::Is64BitProcess
+    $injected = [Environment]::GetEnvironmentVariable("OXVBA_CORE_GATE_TEST_FORCE_PROCESS_ARCH")
+    if (-not [string]::IsNullOrWhiteSpace($injected)) {
+        if ($injected -cne "x86") {
+            throw "core-profile-gates: unsupported architecture-test injection '$injected'"
+        }
+        $processArchitecture = "x86"
+        $is64BitProcess = $false
+    }
+    if ($osArchitecture -cne "x64" -or $processArchitecture -cne "x64" -or -not $is64BitProcess) {
+        throw "core-profile-gates: execution requires OSArchitecture=x64, ProcessArchitecture=x64 and Is64BitProcess=true; found os=$osArchitecture process=$processArchitecture is64=$is64BitProcess"
+    }
+    $platform = if ($IsWindows) { "windows-x64" } elseif ($IsLinux) { "linux-x64" } else { "" }
+    if ([string]::IsNullOrEmpty($platform)) {
+        throw "core-profile-gates: unsupported operating system; expected Windows x64 or Linux x64"
+    }
+    return [pscustomobject][ordered]@{
+        platform = $platform
+        os_architecture = $osArchitecture
+        process_architecture = $processArchitecture
+        is_64_bit_process = $is64BitProcess
+    }
+}
+
+function Get-CurrentPlatformId {
+    $identity = Get-ArchitectureIdentity
+    if ($null -eq $identity) {
+        throw "core-profile-gates: architecture identity unavailable"
+    }
+    return [string]$identity.platform
+}
+
+function Get-RawFileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    return Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Path))
+}
+
+function Get-LinkTargetText {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $item = Get-Item -LiteralPath $Path -Force
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) { return "" }
+    return (@($item.Target) | ForEach-Object { [string]$_ }) -join '|'
+}
+
+function Assert-ExactFileIdentity {
+    param(
+        [Parameter(Mandatory = $true)]$Identity,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    if (-not (Test-Path -LiteralPath ([string]$Identity.path) -PathType Leaf)) {
+        throw "core-profile-gates: $Owner disappeared: $($Identity.path)"
+    }
+    $hash = Get-RawFileSha256 -Path ([string]$Identity.path)
+    $linkTarget = Get-LinkTargetText -Path ([string]$Identity.path)
+    if ($hash -cne [string]$Identity.sha256 -or $linkTarget -cne [string]$Identity.link_target) {
+        throw "core-profile-gates: $Owner identity changed: $($Identity.path)"
+    }
+}
+
+function Invoke-BoundedCapture {
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $process = [Diagnostics.Process]::new()
+    try {
+        $startInfo = [Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $Executable
+        $startInfo.WorkingDirectory = $WorkingDirectory
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $startInfo.StandardOutputEncoding = $utf8
+        $startInfo.StandardErrorEncoding = $utf8
+        foreach ($argument in $Arguments) { [void]$startInfo.ArgumentList.Add($argument) }
+        $process.StartInfo = $startInfo
+        if (-not $process.Start()) { throw "could not start '$Executable'" }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            try { $process.Kill($true) } catch {}
+            try { $process.WaitForExit() } catch {}
+            throw "tool probe exceeded $TimeoutSeconds seconds: $Executable"
+        }
+        $process.WaitForExit()
+        $stdout = [string]$stdoutTask.GetAwaiter().GetResult()
+        $stderr = [string]$stderrTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) {
+            throw "tool command failed ($($process.ExitCode)): $Executable $($Arguments -join ' '): $stderr"
+        }
+        return [pscustomobject]@{ stdout = $stdout; stderr = $stderr; exit_code = [int]$process.ExitCode }
+    }
+    finally { $process.Dispose() }
+}
+
+function Resolve-ExactApplicationIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$RepoRoot
+    )
+
+    $absolute = [IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $absolute -PathType Leaf)) {
+        throw "core-profile-gates: required tool '$Id' is unavailable at '$absolute'"
+    }
+    return [pscustomobject][ordered]@{
+        id = $Id
+        path = $absolute
+        sha256 = Get-RawFileSha256 -Path $absolute
+        version = $Version.Trim()
+        link_target = Get-LinkTargetText -Path $absolute
+    }
+}
+
+function Get-ToolIdentities {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)]$Manifest,
+        [Parameter(Mandatory = $true)][string]$Platform
+    )
+
+    $pwshPath = [Environment]::ProcessPath
+    if ([string]::IsNullOrWhiteSpace($pwshPath) -or [IO.Path]::GetFileNameWithoutExtension($pwshPath) -cne "pwsh") {
+        throw "core-profile-gates: runner must execute under exact PowerShell Core pwsh"
+    }
+    $gitCommand = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $cargoCommand = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $gitCommand) { throw "core-profile-gates: required tool 'git' is unavailable" }
+    if ($null -eq $cargoCommand) { throw "core-profile-gates: required tool 'cargo' is unavailable" }
+    $gitVersion = (Invoke-BoundedCapture -Executable ([string]$gitCommand.Source) -Arguments @("--version") -WorkingDirectory $RepoRoot).stdout.Trim()
+    $cargoVersion = (Invoke-BoundedCapture -Executable ([string]$cargoCommand.Source) -Arguments @("--version", "--verbose") -WorkingDirectory $RepoRoot).stdout.Trim()
+    $identities = @(
+        (Resolve-ExactApplicationIdentity -Id "git" -Path ([string]$gitCommand.Source) -Version $gitVersion -RepoRoot $RepoRoot),
+        (Resolve-ExactApplicationIdentity -Id "pwsh" -Path $pwshPath -Version $PSVersionTable.PSVersion.ToString() -RepoRoot $RepoRoot),
+        (Resolve-ExactApplicationIdentity -Id "cargo" -Path ([string]$cargoCommand.Source) -Version $cargoVersion -RepoRoot $RepoRoot)
+    )
+    if ($Platform -ceq "linux-x64") {
+        $setsidPath = [string]$Manifest.supervision.linux_launcher_path
+        $setsidVersion = (Invoke-BoundedCapture -Executable $setsidPath -Arguments @("--version") -WorkingDirectory $RepoRoot).stdout.Trim()
+        $identities += Resolve-ExactApplicationIdentity -Id "setsid" -Path $setsidPath -Version $setsidVersion -RepoRoot $RepoRoot
+    }
+    return @($identities)
+}
+
+function Assert-ToolIdentities {
+    param([Parameter(Mandatory = $true)][object[]]$Tools)
+
+    foreach ($tool in $Tools) { Assert-ExactFileIdentity -Identity $tool -Owner "tool '$($tool.id)'" }
+}
+
+function Get-ToolIdentityById {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Tools,
+        [Parameter(Mandatory = $true)][string]$Id
+    )
+
+    $rows = @($Tools | Where-Object { [string]$_.id -ceq $Id })
+    if ($rows.Count -ne 1) { throw "core-profile-gates: exact tool identity '$Id' is unavailable" }
+    return $rows[0]
+}
+
+function Invoke-ExactGit {
+    param(
+        [Parameter(Mandatory = $true)]$Git,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    Assert-ExactFileIdentity -Identity $Git -Owner "Git tool"
+    return (Invoke-BoundedCapture -Executable ([string]$Git.path) -Arguments $Arguments -WorkingDirectory $RepoRoot).stdout.TrimEnd("`r", "`n")
+}
+
+function Get-SourceIdentity {
+    param(
+        [Parameter(Mandatory = $true)]$Git,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string[]]$RequiredTrackedPaths
+    )
+
+    $head = Invoke-ExactGit -Git $Git -RepoRoot $RepoRoot -Arguments @("rev-parse", "--verify", "HEAD")
+    $tree = Invoke-ExactGit -Git $Git -RepoRoot $RepoRoot -Arguments @("rev-parse", "HEAD^{tree}")
+    $status = Invoke-ExactGit -Git $Git -RepoRoot $RepoRoot -Arguments @("--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all")
+    if (-not [string]::IsNullOrEmpty($status)) {
+        throw "core-profile-gates: source checkout must be clean with no staged, working or untracked drift"
+    }
+    foreach ($path in $RequiredTrackedPaths) {
+        [void](Invoke-ExactGit -Git $Git -RepoRoot $RepoRoot -Arguments @("ls-files", "--error-unmatch", "--", $path))
+    }
+    return [pscustomobject][ordered]@{ head = $head; tree = $tree; status = "clean" }
+}
+
+function Assert-SourceIdentity {
+    param(
+        [Parameter(Mandatory = $true)]$Expected,
+        [Parameter(Mandatory = $true)]$Git,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string[]]$RequiredTrackedPaths
+    )
+
+    $actual = Get-SourceIdentity -Git $Git -RepoRoot $RepoRoot -RequiredTrackedPaths $RequiredTrackedPaths
+    if ([string]$actual.head -cne [string]$Expected.head -or [string]$actual.tree -cne [string]$Expected.tree) {
+        throw "core-profile-gates: committed source HEAD/tree changed during execution"
+    }
+}
+
+function Get-CommandFileIdentities {
+    param(
+        [Parameter(Mandatory = $true)]$Manifest,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][string]$RunnerPath
+    )
+
+    $relativePaths = @(
+        [IO.Path]::GetRelativePath($RepoRoot, $RunnerPath).Replace('\', '/'),
+        [IO.Path]::GetRelativePath($RepoRoot, $ManifestPath).Replace('\', '/'),
+        [string]$Manifest.supervision.native_source_path,
+        [string]$Manifest.supervision.linux_supervisor_path
+    )
+    foreach ($gate in @($Manifest.gates)) {
+        if ([string]$gate.kind -ceq "powershell") { $relativePaths += [string]$gate.command }
+    }
+    $identities = @()
+    foreach ($relativePath in @($relativePaths | Select-Object -Unique)) {
+        $absolute = Resolve-RepoRelativePath -Root $RepoRoot -Path $relativePath -Owner "command/source identity"
+        if (-not (Test-Path -LiteralPath $absolute -PathType Leaf)) {
+            throw "core-profile-gates: tracked command/source file is missing: $relativePath"
+        }
+        Assert-NoReparsePath -Root $RepoRoot -Target $absolute -Owner "command/source '$relativePath'"
+        $identities += [pscustomobject][ordered]@{
+            path = $relativePath
+            absolute_path = $absolute
+            sha256 = Get-RawFileSha256 -Path $absolute
+            link_target = Get-LinkTargetText -Path $absolute
+        }
+    }
+    return @($identities)
+}
+
+function Assert-CommandFileIdentities {
+    param([Parameter(Mandatory = $true)][object[]]$Commands)
+
+    foreach ($command in $Commands) {
+        Assert-ExactFileIdentity -Identity ([pscustomobject]@{
+                path = [string]$command.absolute_path
+                sha256 = [string]$command.sha256
+                link_target = [string]$command.link_target
+            }) -Owner "command/source '$($command.path)'"
+    }
+}
+
+function Get-CommandFileIdentityByPath {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Commands,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $rows = @($Commands | Where-Object { [string]$_.path -ceq $Path })
+    if ($rows.Count -ne 1) { throw "core-profile-gates: command identity is unavailable for '$Path'" }
+    return $rows[0]
+}
+
+function Assert-ExecutionInputs {
+    param(
+        [Parameter(Mandatory = $true)]$Source,
+        [Parameter(Mandatory = $true)]$Git,
+        [Parameter(Mandatory = $true)][object[]]$Tools,
+        [Parameter(Mandatory = $true)][object[]]$Commands,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string[]]$RequiredTrackedPaths,
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][string]$ManifestSha256
+    )
+
+    Assert-SourceIdentity -Expected $Source -Git $Git -RepoRoot $RepoRoot -RequiredTrackedPaths $RequiredTrackedPaths
+    Assert-ToolIdentities -Tools $Tools
+    Assert-CommandFileIdentities -Commands $Commands
+    Assert-ManifestUnchanged -Path $ManifestPath -ExpectedSha256 $ManifestSha256
 }
 
 function Test-ForbiddenMutationSurface {
@@ -282,7 +594,7 @@ function Assert-Manifest {
 
     Assert-ExactKeys $Manifest @(
         "schema_id", "plan_id", "version", "profile", "supported_platforms", "evidence",
-        "cargo_lock", "gates"
+        "cargo_lock", "supervision", "gates"
     ) "manifest"
     Assert-ExactString $Manifest.schema_id "oxvba-core-profile-gate-plan-v1" "manifest.schema_id"
     Assert-ExactString $Manifest.plan_id "core-profile-portable-gates-v1" "manifest.plan_id"
@@ -301,11 +613,12 @@ function Assert-Manifest {
     }
 
     Assert-ExactKeys $Manifest.evidence @(
-        "no_artifact_root", "plan_path", "run_manifest_path", "summary_path"
+        "no_artifact_root", "plan_path", "run_manifest_path", "run_manifest_digest_path", "summary_path"
     ) "manifest.evidence"
     Assert-ExactString $Manifest.evidence.no_artifact_root "temp/no-artifacts/core-profile-gates" "manifest.evidence.no_artifact_root"
     Assert-ExactString $Manifest.evidence.plan_path "plan.json" "manifest.evidence.plan_path"
     Assert-ExactString $Manifest.evidence.run_manifest_path "run-manifest.json" "manifest.evidence.run_manifest_path"
+    Assert-ExactString $Manifest.evidence.run_manifest_digest_path "run-manifest.sha256" "manifest.evidence.run_manifest_digest_path"
     Assert-ExactString $Manifest.evidence.summary_path "summary.txt" "manifest.evidence.summary_path"
 
     Assert-ExactKeys $Manifest.cargo_lock @("name_prefix", "acquire_timeout_seconds") "manifest.cargo_lock"
@@ -315,6 +628,29 @@ function Assert-Manifest {
         [int64]$Manifest.cargo_lock.acquire_timeout_seconds -lt 1 -or
         [int64]$Manifest.cargo_lock.acquire_timeout_seconds -gt 3600) {
         throw "core-profile-gates: manifest.cargo_lock.acquire_timeout_seconds must be an integer from 1 through 3600"
+    }
+
+    Assert-ExactKeys $Manifest.supervision @(
+        "cleanup_reserve_ms", "native_source_path", "windows_transport", "linux_launcher_path",
+        "linux_supervisor_path", "linux_transport"
+    ) "manifest.supervision"
+    if (($Manifest.supervision.cleanup_reserve_ms -isnot [int] -and
+            $Manifest.supervision.cleanup_reserve_ms -isnot [long]) -or
+        [int64]$Manifest.supervision.cleanup_reserve_ms -lt 100 -or
+        [int64]$Manifest.supervision.cleanup_reserve_ms -gt 2000) {
+        throw "core-profile-gates: manifest.supervision.cleanup_reserve_ms must be an integer from 100 through 2000"
+    }
+    Assert-ExactString $Manifest.supervision.native_source_path "scripts/core-gate-process-supervisor.cs" "manifest.supervision.native_source_path"
+    Assert-ExactString $Manifest.supervision.windows_transport "job-object-v1:suspended-assign-resume;kill-on-close;owned-file-stdout-stderr" "manifest.supervision.windows_transport"
+    Assert-ExactString $Manifest.supervision.linux_launcher_path "/usr/bin/setsid" "manifest.supervision.linux_launcher_path"
+    Assert-ExactString $Manifest.supervision.linux_supervisor_path "scripts/core-gate-linux-supervisor.sh" "manifest.supervision.linux_supervisor_path"
+    Assert-ExactString $Manifest.supervision.linux_transport "setsid-process-group-v1:term-kill;owned-file-stdout-stderr" "manifest.supervision.linux_transport"
+    foreach ($supervisorPath in @($Manifest.supervision.native_source_path, $Manifest.supervision.linux_supervisor_path)) {
+        $supervisorAbsolute = Resolve-RepoRelativePath -Root $RepoRoot -Path ([string]$supervisorPath) -Owner "manifest.supervision path"
+        if (-not (Test-Path -LiteralPath $supervisorAbsolute -PathType Leaf)) {
+            throw "core-profile-gates: manifest supervision source is missing: $supervisorPath"
+        }
+        Assert-NoReparsePath -Root $RepoRoot -Target $supervisorAbsolute -Owner "manifest supervision source"
     }
 
     $gates = @($Manifest.gates)
@@ -372,6 +708,7 @@ function Assert-Manifest {
             if (-not (Test-Path -LiteralPath $commandAbs -PathType Leaf)) {
                 throw "core-profile-gates: $owner.command is missing: $commandText"
             }
+            Assert-NoReparsePath -Root $RepoRoot -Target $commandAbs -Owner "$owner.command"
         }
         elseif ([string]$gate.command -cne "cargo") {
             throw "core-profile-gates: $owner.command must be exact executable 'cargo' for a cargo gate"
@@ -492,8 +829,30 @@ function Write-JsonUtf8 {
         [Parameter(Mandatory = $true)]$Value
     )
 
-    $json = ConvertTo-Json -InputObject $Value -Depth 40
-    [IO.File]::WriteAllText($Path, $json + "`n", $utf8)
+    [IO.File]::WriteAllText($Path, (Get-StableJsonText -Value $Value), $utf8)
+}
+
+function Get-StableJsonText {
+    param([Parameter(Mandatory = $true)]$Value)
+
+    return (ConvertTo-Json -InputObject $Value -Depth 60) + "`n"
+}
+
+function Assert-ExactTextFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Expected,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "core-profile-gates: $Owner is missing: $Path"
+    }
+    [byte[]]$actual = [IO.File]::ReadAllBytes($Path)
+    [byte[]]$expected = $utf8.GetBytes($Expected)
+    if (-not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($actual, $expected)) {
+        throw "core-profile-gates: $Owner bytes differ from immutable in-memory evidence"
+    }
 }
 
 function Get-CargoMutexName {
@@ -511,28 +870,253 @@ function Get-CargoMutexName {
 function Resolve-GateProcess {
     param(
         [Parameter(Mandatory = $true)]$Gate,
-        [Parameter(Mandatory = $true)][string]$RepoRoot
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][object[]]$Tools
     )
 
     if ([string]$Gate.kind -ceq "powershell") {
-        $pwshPath = [Environment]::ProcessPath
-        $pwshName = if ([string]::IsNullOrWhiteSpace($pwshPath)) { "" } else { [IO.Path]::GetFileNameWithoutExtension($pwshPath) }
-        if ([string]::IsNullOrWhiteSpace($pwshPath) -or $pwshName -cne "pwsh" -or
-            -not (Test-Path -LiteralPath $pwshPath -PathType Leaf)) {
-            throw "core-profile-gates: the runner must execute under the PowerShell Core 'pwsh' host"
-        }
+        $pwsh = Get-ToolIdentityById -Tools $Tools -Id "pwsh"
         $scriptPath = Resolve-RepoRelativePath -Root $RepoRoot -Path ([string]$Gate.command) -Owner "gate $($Gate.id) command"
         $arguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $scriptPath) +
             @($Gate.arguments | ForEach-Object { [string]$_ })
-        return [pscustomobject]@{ executable = $pwshPath; arguments = $arguments }
+        return [pscustomobject]@{ executable = [string]$pwsh.path; arguments = $arguments; tool_id = "pwsh" }
     }
-    $cargo = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $cargo) {
-        throw "core-profile-gates: required tool 'cargo' is unavailable"
-    }
+    $cargo = Get-ToolIdentityById -Tools $Tools -Id "cargo"
     return [pscustomobject]@{
-        executable = [string]$cargo.Source
+        executable = [string]$cargo.path
         arguments = @($Gate.arguments | ForEach-Object { [string]$_ })
+        tool_id = "cargo"
+    }
+}
+
+function New-ChildEnvironment {
+    param(
+        [Parameter(Mandatory = $true)]$Gate,
+        [Parameter(Mandatory = $true)][object[]]$Tools,
+        [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+        [Parameter(Mandatory = $true)][string]$PlanPath,
+        [Parameter(Mandatory = $true)][string]$PlanSha256,
+        [Parameter(Mandatory = $true)][string]$ManifestSha256,
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][string]$RunId
+    )
+
+    $comparison = if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }
+    $environment = [Collections.Generic.Dictionary[string, string]]::new($comparison)
+    foreach ($entry in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
+        $name = [string]$entry.Key
+        if ($name -cmatch '^OXVBA_CORE_GATE_' -or (Test-HostileInheritedEnvironmentName -Name $name)) { continue }
+        $environment[$name] = [string]$entry.Value
+    }
+    foreach ($environmentEntry in @($Gate.environment)) {
+        if ([string]$environmentEntry.action -ceq "remove") {
+            [void]$environment.Remove([string]$environmentEntry.name)
+        }
+        else {
+            $environment[[string]$environmentEntry.name] = [string]$environmentEntry.value
+        }
+    }
+    $toolDirectories = @($Tools | ForEach-Object { Split-Path -Parent ([string]$_.path) } | Select-Object -Unique)
+    $inheritedPath = if ($environment.ContainsKey("PATH")) { [string]$environment["PATH"] } else { "" }
+    $pathSeparator = [IO.Path]::PathSeparator
+    $environment["PATH"] = (@($toolDirectories) + @($inheritedPath -split [regex]::Escape([string]$pathSeparator) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) -join $pathSeparator
+    $environment["OXVBA_CORE_GATE_RUN_ID"] = $RunId
+    $environment["OXVBA_CORE_GATE_ID"] = [string]$Gate.id
+    $environment["OXVBA_CORE_GATE_EVIDENCE_ROOT"] = $EvidenceRoot
+    $environment["OXVBA_CORE_GATE_PLAN_PATH"] = $PlanPath
+    $environment["OXVBA_CORE_GATE_PLAN_SHA256"] = $PlanSha256
+    $environment["OXVBA_CORE_GATE_MANIFEST_SHA256"] = $ManifestSha256
+    $environment["OXVBA_CORE_GATE_MANIFEST_PATH"] = $ManifestPath
+    $environment["OXVBA_CORE_GATE_PWSH_PATH"] = [string](Get-ToolIdentityById -Tools $Tools -Id "pwsh").path
+    return $environment
+}
+
+function Invoke-WindowsOwnedProcess {
+    param(
+        [Parameter(Mandatory = $true)]$ProcessShape,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)][string]$StdoutPath,
+        [Parameter(Mandatory = $true)][string]$StderrPath,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
+        [Parameter(Mandatory = $true)][int]$CleanupReserveMs
+    )
+
+    $totalMs = $TimeoutSeconds * 1000
+    $reserveMs = [Math]::Min($CleanupReserveMs, [Math]::Max(100, [int]($totalMs / 2)))
+    $executionCutoffMs = $totalMs - $reserveMs
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $job = $null
+    $terminationReason = ""
+    $treeCleanup = "complete"
+    $exitCode = $null
+    try {
+        $job = [OxVbaCoreGateWindowsJob]::Start(
+            [string]$ProcessShape.executable,
+            [string[]]@($ProcessShape.arguments),
+            $WorkingDirectory,
+            $Environment,
+            $StdoutPath,
+            $StderrPath)
+        $directExitObservedMs = $null
+        while ($timer.ElapsedMilliseconds -lt $executionCutoffMs) {
+            $directExited = $job.DirectExited
+            $active = $job.ActiveProcesses
+            if ($directExited -and $active -eq 0) {
+                $exitCode = $job.ExitCode
+                break
+            }
+            if ($directExited) {
+                if ($null -eq $directExitObservedMs) { $directExitObservedMs = $timer.ElapsedMilliseconds }
+                elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge 100) {
+                    $exitCode = $job.ExitCode
+                    $terminationReason = "descendant-processes-remained-after-direct-exit"
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 10
+        }
+        if ($null -eq $exitCode -and [string]::IsNullOrEmpty($terminationReason)) {
+            $terminationReason = "total-deadline-exceeded"
+        }
+        if (-not [string]::IsNullOrEmpty($terminationReason)) {
+            $job.Terminate(124)
+            while ($timer.ElapsedMilliseconds -lt $totalMs) {
+                if ($job.DirectExited -and $job.ActiveProcesses -eq 0) { break }
+                Start-Sleep -Milliseconds 10
+            }
+            if (-not ($job.DirectExited -and $job.ActiveProcesses -eq 0)) {
+                $treeCleanup = "kill-on-close-forced-at-deadline"
+            }
+        }
+        elseif ($job.ActiveProcesses -ne 0) {
+            $terminationReason = "owned-process-tree-not-empty"
+            $job.Terminate(125)
+        }
+    }
+    finally {
+        if ($null -ne $job) { $job.Dispose() }
+        $timer.Stop()
+    }
+    $status = if (-not [string]::IsNullOrEmpty($terminationReason)) {
+        if ($terminationReason -ceq "total-deadline-exceeded") { "timeout" } else { "failed" }
+    }
+    elseif ($exitCode -eq 0) { "passed" } else { "failed" }
+    $reason = if (-not [string]::IsNullOrEmpty($terminationReason)) { $terminationReason } elseif ($exitCode -eq 0) { "completed" } else { "command exited with code $exitCode" }
+    return [pscustomobject]@{
+        status = $status
+        reason = $reason
+        exit_code = $exitCode
+        duration_ms = [int64]$timer.ElapsedMilliseconds
+        tree_cleanup = $treeCleanup
+        transport = "job-object-v1:suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
+        total_deadline_ms = $totalMs
+    }
+}
+
+function Invoke-LinuxOwnedProcess {
+    param(
+        [Parameter(Mandatory = $true)]$ProcessShape,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)][string]$StdoutPath,
+        [Parameter(Mandatory = $true)][string]$StderrPath,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
+        [Parameter(Mandatory = $true)][int]$CleanupReserveMs,
+        [Parameter(Mandatory = $true)][string]$SetsidPath,
+        [Parameter(Mandatory = $true)][string]$SupervisorPath
+    )
+
+    [IO.File]::WriteAllBytes($StdoutPath, [byte[]]::new(0))
+    [IO.File]::WriteAllBytes($StderrPath, [byte[]]::new(0))
+    $totalMs = $TimeoutSeconds * 1000
+    $reserveMs = [Math]::Min($CleanupReserveMs, [Math]::Max(100, [int]($totalMs / 2)))
+    $executionCutoffMs = $totalMs - $reserveMs
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $process = [Diagnostics.Process]::new()
+    $processStarted = $false
+    $processGroup = 0
+    $terminationReason = ""
+    $treeCleanup = "complete"
+    $exitCode = $null
+    try {
+        $startInfo = [Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $SetsidPath
+        $startInfo.WorkingDirectory = $WorkingDirectory
+        $startInfo.UseShellExecute = $false
+        foreach ($argument in @($SupervisorPath, $StdoutPath, $StderrPath, [string]$ProcessShape.executable) + @($ProcessShape.arguments)) {
+            [void]$startInfo.ArgumentList.Add([string]$argument)
+        }
+        $startInfo.Environment.Clear()
+        foreach ($entry in $Environment.GetEnumerator()) { $startInfo.Environment[[string]$entry.Key] = [string]$entry.Value }
+        $process.StartInfo = $startInfo
+        if (-not $process.Start()) { throw "could not start Linux gate supervisor" }
+        $processStarted = $true
+        while ($timer.ElapsedMilliseconds -lt [Math]::Min(250, $executionCutoffMs) -and $processGroup -eq 0) {
+            try {
+                $observed = [OxVbaCoreGatePosix]::GetProcessGroup($process.Id)
+                if ($observed -eq $process.Id) { $processGroup = $observed }
+            }
+            catch {
+                if (-not $process.HasExited) { throw }
+            }
+            if ($processGroup -eq 0) { Start-Sleep -Milliseconds 5 }
+        }
+        if ($processGroup -eq 0 -and -not $process.HasExited) {
+            try { $process.Kill($true) } catch {}
+            throw "setsid did not establish the exact owned process group"
+        }
+        $directExitObservedMs = $null
+        while ($timer.ElapsedMilliseconds -lt $executionCutoffMs) {
+            $directExited = $process.HasExited
+            $groupExists = if ($processGroup -eq 0) { $false } else { [OxVbaCoreGatePosix]::GroupExists($processGroup) }
+            if ($directExited -and -not $groupExists) {
+                $exitCode = [int]$process.ExitCode
+                break
+            }
+            if ($directExited -and $groupExists) {
+                if ($null -eq $directExitObservedMs) { $directExitObservedMs = $timer.ElapsedMilliseconds }
+                elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge 100) {
+                    $exitCode = [int]$process.ExitCode
+                    $terminationReason = "descendant-processes-remained-after-direct-exit"
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 10
+        }
+        if ($null -eq $exitCode -and [string]::IsNullOrEmpty($terminationReason)) { $terminationReason = "total-deadline-exceeded" }
+        if (-not [string]::IsNullOrEmpty($terminationReason) -and $processGroup -ne 0) {
+            [OxVbaCoreGatePosix]::SignalGroup($processGroup, [OxVbaCoreGatePosix]::SignalTerm)
+            $killAt = [Math]::Min($totalMs - 50, $timer.ElapsedMilliseconds + [Math]::Min(200, [int]($reserveMs / 2)))
+            while ($timer.ElapsedMilliseconds -lt $killAt -and [OxVbaCoreGatePosix]::GroupExists($processGroup)) { Start-Sleep -Milliseconds 10 }
+            if ([OxVbaCoreGatePosix]::GroupExists($processGroup)) {
+                [OxVbaCoreGatePosix]::SignalGroup($processGroup, [OxVbaCoreGatePosix]::SignalKill)
+            }
+            while ($timer.ElapsedMilliseconds -lt $totalMs -and [OxVbaCoreGatePosix]::GroupExists($processGroup)) { Start-Sleep -Milliseconds 10 }
+            if ([OxVbaCoreGatePosix]::GroupExists($processGroup)) { $treeCleanup = "group-kill-incomplete-at-deadline" }
+        }
+        if (-not $process.HasExited -and $timer.ElapsedMilliseconds -lt $totalMs) {
+            [void]$process.WaitForExit([Math]::Max(0, $totalMs - [int]$timer.ElapsedMilliseconds))
+        }
+    }
+    finally {
+        if ($processStarted -and -not $process.HasExited) { try { $process.Kill($true) } catch {} }
+        $process.Dispose()
+        $timer.Stop()
+    }
+    $status = if (-not [string]::IsNullOrEmpty($terminationReason)) {
+        if ($terminationReason -ceq "total-deadline-exceeded") { "timeout" } else { "failed" }
+    }
+    elseif ($exitCode -eq 0) { "passed" } else { "failed" }
+    $reason = if (-not [string]::IsNullOrEmpty($terminationReason)) { $terminationReason } elseif ($exitCode -eq 0) { "completed" } else { "command exited with code $exitCode" }
+    return [pscustomobject]@{
+        status = $status
+        reason = $reason
+        exit_code = $exitCode
+        duration_ms = [int64]$timer.ElapsedMilliseconds
+        tree_cleanup = $treeCleanup
+        transport = "setsid-process-group-v1:term-kill;owned-file-stdout-stderr"
+        total_deadline_ms = $totalMs
     }
 }
 
@@ -547,7 +1131,9 @@ function Invoke-GateProcess {
         [Parameter(Mandatory = $true)][string]$ManifestPath,
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][string]$MutexName,
-        [Parameter(Mandatory = $true)][int]$MutexTimeoutSeconds
+        [Parameter(Mandatory = $true)][int]$MutexTimeoutSeconds,
+        [Parameter(Mandatory = $true)][object[]]$Tools,
+        [Parameter(Mandatory = $true)]$Supervision
     )
 
     $gateRoot = Resolve-RepoRelativePath -Root $EvidenceRoot -Path ([string]$Gate.evidence_path) -Owner "gate $($Gate.id) evidence_path"
@@ -557,7 +1143,6 @@ function Invoke-GateProcess {
     $resultPath = Join-Path $gateRoot "result.json"
     $lock = $null
     $lockAcquired = $false
-    $process = $null
     $lockWait = [Diagnostics.Stopwatch]::StartNew()
     try {
         if ([bool]$Gate.cargo_workspace) {
@@ -573,101 +1158,58 @@ function Invoke-GateProcess {
             }
         }
         $lockWait.Stop()
-        $processShape = Resolve-GateProcess -Gate $Gate -RepoRoot $RepoRoot
+        $processShape = Resolve-GateProcess -Gate $Gate -RepoRoot $RepoRoot -Tools $Tools
+        $childEnvironment = New-ChildEnvironment -Gate $Gate -Tools $Tools -EvidenceRoot $EvidenceRoot `
+            -PlanPath $PlanPath -PlanSha256 $PlanSha256 -ManifestSha256 $ManifestSha256 `
+            -ManifestPath $ManifestPath -RunId $RunId
         $start = [DateTimeOffset]::UtcNow
-        $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-        $process = [Diagnostics.Process]::new()
-        $startInfo = [Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = [string]$processShape.executable
-        $startInfo.WorkingDirectory = $RepoRoot
-        $startInfo.UseShellExecute = $false
-        $startInfo.RedirectStandardOutput = $true
-        $startInfo.RedirectStandardError = $true
-        $startInfo.StandardOutputEncoding = $utf8
-        $startInfo.StandardErrorEncoding = $utf8
-        foreach ($argument in @($processShape.arguments)) {
-            [void]$startInfo.ArgumentList.Add([string]$argument)
+        if ($IsWindows) {
+            $execution = Invoke-WindowsOwnedProcess -ProcessShape $processShape -WorkingDirectory $RepoRoot `
+                -Environment $childEnvironment -StdoutPath $stdoutPath -StderrPath $stderrPath `
+                -TimeoutSeconds ([int]$Gate.timeout_seconds) -CleanupReserveMs ([int]$Supervision.cleanup_reserve_ms)
         }
-        foreach ($environmentName in @($startInfo.Environment.Keys)) {
-            if (Test-HostileInheritedEnvironmentName -Name ([string]$environmentName)) {
-                [void]$startInfo.Environment.Remove([string]$environmentName)
-            }
+        else {
+            $setsid = Get-ToolIdentityById -Tools $Tools -Id "setsid"
+            $execution = Invoke-LinuxOwnedProcess -ProcessShape $processShape -WorkingDirectory $RepoRoot `
+                -Environment $childEnvironment -StdoutPath $stdoutPath -StderrPath $stderrPath `
+                -TimeoutSeconds ([int]$Gate.timeout_seconds) -CleanupReserveMs ([int]$Supervision.cleanup_reserve_ms) `
+                -SetsidPath ([string]$setsid.path) `
+                -SupervisorPath (Resolve-RepoRelativePath -Root $RepoRoot -Path ([string]$Supervision.linux_supervisor_path) -Owner "Linux supervisor")
         }
-        foreach ($environmentEntry in @($Gate.environment)) {
-            if ([string]$environmentEntry.action -ceq "remove") {
-                [void]$startInfo.Environment.Remove([string]$environmentEntry.name)
-            }
-            else {
-                $startInfo.Environment[[string]$environmentEntry.name] = [string]$environmentEntry.value
-            }
-        }
-        $startInfo.Environment["OXVBA_CORE_GATE_RUN_ID"] = $RunId
-        $startInfo.Environment["OXVBA_CORE_GATE_ID"] = [string]$Gate.id
-        $startInfo.Environment["OXVBA_CORE_GATE_EVIDENCE_ROOT"] = $EvidenceRoot
-        $startInfo.Environment["OXVBA_CORE_GATE_PLAN_PATH"] = $PlanPath
-        $startInfo.Environment["OXVBA_CORE_GATE_PLAN_SHA256"] = $PlanSha256
-        $startInfo.Environment["OXVBA_CORE_GATE_MANIFEST_SHA256"] = $ManifestSha256
-        $startInfo.Environment["OXVBA_CORE_GATE_MANIFEST_PATH"] = $ManifestPath
-        $process.StartInfo = $startInfo
-        if (-not $process.Start()) {
-            throw "core-profile-gates: failed to start gate '$($Gate.id)'"
-        }
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        $timedOut = $false
-        $cancellation = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds([int]$Gate.timeout_seconds))
-        try {
-            [void]$process.WaitForExitAsync($cancellation.Token).GetAwaiter().GetResult()
-        }
-        catch [OperationCanceledException] {
-            $timedOut = $true
-            try { $process.Kill($true) } catch {}
-            try { $process.WaitForExit() } catch {}
-        }
-        finally {
-            $cancellation.Dispose()
-        }
-        $stdout = $stdoutTask.GetAwaiter().GetResult()
-        $stderr = $stderrTask.GetAwaiter().GetResult()
-        [IO.File]::WriteAllText($stdoutPath, $stdout, $utf8)
-        [IO.File]::WriteAllText($stderrPath, $stderr, $utf8)
-        $stopwatch.Stop()
         $finish = [DateTimeOffset]::UtcNow
-        $exitCode = if ($timedOut) { $null } else { [int]$process.ExitCode }
-        $status = if ($timedOut) { "timeout" } elseif ($exitCode -eq 0) { "passed" } else { "failed" }
-        $reason = if ($timedOut) {
-            "command exceeded $([int]$Gate.timeout_seconds) seconds"
-        }
-        elseif ($exitCode -ne 0) {
-            "command exited with code $exitCode"
-        }
-        else { "completed" }
-        $result = [ordered]@{
+        [byte[]]$stdoutBytes = [IO.File]::ReadAllBytes($stdoutPath)
+        [byte[]]$stderrBytes = [IO.File]::ReadAllBytes($stderrPath)
+        $gateEvidence = [ordered]@{
             order = [int]$Gate.order
             id = [string]$Gate.id
-            status = $status
-            reason = $reason
-            exit_code = $exitCode
+            status = [string]$execution.status
+            reason = [string]$execution.reason
+            exit_code = $execution.exit_code
             started_utc = $start.ToString("O")
             finished_utc = $finish.ToString("O")
-            duration_ms = [int64]$stopwatch.ElapsedMilliseconds
+            duration_ms = [int64]$execution.duration_ms
             cargo_lock_wait_ms = if ([bool]$Gate.cargo_workspace) { [int64]$lockWait.ElapsedMilliseconds } else { $null }
+            total_deadline_ms = [int]$execution.total_deadline_ms
+            tree_cleanup = [string]$execution.tree_cleanup
+            transport = [string]$execution.transport
             evidence_path = [string]$Gate.evidence_path
             stdout_path = "$($Gate.evidence_path)/stdout.log"
             stderr_path = "$($Gate.evidence_path)/stderr.log"
             result_path = "$($Gate.evidence_path)/result.json"
+            stdout_sha256 = Get-Sha256Hex -Bytes $stdoutBytes
+            stderr_sha256 = Get-Sha256Hex -Bytes $stderrBytes
         }
-        Write-JsonUtf8 -Path $resultPath -Value $result
-        $process.Dispose()
-        $process = $null
-        return [pscustomobject]$result
+        Write-JsonUtf8 -Path $resultPath -Value $gateEvidence
+        $runResult = [ordered]@{}
+        foreach ($key in $gateEvidence.Keys) { $runResult[$key] = $gateEvidence[$key] }
+        $runResult["result_sha256"] = Get-RawFileSha256 -Path $resultPath
+        return [pscustomobject]$runResult
     }
     finally {
         if ($lockAcquired -and $null -ne $lock) {
             try { $lock.ReleaseMutex() } catch {}
         }
         if ($null -ne $lock) { $lock.Dispose() }
-        if ($null -ne $process) { $process.Dispose() }
     }
 }
 
@@ -688,49 +1230,63 @@ function New-NonExecutedResult {
         finished_utc = $null
         duration_ms = $null
         cargo_lock_wait_ms = $null
+        total_deadline_ms = $null
+        tree_cleanup = "not-started"
+        transport = "none"
         evidence_path = [string]$Gate.evidence_path
         stdout_path = ""
         stderr_path = ""
         result_path = ""
+        stdout_sha256 = ""
+        stderr_sha256 = ""
+        result_sha256 = ""
     }
 }
 
-function Write-RunManifest {
+function New-RunManifestValue {
     param(
-        [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)]$Manifest,
         [Parameter(Mandatory = $true)][string]$ManifestSha256,
         [Parameter(Mandatory = $true)][string]$PlanSha256,
-        [Parameter(Mandatory = $true)][string]$Platform,
+        [Parameter(Mandatory = $true)]$Architecture,
+        [Parameter(Mandatory = $true)]$Source,
+        [Parameter(Mandatory = $true)][object[]]$Tools,
+        [Parameter(Mandatory = $true)][object[]]$Commands,
+        [Parameter(Mandatory = $true)]$Supervision,
         [Parameter(Mandatory = $true)][string]$Status,
         [AllowEmptyString()][string]$Failure,
         [Parameter(Mandatory = $true)][string]$StartedUtc,
         [AllowNull()][string]$FinishedUtc,
+        [AllowNull()][string]$SummarySha256,
         [AllowEmptyCollection()][object[]]$Results
     )
 
-    $runManifest = [ordered]@{
+    return [ordered]@{
         schema_id = "oxvba-core-profile-gate-run-v1"
         run_id = $RunId
         plan_id = [string]$Manifest.plan_id
         manifest_sha256 = $ManifestSha256
         plan_sha256 = $PlanSha256
-        platform = $Platform
+        platform = [string]$Architecture.platform
+        architecture = $Architecture
+        source = $Source
+        tools = @($Tools)
+        commands = @($Commands)
+        supervision = $Supervision
         mode = "no-artifacts"
         no_artifacts = $true
         status = $Status
         failure = $Failure
         started_utc = $StartedUtc
         finished_utc = $FinishedUtc
+        summary_sha256 = $SummarySha256
         results = @($Results)
     }
-    Write-JsonUtf8 -Path $Path -Value $runManifest
 }
 
-function Write-Summary {
+function Get-SummaryText {
     param(
-        [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][string]$Platform,
         [Parameter(Mandatory = $true)][string]$Status,
@@ -752,149 +1308,95 @@ function Write-Summary {
             ([string]$result.reason).Replace("`r", " ").Replace("`n", " "),
             [string]$result.evidence_path)
     }
-    [IO.File]::WriteAllText($Path, ($lines -join "`n") + "`n", $utf8)
+    return ($lines -join "`n") + "`n"
 }
 
 function Assert-ExecutionEvidence {
     param(
         [Parameter(Mandatory = $true)][string]$PlanPath,
         [Parameter(Mandatory = $true)][string]$RunManifestPath,
+        [Parameter(Mandatory = $true)][string]$RunManifestDigestPath,
         [Parameter(Mandatory = $true)][string]$SummaryPath,
         [Parameter(Mandatory = $true)][string]$EvidenceRoot,
         [Parameter(Mandatory = $true)]$Manifest,
         [Parameter(Mandatory = $true)][string]$ManifestSha256,
         [Parameter(Mandatory = $true)][string]$ManifestPath,
-        [Parameter(Mandatory = $true)][string]$ExpectedPlanSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedPlanText,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunManifestText,
+        [Parameter(Mandatory = $true)][string]$ExpectedSummaryText,
+        [Parameter(Mandatory = $true)][object[]]$ExpectedResults,
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][string]$Platform
     )
 
     Assert-ManifestUnchanged -Path $ManifestPath -ExpectedSha256 $ManifestSha256
-    foreach ($path in @($PlanPath, $RunManifestPath, $SummaryPath)) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "core-profile-gates: required evidence file is missing: $path"
-        }
+    Assert-ExactTextFile -Path $PlanPath -Expected $ExpectedPlanText -Owner "execution plan evidence"
+    Assert-ExactTextFile -Path $RunManifestPath -Expected $ExpectedRunManifestText -Owner "run manifest evidence"
+    Assert-ExactTextFile -Path $SummaryPath -Expected $ExpectedSummaryText -Owner "summary evidence"
+    $runManifestSha256 = Get-RawFileSha256 -Path $RunManifestPath
+    $expectedDigestText = "$runManifestSha256  $([string]$Manifest.evidence.run_manifest_path)`n"
+    Assert-ExactTextFile -Path $RunManifestDigestPath -Expected $expectedDigestText -Owner "run manifest digest evidence"
+    if ($ExpectedResults.Count -ne @($Manifest.gates).Count) {
+        throw "core-profile-gates: immutable result count differs from the gate plan"
     }
-    $actualPlanSha256 = Get-Sha256Hex -Bytes (Get-CanonicalTextBytes -Path $PlanPath)
-    if ($actualPlanSha256 -cne $ExpectedPlanSha256) {
-        throw "core-profile-gates: execution plan evidence changed during the run"
-    }
-    $plan = Read-StrictJson -Path $PlanPath -Owner "execution plan evidence"
-    Assert-ExactKeys $plan @(
-        "schema_id", "plan_id", "manifest_sha256", "version", "profile", "platform", "mode",
-        "run_id", "evidence_root", "commands"
-    ) "execution plan evidence"
-    Assert-ExactString $plan.schema_id "oxvba-core-profile-execution-plan-v1" "execution plan evidence.schema_id"
-    Assert-ExactString $plan.plan_id ([string]$Manifest.plan_id) "execution plan evidence.plan_id"
-    Assert-ExactString $plan.manifest_sha256 $ManifestSha256 "execution plan evidence.manifest_sha256"
-    Assert-ExactString $plan.platform $Platform "execution plan evidence.platform"
-    Assert-ExactString $plan.mode "no-artifacts" "execution plan evidence.mode"
-    Assert-ExactString $plan.run_id $RunId "execution plan evidence.run_id"
-    if ([int64]$plan.version -ne [int64]$Manifest.version) {
-        throw "core-profile-gates: execution plan evidence.version drifted"
-    }
-    Assert-ExactString $plan.profile ([string]$Manifest.profile) "execution plan evidence.profile"
-    Assert-ExactString $plan.evidence_root "$($Manifest.evidence.no_artifact_root)/$RunId" "execution plan evidence.evidence_root"
-    $planCommands = @($plan.commands)
-    if ($planCommands.Count -ne @($Manifest.gates).Count) {
-        throw "core-profile-gates: execution plan evidence command count drifted"
-    }
-    for ($index = 0; $index -lt $planCommands.Count; $index++) {
-        $planCommand = $planCommands[$index]
+    for ($index = 0; $index -lt $ExpectedResults.Count; $index++) {
+        $result = $ExpectedResults[$index]
         $gate = @($Manifest.gates)[$index]
-        Assert-ExactKeys $planCommand @(
-            "order", "id", "disposition", "reason", "platforms", "kind", "command", "arguments",
-            "environment", "timeout_seconds", "cargo_workspace", "evidence_path"
-        ) "execution plan evidence.commands[$index]"
-        $selected = @($gate.platforms) -ccontains $Platform
-        $expectedDisposition = if ($selected) { "run" } else { "not-applicable" }
-        $expectedReason = if ($selected) { "selected:$Platform" } else { "platform:$Platform" }
-        foreach ($field in @("order", "id", "kind", "command", "timeout_seconds", "cargo_workspace", "evidence_path")) {
-            if ([string]$planCommand.$field -cne [string]$gate.$field) {
-                throw "core-profile-gates: execution plan evidence command field '$field' drifted at index $index"
-            }
-        }
-        Assert-ExactString $planCommand.disposition $expectedDisposition "execution plan evidence.commands[$index].disposition"
-        Assert-ExactString $planCommand.reason $expectedReason "execution plan evidence.commands[$index].reason"
-        if ((@($planCommand.platforms) -join '|') -cne (@($gate.platforms) -join '|') -or
-            (@($planCommand.arguments) -join "`u{1f}") -cne (@($gate.arguments) -join "`u{1f}")) {
-            throw "core-profile-gates: execution plan evidence command platforms/arguments drifted at index $index"
-        }
-        $planEnvironment = @($planCommand.environment)
-        $gateEnvironment = @($gate.environment)
-        if ($planEnvironment.Count -ne $gateEnvironment.Count) {
-            throw "core-profile-gates: execution plan evidence command environment count drifted at index $index"
-        }
-        for ($environmentIndex = 0; $environmentIndex -lt $planEnvironment.Count; $environmentIndex++) {
-            Assert-ExactKeys $planEnvironment[$environmentIndex] @("name", "action", "value") "execution plan evidence.commands[$index].environment[$environmentIndex]"
-            foreach ($field in @("name", "action", "value")) {
-                if ([string]$planEnvironment[$environmentIndex].$field -cne [string]$gateEnvironment[$environmentIndex].$field) {
-                    throw "core-profile-gates: execution plan evidence command environment field '$field' drifted at index $index"
-                }
-            }
-        }
-    }
-
-    $runManifest = Read-StrictJson -Path $RunManifestPath -Owner "run manifest evidence"
-    Assert-ExactKeys $runManifest @(
-        "schema_id", "run_id", "plan_id", "manifest_sha256", "plan_sha256", "platform",
-        "mode", "no_artifacts", "status", "failure", "started_utc", "finished_utc", "results"
-    ) "run manifest evidence"
-    Assert-ExactString $runManifest.schema_id "oxvba-core-profile-gate-run-v1" "run manifest evidence.schema_id"
-    Assert-ExactString $runManifest.run_id $RunId "run manifest evidence.run_id"
-    Assert-ExactString $runManifest.plan_id ([string]$Manifest.plan_id) "run manifest evidence.plan_id"
-    Assert-ExactString $runManifest.manifest_sha256 $ManifestSha256 "run manifest evidence.manifest_sha256"
-    Assert-ExactString $runManifest.plan_sha256 $ExpectedPlanSha256 "run manifest evidence.plan_sha256"
-    Assert-ExactString $runManifest.platform $Platform "run manifest evidence.platform"
-    Assert-ExactString $runManifest.mode "no-artifacts" "run manifest evidence.mode"
-    if ($runManifest.no_artifacts -isnot [bool] -or -not [bool]$runManifest.no_artifacts) {
-        throw "core-profile-gates: run manifest evidence.no_artifacts must be true"
-    }
-    if ([string]$runManifest.status -cnotin @("passed", "failed")) {
-        throw "core-profile-gates: run manifest evidence.status must be passed or failed"
-    }
-    $results = @($runManifest.results)
-    if ($results.Count -ne @($Manifest.gates).Count) {
-        throw "core-profile-gates: run manifest evidence result count drifted"
-    }
-    for ($index = 0; $index -lt $results.Count; $index++) {
-        $result = $results[$index]
-        $gate = @($Manifest.gates)[$index]
-        Assert-ExactKeys $result @(
-            "order", "id", "status", "reason", "exit_code", "started_utc", "finished_utc",
-            "duration_ms", "cargo_lock_wait_ms", "evidence_path", "stdout_path", "stderr_path",
-            "result_path"
-        ) "run manifest evidence.results[$index]"
         if ([int64]$result.order -ne [int64]$gate.order -or [string]$result.id -cne [string]$gate.id) {
-            throw "core-profile-gates: run manifest evidence result identity/order drifted at index $index"
+            throw "core-profile-gates: immutable result identity/order drifted at index $index"
         }
-        if ([string]$result.status -cnotin @("passed", "failed", "timeout", "not-applicable", "not-run")) {
-            throw "core-profile-gates: run manifest evidence result '$($result.id)' has invalid status '$($result.status)'"
+        $selected = @($gate.platforms) -ccontains $Platform
+        if ($selected -and ([string]$result.status -cne "passed" -or $null -eq $result.exit_code -or [int]$result.exit_code -ne 0 -or [string]$result.tree_cleanup -cne "complete")) {
+            throw "core-profile-gates: selected gate '$($gate.id)' is not an exact passed/exit-0/clean-tree result"
         }
-        if ([string]$result.evidence_path -cne [string]$gate.evidence_path) {
-            throw "core-profile-gates: run manifest evidence path drifted for '$($result.id)'"
+        if (-not $selected -and ([string]$result.status -cne "not-applicable" -or [string]$result.reason -cne "platform:$Platform")) {
+            throw "core-profile-gates: nonselected gate '$($gate.id)' is not exact not-applicable evidence"
         }
         if ([string]$result.status -in @("passed", "failed", "timeout")) {
-            foreach ($relativePath in @($result.stdout_path, $result.stderr_path, $result.result_path)) {
-                $absolutePath = Resolve-RepoRelativePath -Root $EvidenceRoot -Path ([string]$relativePath) -Owner "run manifest result path"
-                if (-not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
-                    throw "core-profile-gates: executed gate evidence is missing: $relativePath"
+            foreach ($pair in @(
+                @($result.stdout_path, $result.stdout_sha256),
+                @($result.stderr_path, $result.stderr_sha256),
+                @($result.result_path, $result.result_sha256)
+            )) {
+                $absolutePath = Resolve-RepoRelativePath -Root $EvidenceRoot -Path ([string]$pair[0]) -Owner "run result evidence path"
+                if ((Get-RawFileSha256 -Path $absolutePath) -cne [string]$pair[1]) {
+                    throw "core-profile-gates: content hash drifted for '$($pair[0])'"
                 }
             }
-            $gateResultPath = Resolve-RepoRelativePath -Root $EvidenceRoot -Path ([string]$result.result_path) -Owner "gate result evidence"
-            $gateResult = Read-StrictJson -Path $gateResultPath -Owner "gate result evidence"
-            Assert-ExactKeys $gateResult @(
-                "order", "id", "status", "reason", "exit_code", "started_utc", "finished_utc",
-                "duration_ms", "cargo_lock_wait_ms", "evidence_path", "stdout_path", "stderr_path",
-                "result_path"
-            ) "gate result evidence"
-            foreach ($field in @(
-                "order", "id", "status", "reason", "exit_code", "started_utc", "finished_utc",
-                "duration_ms", "cargo_lock_wait_ms", "evidence_path", "stdout_path", "stderr_path",
-                "result_path"
+        }
+    }
+    return $runManifestSha256
+}
+
+function Assert-InterimEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$PlanPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedPlanText,
+        [Parameter(Mandatory = $true)][string]$RunManifestPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedRunManifestText,
+        [Parameter(Mandatory = $true)][string]$SummaryPath,
+        [Parameter(Mandatory = $true)][string]$RunManifestDigestPath,
+        [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+        [AllowEmptyCollection()][object[]]$Results
+    )
+
+    Assert-ExactTextFile -Path $PlanPath -Expected $ExpectedPlanText -Owner "interim execution plan"
+    Assert-ExactTextFile -Path $RunManifestPath -Expected $ExpectedRunManifestText -Owner "interim run manifest"
+    foreach ($unexpected in @($SummaryPath, $RunManifestDigestPath)) {
+        if (Test-Path -LiteralPath $unexpected) {
+            throw "core-profile-gates: child created terminal evidence before the runner finalized it: $unexpected"
+        }
+    }
+    foreach ($result in @($Results)) {
+        if ([string]$result.status -in @("passed", "failed", "timeout")) {
+            foreach ($pair in @(
+                @($result.stdout_path, $result.stdout_sha256),
+                @($result.stderr_path, $result.stderr_sha256),
+                @($result.result_path, $result.result_sha256)
             )) {
-                if ([string]$gateResult.$field -cne [string]$result.$field) {
-                    throw "core-profile-gates: gate result evidence field '$field' differs from the run manifest for '$($result.id)'"
+                $absolute = Resolve-RepoRelativePath -Root $EvidenceRoot -Path ([string]$pair[0]) -Owner "interim result evidence"
+                if ((Get-RawFileSha256 -Path $absolute) -cne [string]$pair[1]) {
+                    throw "core-profile-gates: child changed prior evidence bytes: $($pair[0])"
                 }
             }
         }
@@ -907,160 +1409,204 @@ $repoRoot = if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
 else {
     [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $RepositoryRoot).Path)
 }
-$platform = Get-CurrentPlatformId
-$manifestAbs = Resolve-RepoRelativePath -Root $repoRoot -Path $ManifestPath -Owner "ManifestPath"
-if (-not (Test-Path -LiteralPath $manifestAbs -PathType Leaf)) {
-    throw "core-profile-gates: manifest is missing: $ManifestPath"
+$architecture = Get-ArchitectureIdentity
+$platform = [string]$architecture.platform
+$runnerAbs = [IO.Path]::GetFullPath($PSCommandPath)
+$runnerRelative = [IO.Path]::GetRelativePath($repoRoot, $runnerAbs).Replace('\', '/')
+if ($runnerRelative -eq ".." -or $runnerRelative.StartsWith("../", [StringComparison]::Ordinal)) {
+    throw "core-profile-gates: gate runner must be inside the repository root"
 }
+Assert-NoReparsePath -Root $repoRoot -Target $repoRoot -Owner "repository root"
+Assert-NoReparsePath -Root $repoRoot -Target $runnerAbs -Owner "gate runner"
+$manifestAbs = Resolve-RepoRelativePath -Root $repoRoot -Path $ManifestPath -Owner "ManifestPath"
+if (-not (Test-Path -LiteralPath $manifestAbs -PathType Leaf)) { throw "core-profile-gates: manifest is missing: $ManifestPath" }
+Assert-NoReparsePath -Root $repoRoot -Target $manifestAbs -Owner "versioned manifest"
 $manifest = Read-StrictJson -Path $manifestAbs -Owner "manifest"
 Assert-ManifestJsonArrayShapes -Path $manifestAbs
 Assert-Manifest -Manifest $manifest -RepoRoot $repoRoot -Platform $platform
 $manifestSha256 = Get-Sha256Hex -Bytes (Get-CanonicalTextBytes -Path $manifestAbs)
 Assert-ManifestUnchanged -Path $manifestAbs -ExpectedSha256 $manifestSha256
 
-if ($List -or $DryRun) {
-    Write-DeterministicPlan -Manifest $manifest -Platform $platform
-    return
-}
-
+if ($List -or $DryRun) { Write-DeterministicPlan -Manifest $manifest -Platform $platform; return }
 if ($Mode -ceq "ValidateManifest") {
-    if (-not [string]::IsNullOrWhiteSpace($RunId)) {
-        throw "core-profile-gates: RunId is only valid for Mode=NoArtifacts"
-    }
+    if (-not [string]::IsNullOrWhiteSpace($RunId)) { throw "core-profile-gates: RunId is only valid for Mode=NoArtifacts" }
     Write-Host "core-profile-gates: manifest ok (plan=$($manifest.plan_id) version=$($manifest.version) platform=$platform sha256=$manifestSha256 gates=$(@($manifest.gates).Count))"
     return
 }
-
-if ([string]::IsNullOrWhiteSpace($RunId) -or $RunId -cnotmatch '^[a-z0-9][a-z0-9._-]{0,63}$' -or
-    $RunId -in @(".", "..")) {
+if ([string]::IsNullOrWhiteSpace($RunId) -or $RunId -cnotmatch '^[a-z0-9][a-z0-9._-]{0,63}$' -or $RunId -in @(".", "..")) {
     throw "core-profile-gates: Mode=NoArtifacts requires a bounded lowercase RunId"
 }
+
+$tools = Get-ToolIdentities -RepoRoot $repoRoot -Manifest $manifest -Platform $platform
+$gitTool = Get-ToolIdentityById -Tools $tools -Id "git"
+$commandIdentities = Get-CommandFileIdentities -Manifest $manifest -RepoRoot $repoRoot -ManifestPath $manifestAbs -RunnerPath $runnerAbs
+$requiredTrackedPaths = @($commandIdentities | ForEach-Object { [string]$_.path })
+$sourceIdentity = Get-SourceIdentity -Git $gitTool -RepoRoot $repoRoot -RequiredTrackedPaths $requiredTrackedPaths
+$nativeSource = Get-CommandFileIdentityByPath -Commands $commandIdentities -Path ([string]$manifest.supervision.native_source_path)
+Add-Type -Path ([string]$nativeSource.absolute_path)
+Assert-ExecutionInputs -Source $sourceIdentity -Git $gitTool -Tools $tools -Commands $commandIdentities `
+    -RepoRoot $repoRoot -RequiredTrackedPaths $requiredTrackedPaths -ManifestPath $manifestAbs -ManifestSha256 $manifestSha256
+
 $evidenceBase = Resolve-RepoRelativePath -Root $repoRoot -Path ([string]$manifest.evidence.no_artifact_root) -Owner "manifest.evidence.no_artifact_root"
 $evidenceRoot = [IO.Path]::GetFullPath((Join-Path $evidenceBase $RunId))
 $rootPrefix = $evidenceBase.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
 $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
-if (-not $evidenceRoot.StartsWith($rootPrefix, $comparison)) {
-    throw "core-profile-gates: RunId escapes the no-artifact evidence root"
-}
+if (-not $evidenceRoot.StartsWith($rootPrefix, $comparison)) { throw "core-profile-gates: RunId escapes the no-artifact evidence root" }
 Assert-NoReparseAncestor -Root $repoRoot -Target $evidenceRoot
-if (Test-Path -LiteralPath $evidenceRoot) {
-    throw "core-profile-gates: no-artifact evidence root already exists; refusing stale evidence: $evidenceRoot"
-}
+if (Test-Path -LiteralPath $evidenceRoot) { throw "core-profile-gates: no-artifact evidence root already exists; refusing stale evidence: $evidenceRoot" }
 [void](New-Item -ItemType Directory -Path $evidenceRoot)
 
 $planPath = Join-Path $evidenceRoot ([string]$manifest.evidence.plan_path)
 $runManifestPath = Join-Path $evidenceRoot ([string]$manifest.evidence.run_manifest_path)
+$runManifestDigestPath = Join-Path $evidenceRoot ([string]$manifest.evidence.run_manifest_digest_path)
 $summaryPath = Join-Path $evidenceRoot ([string]$manifest.evidence.summary_path)
+$toolEvidence = @($tools | ForEach-Object { [ordered]@{ id = $_.id; path = $_.path; sha256 = $_.sha256; version = $_.version; link_target = $_.link_target } })
+$commandEvidence = @($commandIdentities | ForEach-Object { [ordered]@{ path = $_.path; sha256 = $_.sha256 } })
+$supervisionEvidence = [ordered]@{
+    cleanup_reserve_ms = [int]$manifest.supervision.cleanup_reserve_ms
+    transport = if ($IsWindows) { [string]$manifest.supervision.windows_transport } else { [string]$manifest.supervision.linux_transport }
+    native_source_path = [string]$manifest.supervision.native_source_path
+    native_source_sha256 = [string]$nativeSource.sha256
+    linux_launcher_path = if ($IsLinux) { [string](Get-ToolIdentityById -Tools $tools -Id "setsid").path } else { "not-applicable" }
+    linux_supervisor_path = [string]$manifest.supervision.linux_supervisor_path
+}
 $planRows = @()
 foreach ($gate in @($manifest.gates)) {
     $selected = @($gate.platforms) -ccontains $platform
-    $environmentRows = @($gate.environment | ForEach-Object {
-            [ordered]@{ name = [string]$_.name; action = [string]$_.action; value = [string]$_.value }
-        })
-    $planRows += [ordered]@{
-        order = [int]$gate.order
-        id = [string]$gate.id
-        disposition = if ($selected) { "run" } else { "not-applicable" }
-        reason = if ($selected) { "selected:$platform" } else { "platform:$platform" }
-        platforms = @($gate.platforms)
+    $executorId = if ([string]$gate.kind -ceq "cargo") { "cargo" } else { "pwsh" }
+    $executor = Get-ToolIdentityById -Tools $tools -Id $executorId
+    $commandSha = if ([string]$gate.kind -ceq "cargo") { [string]$executor.sha256 } else { [string](Get-CommandFileIdentityByPath -Commands $commandIdentities -Path ([string]$gate.command)).sha256 }
+    $commandDigestShape = [ordered]@{
         kind = [string]$gate.kind
         command = [string]$gate.command
+        command_sha256 = $commandSha
+        executor_path = [string]$executor.path
+        executor_sha256 = [string]$executor.sha256
+        arguments = @($gate.arguments | ForEach-Object { [string]$_ })
+        environment = @($gate.environment | ForEach-Object { [ordered]@{ name = $_.name; action = $_.action; value = $_.value } })
+    }
+    $commandDigest = Get-Sha256Hex -Bytes ($utf8.GetBytes((Get-StableJsonText -Value $commandDigestShape)))
+    $planRows += [ordered]@{
+        order = [int]$gate.order; id = [string]$gate.id
+        disposition = if ($selected) { "run" } else { "not-applicable" }
+        reason = if ($selected) { "selected:$platform" } else { "platform:$platform" }
+        platforms = @($gate.platforms); kind = [string]$gate.kind; command = [string]$gate.command
+        command_sha256 = $commandSha; command_digest = $commandDigest
+        executor_path = [string]$executor.path; executor_sha256 = [string]$executor.sha256
         arguments = @($gate.arguments)
-        environment = $environmentRows
-        timeout_seconds = [int]$gate.timeout_seconds
-        cargo_workspace = [bool]$gate.cargo_workspace
+        environment = @($gate.environment | ForEach-Object { [ordered]@{ name = $_.name; action = $_.action; value = $_.value } })
+        timeout_seconds = [int]$gate.timeout_seconds; cargo_workspace = [bool]$gate.cargo_workspace
         evidence_path = [string]$gate.evidence_path
     }
 }
 $executionPlan = [ordered]@{
-    schema_id = "oxvba-core-profile-execution-plan-v1"
-    plan_id = [string]$manifest.plan_id
-    manifest_sha256 = $manifestSha256
-    version = [int]$manifest.version
-    profile = [string]$manifest.profile
-    platform = $platform
-    mode = "no-artifacts"
-    run_id = $RunId
-    evidence_root = "$($manifest.evidence.no_artifact_root)/$RunId"
+    schema_id = "oxvba-core-profile-execution-plan-v1"; plan_id = [string]$manifest.plan_id
+    manifest_sha256 = $manifestSha256; version = [int]$manifest.version; profile = [string]$manifest.profile
+    platform = $platform; architecture = $architecture; source = $sourceIdentity; tools = $toolEvidence
+    commands_identity = $commandEvidence; supervision = $supervisionEvidence
+    mode = "no-artifacts"; run_id = $RunId; evidence_root = "$($manifest.evidence.no_artifact_root)/$RunId"
     commands = $planRows
 }
-Write-JsonUtf8 -Path $planPath -Value $executionPlan
-$planSha256 = Get-Sha256Hex -Bytes (Get-CanonicalTextBytes -Path $planPath)
+$expectedPlanText = Get-StableJsonText -Value $executionPlan
+[IO.File]::WriteAllText($planPath, $expectedPlanText, $utf8)
+$planSha256 = Get-RawFileSha256 -Path $planPath
 $mutexName = Get-CargoMutexName -Prefix ([string]$manifest.cargo_lock.name_prefix) -RepoRoot $repoRoot
 $runStarted = [DateTimeOffset]::UtcNow.ToString("O")
 $results = @()
 $executionFailure = $null
-
-Write-RunManifest -Path $runManifestPath -RunId $RunId -Manifest $manifest `
-    -ManifestSha256 $manifestSha256 -PlanSha256 $planSha256 -Platform $platform -Status "running" `
-    -Failure "" -StartedUtc $runStarted -FinishedUtc $null -Results $results
+$initialRunManifest = New-RunManifestValue -RunId $RunId -Manifest $manifest -ManifestSha256 $manifestSha256 `
+    -PlanSha256 $planSha256 -Architecture $architecture -Source $sourceIdentity -Tools $toolEvidence `
+    -Commands $commandEvidence -Supervision $supervisionEvidence -Status "running" -Failure "" `
+    -StartedUtc $runStarted -FinishedUtc $null -SummarySha256 $null -Results $results
+$expectedInterimRunManifestText = Get-StableJsonText -Value $initialRunManifest
+[IO.File]::WriteAllText($runManifestPath, $expectedInterimRunManifestText, $utf8)
 
 foreach ($gate in @($manifest.gates)) {
-    if ($null -ne $executionFailure) {
-        $results += New-NonExecutedResult -Gate $gate -Status "not-run" -Reason "earlier gate failed"
-        continue
-    }
+    if ($null -ne $executionFailure) { $results += New-NonExecutedResult -Gate $gate -Status "not-run" -Reason "earlier gate failed"; continue }
     try {
-        Assert-ManifestUnchanged -Path $manifestAbs -ExpectedSha256 $manifestSha256
+        Assert-ExecutionInputs -Source $sourceIdentity -Git $gitTool -Tools $tools -Commands $commandIdentities `
+            -RepoRoot $repoRoot -RequiredTrackedPaths $requiredTrackedPaths -ManifestPath $manifestAbs -ManifestSha256 $manifestSha256
+        Assert-InterimEvidence -PlanPath $planPath -ExpectedPlanText $expectedPlanText -RunManifestPath $runManifestPath `
+            -ExpectedRunManifestText $expectedInterimRunManifestText -SummaryPath $summaryPath `
+            -RunManifestDigestPath $runManifestDigestPath -EvidenceRoot $evidenceRoot -Results $results
     }
-    catch {
-        $executionFailure = $_.Exception.Message
-        $results += New-NonExecutedResult -Gate $gate -Status "not-run" -Reason $executionFailure
-        continue
-    }
-    if (@($gate.platforms) -cnotcontains $platform) {
-        $results += New-NonExecutedResult -Gate $gate -Status "not-applicable" -Reason "platform:$platform"
-        continue
-    }
+    catch { $executionFailure = $_.Exception.Message; $results += New-NonExecutedResult -Gate $gate -Status "not-run" -Reason $executionFailure; continue }
+    if (@($gate.platforms) -cnotcontains $platform) { $results += New-NonExecutedResult -Gate $gate -Status "not-applicable" -Reason "platform:$platform"; continue }
     $result = $null
     try {
-        Write-Host ("[core-profile] {0:D3} {1} (timeout={2}s cargo_lock={3})" -f
-            [int]$gate.order, [string]$gate.id, [int]$gate.timeout_seconds, [bool]$gate.cargo_workspace)
+        Write-Host ("[core-profile] {0:D3} {1} (total_deadline={2}s cargo_lock={3})" -f [int]$gate.order, [string]$gate.id, [int]$gate.timeout_seconds, [bool]$gate.cargo_workspace)
         $result = Invoke-GateProcess -Gate $gate -RepoRoot $repoRoot -EvidenceRoot $evidenceRoot `
             -PlanPath $planPath -PlanSha256 $planSha256 -ManifestSha256 $manifestSha256 -RunId $RunId `
-            -ManifestPath $manifestAbs -MutexName $mutexName `
-            -MutexTimeoutSeconds ([int]$manifest.cargo_lock.acquire_timeout_seconds)
+            -ManifestPath $manifestAbs -MutexName $mutexName -MutexTimeoutSeconds ([int]$manifest.cargo_lock.acquire_timeout_seconds) `
+            -Tools $tools -Supervision $manifest.supervision
         $results += $result
-        Assert-ManifestUnchanged -Path $manifestAbs -ExpectedSha256 $manifestSha256
-        if ([string]$result.status -cne "passed") {
-            $executionFailure = "gate '$($gate.id)' $($result.reason)"
-        }
+        Assert-ExecutionInputs -Source $sourceIdentity -Git $gitTool -Tools $tools -Commands $commandIdentities `
+            -RepoRoot $repoRoot -RequiredTrackedPaths $requiredTrackedPaths -ManifestPath $manifestAbs -ManifestSha256 $manifestSha256
+        Assert-InterimEvidence -PlanPath $planPath -ExpectedPlanText $expectedPlanText -RunManifestPath $runManifestPath `
+            -ExpectedRunManifestText $expectedInterimRunManifestText -SummaryPath $summaryPath `
+            -RunManifestDigestPath $runManifestDigestPath -EvidenceRoot $evidenceRoot -Results $results
+        if ([string]$result.status -cne "passed") { $executionFailure = "gate '$($gate.id)' $($result.reason)" }
     }
     catch {
         $executionFailure = "gate '$($gate.id)' failed: $($_.Exception.Message)"
-        if ($null -eq $result) {
-            $results += New-NonExecutedResult -Gate $gate -Status "not-run" -Reason $executionFailure
-        }
+        if ($null -eq $result) { $results += New-NonExecutedResult -Gate $gate -Status "not-run" -Reason $executionFailure }
     }
 }
 
 $runFinished = [DateTimeOffset]::UtcNow.ToString("O")
 $runStatus = if ($null -eq $executionFailure) { "passed" } else { "failed" }
 $failureText = if ($null -eq $executionFailure) { "" } else { [string]$executionFailure }
-Write-RunManifest -Path $runManifestPath -RunId $RunId -Manifest $manifest `
-    -ManifestSha256 $manifestSha256 -PlanSha256 $planSha256 -Platform $platform -Status $runStatus `
-    -Failure $failureText -StartedUtc $runStarted -FinishedUtc $runFinished -Results $results
-Write-Summary -Path $summaryPath -RunId $RunId -Platform $platform -Status $runStatus `
-    -Failure $failureText -Results $results
+if ($runStatus -ceq "passed") {
+    try {
+        Assert-ExecutionInputs -Source $sourceIdentity -Git $gitTool -Tools $tools -Commands $commandIdentities `
+            -RepoRoot $repoRoot -RequiredTrackedPaths $requiredTrackedPaths -ManifestPath $manifestAbs -ManifestSha256 $manifestSha256
+        Assert-InterimEvidence -PlanPath $planPath -ExpectedPlanText $expectedPlanText -RunManifestPath $runManifestPath `
+            -ExpectedRunManifestText $expectedInterimRunManifestText -SummaryPath $summaryPath `
+            -RunManifestDigestPath $runManifestDigestPath -EvidenceRoot $evidenceRoot -Results $results
+        for ($index = 0; $index -lt @($manifest.gates).Count; $index++) {
+            $gate = @($manifest.gates)[$index]; $result = $results[$index]; $selected = @($gate.platforms) -ccontains $platform
+            if ($selected -and ([string]$result.status -cne "passed" -or [int]$result.exit_code -ne 0 -or [string]$result.tree_cleanup -cne "complete")) { throw "selected gate '$($gate.id)' lacks exact success" }
+            if (-not $selected -and [string]$result.status -cne "not-applicable") { throw "nonselected gate '$($gate.id)' lacks exact not-applicable result" }
+        }
+    }
+    catch { $runStatus = "failed"; $failureText = "terminal success reconstruction failed: $($_.Exception.Message)" }
+}
+$expectedSummaryText = Get-SummaryText -RunId $RunId -Platform $platform -Status $runStatus -Failure $failureText -Results $results
+$summarySha256 = Get-Sha256Hex -Bytes ($utf8.GetBytes($expectedSummaryText))
+$finalRunManifest = New-RunManifestValue -RunId $RunId -Manifest $manifest -ManifestSha256 $manifestSha256 `
+    -PlanSha256 $planSha256 -Architecture $architecture -Source $sourceIdentity -Tools $toolEvidence `
+    -Commands $commandEvidence -Supervision $supervisionEvidence -Status $runStatus -Failure $failureText `
+    -StartedUtc $runStarted -FinishedUtc $runFinished -SummarySha256 $summarySha256 -Results $results
+$expectedRunManifestText = Get-StableJsonText -Value $finalRunManifest
+[IO.File]::WriteAllText($summaryPath, $expectedSummaryText, $utf8)
+[IO.File]::WriteAllText($runManifestPath, $expectedRunManifestText, $utf8)
+$runManifestSha256 = Get-RawFileSha256 -Path $runManifestPath
+[IO.File]::WriteAllText($runManifestDigestPath, "$runManifestSha256  $($manifest.evidence.run_manifest_path)`n", $utf8)
 
-try {
-    Assert-ExecutionEvidence -PlanPath $planPath -RunManifestPath $runManifestPath -SummaryPath $summaryPath `
-        -EvidenceRoot $evidenceRoot -Manifest $manifest -ManifestSha256 $manifestSha256 -ManifestPath $manifestAbs `
-        -ExpectedPlanSha256 $planSha256 -RunId $RunId -Platform $platform
+if ($runStatus -ceq "passed") {
+    try {
+        $validatedDigest = Assert-ExecutionEvidence -PlanPath $planPath -RunManifestPath $runManifestPath `
+            -RunManifestDigestPath $runManifestDigestPath -SummaryPath $summaryPath -EvidenceRoot $evidenceRoot `
+            -Manifest $manifest -ManifestSha256 $manifestSha256 -ManifestPath $manifestAbs `
+            -ExpectedPlanText $expectedPlanText -ExpectedRunManifestText $expectedRunManifestText `
+            -ExpectedSummaryText $expectedSummaryText -ExpectedResults $results -RunId $RunId -Platform $platform
+        Assert-ExecutionInputs -Source $sourceIdentity -Git $gitTool -Tools $tools -Commands $commandIdentities `
+            -RepoRoot $repoRoot -RequiredTrackedPaths $requiredTrackedPaths -ManifestPath $manifestAbs -ManifestSha256 $manifestSha256
+    }
+    catch { $runStatus = "failed"; $failureText = "terminal evidence validation failed: $($_.Exception.Message)" }
 }
-catch {
-    $evidenceFailure = "evidence validation failed: $($_.Exception.Message)"
-    Write-RunManifest -Path $runManifestPath -RunId $RunId -Manifest $manifest `
-        -ManifestSha256 $manifestSha256 -PlanSha256 $planSha256 -Platform $platform -Status "failed" `
-        -Failure $evidenceFailure -StartedUtc $runStarted -FinishedUtc ([DateTimeOffset]::UtcNow.ToString("O")) `
-        -Results $results
-    Write-Summary -Path $summaryPath -RunId $RunId -Platform $platform -Status "failed" `
-        -Failure $evidenceFailure -Results $results
-    throw "core-profile-gates: $evidenceFailure"
+if ($runStatus -cne "passed") {
+    $expectedSummaryText = Get-SummaryText -RunId $RunId -Platform $platform -Status $runStatus -Failure $failureText -Results $results
+    $summarySha256 = Get-Sha256Hex -Bytes ($utf8.GetBytes($expectedSummaryText))
+    $finalRunManifest = New-RunManifestValue -RunId $RunId -Manifest $manifest -ManifestSha256 $manifestSha256 `
+        -PlanSha256 $planSha256 -Architecture $architecture -Source $sourceIdentity -Tools $toolEvidence `
+        -Commands $commandEvidence -Supervision $supervisionEvidence -Status $runStatus -Failure $failureText `
+        -StartedUtc $runStarted -FinishedUtc $runFinished -SummarySha256 $summarySha256 -Results $results
+    $expectedRunManifestText = Get-StableJsonText -Value $finalRunManifest
+    [IO.File]::WriteAllText($summaryPath, $expectedSummaryText, $utf8)
+    [IO.File]::WriteAllText($runManifestPath, $expectedRunManifestText, $utf8)
+    $runManifestSha256 = Get-RawFileSha256 -Path $runManifestPath
+    [IO.File]::WriteAllText($runManifestDigestPath, "$runManifestSha256  $($manifest.evidence.run_manifest_path)`n", $utf8)
 }
-
-if ($null -ne $executionFailure) {
-    throw "core-profile-gates: $executionFailure"
-}
-Assert-ManifestUnchanged -Path $manifestAbs -ExpectedSha256 $manifestSha256
-Write-Host "core-profile-gates: ok (run_id=$RunId platform=$platform evidence=$evidenceRoot manifest_sha256=$manifestSha256 plan_sha256=$planSha256)"
+if ($runStatus -cne "passed") { throw "core-profile-gates: $failureText" }
+Write-Host "core-profile-gates: ok (run_id=$RunId platform=$platform evidence=$evidenceRoot manifest_sha256=$manifestSha256 plan_sha256=$planSha256 run_manifest_sha256=$validatedDigest)"
