@@ -327,6 +327,8 @@ unsafe fn raw_bounds_slice<'a>(header: *const RawSafeArray) -> &'a [SafeArrayBou
     }
     // SAFETY: `alloc_header` initialized exactly `dims` bounds at rgsabound.
     let ptr = unsafe { core::ptr::addr_of!((*header).rgsabound).cast::<SafeArrayBound>() };
+    // SAFETY: `ptr` addresses the first bound in the live descriptor allocation,
+    // which `alloc_header` initialized with exactly `dims` contiguous entries.
     unsafe { core::slice::from_raw_parts(ptr, dims) }
 }
 
@@ -988,7 +990,7 @@ fn alloc_header(
     // `owner_layout(bounds.len())`: a RawSafeArrayOwnerPrefix followed by a
     // RawSafeArray header with `bounds.len()` bounds entries (one inline plus
     // `bounds.len() - 1` trailing). All writes below stay inside that
-    // allocation, the 8-byte prefix offset keeps the header aligned, `bounds`
+    // allocation, the size-derived prefix offset keeps the header aligned, `bounds`
     // provides exactly `bounds.len()` entries for the non-overlapping copy
     // into the fresh allocation, and the header pointer offsets a NonNull base
     // by a constant within the allocation — justifying `new_unchecked`.
@@ -1443,6 +1445,8 @@ impl SafeArray {
         }
         // SAFETY: kind/len checks above prove this is an in-bounds i32 slot.
         let ptr = unsafe { data.add(payload_offset(kind, index)) };
+        // SAFETY: I4/Int selects a four-byte-aligned `i32` payload layout;
+        // the checked index identifies a live slot inside the non-null payload.
         Ok(Some(unsafe { *ptr.cast::<i32>() }))
     }
 
@@ -1465,6 +1469,8 @@ impl SafeArray {
         }
         // SAFETY: kind/len checks above prove this is an in-bounds writable i32 slot.
         let ptr = unsafe { data.add(payload_offset(kind, index)) };
+        // SAFETY: I4/Int selects a four-byte-aligned `i32` payload layout;
+        // the checked index and exclusive `&mut self` make this a unique live slot.
         unsafe { *ptr.cast::<i32>() = value };
         Ok(true)
     }
@@ -1569,6 +1575,13 @@ impl SafeArray {
         result
     }
 
+    /// Reads an I4/Int element from a raw SAFEARRAY descriptor produced by this runtime.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must point at a live OxVba-owned descriptor, and the caller must
+    /// have shared access to that descriptor for the duration of this call.
+    /// Ownership of the descriptor remains with the caller.
     pub unsafe fn raw_safearray_i32_element(
         raw: *mut core::ffi::c_void,
         index: usize,
@@ -1584,6 +1597,13 @@ impl SafeArray {
         result
     }
 
+    /// Mutates an I4/Int element of a raw SAFEARRAY descriptor produced by this runtime.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must point at a live OxVba-owned descriptor, and the caller must
+    /// have exclusive access to that descriptor for the duration of this call.
+    /// Ownership of the descriptor remains with the caller.
     pub unsafe fn set_raw_safearray_i32_element(
         raw: *mut core::ffi::c_void,
         index: usize,
@@ -1706,11 +1726,11 @@ impl Drop for SafeArray {
                     .cast::<u8>()
                     .sub(core::mem::size_of::<RawSafeArrayOwnerPrefix>())
             };
+            crate::live_counters::safearray_freed();
             // SAFETY: `owner` is the pointer `alloc_zeroed` returned in
             // `alloc_header`, and `owner_layout(self.dimensions())` recomputes
             // the layout used there (`c_dims` was written from `bounds.len()`);
             // nothing touches the allocation after this point.
-            crate::live_counters::safearray_freed();
             unsafe { std::alloc::dealloc(owner, layout) };
         }
     }
