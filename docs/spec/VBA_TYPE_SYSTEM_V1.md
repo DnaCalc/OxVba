@@ -1,21 +1,25 @@
 # VBA Type System v1
 
-Status: working VBA semantic reference; implementation/evidence incomplete
+Status: current VBA semantic reference; implementation and evidence tracked in canonical matrices
 Date: 2026-05-26
-Scope owner: OxVBA compiler/VM/runtime/COM/native-readiness
+Authority review: 2026-07-11
+Scope owner: VBA declared types and value-state semantics
 System clauses: `AUTH-SPEC-001`, `COMP-BIND-001`, `RUNTIME-VALUE-001`, `IR-OXIR-001`
 Current architecture: [`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md), [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md)
 
 ## Purpose
 
-Define the target OxVba type model for full VBA compatibility and current/future backend
-work. This document is the semantic authority for type-system shape: compiler
-metadata, OxIR/OxImage metadata, backend lowering plans, COM/native
-descriptors, and differential harness evidence should align to this model.
+Define the target VBA type model for full compatibility. This document refines
+type-system meaning: source types, declared types, value states, callable
+signatures, and the semantic facts required at runtime and external boundaries.
 
-Current code remains executable truth where implementation and this draft are
-not yet aligned. Such differences are gaps to close or explicitly classify, not
-permission to invent a parallel JIT-only type model.
+Authority follows `CHARTER.md`, `OPERATIONS.md`, and
+[`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md). Public
+specifications and reproducible black-box Excel/VBA observations decide
+behavior. Current OxVba code and historical fixtures are regression evidence,
+not semantic authority. A disagreement remains an explicit canonical matrix or
+oracle row until adjudicated; it is never resolved in favor of current code by
+default.
 
 ## Source References
 
@@ -55,14 +59,19 @@ Project-specific companion references:
 
 - Expression, coercion, and call semantics:
   [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md)
-- Executable package target:
-  [`EXECUTABLE_SEMANTIC_PACKAGE_V1.md`](EXECUTABLE_SEMANTIC_PACKAGE_V1.md)
-- Native-ready value substrate:
-  [`NATIVE_READY_VALUE_SUBSTRATE_V1.md`](NATIVE_READY_VALUE_SUBSTRATE_V1.md)
-- COM early binding scope:
-  [`COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md`](COM_EARLY_BINDING_TYPELIB_SCOPE_V1.md)
-- COM client/server scope:
-  [`COM_CLIENT_SERVER_SCOPE_V1.md`](COM_CLIENT_SERVER_SCOPE_V1.md)
+- Compiler semantic-fact contract:
+  [`OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md)
+- Verified OxIR/OxImage representation:
+  [`OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md`](OXVBA_OXIR_AND_IMAGE_CONTRACT_V1.md)
+- Runtime carrier layout:
+  [`OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md`](OXVBA_REPRESENTATION_LAYOUT_DOCTRINE_V1.md)
+- Windows boundary projection:
+  [`OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md`](OXVBA_WINDOWS_INTEROP_ARCHITECTURE_V1.md)
+
+Rust-like structures in this document are non-normative illustrations of the
+semantic facts that must remain distinguishable. They do not prescribe public
+DTO names, crate ownership, artifact layout, VM slots, or JIT representation.
+Those decisions belong to the active subsystem contracts.
 
 ## Layer Model
 
@@ -78,7 +87,7 @@ required:
      `DefType` rules, type characters, module kind rules, and object/interface
      resolution.
 3. **Runtime carrier**
-   - The current execution carrier: retained `Variant`, `BStr`, `ObjectRef`,
+   - The semantic carrier family: `Variant`, `BStr`, `ObjectRef`,
      `SafeArray`, descriptor-backed UDT fields, and selected control-plane
      tokens such as `BindingHandle`.
 4. **External ABI/wire projection**
@@ -86,8 +95,9 @@ required:
      and exported callable shapes. These are projections from declared semantic
      types and runtime carriers, not replacements for them.
 
-The executable semantic package carries the declared semantic type and enough
-descriptor metadata to choose the runtime carrier and external projection.
+The compiler-owned semantic facts and verified executable artifact preserve the
+declared semantic type and enough descriptor information for consumers to
+select a carrier and any external projection without rediscovering meaning.
 
 Expression and call behavior is a companion semantic layer, not an optional
 JIT detail. Declared type descriptors must be paired with the coercion,
@@ -95,8 +105,8 @@ operator, assignment, property, and call-site descriptors defined in
 [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md).
 For example, a `ByRef Long` parameter is not described fully by the declared
 type `Long`; its parameter mechanism, aliasing/writeback behavior, optional
-state, and call-site compatibility checks are part of the same executable
-semantic package.
+state, and call-site compatibility checks are part of the same semantic fact
+set preserved through the verified artifact.
 
 ## Declared Type Categories
 
@@ -145,9 +155,9 @@ OxVba rules:
 - `Dim x As Decimal`, `DefDec`, and ordinary declared Decimal slots are not
   spec-compatible declared-type lanes and must be rejected or placed behind an
   explicit non-VBA extension gate;
-- compiler internals that currently contain a `Decimal` bound type must be
-  audited so they cannot make Decimal look like a normal declared storage type
-  for package/JIT purposes.
+- any compiler representation that can make `Decimal` look like ordinary
+  declared storage remains a `CORE-READINESS/CORE-TYPED-BINDING` gap until it
+  is rejected or explicitly extension-gated and evidenced.
 
 ### String Types
 
@@ -158,7 +168,7 @@ String descriptors must distinguish:
 - `vbNullString` as a value expression/projection case, not a distinct declared
   type.
 
-String package metadata must record fixed length where present, default
+Semantic and verified-artifact facts must record fixed length where present, default
 initialization, assignment truncation/padding behavior, and cleanup ownership.
 
 ### Arrays
@@ -180,7 +190,8 @@ carrier used for array values and COM projection.
 
 ### Array Bounds And Shape
 
-Array bounds are shape metadata, not the element declared type. The package
+Array bounds are shape metadata, not the element declared type. Compiler-owned
+semantic facts and the verified artifact
 must preserve both:
 
 - the element declared type and carrier;
@@ -211,7 +222,7 @@ Bounds rules:
 - COM SAFEARRAY projection must preserve the lower bound and element type
   metadata per dimension exactly at the boundary.
 
-Target package shape:
+Illustrative semantic fact shape (non-normative representation):
 
 ```rust
 pub enum ArrayStorageKind {
@@ -261,9 +272,9 @@ record:
 - native ABI materialization policy, explicitly separate from internal
   descriptor-backed semantics.
 
-Internal storage may remain flattened/descriptor-backed over retained slots for
-now. JIT/native lowering must not treat a UDT as a platform struct unless a
-separate ABI descriptor proves the layout.
+Internal storage is a backend decision, but it must preserve nominal UDT
+semantics and ownership. JIT/native lowering must not treat a UDT as a platform
+struct unless a separately verified ABI descriptor proves the layout.
 
 ### Enums
 
@@ -276,13 +287,11 @@ record:
 - underlying carrier as `Long`;
 - assignment/coercion behavior where VBA treats enum values as numeric.
 
-Current package evidence preserves selected enum facts through
-`NameBindingDescriptor` rows: `NAME-BINDING-ENUM-TYPE` records nominal identity,
-visibility, member count, and `Long` carrier policy; `NAME-BINDING-ENUM-MEMBER`
-records member order, explicit-value status, and constant value. Execution still
-lowers enum members as module constants. A dedicated `EnumTypeDescriptor`,
-declared enum slot typing, and enum-specific coercion diagnostics remain
-future work.
+Enum nominal identity, member order/value, declared-slot typing, and
+enum-specific coercion diagnostics are required semantic facts. Their
+implementation and evidence state is owned by
+`CORE-READINESS/CORE-TYPED-BINDING` and the corresponding verified-artifact
+rows; historical name-binding tokens do not establish current completion.
 
 ### Object, Class, Interface, And Imported COM Types
 
@@ -337,9 +346,9 @@ types.
 
 ## Procedure Type Descriptors
 
-Procedure descriptors must capture the full source signature and the resolved
-semantic calling shape. This is required for ordinary VM execution, COM
-projection, native Declare, exported callables, and future JIT call lowering.
+Procedure semantic facts must capture the full source signature and resolved
+calling shape. This is required for VM3/JIT execution, COM projection, native
+`Declare`, and exported callables.
 
 Procedure descriptors must record:
 
@@ -366,9 +375,9 @@ Procedure descriptors must record:
 - event signature compatibility and handler binding;
 - implicit method current-object (`Me`) descriptor;
 - external Declare ABI surface where applicable;
-- source span and bytecode entry metadata.
+- source span and resolved executable-procedure identity.
 
-Target signature model:
+Illustrative semantic fact shape (non-normative representation):
 
 ```rust
 pub struct ProcedureSignatureDescriptor {
@@ -384,7 +393,7 @@ pub struct ProcedureSignatureDescriptor {
     pub implicit_current_object: Option<ImplicitCurrentObjectDescriptor>,
     pub external_abi: Option<ExternalAbiDescriptorId>,
     pub source_span: Option<SourceSpanId>,
-    pub bytecode_entry: Option<BytecodeEntryId>,
+    pub executable_procedure: Option<ResolvedProcedureId>,
 }
 
 pub struct ParameterDescriptor {
@@ -475,8 +484,10 @@ Interop descriptors project from semantic types:
 - Exported callable projection: inbound ABI shape, slot population, ByRef
   writeback, cleanup, and error return policy.
 
-COM and native descriptors are package metadata. Generated code and JIT helpers
-must not discover these shapes through ambient symbols or side channels.
+COM and native projections consume verified semantic descriptors. Generated
+code and runtime helpers must not discover these shapes through ambient symbols
+or side channels; concrete descriptor representation belongs to the artifact
+and Windows subsystem contracts.
 
 ## Spec Cross-Reference Review
 
@@ -488,7 +499,7 @@ extractions listed above. The current alignment target is:
 | Scalar/value type list | MS-VBAL table 2/table 3, including `SEG-000585..000653` | Keep scalar declared types explicit; model `Decimal` as a runtime Variant subtype, not ordinary declared storage. |
 | Decimal nuance | MS-VBAL `SEG-000653`; Microsoft Decimal language reference | `VarType::Decimal`/`Decimal96` is valid as Variant payload and COM/SAFEARRAY projection; declared `Dim x As Decimal` remains rejected or extension-gated. |
 | Array declaration shape | MS-VBAL `CONF-...-0057..0059`, `SEG-001689..001691` | Distinguish scalar, resizable array, and fixed-size array declared types with element type and shape. |
-| Array bounds constants | MS-VBAL `CONF-...-0062`, `SEG-001723` | Bounds expressions are compile-time values Let-coercible to `Long`; package records lower/upper/provenance. |
+| Array bounds constants | MS-VBAL `CONF-...-0062`, `SEG-001723` | Bounds expressions are compile-time values Let-coercible to `Long`; semantic facts preserve lower/upper/provenance. |
 | Fixed string length | MS-VBAL `CONF-...-0066`, `SEG-001744..001745` | Fixed-length String descriptors carry length provenance and assignment rules. |
 | Procedure parameter grammar | MS-VBAL `CONF-...-0107..0129`, `SEG-002047..002101` | Signature descriptors include parameter order, role, ByRef/ByVal/defaulting, array designators, Optional, ParamArray, and implicit `Me`. |
 | Property signatures | MS-VBAL `CONF-...-0134..0139`, `SEG-002107..002121` | Property descriptors preserve Get/Let/Set grouping, value-param declared type, and runtime ByVal value-param semantics. |
@@ -496,28 +507,32 @@ extractions listed above. The current alignment target is:
 | Object/class conformance | MS-VBAL `CONF-...-0008..0009`; Set-coercion sections | Object descriptors include class/interface conformance and `Nothing` state. |
 | COM wire types | MS-OAUT `CONF-...-0010..0016`, `0023..0028`, `0042`, `0050..0077`, `0173..0188`, `0202`, `0224`, `0227`, `0278..0287` | COM descriptors project to VARIANT/BSTR/SAFEARRAY/IDispatch/IUnknown without replacing the core OxVba type model. |
 
-Review gaps:
+Canonical closure routes:
 
-- the central `VbaTypeId` registry does not exist yet;
-- the compiler/VM metadata still needs auditing against the full
-  `ProcedureSignatureDescriptor` shape;
-- Let/Set coercion and operator truth tables are tracked in
+- stable declared-type identities, complete callable facts, and compiler
+  diagnostics are owned by `CORE-READINESS/CORE-TYPED-BINDING`;
+- verified nominal types, arrays, records, callable signatures, and consumer
+  admission are owned by the applicable `OXIR-BACKENDS` and
+  `OXIMAGE-CONTRACT` rows;
+- Let/Set coercion and operator truth tables are specified in
   [`VBA_EXPRESSION_CALL_SEMANTICS_V1.md`](VBA_EXPRESSION_CALL_SEMANTICS_V1.md).
-  The first coercion seed rows are checked in at
+  Historical seed rows remain non-authoritative coverage inputs at
   [`../validation/VBA_COERCION_SEED_TABLE_V1.csv`](../validation/VBA_COERCION_SEED_TABLE_V1.csv);
-  the first operator seed rows are checked in at
+  operator inputs are at
   [`../validation/VBA_OPERATOR_SEED_TABLE_V1.csv`](../validation/VBA_OPERATOR_SEED_TABLE_V1.csv);
-  the first lifecycle/cleanup seed rows are checked in at
+  lifecycle inputs are at
   [`../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv`](../validation/VBA_LIFECYCLE_CLEANUP_SEED_TABLE_V1.csv);
-  the first object/member binding seed rows are checked in at
+  and object/member inputs are at
   [`../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv`](../validation/VBA_OBJECT_MEMBER_BINDING_SEED_TABLE_V1.csv);
-  full truth-table extraction and canonical descriptor ids remain open;
-- `Array(...)` function lower-bound behavior needs explicit MS-VBAL plus Office
-  oracle closure before specialization.
+  they gain current completion credit only through replay on canonical rows;
+- `Array(...)` lower-bound behavior and any other unresolved observable receive
+  an authoritative public-spec reason or a current Excel/VBA oracle row before
+  VM3/JIT specialization is accepted.
 
-## Package Slot Descriptor Target
+## Semantic Slot Facts
 
-The executable semantic package should expose a per-slot descriptor shaped like:
+Consumers require the following per-slot facts. The shape is illustrative and
+non-normative:
 
 ```rust
 pub struct SlotTypeDescriptor {
@@ -538,7 +553,6 @@ pub enum SlotRole {
 }
 
 pub enum SlotInitialState {
-    Unknown,
     CallerProvided,
     Empty,
     ScalarZero,
@@ -551,7 +565,6 @@ pub enum SlotInitialState {
 }
 
 pub enum RuntimeCarrierKind {
-    Unknown,
     Variant,
     Boolean,
     I16,
@@ -568,149 +581,33 @@ pub enum RuntimeCarrierKind {
     ObjectRef,
     SafeArray,
     UdtFields { descriptor: UdtTypeId },
-    BindingHandleInternal,
 }
 ```
 
-This is a target package model, not an immediate storage mandate. The VM may
-continue executing retained `Variant` slots while exposing declared type and
-carrier metadata for evidence and future lowering.
+This is not a storage mandate. Backends may choose physical slots only after
+preserving the verified declared type, carrier, ownership, and call facts.
+`Unknown` or poison type facts are permitted only in editor analysis and cannot
+enter verified Core IR/OxIR or code generation. Internal binding handles are
+control-plane data, not VBA slot carriers. `CallerProvided` is the initial state
+for parameter slots before call-binding facts define the exact source,
+aliasing, and writeback behavior.
 
-`Unknown` is a temporary package-strengthening state for metadata that current
-compiler/runtime surfaces do not yet preserve. It is not a type-system answer
-and must be treated as unsupported by JIT/native entry gates. `CallerProvided`
-is the initial state for parameter slots before call-binding descriptors define
-the exact argument source, aliasing, and writeback behavior.
+## Historical Implementation Snapshot Disposition
 
-## Historical Code Anchors And Gaps (Superseded Snapshot)
+The removed compiler/Bundle/VM inventory that originally occupied this section
+was a 2026-05-26 implementation snapshot. It is intentionally not retained as
+active guidance: its crate paths, package versions, descriptor tokens, VMR
+milestones, and gap claims are historical provenance in Git and cannot establish
+current architecture, expected VBA behavior, or completion. Current realization
+is recorded in `docs/ARCHITECTURE.md`; current delivery and evidence state comes
+only from the accepted worksets and canonical matrices.
 
-> [!CAUTION]
-> This implementation inventory records the removed compiler/Bundle/VM generation from 2026-05-26. It is retained only to explain the semantic draft's origin. Current implementation and gaps are in `docs/ARCHITECTURE.md`; current type/artifact ownership is defined by the compiler and OxIR/Image contracts.
+Any still-useful fixture or observation from that snapshot must be replayed on
+the current compiler -> Core IR -> verified OxIR/OxImage -> VM3/JIT route and
+adjudicated against public specifications or reproducible Excel/VBA behavior
+before it can advance a compatibility row.
 
-Current implementation anchors:
-
-- `crates/oxvba-runtime/src/variant.rs`: runtime `VarType` tags and retained
-  `Variant` storage.
-- `crates/oxvba-runtime/src/decimal.rs`: `Decimal96`.
-- `crates/oxvba-runtime/src/safe_array.rs`: SAFEARRAY element carriers,
-  including Decimal element support.
-- `crates/oxvba-compiler/src/resolve.rs`: current `BoundType`,
-  `BoundArrayDescriptor`, `BoundParam`, external declaration shape, and
-  project/module binding.
-- `crates/oxvba-compiler/src/project.rs`: current reflection
-  `VbaTypeDescriptor`, procedure/class/export metadata, and imported COM
-  descriptors.
-- `crates/oxvba-compiler/src/emit.rs`: current `ProcedureRuntimeMetadata` and
-  `ProcedureRuntimeSlotMetadata`; `SlotTypeDescriptor` view with provisional
-  `VbaTypeId`, `SlotInitialState`, and `RuntimeCarrierKind` enums populated
-  for parameters, locals, return slots, compiler-generated fixed-array element
-  slots, and temporary slots; first `ProcedureSignatureDescriptor` and
-  `ParameterDescriptor` view for procedure kind, parsed parameter mode,
-  source/resolved parameter mechanism, Optional/default/missing policy,
-  ParamArray shape, return type, property group, property value ByVal
-  semantics, and class hidden-receiver metadata; first `ArrayShapeDescriptor`
-  rows for resolver-known arrays, including rank, declared bounds, storage
-  kind, `Option Base`, element type, and element carrier; and first
-  `UdtTypeDescriptor` rows for nominal UDT ids, instances, fields, nested UDT
-  references, fixed strings, fixed array fields, aliases, and cleanup flags;
-  and first `ObjectTypeDescriptor` rows for generic `Object` slots with
-  `Nothing` initial state, `ObjectRef` carrier, activation/event/default
-  member policy, support classification, and per-slot instances.
-- `crates/oxvba-compiler/src/bundle.rs`: `OxBundle` format v10 serializes the
-  populated slot, signature, seed call-site, array-shape, UDT, and object
-  metadata and upgrades v1/v2/v3/v4/v5/v6/v7/v8/v9 bundles into the current
-  descriptor shape.
-- `crates/oxvba-vm/src/interpreter.rs`: `VmExecutionPackage` and package
-  metadata loading; `VmExecutionPackage::slot_type_descriptors` exposes the
-  current slot descriptor view and
-  `VmExecutionPackage::procedure_signature_descriptors` exposes the first
-  signature descriptor view; `VmExecutionPackage::call_site_descriptors`
-  exposes seed call-site rows without changing slot or call execution; and
-  `VmPackageIdentityEvidence` reports per-procedure slot descriptor digests,
-  descriptor rows, signature/call observation rows for current seed `CallProc`
-  lowering compared with signature metadata, and call-site descriptor evidence
-  rows for the first VMR-04 fixtures, plus array-shape and UDT descriptor
-  evidence for VMR-05 fixtures; selected lifecycle evidence for descriptor-backed
-  UDT owning-field cleanup; object descriptor evidence for generic object slots;
-  bundle-carried route evidence for VM-capable class/interface dynamic object
-  routes and imported COM `WithEvents` routes; and matching runtime route
-  evidence when those route tables are supplied to the VM.
-- `conformance/vm_package/identity_seed`: VM-runnable package fixtures assert
-  value snapshots plus descriptor tokens for primitive scalar, `String`/`BStr`,
-  declared `Variant`, the current flattened UDT field-alias/base-slot shape,
-  first nominal UDT descriptors, and VMR-03 call observations for ByVal,
-  ByRef, Optional default, ParamArray, property value, and return copyout
-  behavior. VMR-04 fixture rows add call-site
-  descriptor evidence for ByRef alias/writeback, ByRef expression temp,
-  ByVal copy with the selected package-backed declared-`Double` call-entry
-  coercion shape and its selected coercion/helper row ids, Optional default,
-  Optional `Variant` missing-policy metadata, and empty/non-empty `ParamArray`
-  shape. The VMR-05 fixture rows assert fixed/static array descriptor bounds,
-  dynamic `ReDim` runtime SAFEARRAY bounds, `Option Base` influence, element
-  carrier facts, package-backed rank-1 fixed/static `LBound`/`UBound`
-  descriptor consumption with a raw-bytecode base-slot limitation baseline, and
-  UDT descriptor facts for nested UDTs, fixed strings, fixed array fields,
-  aliases, cleanup ownership flags, selected lifecycle cleanup observations for
-  variable/fixed BSTR-owning UDT fields, generic `Object` descriptor facts, and
-  selected `ObjectRef` slot lifecycle tokens. A companion project fixture
-  asserts bundle-visible and VM-runtime-visible source-project class route
-  identity, `As New` generated-handle activation policy, default-member route
-  identity, implemented interface descriptor ids, imported COM `WithEvents`
-  route identity, handler guards, and subscription/cleanup policy for current
-  VM-capable route tables.
-
-Known development gaps:
-
-- no central `VbaTypeId`/descriptor registry exists yet;
-- `ProcedureSignatureDescriptor` now carries the first call-relevant source
-  and resolved parameter facts, missing optional state, ParamArray shape,
-  implicit `Me`, and property value ByVal semantics, but signature descriptor
-  ids, complete call-site coverage, and descriptor-driven VM call behavior
-  remain incomplete;
-- `CallSiteDescriptor` and `ArgumentBindingDescriptor` now represent the first
-  top-level project call sites with ByRef alias/writeback, ByRef expression
-  temporary/no-writeback, ByVal copy, Optional/default and Optional `Variant`
-  missing-policy metadata, named/omitted, ParamArray, fixed-array
-  materialization, default-member fallback policy, property value ByVal
-  classification, and return copyout facts. Expression-call coverage outside
-  current direct lowering, external Declare/COM call coverage, canonical
-  descriptor ids, broader descriptor-driven VM behavior, broad ByVal call-entry
-  coercion, and true Optional-missing runtime behavior remain incomplete. The
-  first VMR-06 path consumes package metadata only for direct local `Long` to
-  declared-`Double ByVal` call entry;
-- `ProcedureRuntimeSlotMetadata`, `ArrayShapeDescriptor`, `UdtTypeDescriptor`,
-  and `ObjectTypeDescriptor` now carry first-pass slot, local array shape, UDT
-  shape facts, generic object slot facts, selected array lifecycle evidence,
-  non-UDT String slot lifecycle evidence, UDT recursive-init/layout-index
-  evidence, and selected bundle route evidence for source-project class
-  activation/default-member/interface identity plus imported COM `WithEvents`
-  route identity. Expression temporary declared types, VM-runnable multi-rank
-  and bounds-error array evidence, aggregate UDT byte offsets/ABI layout,
-  descriptor-driven UDT copy/drop behavior, default-instance execution policy,
-  full imported-COM type/member descriptors, general fixed-string behavior,
-  helper lifetime counters, and full carrier layout facts remain incomplete or
-  explicitly `Unknown`; the first lifecycle/cleanup seed table names current
-  cleanup obligations for primitive, Variant/Decimal, BStr, SafeArray,
-  ObjectRef, UDT fields, ByRef temps, COM/native boundary temps, and deopt
-  state, and VM lifecycle evidence now asserts selected String, array,
-  SAFEARRAY, UDT BSTR owning-field, and ObjectRef slot cleanup paths, but those
-  rows are not package-owned descriptors yet and explicit cleanup-stack
-  execution remains open;
-- current `BoundType::Decimal` must be audited so Decimal is retained as a
-  Variant subtype/value carrier rather than accepted as ordinary declared
-  storage;
-- project reflection `VbaType` is useful but too coarse for package/JIT use;
-- enum facts now have selected package name-binding rows, and UDT descriptors
-  now emit recursive init plus descriptor layout-index evidence, but dedicated
-  enum descriptors, UDT byte-offset/ABI layout descriptors, richer
-  full object/class/interface descriptors, and COM imported type descriptors
-  are not yet unified behind one package type registry; the first object/member
-  binding seed table now names `Set`/`Nothing`, property accessors, default
-  members, class/interface routes, COM dispatch, early-bound COM, events, and
-  `WithEvents` as binding rows, but those rows are not a package-owned member
-  registry yet.
-
-## Current Type-System Direction
+## Required Type-System Direction
 
 1. Preserve declared types and callable signatures in compiler AnalysisResult, Core IR and OxIR.
 2. Give OxIR/OxImage stable nominal type/record/interface identities and verified descriptors.

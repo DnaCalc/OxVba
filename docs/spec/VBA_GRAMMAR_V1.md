@@ -1,16 +1,19 @@
 # VBA Grammar V1
 
 Date: 2026-06-01
-Status: working VBA semantic reference; implementation/evidence incomplete
+Authority review: 2026-07-11
+Status: current VBA semantic reference; implementation and evidence tracked in canonical matrices
 System clauses: `AUTH-SPEC-001`, `SRC-CC-001`, `SYN-CST-001`
 Current compiler contract: [`OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md`](OXVBA_COMPILER_AND_SEMANTIC_ANALYSIS_CONTRACT_V2.md)
 Historical origin: frontend-v2 workset/bead `bd-aprs.2.1`
 
 ## Purpose
 
-This document is the in-repo grammar anchor for OxVba's current compiler. It is a clean-room
-grammar scaffold derived from implementation knowledge, existing OxVba fixtures, and public
-authority references. It is not a copied extract of any third-party grammar.
+This document is the in-repo semantic grammar anchor for VBA source accepted by
+OxVba. It is a clean-room, project-owned organization of public authority.
+Existing OxVba fixtures and implementation behavior may identify regression and
+coverage cases, but they do not decide the grammar. This is not a copied extract
+of any third-party grammar.
 
 The grammar exists to drive:
 
@@ -21,12 +24,20 @@ The grammar exists to drive:
 
 ## Authority And Provenance
 
+Authority follows `CHARTER.md`, `OPERATIONS.md`, and
+[`OXVBA_SYSTEM_CONTRACT_V1.md`](OXVBA_SYSTEM_CONTRACT_V1.md). Public
+specifications define the language model; reproducible black-box Excel/VBA
+compile observations adjudicate ambiguity or specification disagreement.
+Current OxVba parsing behavior is evidence only. A mismatch remains an open
+canonical row owned by the Core source/compiler or Excel-oracle lane; it never
+becomes grammar merely because the current parser accepts or rejects it.
+
 Primary authority:
 
 - Microsoft Open Specifications, `[MS-VBAL]: VBA Language Specification`
   (`https://learn.microsoft.com/en-us/openspecs/microsoft_general_purpose_programming_languages/ms-vbal/d5418146-0bd2-45eb-9c7a-fd9502722c74`).
 
-Existing repo evidence:
+Non-authoritative regression and coverage inputs:
 
 - `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.md`
 - `docs/evidence/language/MS_VBAL_MODULE_PROJECT_REQUIREMENTS.csv`
@@ -42,6 +53,11 @@ Clean-room rule:
 - Do not paste normative MS-VBAL grammar text into this repository.
 - Rubberduck or other grammars may be used as quirk checklists in later beads, but not copied into
   this grammar artifact.
+
+The EBNF below is non-normative notation for semantic productions and coverage.
+It does not prescribe parser functions, CST DTOs, recovery-node storage, or
+OxIR representation. Those representations belong to the active compiler and
+artifact contracts.
 
 ## Dialect Target
 
@@ -290,21 +306,33 @@ literal            = STRING_LITERAL | DATE_LITERAL | NUMERIC_LITERAL | "True" | 
                    | "Empty" | "Null" ;
 ```
 
-## Coverage Residuals
+## Coverage And Residual Ownership
 
-This scaffold intentionally leaves detailed rows for later grammar/coverage beads:
+The following semantic areas require independently closable rows. Their status
+is read from canonical matrices rather than inferred from this reference:
 
-- preprocessor grammar (`#If`, `#ElseIf`, `#Else`, `#End If`, `#Const`);
-- attributes and designer/module metadata details;
-- full event/Implements/static semantics beyond syntactic recognition;
-- full external reference grammar and host project storage shapes;
-- userform/control declarations and runtime forms behavior;
-- parser recovery nodes for incomplete IDE edit states.
+- preprocessor grammar (`#If`, `#ElseIf`, `#Else`, `#End If`, `#Const`) and
+  parser recovery are owned by `CORE-READINESS/CORE-SYNTAX-CST`;
+- attribute, normalization, and generated-source coordinates are owned by
+  `CORE-READINESS/CORE-SOURCE-IDENTITY-PROVENANCE`;
+- declaration legality, event/`Implements` signatures, and external-reference
+  syntax-to-meaning transitions are owned by
+  `CORE-READINESS/CORE-TYPED-BINDING`, with Windows boundary behavior remaining
+  in the Windows matrices;
+- incomplete-editor recovery consumes the same CST semantics and is evidenced
+  by the IDE baseline rows;
+- userform/control grammar and forms runtime remain `PROFILE-EXT-001` scope and
+  are not silently claimed by the accepted Core profile.
+
+Unresolved grammar behavior receives a public-spec anchor or a reproducible
+Excel/VBA compile case and an exact residual owner before any compatibility
+claim advances.
 
 ## Checks
 
 - Public MS-VBAL reference verified on Microsoft Learn on 2026-06-01.
-- Existing repo language evidence and parser surface inspected.
+- Existing repo language evidence and parser surface inspected as
+  non-authoritative coverage inputs.
 - EBNF scaffold consistency check: all lower-snake-case RHS production references have a matching
   LHS definition.
 - `git diff --check`: passed with line-ending warnings only for touched tracked files.
