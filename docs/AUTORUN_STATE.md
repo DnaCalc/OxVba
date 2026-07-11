@@ -7,10 +7,11 @@ Active program manifest: docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json
 Program root: bd-59co
 Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
-Queue certification: certified — CORE-1, WIN-0 and WIN-14 rollout leaves are closed; the actual ready queue contains exactly the ten current leaves listed below and no stale work.
+Queue certification: certified — three first-wave leaves are active; the actual ready queue contains exactly the seven remaining current leaves listed below and no stale work.
 Claim queue: br ready -l ideal-2026-07 -t task
-Current tasks: none at this committed integration boundary.
-Certified ready queue: `bd-2cjy`, `bd-59co.2.2.4`, `bd-59co.2.2.5`, `bd-59co.2.2.7`, `bd-59co.2.2.8`, `bd-59co.2.2.13`, `bd-59co.3.1.3`, `bd-59co.3.1.4`, `bd-59co.3.1.5`, and `bd-59co.3.15.4`.
+Current tasks: `bd-2cjy` (SafeArray strict-Clippy/ownership), `bd-59co.2.2.5` (isolated carrier-balance protocol), and `bd-59co.3.1.3` (x64 matrix stewardship/authority).
+Certified ready queue: `bd-59co.2.2.4`, `bd-59co.2.2.7`, `bd-59co.2.2.8`, `bd-59co.2.2.13`, `bd-59co.3.1.4`, `bd-59co.3.1.5`, and `bd-59co.3.15.4`.
+Current capacity snapshot: `docs/evidence/programs/ideal-2026-07/capacity/POST_ROLLOUT_CAPACITY_2026-07-11.md` (three agents, source hash `19876d013a3d9d45`).
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
 Last completed tasks: rollout leaves `bd-59co.2.2.1`, `bd-59co.3.1.1`, and `bd-59co.3.15.1` closed after clean graph, truth, negative-fixture and independent semantic review gates.
 
