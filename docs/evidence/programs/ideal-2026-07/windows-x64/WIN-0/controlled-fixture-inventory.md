@@ -65,10 +65,31 @@ an old DLL, TLB, workbook or archived capture.
 
 All 57 `built_artifact_state` values are `pending`, with `path=pending`,
 `hash=pending` and the exact active matrix residual owner. No historical or
-ad-hoc binary is reused as current proof. A future current artifact requires an
-immutable x64 artifact identity, a controlled non-historical repo path and a
-SHA-256 that recomputes from the file bytes; changing a matrix fixture hash
-without adding that controlled path fails generation.
+ad-hoc binary is reused as current proof. Each row now has an explicit artifact
+contract rather than a generic future path:
+
+| artifact class | rows | immutable file name | admitted content |
+|---|---:|---|---|
+| `pe-dll-x64` | 23 | `fixture.dll` | PE32+ AMD64 executable with the DLL characteristic |
+| `pe-exe-x64` | 18 | `fixture.exe` | PE32+ AMD64 executable without the DLL characteristic |
+| `fixture-bundle-json-v1` | 16 | `fixture-bundle.json` | exact versioned JSON schema plus the row's ordered component-type contract |
+
+The controlled root is exactly
+`artifacts/windows-x64/controlled-fixtures/v1/<matrix-id>/<row-id>` with
+lower-case immutable matrix and row IDs. A `current` transition must use that
+exact root/name pair. The validator rejects traversal, reparse-point escape,
+mutable aliases and historical/generated/evidence locations before reading
+content.
+
+Direct binaries are parsed as PE files: DOS and PE signatures, AMD64 machine
+`0x8664`, PE32+ optional-header magic `0x020B`, section/header bounds,
+executable characteristic and DLL-versus-EXE characteristic must all agree
+with the row contract. Bundle JSON has an exact property-and-type schema bound
+to `matrix_id`, `row_id`, `fixture_id`, `built_artifact_id`, x64 and the bundle
+class. Its ordered components use immutable versioned IDs, exact controlled
+component paths and raw-byte SHA-256 values; each component is then validated
+as x64 DLL/EXE, MSFT typelib or nonblank UTF-8 VBA source as declared. The
+top-level artifact hash is recomputed only after content validation.
 
 ### Environments
 
@@ -81,8 +102,24 @@ capture nor the clean certification image has landed:
 | `win-x64-cert-vm-pending-v1` | 45 | `bd-59co.3.15.3` | clean pinned release-certification VM still blocking |
 
 Environment hashes are separate from both source/recipe and built-artifact
-hashes. A current environment hash requires the environment owner to supply an
-immutable capture path. The later WIN-0 reconciliation bead
+hashes. Every row pins the canonical environment role, profile, target,
+Office bitness, evidence state and this exact capture contract:
+
+`artifacts/windows-x64/controlled-environments/v1/<environment-id>/environment-capture.json`
+
+The capture must use schema
+`oxvba-windows-x64-environment-capture-v1`, exact JSON properties and types,
+and a versioned capture ID. It must reproduce the canonical environment ID,
+role, `windows-x64` profile, x64 target, Office64 product/build/channel,
+locale, OS build, evidence state, image identity and reset policy from
+`IDEAL_ENVIRONMENT_MANIFEST_V1.csv`. The image must be pinned by SHA-256 and
+the capture separately hashes the exact reset policy. Development-oracle
+captures must remain explicitly noncertifying; certification captures must be
+verified, authoritative and bind a pinned resettable snapshot/image. Thus the
+current mutable development host and pending certification VM cannot be
+promoted merely by hashing arbitrary notes.
+
+The later WIN-0 reconciliation bead
 `bd-59co.3.1.7` owns the environment/fixture/downstream handoff; this bead does
 not edit `IDEAL_ENVIRONMENT_MANIFEST_V1.csv`.
 
@@ -113,6 +150,11 @@ The deterministic sync and validator enforce:
 - immutable versioned fixture identities and explicit x64 recipe/artifact
   identities, with x86/WOW64/ARM64 and mutable `latest/current/head` identities
   rejected;
+- exact per-row artifact classes, roots, names, types and ordered bundle
+  component contracts, with structural PE32+/AMD64 and exact JSON admission;
+- exact versioned environment capture roots, names and schema, bound field by
+  field to the canonical Windows x64/Office64 environment and its authority
+  role, image and reset policy;
 - normalized sorted deduplicated source paths and LF-stable hash recomputation;
 - distinct source/recipe, built-artifact and environment state/hash/owner
   triples;
@@ -122,12 +164,14 @@ The deterministic sync and validator enforce:
 - `capability_credit=none` on every row.
 
 `scripts/test-windows-fixture-manifest.ps1` proves the clean generated copy, a
-legal pending-with-owner population and CRLF checkout stability. Its 15
-fail-closed mutations cover missing and duplicate rows, unowned pending source,
-artifact and environment records, forged and malformed current hashes,
-pending-with-forged-hash, mutable and non-x64 identities, capability credit,
-32-bit Office, noncanonical paths, historical binary source reuse and blank
-cleanup.
+legal pending-with-owner population, CRLF checkout stability and successful
+full-validator admission of controlled x64 DLL, x64 EXE, exact bundle and
+canonical environment-capture samples. Its 31 fail-closed mutations cover the
+original row/owner/hash/credit/source-path guards plus source text disguised as
+a DLL, mutable and historical artifact aliases, artifact traversal, x86 PE and
+wrong bundle schema. Environment mutations cover arbitrary text, mutable
+alias, wrong identity, target architecture, Office bitness, role, traversal, mutable image,
+dev-oracle certification flags and forged reset-policy binding.
 
 ## Acceptance record
 
@@ -137,8 +181,8 @@ The focused acceptance commands pass:
   20 current source recipes and 37 pending source recipes;
 - `./scripts/validate-windows-fixture-manifest.ps1` — exact six-matrix/57-row x64
   inventory, 57 pending built artifacts, 57 pending environments and no credit;
-- `./scripts/test-windows-fixture-manifest.ps1` — three positive observations
-  and 15 negative mutations.
+- `./scripts/test-windows-fixture-manifest.ps1` — six positive observations
+  and 31 negative mutations, including full `current` admission probes.
 - `./scripts/run-truth-reconciliation.ps1` — full check-only reconciliation,
   including the new sync and validator, with no generated/controller rewrite.
 
