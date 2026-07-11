@@ -4,6 +4,7 @@ Date: 2026-07-11
 Bead: `bd-59co.2.2.8`
 Base: `c0ff1de7a61dce2df6c83eff730582f2fd6f969b`
 Implementation commit: `d9a471b5703c79e06d1702ff292165a5b41fa9eb`
+Hardening commit: `22fc9de46828dc8595313c89c3207dc5601a49c7`
 Clause: `CONF-QUALITY-001`
 Matrix route: `CORE-READINESS/CORE-BASELINE-CROSS-PLATFORM-GATES`
 
@@ -94,24 +95,30 @@ The PowerShell bootstrap similarly refuses a pre-existing owned tool root.
 
 ## Controlled source and fixture hash
 
-Hashes are SHA-256 over strict UTF-8 after CRLF and bare-CR normalization to LF.
-That makes the contract independent of checkout transport while still rejecting
-any semantic or byte change to its controlled inputs.
+Hashes are SHA-256 over strict UTF-8 after CRLF normalization to LF. A lone
+carriage return is rejected rather than normalized. That makes the contract
+independent of ordinary checkout transport while still rejecting malformed EOL
+states and any semantic or byte change to its controlled inputs.
 
 | path | canonical SHA-256 |
 |---|---|
 | `.github/workflows/ci.yml` | `bdc6ff1f7a0859dafdf4c54f70e151bb118d2e978e83bbec166365d4cd01de52` |
-| `scripts/check-governance.ps1` | `8e252bc465d2578d3bfc0c84f0db76775a031fd5d78f3b649c7dfa552ff6c512` |
 | `scripts/install-pinned-pwsh.sh` | `f822fe27bc75cb435773ad1b9ea1dbd3d28a5a873c0d3c9a612b13d0ff3fe6cf` |
 | `scripts/run-hal-conformance-wasm32.ps1` | `0d64e4b56cd7ed9ccba60e45e3233df717530dcd9efb14b32f30f3b01088f570` |
 | `scripts/setup-kani.ps1` | `9d84171fb604de2bece6c7efaa990feb7d46632c32e054667e0756145bffe8e8` |
-| `scripts/test-linux-ci-environment.ps1` | `9e99ea7b7a19a7339721ef2fe9b829bd723393d612b624c55fd27931bfc65978` |
-| `scripts/validate-linux-ci-environment.ps1` | `2e1d83a719d047152380d0d53ee53d13bfcf2aa9a124907976a6c48be11addc9` |
+| `scripts/test-linux-ci-environment.ps1` | `dd3da5625640d41946a57d1eea20eae48bc379624d7d841a9c78451a4d207634` |
+| `scripts/validate-linux-ci-environment.ps1` | `366a8de58ff65e997e9e8327f8a4616f5a8115d509c92ef5804958d95991cc03` |
+
+The shared `scripts/check-governance.ps1` aggregator is deliberately not hashed:
+other accepted gates, including the EOL contract, legitimately extend it. The
+Linux validator instead requires exactly one invocation of both Linux contract
+checks, so unrelated governance integration does not force an environment
+identity change or permit the wiring to disappear.
 
 The canonical SHA-256 of `ci/linux-x64/contract-v1.json` is:
 
 ```text
-62732d0dd3da2b66633bc4938da378ab3ae29842bdde4ce130f751e866c33e16
+62910789b69c2806303c29bc6e9083bc7a9316c83510505add70b2393fa159f5
 ```
 
 This is the exact `fixture_hash` for the controller-owned environment row.
@@ -120,7 +127,7 @@ This is the exact `fixture_hash` for the controller-owned environment row.
 
 `test-linux-ci-environment.ps1` builds isolated process-unique repositories
 below the system temp root. Both the current pending-ledger handoff and the
-sealed-ledger handoff pass. Eighteen independent mutations fail for the intended
+sealed-ledger handoff pass. Twenty independent mutations fail for the intended
 reason:
 
 - `ubuntu-latest`, container tag, wrong container digest and runner release
@@ -128,9 +135,10 @@ reason:
 - checkout tag, `stable` toolchain action, unpinned Kani command and retained
   cache action;
 - locale drift and missing runtime preflight;
-- mutable Rust/container contract values and reset policy retaining state;
+- mutable Rust/container contract values, a null boolean authority field and a
+  reset policy retaining state;
 - forged controlled-source hash;
-- duplicate and mis-cased JSON properties;
+- bare carriage return, duplicate and mis-cased JSON properties;
 - mutable ledger identity and ledger-owner drift.
 
 The contract parser rejects duplicate properties before `ConvertFrom-Json`,
@@ -145,7 +153,7 @@ random system-temp directory.
 PASS: contract and controlled source hashes; pending controller handoff.
 
 ./scripts/test-linux-ci-environment.ps1
-PASS: 2 positive states, 18 fail-closed mutations.
+PASS: 2 positive states, 20 fail-closed mutations.
 
 ./scripts/validate-linux-ci-environment.ps1 -VerifyExternalProvenance
 PASS: official runner, OCI, Rust, action, PowerShell, Kani and Wasmtime identities.
@@ -161,7 +169,7 @@ git diff --check
 PASS: clean code/contract commit scope.
 
 ./scripts/check-governance.ps1
-PARTIAL: the new Linux validator and all 18 mutations passed, as did the
+PARTIAL: the new Linux validator and all 20 mutations passed, as did the
 pre-existing checks through project-integration-catalog. The base commit then
 failed on the inherited stale generated
 `docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md`; this bead did not edit or
@@ -187,7 +195,7 @@ controller must replace the current `linux-ci` row in
 `IDEAL_ENVIRONMENT_MANIFEST_V1.csv` with this exact row (header omitted):
 
 ```csv
-"linux-x64-ci-rust-1.94.1-bookworm-amd64-v1","linux-ci","core","x64","debian-12-bookworm-amd64@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","n/a","n/a","n/a","n/a","n/a","C.UTF-8","docker.io/library/rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","github-hosted-new-vm-per-job;fresh-digest-pinned-job-container;clean-checkout;no-actions-cache;owned-state-under-RUNNER_TEMP;delete-owned-processes-and-state-only","ci/linux-x64/contract-v1.json","sha256:62732d0dd3da2b66633bc4938da378ab3ae29842bdde4ce130f751e866c33e16","github-hosted-new-VM-per-job;fresh-job-container;no-actions-cache;record-and-clean-owned-processes-and-RUNNER_TEMP-state-only","n/a-no-Excel-UIA","planned-blocking","bd-59co.2.2.11","Immutable Linux x64 execution contract is sealed; the host label is scheduling only; the canonical baseline transcript remains pending under bd-59co.2.2.11"
+"linux-x64-ci-rust-1.94.1-bookworm-amd64-v1","linux-ci","core","x64","debian-12-bookworm-amd64@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","n/a","n/a","n/a","n/a","n/a","C.UTF-8","docker.io/library/rust@sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b","github-hosted-new-vm-per-job;fresh-digest-pinned-job-container;clean-checkout;no-actions-cache;owned-state-under-RUNNER_TEMP;delete-owned-processes-and-state-only","ci/linux-x64/contract-v1.json","sha256:62910789b69c2806303c29bc6e9083bc7a9316c83510505add70b2393fa159f5","github-hosted-new-VM-per-job;fresh-job-container;no-actions-cache;record-and-clean-owned-processes-and-RUNNER_TEMP-state-only","n/a-no-Excel-UIA","planned-blocking","bd-59co.2.2.11","Immutable Linux x64 execution contract is sealed; the host label is scheduling only; the canonical baseline transcript remains pending under bd-59co.2.2.11"
 ```
 
 The row intentionally remains `planned-blocking`; `bd-59co.2.2.11` is the open
