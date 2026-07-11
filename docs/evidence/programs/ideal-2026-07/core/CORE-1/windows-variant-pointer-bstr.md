@@ -24,11 +24,12 @@ the OLE allocation itself was released correctly.
 
 This leaf repairs only that already-observed native-VARIANT projection seam.
 It audits the top-level `OwnedVariant`, nested `SAFEARRAY(VT_VARIANT)` element
-projection, registry insertion and `free_pins` release order, null and
-non-BSTR cells, partial array-construction failure, and native clearing or
-replacement of a writable cell. It does not claim general pointer/native-call
-parity, arbitrary foreign VARIANT validity, COM marshalling, or VBA oracle
-conformance.
+projection, stable registry identity across simultaneous pins and map growth,
+`free_pins` release order, null and non-BSTR cells, panic-safe partial
+array-construction failure, extreme Windows `LONG` array bounds, and native
+clearing or replacement of a writable cell. It does not claim general
+pointer/native-call parity, arbitrary foreign VARIANT validity, COM
+marshalling, or VBA oracle conformance.
 
 ## Ownership model
 
@@ -67,21 +68,41 @@ cell's current `vt`. Consequently:
 `free_pins` addresses remain no-ops in the registry, so the owner and token can
 be dropped only once.
 
+`PointerEntry::VariantCell` heap-owns its `OwnedVariant` before
+`PointerRegistry::insert` derives the pin ID from the cell address. Moving the
+entry into a `HashMap`, growing or rehashing that map, and moving its buckets
+therefore move only the `Box`, never the native VARIANT cell. Simultaneous pins
+have distinct IDs and cells; removing one entry cannot replace, alias, or
+invalidate another entry or settle its token early.
+
 Every temporary native VARIANT used to populate a
 `SAFEARRAY(VT_VARIANT)` is now an `OwnedVariant` as well. `SafeArrayPutElement`
 deep-copies the element; the temporary is then cleared and its token settled.
-If element projection or insertion fails, already-copied native elements are
-destroyed with the partial SAFEARRAY, temporary tokens settle through RAII,
-and no registry entry is published. This also repairs the one-dimensional
-index-conversion error exit that previously bypassed partial SAFEARRAY cleanup.
+Every successful `SafeArrayCreate` or `SafeArrayCreateVector` is immediately
+wrapped by `OwnedWindowsSafeArray`. The guard destroys the array and all
+already-copied elements on every error or Rust unwind and is disarmed only
+after a complete array VARIANT has taken ownership. If element projection,
+insertion, checked index progression, or later construction fails, temporary
+tokens settle through RAII and no registry entry is published. Multidimensional
+progression uses representable `i64` relative indices, never increments after
+the final element, and returns an error instead of overflowing a Windows
+`LONG`. This also retains the earlier repair of the one-dimensional
+index-conversion exit that bypassed partial SAFEARRAY cleanup.
 
 The audit found no other call to the raw VARIANT projector and no
 `mem::forget`/`forget(` occurrence under `crates`.
 
 ## Named Windows-isolated proof
 
-`windows_variant_pointer_bstr_balance` runs as its own differential integration
-test process with `live-counters` enabled. It proves:
+The exact bead acceptance command now runs the runtime unit test
+`pointer_helpers::tests::windows_variant_pointer_bstr_balance` rather than a
+zero-test filter. It uses thread-local carrier counts to prove two simultaneous
+cells, independent null/native-BSTR mutations, staggered idempotent release,
+and exact `+2 -> +1 -> 0` BSTR accounting even when the full runtime suite runs
+in parallel.
+
+The companion `windows_variant_pointer_bstr` differential target runs as its
+own process with global `live-counters` enabled. It additionally proves:
 
 - a top-level unchanged `VT_BSTR` cell preserves exact UTF-16 including an
   embedded NUL, retains exactly one token while pinned, and returns all carrier
@@ -91,6 +112,12 @@ test process with `live-counters` enabled. It proves:
 - a native `VariantClear` followed by an independently allocated BSTR
   replacement preserves the exact replacement value, balances after release,
   and would expose either a missed debit (`+1`) or false extra debit (`-1`);
+- two pairs of simultaneous BSTR Variant pins have distinct IDs and addresses,
+  survive independent native mutation, and remain live when released in either
+  order with exact `+2 -> +1 -> 0` accounting;
+- 128 simultaneous BSTR Variant pins retain unique, stable IDs and cell
+  addresses through repeated `HashMap` growth, then balance under staggered
+  even/odd release and repeated no-op release;
 - null-BSTR String, `VT_EMPTY`, `VT_NULL`, and non-BSTR `VT_I4` projections
   preserve their exact type/value and create no BSTR accounting token;
 - a `SAFEARRAY(VT_VARIANT)` BSTR element is copied exactly, while the temporary
@@ -99,6 +126,11 @@ test process with `live-counters` enabled. It proves:
   unsupported procedure-reference element fails without publishing a pin,
   leaves the source readable, destroys the partial native array, and returns
   every carrier count to baseline; and
+- a valid one-element dimension beginning at `LONG::MAX` succeeds without
+  unwinding, while an unrepresentable two-element dimension fails through
+  checked progression after its first successful BSTR copy; the armed native
+  SAFEARRAY guard destroys that partial array and returns every tracked count
+  and pin count to baseline; and
 - the process ends at its initial pointer-registry count and exact BSTR,
   object-box, SAFEARRAY, record-buffer, and total carrier counts.
 
@@ -108,18 +140,18 @@ test process with `live-counters` enabled. It proves:
 |---|---|
 | Result | Unchanged, replacement, null-BSTR, Empty, Null, Long, and nested-array controls preserve exact native `vt` and payload values. Unsupported nested ProcRef returns the existing projection error. |
 | Full Err | This low-level helper returns `Result<_, String>` and does not mutate VBA `Err`. The failure control retains the complete message `procedure references cannot be marshaled as VARIANT values`; no partial pin is observable. |
-| Side effects | Registry publication occurs only after complete projection. Native mutation is confined to the owned cell. Failed nested projection leaves the OxVba source array readable and releases the partial Windows SAFEARRAY. |
-| Lifecycle/event order | Fresh cell -> clone/transfer BSTR -> attach accounting token -> publish pin -> optional valid native clear/replacement -> remove pin -> `VariantClear(current)` -> debit original token. Nested array copies use temporary `OwnedVariant` owners and settle them immediately after `SafeArrayPutElement`. No runtime event dispatch occurs. |
+| Side effects | Registry publication occurs only after complete projection. Native mutation is confined to a distinct heap-stable owned cell. Failed or unwound nested projection leaves the OxVba source array readable and the armed guard releases the partial Windows SAFEARRAY. |
+| Lifecycle/event order | Heap-own fresh cell -> clone/transfer BSTR -> attach accounting token -> derive stable pin ID -> publish pin -> optional valid native clear/replacement -> remove exactly that pin -> `VariantClear(current)` -> debit original token. Nested array construction arms a SAFEARRAY guard before population, uses temporary `OwnedVariant` owners, transfers a completed array into the outer VARIANT, and only then disarms the guard. No runtime event dispatch occurs. |
 | Transport | The public pointer-helper and native `VARIANT`/SAFEARRAY layouts are unchanged. This is process-local Windows x64 native transport, not serialization or a cross-process artifact. |
 | Balance | The named process-isolated test observes the exact live vector at each ownership transition and requires zero BSTR and total drift after every release/failure case and after final source drop. |
 
 ## Checks
 
-- `cargo check -p oxvba-runtime --all-targets --all-features` — passed.
+- `cargo test -p oxvba-runtime windows_variant_pointer_bstr_balance -- --nocapture` — the exact bead acceptance command ran 1 named runtime test and passed (not a zero-test filter).
 - `cargo test -p oxvba-differential --test windows_variant_pointer_bstr -- --test-threads=1 --nocapture` — 1 named Windows-isolated test passed.
 - `cargo test -p oxvba-differential --test pointer_bstr_ownership -- --test-threads=1 --nocapture` — 1 neighboring Windows BSTR-cell ownership test passed.
-- `cargo test -p oxvba-runtime pointer_helpers::tests --all-features -- --test-threads=1` — 17 neighboring pointer-helper tests passed.
-- `cargo test -p oxvba-runtime --all-features -- --test-threads=1` — 178 unit tests, 2 isolated integration tests, and 8 compile-fail doctests passed.
+- `cargo test -p oxvba-runtime pointer_helpers::tests --all-features -- --test-threads=1` — 18 neighboring pointer-helper tests passed.
+- `cargo test -p oxvba-runtime --all-features -- --test-threads=1` — 179 unit tests, 2 isolated integration tests, and 8 compile-fail doctests passed.
 - `cargo clippy -p oxvba-runtime --all-targets --all-features -- -D warnings` — passed with zero warnings.
 - `cargo clippy -p oxvba-differential --test windows_variant_pointer_bstr --all-features --no-deps -- -D warnings` — passed with zero warnings in the touched Windows-isolated target.
 - `cargo +nightly miri test -p oxvba-runtime borrowed_carrier_unwind_safety -- --test-threads=1` — 5 portable neighboring ownership tests passed; the four already-documented exposed-provenance warnings remained visible.
