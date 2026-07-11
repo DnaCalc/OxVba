@@ -81,15 +81,40 @@ exact root/name pair. The validator rejects traversal, reparse-point escape,
 mutable aliases and historical/generated/evidence locations before reading
 content.
 
-Direct binaries are parsed as PE files: DOS and PE signatures, AMD64 machine
-`0x8664`, PE32+ optional-header magic `0x020B`, section/header bounds,
-executable characteristic and DLL-versus-EXE characteristic must all agree
-with the row contract. Bundle JSON has an exact property-and-type schema bound
+Direct binaries are parsed by .NET's portable `PEReader`, then subjected to
+bounded PE32+ mapping checks: AMD64 machine, DLL-versus-EXE class, file/section
+alignment, header and image sizes, raw and virtual section bounds and
+non-overlap, aggregate sizes, executable entry mapping and contained data
+directories. On Windows, admission additionally requires both
+`LoadLibraryExW(DONT_RESOLVE_DLL_REFERENCES)` and an
+`SEC_IMAGE_NO_EXECUTE` mapping to accept the image. These checks do not invoke
+the entry point or resolve dependencies.
+
+Bundle and environment JSON bytes are first parsed by `JsonDocument` directly
+from strict UTF-8. Every object is recursively walked before materialization;
+duplicate property names are rejected using ordinal case-sensitive identity.
+The later exact property-set checks are also ordinal case-sensitive, so a
+mis-cased field cannot alias a canonical field. Bundle identity remains bound
 to `matrix_id`, `row_id`, `fixture_id`, `built_artifact_id`, x64 and the bundle
-class. Its ordered components use immutable versioned IDs, exact controlled
-component paths and raw-byte SHA-256 values; each component is then validated
-as x64 DLL/EXE, MSFT typelib or nonblank UTF-8 VBA source as declared. The
-top-level artifact hash is recomputed only after content validation.
+class. Ordered components retain immutable IDs, exact controlled paths and
+raw-byte SHA-256 values.
+
+`msft-tlb-v1` components receive a bounded MSFT parser check before any OS
+call: file envelope, format version, `SYS_WIN64`, conditional segment-directory
+layout, aligned non-overlapping segments, TypeInfo records and references,
+GUID/name/string tables, exact LIBID
+`47C202E7-AD2A-49D3-9289-45B68A62499D`, library name
+`OxVbaFixtureAdmissionLib`, version 1.0 and the controlled enum identity. On
+Windows, `LoadTypeLibEx(REGKIND_NONE)` must then accept the library without
+registration. The top-level artifact hash is recomputed only after all content
+validation.
+
+The genuine admission positives are test-only assets under
+`scripts/testdata/windows-fixture-toolchain/`: an MSVC-linked x64 DLL/EXE and a
+MIDL `/env x64` typelib generated from fixed adjacent sources. Their text
+manifest pins producer, lengths, hashes and base64 bytes. They do not occupy a
+canonical artifact root, do not replace any matrix hash and grant no capability
+credit.
 
 ### Environments
 
@@ -151,7 +176,10 @@ The deterministic sync and validator enforce:
   identities, with x86/WOW64/ARM64 and mutable `latest/current/head` identities
   rejected;
 - exact per-row artifact classes, roots, names, types and ordered bundle
-  component contracts, with structural PE32+/AMD64 and exact JSON admission;
+  component contracts, with portable bounded PE32+/AMD64 mapping, Windows
+  non-executing image-loader admission and duplicate-aware exact JSON;
+- complete bounded controlled-MSFT structure/identity plus Windows
+  `LoadTypeLibEx(REGKIND_NONE)` acceptance for typelib components;
 - exact versioned environment capture roots, names and schema, bound field by
   field to the canonical Windows x64/Office64 environment and its authority
   role, image and reset policy;
@@ -165,13 +193,17 @@ The deterministic sync and validator enforce:
 
 `scripts/test-windows-fixture-manifest.ps1` proves the clean generated copy, a
 legal pending-with-owner population, CRLF checkout stability and successful
-full-validator admission of controlled x64 DLL, x64 EXE, exact bundle and
-canonical environment-capture samples. Its 31 fail-closed mutations cover the
-original row/owner/hash/credit/source-path guards plus source text disguised as
-a DLL, mutable and historical artifact aliases, artifact traversal, x86 PE and
-wrong bundle schema. Environment mutations cover arbitrary text, mutable
-alias, wrong identity, target architecture, Office bitness, role, traversal, mutable image,
-dev-oracle certification flags and forged reset-policy binding.
+full-validator admission of genuine toolchain-built x64 DLL and EXE images, an
+exact bundle, a genuine MIDL-generated MSFT typelib bundle and a canonical
+environment capture. Its 47 Windows fail-closed mutations (46 on non-Windows,
+where the loader-only case is explicitly skipped) cover the original guards
+plus source text and the former synthetic PE blob, mutable/historical/escaping
+paths, x86 and wrong-class images, PE truncation, alignment, overlap, image-size
+corruption and a structurally plausible image rejected by Windows. JSON cases
+cover duplicate and mis-cased bundle-root, component and environment fields.
+Typelib cases make the former eight-byte MSFT stub, truncation and segment
+corruption negative. Environment binding mutations continue to cover identity,
+target, Office bitness, role, image, reset policy and authority flags.
 
 ## Acceptance record
 
@@ -181,8 +213,9 @@ The focused acceptance commands pass:
   20 current source recipes and 37 pending source recipes;
 - `./scripts/validate-windows-fixture-manifest.ps1` — exact six-matrix/57-row x64
   inventory, 57 pending built artifacts, 57 pending environments and no credit;
-- `./scripts/test-windows-fixture-manifest.ps1` — six positive observations
-  and 31 negative mutations, including full `current` admission probes.
+- `./scripts/test-windows-fixture-manifest.ps1` — seven positive observations
+  and 47 Windows negative mutations, including real toolchain/loader `current`
+  admission probes;
 - `./scripts/run-truth-reconciliation.ps1` — full check-only reconciliation,
   including the new sync and validator, with no generated/controller rewrite.
 
