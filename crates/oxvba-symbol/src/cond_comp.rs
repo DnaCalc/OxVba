@@ -531,4 +531,50 @@ mod tests {
         let out = run("d = #1/2/2020#\n");
         assert!(out.contains("#1/2/2020#"), "{out:?}");
     }
+
+    #[test]
+    fn vmr05_array_shape_offsets() {
+        let fixture = include_str!(
+            "../../../conformance/vm_package/identity_seed/vmr05_array_shape_bounds.bas"
+        );
+
+        for eol in ["\n", "\r\n"] {
+            let prefix = [
+                "#If Mac Then",
+                "' 非active branch must be blanked",
+                "#Else",
+                "' café active branch",
+                "#End If",
+                "",
+            ]
+            .join(eol);
+            let fixture = fixture.replace('\n', eol);
+            let malformed = fixture.replacen("explicit(0) = 11", "explicit(0) = )", 1);
+            let source = format!("{prefix}{malformed}");
+            let active = preprocess(&source, &cc()).expect("conditional preprocessing");
+
+            assert_eq!(active.len(), source.len(), "EOL={eol:?}");
+            assert!(!active.contains("非active"), "inactive branch survived");
+            assert!(active.contains("café active"), "active branch was blanked");
+
+            let marker = "explicit(0) = )";
+            let expected_offset = source.find(marker).expect("source marker")
+                + marker.rfind(')').expect("unexpected token");
+            assert_eq!(
+                active.find(marker).expect("active marker")
+                    + marker.rfind(')').expect("unexpected token"),
+                expected_offset,
+                "preprocessing changed the active token's source-byte offset ({eol:?})"
+            );
+
+            let error = oxvba_syntax::parse(&active)
+                .errors()
+                .iter()
+                .find(|error| error.message == "expected expression after `=`")
+                .cloned()
+                .expect("expected expression diagnostic");
+            assert_eq!(error.offset as usize, expected_offset, "EOL={eol:?}");
+            assert_eq!(source.as_bytes()[error.offset as usize], b')');
+        }
+    }
 }
