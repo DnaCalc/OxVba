@@ -28,6 +28,27 @@ function Test-GuardianOwnedWindowEnumerationShape {
         $body -notmatch 'ControlTypeProperty|ControlType\]::Window|AndCondition'
 }
 
+function Test-GuardianCaptureBeforeDismissShape {
+    param([Parameter(Mandatory = $true)][string]$Source)
+    $observationAppend = $Source.IndexOf('Add-GuardianEvent -Event $observationEvent')
+    $invoke = $Source.IndexOf('$dismissedButton = Invoke-OwnedDialogButton')
+    $dismissalAppend = $Source.IndexOf('Add-GuardianEvent -Event $dismissalEvent')
+    return $observationAppend -ge 0 -and $invoke -gt $observationAppend -and $dismissalAppend -gt $invoke
+}
+
+function Test-RunnerIdentityCheckedCleanupShape {
+    param([Parameter(Mandatory = $true)][string]$Source)
+    $match = [regex]::Match(
+        $Source,
+        '(?s)function Stop-RecordedOwnedResources\s*\{(?<body>.*?)\r?\n\}\r?\n\r?\n\$outputBase'
+    )
+    if (-not $match.Success) { return $false }
+    $body = $match.Groups['body'].Value
+    return $body -match 'Test-ExcelOracleProcessIdentity' -and
+        $body -match '\.Kill\(\)' -and
+        $body -notmatch 'Stop-Process'
+}
+
 foreach ($fileName in @(
     "excel-vba-oracle-contract.ps1",
     "excel-vba-oracle-guardian.ps1",
@@ -87,10 +108,47 @@ try { [void](ConvertFrom-ExcelOracleRuntimeErr -Json '{"number":513}') }
 catch { $missingErrRejected = $_.Exception.Message -match "missing" }
 Assert-True $missingErrRejected "incomplete runtime Err payload must fail closed"
 
-$ownedRecord = [pscustomobject]@{ run_id = "run-a"; ownership = "owned-new-instance"; pid = 303 }
+$ownedRecord = [pscustomobject]@{
+    run_id = "run-a"
+    ownership = "owned-new-instance"
+    pid = 303
+    process_name = "EXCEL"
+    process_start_utc = "2026-07-14T00:00:00.0000000Z"
+    executable_path = "C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE"
+}
 Assert-True (Test-ExcelOracleOwnedProcessRecord -Record $ownedRecord -BaselineExcelPids @(101, 202) -RunId "run-a") "new recorded Excel PID must be recognized as owned"
 Assert-True (-not (Test-ExcelOracleOwnedProcessRecord -Record $ownedRecord -BaselineExcelPids @(101, 303) -RunId "run-a")) "baseline Excel PID must never be recognized as owned"
 Assert-True (-not (Test-ExcelOracleOwnedProcessRecord -Record $ownedRecord -BaselineExcelPids @() -RunId "other-run")) "foreign run record must never be recognized as owned"
+$pidOnlyRecord = [pscustomobject]@{ run_id = "run-a"; ownership = "owned-new-instance"; pid = 303; process_name = "EXCEL" }
+Assert-True (-not (Test-ExcelOracleOwnedProcessRecord -Record $pidOnlyRecord -BaselineExcelPids @() -RunId "run-a")) "mutation: PID/name-only ownership records must fail closed"
+
+$selfProcess = Get-Process -Id $PID
+$selfRecord = [pscustomobject]@{
+    run_id = "run-self"
+    pid = $selfProcess.Id
+    process_name = [string]$selfProcess.ProcessName
+    process_start_utc = $selfProcess.StartTime.ToUniversalTime().ToString("o")
+    executable_path = [string]$selfProcess.Path
+}
+Assert-True (Test-ExcelOracleProcessIdentity -Record $selfRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self") "exact PID/start/name/path process identity must match"
+$wrongStartRecord = $selfRecord | Select-Object *
+$wrongStartRecord.process_start_utc = $selfProcess.StartTime.ToUniversalTime().AddTicks(1).ToString("o")
+Assert-True (-not (Test-ExcelOracleProcessIdentity -Record $wrongStartRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self")) "mutation: reused PID with a different start time must fail closed"
+$wrongPathRecord = $selfRecord | Select-Object *
+$wrongPathRecord.executable_path = Join-Path ([IO.Path]::GetDirectoryName($selfProcess.Path)) "different.exe"
+Assert-True (-not (Test-ExcelOracleProcessIdentity -Record $wrongPathRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self")) "mutation: matching PID/start with different executable must fail closed"
+$helperRecord = [pscustomobject]@{
+    run_id = "run-self"
+    ownership = "owned-helper-process"
+    role = "guardian"
+    pid = $selfProcess.Id
+    process_name = [string]$selfProcess.ProcessName
+    process_start_utc = $selfProcess.StartTime.ToUniversalTime().ToString("o")
+    executable_path = [string]$selfProcess.Path
+}
+Assert-True (Test-ExcelOracleHelperProcessRecord -Record $helperRecord -RunId "run-self") "complete guardian ownership record must pass structural validation"
+$pidOnlyHelperRecord = [pscustomobject]@{ run_id = "run-self"; ownership = "owned-helper-process"; role = "guardian"; pid = $selfProcess.Id; process_name = $selfProcess.ProcessName }
+Assert-True (-not (Test-ExcelOracleHelperProcessRecord -Record $pidOnlyHelperRecord -RunId "run-self")) "mutation: PID/name-only guardian ownership must fail closed"
 
 $guardianOutput = & (Join-Path $PSScriptRoot "excel-vba-oracle-guardian.ps1") -PolicySelfTest
 Assert-True (($guardianOutput -join "`n") -match "passed") "guardian policy self-test"
@@ -104,6 +162,7 @@ Assert-Equal $false ([bool]$plan.certifying) "dev/oracle plan cannot certify"
 Assert-Equal $false ([bool]$plan.matrix_update) "dev/oracle plan cannot update matrices"
 Assert-Equal $false ([bool]$plan.release_credit) "dev/oracle plan cannot claim release credit"
 Assert-Equal $false ([bool]$plan.capability_credit) "dev/oracle plan cannot claim capability credit"
+Assert-True ([string]$plan.ownership_policy -match "process-start" -and [string]$plan.ownership_policy -match "reused PIDs") "plan must require complete process identity and reject PID reuse"
 Assert-True ([string]$plan.compile_policy -match "command ID 578") "plan must require forced VBE compile command ID 578"
 Assert-True ([string]$plan.modal_policy -match "guardian before") "plan must start the guardian before invocation"
 
@@ -128,6 +187,20 @@ $windowPrefilterMutation = $guardianSource.Replace(
     '[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)'
 )
 Assert-True (-not (Test-GuardianOwnedWindowEnumerationShape -Source $windowPrefilterMutation)) "mutation: ControlType.Window root prefilter must be rejected"
+Assert-True (Test-GuardianCaptureBeforeDismissShape -Source $guardianSource) "guardian must durably append the immutable observation before invoking a dismiss button and append a linked result afterward"
+$dismissBeforeCaptureMutation = $guardianSource.Replace(
+    'Add-GuardianEvent -Event $observationEvent',
+    'TEMP-CAPTURE-MARKER'
+).Replace(
+    '$dismissedButton = Invoke-OwnedDialogButton',
+    'Add-GuardianEvent -Event $observationEvent'
+).Replace(
+    'TEMP-CAPTURE-MARKER',
+    '$dismissedButton = Invoke-OwnedDialogButton'
+)
+Assert-True (-not (Test-GuardianCaptureBeforeDismissShape -Source $dismissBeforeCaptureMutation)) "mutation: dismiss-before-capture ordering must be rejected"
+Assert-True ($guardianSource -match 'process_start_utc' -and $guardianSource -match 'executable_path') "guardian ready identity must include start time and executable"
+Assert-True ($guardianSource -match 'Stale top-level UIA children are expected and nonfatal per element') "stale UIA children must be nonfatal per element"
 
 $workerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-worker.ps1")
 $compileIndex = $workerSource.IndexOf('$compileControl.Execute()')
@@ -138,5 +211,12 @@ Assert-True ($workerSource -match "module_sha256") "case evidence must seal modu
 Assert-True ($workerSource -match "Get-VbeSelectionFromCom") "worker must preserve the VBE COM selection as a scoped fallback"
 Assert-True ($workerSource -match "CodePane.Show\(\)" -and $workerSource -match "compile command ID 578 is disabled") "worker must activate the code pane and reject a disabled compile command"
 Assert-True ($workerSource -match 'no-dialog-unverified') "absence of a captured dialog must remain fail-closed"
+Assert-True ($workerSource -match 'owned-helper-process' -and $workerSource -match 'process_start_utc' -and $workerSource -match 'executable_path') "worker must record complete Excel and guardian identities"
+Assert-True ($workerSource -notmatch 'Stop-Process') "worker cleanup must retain exact Process objects instead of PID-only termination"
+
+$runnerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "run-excel-vba-oracle.ps1")
+Assert-True (Test-RunnerIdentityCheckedCleanupShape -Source $runnerSource) "supervisor fallback cleanup must check PID/start/name/path identity before Process.Kill"
+$pidOnlyCleanupMutation = $runnerSource.Replace('Test-ExcelOracleProcessIdentity', 'Test-PidOnlyIdentity')
+Assert-True (-not (Test-RunnerIdentityCheckedCleanupShape -Source $pidOnlyCleanupMutation)) "mutation: PID-only fallback cleanup must be rejected"
 
 Write-Output "test-excel-vba-oracle: PASS"

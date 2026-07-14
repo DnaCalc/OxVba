@@ -1,5 +1,6 @@
 param(
     [int]$ExcelPid,
+    [string]$ExcelIdentityFile,
     [string]$RunId,
     [string]$ControlFile,
     [string]$EventsFile,
@@ -37,6 +38,7 @@ if ($PolicySelfTest) {
 
 foreach ($required in @{
         ExcelPid = $ExcelPid
+        ExcelIdentityFile = $ExcelIdentityFile
         RunId = $RunId
         ControlFile = $ControlFile
         EventsFile = $EventsFile
@@ -54,6 +56,15 @@ foreach ($required in @{
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
+if (-not (Test-Path -LiteralPath $ExcelIdentityFile)) {
+    throw "excel-vba-oracle-guardian: Excel identity file does not exist"
+}
+$excelIdentity = Get-Content -Raw -LiteralPath $ExcelIdentityFile | ConvertFrom-Json
+$initialExcelProcess = Get-Process -Id $ExcelPid -ErrorAction Stop
+if (-not (Test-ExcelOracleProcessIdentity -Record $excelIdentity -Process $initialExcelProcess -ExpectedProcessName "EXCEL" -RunId $RunId)) {
+    throw "excel-vba-oracle-guardian: Excel PID/start/name/executable identity did not validate"
+}
+
 function Get-OwnedTopLevelWindows {
     # Office/VBE top-level HWNDs are not consistently projected as UIA
     # ControlType.Window. Enumerate every desktop child and then apply the hard
@@ -64,7 +75,12 @@ function Get-OwnedTopLevelWindows {
     )
     $owned = [Collections.Generic.List[Windows.Automation.AutomationElement]]::new()
     foreach ($window in $desktopChildren) {
-        if ([int]$window.Current.ProcessId -eq $ExcelPid) { $owned.Add($window) }
+        try {
+            if ([int]$window.Current.ProcessId -eq $ExcelPid) { $owned.Add($window) }
+        }
+        catch {
+            # Desktop UIA children can disappear between enumeration and read.
+        }
     }
     return @($owned)
 }
@@ -80,8 +96,13 @@ function Get-ElementStrings {
     )
     $values = [Collections.Generic.List[string]]::new()
     foreach ($element in @($Root.FindAll([Windows.Automation.TreeScope]::Descendants, $condition))) {
-        $name = [string]$element.Current.Name
-        if (-not [string]::IsNullOrWhiteSpace($name)) { $values.Add($name.Trim()) }
+        try {
+            $name = [string]$element.Current.Name
+            if (-not [string]::IsNullOrWhiteSpace($name)) { $values.Add($name.Trim()) }
+        }
+        catch {
+            # A stale descendant must not stop the guardian.
+        }
     }
     return @($values | Select-Object -Unique)
 }
@@ -93,8 +114,8 @@ function Get-VbeSelection {
         [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Edit)
     )
     foreach ($window in @(Get-OwnedTopLevelWindows)) {
-        foreach ($document in @($window.FindAll([Windows.Automation.TreeScope]::Descendants, $documentCondition))) {
-            try {
+        try {
+            foreach ($document in @($window.FindAll([Windows.Automation.TreeScope]::Descendants, $documentCondition))) {
                 $pattern = $document.GetCurrentPattern([Windows.Automation.TextPattern]::Pattern)
                 $ranges = @($pattern.GetSelection())
                 if ($ranges.Count -eq 0) { continue }
@@ -108,9 +129,9 @@ function Get-VbeSelection {
                     return [pscustomobject]$selection
                 }
             }
-            catch {
-                # Not every UIA document exposes TextPattern; keep looking in the owned process.
-            }
+        }
+        catch {
+            # Stale windows and documents without TextPattern are nonfatal.
         }
     }
     return [pscustomobject]$selection
@@ -147,16 +168,28 @@ function Invoke-OwnedDialogButton {
     return $null
 }
 
+function Add-GuardianEvent {
+    param([Parameter(Mandatory = $true)]$Event)
+    ($Event | ConvertTo-Json -Compress -Depth 8) | Add-Content -LiteralPath $EventsFile -Encoding utf8NoBOM
+}
+
 $readyParent = Split-Path -Parent $ReadyFile
 if ($readyParent) { New-Item -ItemType Directory -Force -Path $readyParent | Out-Null }
 $eventParent = Split-Path -Parent $EventsFile
 if ($eventParent) { New-Item -ItemType Directory -Force -Path $eventParent | Out-Null }
 
+$selfProcess = Get-Process -Id $PID
 $ready = [ordered]@{
     schema = "oxvba.excel-vba-oracle-guardian-ready.v1"
     run_id = $RunId
     excel_pid = $ExcelPid
+    excel_process_start_utc = [string]$excelIdentity.process_start_utc
+    excel_executable_path = [string]$excelIdentity.executable_path
     guardian_pid = $PID
+    pid = $PID
+    process_name = [string]$selfProcess.ProcessName
+    process_start_utc = $selfProcess.StartTime.ToUniversalTime().ToString("o")
+    executable_path = [string]$selfProcess.Path
     ready_utc = [DateTime]::UtcNow.ToString("o")
 }
 $ready | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReadyFile -Encoding utf8NoBOM
@@ -164,7 +197,8 @@ $ready | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReadyFile -Encoding
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $deadline = [DateTime]::UtcNow.AddSeconds($MaxSeconds)
 while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopFile)) {
-    if (-not (Get-Process -Id $ExcelPid -ErrorAction SilentlyContinue)) { break }
+    $currentExcelProcess = Get-Process -Id $ExcelPid -ErrorAction SilentlyContinue
+    if (-not $currentExcelProcess -or -not (Test-ExcelOracleProcessIdentity -Record $excelIdentity -Process $currentExcelProcess -ExpectedProcessName "EXCEL" -RunId $RunId)) { break }
     $control = $null
     if (Test-Path -LiteralPath $ControlFile) {
         try { $control = Get-Content -Raw -LiteralPath $ControlFile | ConvertFrom-Json }
@@ -176,51 +210,77 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
     }
 
     foreach ($window in @(Get-OwnedTopLevelWindows)) {
-        $isModal = $false
         try {
-            $windowPattern = $window.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern)
-            $isModal = [bool]$windowPattern.Current.IsModal
-        }
-        catch { }
-        $className = [string]$window.Current.ClassName
-        $texts = @(Get-ElementStrings -Root $window -ControlType ([Windows.Automation.ControlType]::Text))
-        $buttons = @(Get-ElementStrings -Root $window -ControlType ([Windows.Automation.ControlType]::Button))
-        $policy = Get-ExcelOracleDialogPolicy -Phase ([string]$control.phase) -WindowTitle ([string]$window.Current.Name) -Texts $texts -Buttons $buttons
-        # VBE compile dialogs are not consistently exposed as IsModal/#32770 on
-        # all Office builds. Recognized dialog text is authoritative. Unknown
-        # non-modal application windows are recorded for the bounded audit but
-        # ignored for policy/action purposes.
-        $consideredDialog = $policy.kind -ne "unrecognized-modal" -or $isModal -or $className -eq "#32770"
-        $key = "$($control.operation_id)|$(Get-WindowIdentity $window)|$($policy.kind)|$($texts -join '|')"
-        if (-not $seen.Add($key)) { continue }
+            $isModal = $false
+            try {
+                $windowPattern = $window.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern)
+                $isModal = [bool]$windowPattern.Current.IsModal
+            }
+            catch { }
+            $className = [string]$window.Current.ClassName
+            $windowTitle = [string]$window.Current.Name
+            $windowHandle = Get-WindowIdentity $window
+            $observedProcessId = [int]$window.Current.ProcessId
+            $texts = @(Get-ElementStrings -Root $window -ControlType ([Windows.Automation.ControlType]::Text))
+            $buttons = @(Get-ElementStrings -Root $window -ControlType ([Windows.Automation.ControlType]::Button))
+            $policy = Get-ExcelOracleDialogPolicy -Phase ([string]$control.phase) -WindowTitle $windowTitle -Texts $texts -Buttons $buttons
+            # VBE compile dialogs are not consistently exposed as IsModal/#32770 on
+            # all Office builds. Recognized dialog text is authoritative. Unknown
+            # non-modal application windows are recorded for the bounded audit but
+            # ignored for policy/action purposes.
+            $consideredDialog = $policy.kind -ne "unrecognized-modal" -or $isModal -or $className -eq "#32770"
+            $key = "$($control.operation_id)|$windowHandle|$($policy.kind)|$($texts -join '|')"
+            if (-not $seen.Add($key)) { continue }
 
-        $vbeSelection = if ($consideredDialog) { Get-VbeSelection } else { [pscustomobject]@{ selected_token = $null; expanded_line = $null } }
-        $event = [ordered]@{
-            schema = "oxvba.excel-vba-oracle-dialog-event.v1"
-            event_type = if ($consideredDialog) { "dialog-observation" } else { "ignored-top-level-window" }
-            run_id = $RunId
-            operation_id = [string]$control.operation_id
-            phase = [string]$control.phase
-            excel_pid = $ExcelPid
-            observed_process_id = [int]$window.Current.ProcessId
-            observed_utc = [DateTime]::UtcNow.ToString("o")
-            window_title = [string]$window.Current.Name
-            window_class = $className
-            window_handle = Get-WindowIdentity $window
-            is_modal = $isModal
-            considered_dialog = $consideredDialog
-            dialog_text = $texts
-            visible_buttons = $buttons
-            selected_token = $vbeSelection.selected_token
-            expanded_line = $vbeSelection.expanded_line
-            classification = [string]$policy.kind
-            disposition = [string]$policy.disposition
-            dismissed_button = $null
+            $vbeSelection = if ($consideredDialog) { Get-VbeSelection } else { [pscustomobject]@{ selected_token = $null; expanded_line = $null } }
+            $observationId = [Guid]::NewGuid().ToString("D")
+            $observationEvent = [ordered]@{
+                schema = "oxvba.excel-vba-oracle-window-observation.v1"
+                event_type = if ($consideredDialog) { "dialog-observation" } else { "ignored-top-level-window" }
+                observation_id = $observationId
+                run_id = $RunId
+                operation_id = [string]$control.operation_id
+                phase = [string]$control.phase
+                excel_pid = $ExcelPid
+                observed_process_id = $observedProcessId
+                observed_utc = [DateTime]::UtcNow.ToString("o")
+                window_title = $windowTitle
+                window_class = $className
+                window_handle = $windowHandle
+                is_modal = $isModal
+                considered_dialog = $consideredDialog
+                dialog_text = $texts
+                visible_buttons = $buttons
+                selected_token = $vbeSelection.selected_token
+                expanded_line = $vbeSelection.expanded_line
+                classification = [string]$policy.kind
+                disposition = [string]$policy.disposition
+            }
+            # The immutable observation must be durable before any owned UI is
+            # changed. A later crash can therefore never dismiss without capture.
+            Add-GuardianEvent -Event $observationEvent
+
+            if ($consideredDialog -and $policy.disposition -eq "capture-then-dismiss" -and [bool]$control.allow_dismiss) {
+                $dismissedButton = Invoke-OwnedDialogButton -Window $window -PreferredButtons @($policy.preferred_buttons)
+                $dismissalEvent = [ordered]@{
+                    schema = "oxvba.excel-vba-oracle-dismissal-result.v1"
+                    event_type = "dismissal-result"
+                    observation_id = $observationId
+                    run_id = $RunId
+                    operation_id = [string]$control.operation_id
+                    excel_pid = $ExcelPid
+                    window_handle = $windowHandle
+                    attempted_utc = [DateTime]::UtcNow.ToString("o")
+                    requested_buttons = @($policy.preferred_buttons)
+                    dismissed_button = $dismissedButton
+                    succeeded = -not [string]::IsNullOrWhiteSpace([string]$dismissedButton)
+                }
+                Add-GuardianEvent -Event $dismissalEvent
+            }
         }
-        if ($consideredDialog -and $policy.disposition -eq "capture-then-dismiss" -and [bool]$control.allow_dismiss) {
-            $event.dismissed_button = Invoke-OwnedDialogButton -Window $window -PreferredButtons @($policy.preferred_buttons)
+        catch {
+            # Stale top-level UIA children are expected and nonfatal per element.
         }
-        ($event | ConvertTo-Json -Compress -Depth 8) | Add-Content -LiteralPath $EventsFile -Encoding utf8NoBOM
     }
     Start-Sleep -Milliseconds $PollMilliseconds
 }

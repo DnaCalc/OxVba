@@ -48,7 +48,7 @@ $plan = [ordered]@{
     release_credit = $false
     capability_credit = $false
     diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
-    ownership_policy = "record-new-Excel-PID-derived-from-Hwnd; never touch baseline or unrecorded Excel PIDs"
+    ownership_policy = "record PID+process-start+name+executable for new Excel HWND and guardian processes; validate the complete identity before fallback cleanup; never touch baseline unrecorded or reused PIDs"
     modal_policy = "start PID-scoped UIA guardian before command-ID-578 compile and runtime invocation; capture first; never auto-enable security/trust prompts"
     compile_policy = "VBE Debug -> Compile VBAProject command ID 578; Application.Run is never a compile check"
     cases = @($cases | ForEach-Object {
@@ -89,26 +89,22 @@ function Read-OwnershipRecords {
 function Stop-RecordedOwnedResources {
     param(
         [Parameter(Mandatory = $true)][string]$OwnershipPath,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$BaselineExcelPids,
-        [Parameter(Mandatory = $true)][string]$OutputDirectory
+        [Parameter(Mandatory = $true)][string]$HelperOwnershipPath,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$BaselineExcelPids
     )
     foreach ($record in @(Read-OwnershipRecords -Path $OwnershipPath)) {
         if (-not (Test-ExcelOracleOwnedProcessRecord -Record $record -BaselineExcelPids $BaselineExcelPids -RunId $RunId)) { continue }
         $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-        if ($process -and [string]$process.ProcessName -eq "EXCEL") {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId)) {
+            try { $process.Kill(); [void]$process.WaitForExit(5000) } catch { }
         }
     }
-    foreach ($readyPath in @(Get-ChildItem -Path $OutputDirectory -Filter "guardian-ready.json" -Recurse -ErrorAction SilentlyContinue)) {
-        try {
-            $ready = Get-Content -Raw -LiteralPath $readyPath.FullName | ConvertFrom-Json
-            if ([string]$ready.run_id -ne $RunId) { continue }
-            $guardianProcess = Get-Process -Id ([int]$ready.guardian_pid) -ErrorAction SilentlyContinue
-            if ($guardianProcess -and [string]$guardianProcess.ProcessName -in @("pwsh", "powershell")) {
-                Stop-Process -Id $guardianProcess.Id -Force -ErrorAction SilentlyContinue
-            }
+    foreach ($record in @(Read-OwnershipRecords -Path $HelperOwnershipPath)) {
+        if (-not (Test-ExcelOracleHelperProcessRecord -Record $record -RunId $RunId)) { continue }
+        $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
+        if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId)) {
+            try { $process.Kill(); [void]$process.WaitForExit(5000) } catch { }
         }
-        catch { }
     }
 }
 
@@ -118,6 +114,7 @@ New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDirectory "plan.json") -Encoding utf8NoBOM
 
 $ownershipFile = Join-Path $outputDirectory "owned-processes.jsonl"
+$helperOwnershipFile = Join-Path $outputDirectory "owned-helper-processes.jsonl"
 $workerStdout = Join-Path $outputDirectory "worker.stdout.txt"
 $workerStderr = Join-Path $outputDirectory "worker.stderr.txt"
 $baselineExcelPids = @(Get-ExcelProcessIds)
@@ -126,6 +123,7 @@ $workerArguments = @(
     "-RunId", $RunId,
     "-OutputDirectory", $outputDirectory,
     "-OwnershipFile", $ownershipFile,
+    "-HelperOwnershipFile", $helperOwnershipFile,
     "-CaseTimeoutSeconds", [string][Math]::Min(120, $TimeoutSeconds)
 )
 if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
@@ -141,7 +139,7 @@ try {
     }
     if (-not $worker.HasExited) {
         $timedOut = $true
-        Stop-Process -Id $worker.Id -Force -ErrorAction SilentlyContinue
+        try { $worker.Kill() } catch { }
         throw "run-excel-vba-oracle: worker timed out after $TimeoutSeconds seconds"
     }
     if ($worker.ExitCode -ne 0) {
@@ -150,7 +148,7 @@ try {
     }
 }
 finally {
-    Stop-RecordedOwnedResources -OwnershipPath $ownershipFile -BaselineExcelPids $baselineExcelPids -OutputDirectory $outputDirectory
+    Stop-RecordedOwnedResources -OwnershipPath $ownershipFile -HelperOwnershipPath $helperOwnershipFile -BaselineExcelPids $baselineExcelPids
 }
 
 $resultsPath = Join-Path $outputDirectory "results.json"
@@ -166,9 +164,22 @@ if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and @($results.cases).
 $remainingOwned = [Collections.Generic.List[int]]::new()
 foreach ($record in @(Read-OwnershipRecords -Path $ownershipFile)) {
     if (-not (Test-ExcelOracleOwnedProcessRecord -Record $record -BaselineExcelPids $baselineExcelPids -RunId $RunId)) { continue }
-    if (Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue) { $remainingOwned.Add([int]$record.pid) }
+    $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
+    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId)) {
+        $remainingOwned.Add([int]$record.pid)
+    }
 }
 if ($remainingOwned.Count -ne 0) { throw "run-excel-vba-oracle: owned Excel PIDs remain: $($remainingOwned -join ', ')" }
+
+$remainingHelpers = [Collections.Generic.List[int]]::new()
+foreach ($record in @(Read-OwnershipRecords -Path $helperOwnershipFile)) {
+    if (-not (Test-ExcelOracleHelperProcessRecord -Record $record -RunId $RunId)) { continue }
+    $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
+    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId)) {
+        $remainingHelpers.Add([int]$record.pid)
+    }
+}
+if ($remainingHelpers.Count -ne 0) { throw "run-excel-vba-oracle: owned guardian PIDs remain: $($remainingHelpers -join ', ')" }
 
 $completedUtc = [DateTime]::UtcNow
 $transcript = [ordered]@{
@@ -202,7 +213,7 @@ $summary = @"
 - Result: **$displayResult**
 - Authority: development/oracle characterization only; noncertifying
 - Credit: no canonical matrix, release, certification, or capability credit
-- Ownership: only newly created Excel PIDs derived from their application HWND were recorded and cleaned
+- Ownership: newly created Excel HWNDs and guardian processes were sealed by PID, process start, name, and executable; fallback cleanup required the complete identity
 - Compile authority: VBE Debug -> Compile VBAProject command ID 578; runtime invocation was never used as a compile check
 - Modal safety: the PID-scoped UIA guardian was ready before each compile and runtime invocation
 

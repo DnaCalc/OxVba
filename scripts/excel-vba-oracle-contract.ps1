@@ -251,9 +251,67 @@ function Test-ExcelOracleOwnedProcessRecord {
         [Parameter(Mandatory = $true)][string]$RunId
     )
 
+    foreach ($field in @("run_id", "ownership", "pid", "process_name", "process_start_utc", "executable_path")) {
+        if ($Record.PSObject.Properties.Name -notcontains $field -or [string]::IsNullOrWhiteSpace([string]$Record.$field)) {
+            return $false
+        }
+    }
     if ([string]$Record.run_id -ne $RunId -or [string]$Record.ownership -ne "owned-new-instance") {
         return $false
     }
-    $pidValue = [int]$Record.pid
+    try { $pidValue = [int]$Record.pid }
+    catch { return $false }
     return $pidValue -gt 0 -and $pidValue -notin $BaselineExcelPids
+}
+
+function Test-ExcelOracleProcessIdentity {
+    param(
+        [Parameter(Mandatory = $true)]$Record,
+        [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)][string]$ExpectedProcessName,
+        [Parameter(Mandatory = $true)][string]$RunId
+    )
+
+    foreach ($field in @("run_id", "pid", "process_name", "process_start_utc", "executable_path")) {
+        if ($Record.PSObject.Properties.Name -notcontains $field -or [string]::IsNullOrWhiteSpace([string]$Record.$field)) {
+            return $false
+        }
+    }
+    try { $recordedPid = [int]$Record.pid }
+    catch { return $false }
+    if ([string]$Record.run_id -ne $RunId -or $recordedPid -ne $Process.Id) { return $false }
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.process_name, $ExpectedProcessName)) { return $false }
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Process.ProcessName, $ExpectedProcessName)) { return $false }
+    try {
+        $recordedStart = [DateTime]::Parse(
+            [string]$Record.process_start_utc,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind
+        ).ToUniversalTime()
+        $actualStart = $Process.StartTime.ToUniversalTime()
+        $actualPath = [IO.Path]::GetFullPath([string]$Process.Path)
+        $recordedPath = [IO.Path]::GetFullPath([string]$Record.executable_path)
+        return $recordedStart.Ticks -eq $actualStart.Ticks -and
+            [StringComparer]::OrdinalIgnoreCase.Equals($recordedPath, $actualPath)
+    }
+    catch { return $false }
+}
+
+function Test-ExcelOracleHelperProcessRecord {
+    param(
+        [Parameter(Mandatory = $true)]$Record,
+        [Parameter(Mandatory = $true)][string]$RunId
+    )
+    foreach ($field in @("run_id", "ownership", "role", "pid", "process_name", "process_start_utc", "executable_path")) {
+        if ($Record.PSObject.Properties.Name -notcontains $field -or [string]::IsNullOrWhiteSpace([string]$Record.$field)) {
+            return $false
+        }
+    }
+    try { $recordedPid = [int]$Record.pid }
+    catch { return $false }
+    return [string]$Record.run_id -eq $RunId -and
+        [string]$Record.ownership -eq "owned-helper-process" -and
+        [string]$Record.role -eq "guardian" -and
+        [string]$Record.process_name -in @("pwsh", "powershell") -and
+        $recordedPid -gt 0
 }

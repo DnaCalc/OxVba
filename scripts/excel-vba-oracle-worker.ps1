@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true)][string]$RunId,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [Parameter(Mandatory = $true)][string]$OwnershipFile,
+    [Parameter(Mandatory = $true)][string]$HelperOwnershipFile,
     [ValidateRange(5, 600)][int]$CaseTimeoutSeconds = 90,
     [string]$DiagnosticCaseId = ""
 )
@@ -37,7 +38,7 @@ function Get-ExcelPidFromApplication {
 
 function Add-OwnershipRecord {
     param(
-        [Parameter(Mandatory = $true)][int]$ExcelPid,
+        [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$BeforePids,
         [Parameter(Mandatory = $true)][string]$CaseId
     )
@@ -45,13 +46,36 @@ function Add-OwnershipRecord {
         schema = "oxvba.excel-vba-oracle-owned-process.v1"
         run_id = $RunId
         case_id = $CaseId
-        pid = $ExcelPid
-        process_name = "EXCEL"
+        pid = $Process.Id
+        process_name = [string]$Process.ProcessName
+        process_start_utc = $Process.StartTime.ToUniversalTime().ToString("o")
+        executable_path = [string]$Process.Path
         before_excel_pids = @($BeforePids)
         ownership = "owned-new-instance"
         acquired_utc = [DateTime]::UtcNow.ToString("o")
     }
     ($record | ConvertTo-Json -Compress -Depth 5) | Add-Content -LiteralPath $OwnershipFile -Encoding utf8NoBOM
+    return [pscustomobject]$record
+}
+
+function Add-HelperOwnershipRecord {
+    param(
+        [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)][string]$CaseId
+    )
+    $record = [ordered]@{
+        schema = "oxvba.excel-vba-oracle-owned-helper.v1"
+        run_id = $RunId
+        case_id = $CaseId
+        role = "guardian"
+        pid = $Process.Id
+        process_name = [string]$Process.ProcessName
+        process_start_utc = $Process.StartTime.ToUniversalTime().ToString("o")
+        executable_path = [string]$Process.Path
+        ownership = "owned-helper-process"
+        acquired_utc = [DateTime]::UtcNow.ToString("o")
+    }
+    ($record | ConvertTo-Json -Compress -Depth 5) | Add-Content -LiteralPath $HelperOwnershipFile -Encoding utf8NoBOM
 }
 
 function Set-GuardianControl {
@@ -209,11 +233,13 @@ function Invoke-HarnessCase {
     $component = $null
     $compileControl = $null
     $guardian = $null
+    $ownedExcelProcess = $null
     $excelPid = $null
     $controlFile = Join-Path $caseDirectory "guardian-control.json"
     $eventsFile = Join-Path $caseDirectory "guardian-events.jsonl"
     $readyFile = Join-Path $caseDirectory "guardian-ready.json"
     $stopFile = Join-Path $caseDirectory "guardian-stop"
+    $excelIdentityFile = Join-Path $caseDirectory "excel-process-identity.json"
     $guardianStdout = Join-Path $caseDirectory "guardian.stdout.txt"
     $guardianStderr = Join-Path $caseDirectory "guardian.stderr.txt"
     $compileEvents = @()
@@ -240,11 +266,14 @@ function Invoke-HarnessCase {
         if ($excelPid -in $beforePids) {
             throw "excel-vba-oracle-worker: Excel PID $excelPid existed before this case; refusing ownership"
         }
-        Add-OwnershipRecord -ExcelPid $excelPid -BeforePids $beforePids -CaseId $Case.id
+        $ownedExcelProcess = Get-Process -Id $excelPid -ErrorAction Stop
+        $excelOwnershipRecord = Add-OwnershipRecord -Process $ownedExcelProcess -BeforePids $beforePids -CaseId $Case.id
+        $excelOwnershipRecord | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $excelIdentityFile -Encoding utf8NoBOM
 
         $guardianArguments = @(
             "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-File", (Join-Path $PSScriptRoot "excel-vba-oracle-guardian.ps1"),
             "-ExcelPid", [string]$excelPid,
+            "-ExcelIdentityFile", $excelIdentityFile,
             "-RunId", $RunId,
             "-ControlFile", $controlFile,
             "-EventsFile", $eventsFile,
@@ -253,6 +282,7 @@ function Invoke-HarnessCase {
             "-MaxSeconds", [string]$CaseTimeoutSeconds
         )
         $guardian = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $guardianArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $guardianStdout -RedirectStandardError $guardianStderr
+        Add-HelperOwnershipRecord -Process $guardian -CaseId $Case.id
         Wait-GuardianReady -ReadyFile $readyFile -Process $guardian
 
         $workbook = $excel.Workbooks.Add()
@@ -309,7 +339,7 @@ function Invoke-HarnessCase {
             }
         }
         $compileEvents = @(Wait-GuardianEventFlush -EventsFile $eventsFile -OperationId $compileOperation)
-        $compileDialogs = @($compileEvents | Where-Object { [bool]$_.considered_dialog })
+        $compileDialogs = @($compileEvents | Where-Object { [string]$_.event_type -eq "dialog-observation" })
         $comSelection = Get-VbeSelectionFromCom -Vbe $excel.VBE
         $compileContext | Add-Member -NotePropertyName selection_after_execute -NotePropertyValue $comSelection
         if ($comSelection) {
@@ -375,7 +405,10 @@ function Invoke-HarnessCase {
     finally {
         if ($guardian) {
             New-Item -ItemType File -Force -Path $stopFile | Out-Null
-            if (-not $guardian.WaitForExit(3000)) { Stop-Process -Id $guardian.Id -Force -ErrorAction SilentlyContinue }
+            if (-not $guardian.WaitForExit(3000)) {
+                try { $guardian.Kill() } catch { }
+                [void]$guardian.WaitForExit(5000)
+            }
         }
         if ($workbook) {
             try { $workbook.Close($false) } catch { }
@@ -390,13 +423,12 @@ function Invoke-HarnessCase {
         Release-ComObject $excel
         [GC]::Collect()
         [GC]::WaitForPendingFinalizers()
-        if ($excelPid) {
-            $ownedProcess = Get-Process -Id $excelPid -ErrorAction SilentlyContinue
-            if ($ownedProcess -and -not $ownedProcess.WaitForExit(2000)) {
-                Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
-                [void]$ownedProcess.WaitForExit(5000)
+        if ($ownedExcelProcess) {
+            if (-not $ownedExcelProcess.WaitForExit(2000)) {
+                try { $ownedExcelProcess.Kill() } catch { }
+                [void]$ownedExcelProcess.WaitForExit(5000)
             }
-            $cleanupStatus = if (Get-Process -Id $excelPid -ErrorAction SilentlyContinue) { "owned-process-remains" } else { "owned-process-zero" }
+            $cleanupStatus = if ($ownedExcelProcess.HasExited) { "owned-process-zero" } else { "owned-process-remains" }
         }
     }
 
@@ -431,6 +463,8 @@ function Invoke-HarnessCase {
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $ownershipParent = Split-Path -Parent $OwnershipFile
 if ($ownershipParent) { New-Item -ItemType Directory -Force -Path $ownershipParent | Out-Null }
+$helperOwnershipParent = Split-Path -Parent $HelperOwnershipFile
+if ($helperOwnershipParent) { New-Item -ItemType Directory -Force -Path $helperOwnershipParent | Out-Null }
 
 $selectedCases = @(Get-ExcelOracleHarnessCases)
 if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
