@@ -273,7 +273,9 @@ impl<'p> CompiledImage<'p> {
 
         oxvba_runtime::reset_pending_terminations();
         if let Some(init) = entry_program.global_initializer {
-            let status = self.invoke_func(entry_program_index, init, &mut run, state)?;
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            let status = unsafe { self.invoke_func(entry_program_index, init, &mut run, state) }?;
             if status == ST_FAULT {
                 return Ok(JitOutcome {
                     values: Vec::new(),
@@ -291,7 +293,9 @@ impl<'p> CompiledImage<'p> {
         }
 
         if let Some(entry) = entry_program.entry {
-            let status = self.invoke_func(entry_program_index, entry, &mut run, state)?;
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            let status = unsafe { self.invoke_func(entry_program_index, entry, &mut run, state) }?;
             if status == ST_FAULT {
                 return Ok(JitOutcome {
                     values: Vec::new(),
@@ -308,7 +312,9 @@ impl<'p> CompiledImage<'p> {
             }
         }
 
-        let drain_status = rt_maybe_drain(state);
+        // SAFETY: `state` was derived above from the uniquely borrowed, live `exec`
+        // and remains valid for this synchronous runtime call.
+        let drain_status = unsafe { rt_maybe_drain(state) };
         if drain_status == ST_FAULT {
             return Ok(JitOutcome {
                 values: Vec::new(),
@@ -324,7 +330,11 @@ impl<'p> CompiledImage<'p> {
         })
     }
 
-    fn invoke_func(
+    // SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+    // same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+    // and length arguments must identify the initialized, nonaliasing storage described
+    // by their typed parameters for the complete synchronous call.
+    unsafe fn invoke_func(
         &self,
         program_index: usize,
         func: FuncId,
@@ -353,7 +363,9 @@ impl<'p> CompiledImage<'p> {
                 ))
             })?;
         let mut saved_err = RtSavedErrState::default();
-        let enter_status = rt_err_enter_activation(state, &mut saved_err);
+        // SAFETY: `state` is the live execution state for this invocation and
+        // `saved_err` is initialized, uniquely borrowed output storage.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut saved_err) };
         if enter_status != ST_OK {
             return Ok(enter_status);
         }
@@ -361,7 +373,9 @@ impl<'p> CompiledImage<'p> {
         // SAFETY: `entry` was produced by Cranelift for the exact `JitEntryFn`
         // signature in `Compiler::entry_signature`; `run` and `state` live for the call.
         let status = unsafe { entry(run, state) };
-        let restore_status = rt_err_restore_activation(state, &saved_err);
+        // SAFETY: `state` remains live and uniquely owned by the invocation;
+        // `saved_err` was initialized by the successful enter call above.
+        let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
         if restore_status != ST_OK {
             Ok(restore_status)
         } else {
@@ -439,7 +453,9 @@ unsafe extern "C" fn jit_proc_invoke(
             return ST_FAULT;
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(ctx.state);
+            // SAFETY: the callback context validation above established that
+            // `ctx.state` is the live execution state for this synchronous call.
+            return unsafe { rt_raise_out_of_stack(ctx.state) };
         }
         let Ok(mut frame) = new_jit_frame(program, target_prog, func) else {
             return ST_FAULT;
@@ -447,7 +463,9 @@ unsafe extern "C" fn jit_proc_invoke(
         // SAFETY: `me` was checked non-null and is borrowed only for this synchronous call.
         frame.locals[0] = unsafe { (*me).clone() };
         let mut saved_err = RtSavedErrState::default();
-        let enter_status = rt_err_enter_activation(ctx.state, &mut saved_err);
+        // SAFETY: the validated callback state is live for the call and
+        // `saved_err` is initialized, uniquely borrowed output storage.
+        let enter_status = unsafe { rt_err_enter_activation(ctx.state, &mut saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -459,11 +477,15 @@ unsafe extern "C" fn jit_proc_invoke(
         let Some(frame) = run.frames.pop() else {
             return ST_FAULT;
         };
-        let cleanup_status = after_jit_frame_pop(run, ctx.state, &frame);
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let cleanup_status = unsafe { after_jit_frame_pop(run, ctx.state, &frame) };
         if cleanup_status != ST_OK {
             return cleanup_status;
         }
-        let restore_status = rt_err_restore_activation(ctx.state, &saved_err);
+        // SAFETY: the callback state remains live and `saved_err` was initialized
+        // by the successful enter call above.
+        let restore_status = unsafe { rt_err_restore_activation(ctx.state, &saved_err) };
         if restore_status != ST_OK {
             restore_status
         } else {
@@ -12703,7 +12725,11 @@ fn clear_current_statement_temps(run: &mut JitRun, first_temp: usize) {
     prune_param_array_aliases_for_cleared_temps(run, frame_index, first_temp);
 }
 
-fn mirror_param_array_element_write(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn mirror_param_array_element_write(
     state: *mut RawExecState,
     run: &mut JitRun,
     array_alias: SlotAlias,
@@ -12730,7 +12756,8 @@ fn mirror_param_array_element_write(
         };
         array
             .set_safearray_element(index, value)
-            .map_err(|_| rt_raise_type_mismatch(state))?;
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            .map_err(|_| unsafe { rt_raise_type_mismatch(state) })?;
     }
     Ok(())
 }
@@ -12778,7 +12805,11 @@ fn variant_operand_value(run: &JitRun, operand: JitVariantOperandDesc) -> Option
     }
 }
 
-fn variant_operand_value_with_as_new(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn variant_operand_value_with_as_new(
     run: &mut JitRun,
     state: *mut RawExecState,
     operand: JitVariantOperandDesc,
@@ -12803,7 +12834,9 @@ fn variant_operand_value_with_as_new(
     if !jit_is_nothing(&value) {
         return Ok(value);
     }
-    let object = instantiate_as_new_for_jit(run, state, 0, binding)?;
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let object = unsafe { instantiate_as_new_for_jit(run, state, 0, binding) }?;
     let Some(slot) = slot_alias_mut(run, alias) else {
         return Err(ST_FAULT);
     };
@@ -12811,7 +12844,11 @@ fn variant_operand_value_with_as_new(
     Ok(object)
 }
 
-fn instantiate_as_new_for_jit(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn instantiate_as_new_for_jit(
     run: &mut JitRun,
     state: *mut RawExecState,
     program_index: i32,
@@ -12820,7 +12857,10 @@ fn instantiate_as_new_for_jit(
     match binding {
         OxAsNew::ProjectClass { class } => {
             let mut value = Variant::empty();
-            let status = rt_project_new_object(state, program_index as usize, class.0, &mut value);
+            // SAFETY: the enclosing JIT boundary validated the live state; the Variant output is initialized, uniquely borrowed storage.
+            let status = unsafe {
+                rt_project_new_object(state, program_index as usize, class.0, &mut value)
+            };
             if status == ST_OK {
                 Ok(value)
             } else {
@@ -12882,7 +12922,11 @@ fn class_field_as_new_binding_for_jit(
         .map(|candidate| candidate.binding.clone())
 }
 
-fn project_field_get_with_as_new_for_jit(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn project_field_get_with_as_new_for_jit(
     run: &mut JitRun,
     state: *mut RawExecState,
     object: &oxvba_runtime::object_ref::ObjectRef,
@@ -12897,11 +12941,15 @@ fn project_field_get_with_as_new_for_jit(
     if !jit_is_nothing(&value) {
         return Ok(value);
     }
-    let object_value = instantiate_as_new_for_jit(run, state, object.bundle_id(), binding)?;
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let object_value =
+        unsafe { instantiate_as_new_for_jit(run, state, object.bundle_id(), binding) }?;
     if object.project_field_set(field, object_value.clone()) {
         Ok(object_value)
     } else {
-        Err(rt_raise_runtime_error_number(state, 438))
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        Err(unsafe { rt_raise_runtime_error_number(state, 438) })
     }
 }
 
@@ -12964,9 +13012,17 @@ fn call_arg_long_i32_value(run: &JitRun, arg: JitCallArgDesc) -> Option<i32> {
     }
 }
 
-fn coerce_string_call_arg(state: *mut RawExecState, value: &Variant) -> Result<Variant, i32> {
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn coerce_string_call_arg(
+    state: *mut RawExecState,
+    value: &Variant,
+) -> Result<Variant, i32> {
     let mut coerced = Variant::empty();
-    let status = rt_coerce_string_v(state, value, &mut coerced);
+    // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+    let status = unsafe { rt_coerce_string_v(state, value, &mut coerced) };
     if status == ST_OK {
         Ok(coerced)
     } else {
@@ -12974,13 +13030,18 @@ fn coerce_string_call_arg(state: *mut RawExecState, value: &Variant) -> Result<V
     }
 }
 
-fn coerce_fixed_string_call_arg(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn coerce_fixed_string_call_arg(
     state: *mut RawExecState,
     len: u32,
     value: &Variant,
 ) -> Result<Variant, i32> {
     let mut coerced = Variant::empty();
-    let status = rt_coerce_fixed_string_v(state, len, value, &mut coerced);
+    // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+    let status = unsafe { rt_coerce_fixed_string_v(state, len, value, &mut coerced) };
     if status == ST_OK {
         Ok(coerced)
     } else {
@@ -12988,14 +13049,22 @@ fn coerce_fixed_string_call_arg(
     }
 }
 
-fn coerce_call_arg_for_param(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn coerce_call_arg_for_param(
     state: *mut RawExecState,
     param_ty: &OxTy,
     value: &Variant,
 ) -> Result<Variant, i32> {
     match param_ty {
-        OxTy::Str => coerce_string_call_arg(state, value),
-        OxTy::FixedStr(len) => coerce_fixed_string_call_arg(state, *len, value),
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        OxTy::Str => unsafe { coerce_string_call_arg(state, value) },
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        OxTy::FixedStr(len) => unsafe { coerce_fixed_string_call_arg(state, *len, value) },
         _ => Ok(value.clone()),
     }
 }
@@ -13055,7 +13124,11 @@ fn call_arg_name_preserved(name: JitCallArgNameDesc) -> Result<Option<String>, i
     Ok(Some(name.to_string()))
 }
 
-fn order_project_member_call_args(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn order_project_member_call_args(
     state: *mut RawExecState,
     func: &OxFunc,
     args: &[JitCallArgDesc],
@@ -13080,13 +13153,15 @@ fn order_project_member_call_args(
     for (arg, name) in args.iter().copied().zip(names.iter().copied()) {
         if let Some(name) = call_arg_name(name)? {
             let Some(index) = param_names.iter().position(|param| param == &name) else {
-                return Err(rt_raise_runtime_error_number(state, 448));
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                return Err(unsafe { rt_raise_runtime_error_number(state, 448) });
             };
             if ordered.len() <= index {
                 ordered.resize_with(index + 1, || None);
             }
             if ordered[index].is_some() {
-                return Err(rt_raise_runtime_error_number(state, 448));
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                return Err(unsafe { rt_raise_runtime_error_number(state, 448) });
             }
             ordered[index] = Some(arg);
         } else {
@@ -13106,7 +13181,11 @@ fn order_project_member_call_args(
         .collect())
 }
 
-fn seed_jit_member_frame_args(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn seed_jit_member_frame_args(
     state: *mut RawExecState,
     run: &mut JitRun,
     func: &OxFunc,
@@ -13168,7 +13247,9 @@ fn seed_jit_member_frame_args(
                     return ST_FAULT;
                 }
                 frame.locals[param_index] =
-                    match coerce_call_arg_for_param(state, &param.ty, &value) {
+                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                    // typed references and owned values remain live and nonaliasing for this call.
+                    match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
                         Ok(value) => value,
                         Err(status) => return status,
                     };
@@ -13188,7 +13269,9 @@ fn seed_jit_member_frame_args(
                         return ST_FAULT;
                     };
                     frame.locals[param_index] =
-                        match coerce_call_arg_for_param(state, &param.ty, &value) {
+                        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                        // typed references and owned values remain live and nonaliasing for this call.
+                        match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
                             Ok(value) => value,
                             Err(status) => return status,
                         };
@@ -13223,7 +13306,11 @@ fn seed_jit_member_frame_args(
     ST_OK
 }
 
-fn unknown_proc_ref_arg_shape(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn unknown_proc_ref_arg_shape(
     state: *mut RawExecState,
     run: &JitRun,
     func: &OxFunc,
@@ -13278,7 +13365,9 @@ fn unknown_proc_ref_arg_shape(
     });
     if string_byval_only {
         for value in &string_byval_values {
-            coerce_string_call_arg(state, value)?;
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            unsafe { coerce_string_call_arg(state, value) }?;
         }
         Ok(UnknownProcRefArgShape::StringByValOnly)
     } else {
@@ -13311,7 +13400,9 @@ fn unknown_proc_ref_arg_shape(
         });
         if string_candidate {
             for value in &string_candidate_values {
-                coerce_string_call_arg(state, value)?;
+                // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                // typed references and owned values remain live and nonaliasing for this call.
+                unsafe { coerce_string_call_arg(state, value) }?;
             }
             Ok(UnknownProcRefArgShape::StringCandidate)
         } else {
@@ -13338,9 +13429,14 @@ fn jit_is_nothing(value: &Variant) -> bool {
     }
 }
 
-fn object_identity_for_is(state: *mut RawExecState, value: &Variant) -> Result<i32, i32> {
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn object_identity_for_is(state: *mut RawExecState, value: &Variant) -> Result<i32, i32> {
     if !matches!(value.vtype(), VarType::Object) {
-        return Err(rt_raise_runtime_error_number(state, 424));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_runtime_error_number(state, 424) });
     }
     Ok(value
         .as_object_ref()
@@ -13669,14 +13765,18 @@ unsafe extern "C" fn rt_jit_store_variant(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the source is cloned before the destination write.
         let run = unsafe { &mut *run };
-        let src = match variant_operand_value_with_as_new(run, state, operand) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let src = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(src) => src,
             Err(status) => return status,
         };
         let Some(slot) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        replace_jit_slot_with_cleanup(state, slot, src)
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        unsafe { replace_jit_slot_with_cleanup(state, slot, src) }
     })
 }
 
@@ -13692,7 +13792,8 @@ unsafe extern "C" fn rt_jit_stmt_boundary(
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
         clear_current_statement_temps(run, clear_temps_from as usize);
-        rt_maybe_drain(state)
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        unsafe { rt_maybe_drain(state) }
     })
 }
 
@@ -13701,7 +13802,8 @@ unsafe extern "C" fn rt_jit_drain_terminations(state: *mut RawExecState) -> i32 
         if state.is_null() {
             return ST_FAULT;
         }
-        rt_maybe_drain(state)
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        unsafe { rt_maybe_drain(state) }
     })
 }
 
@@ -13718,12 +13820,15 @@ unsafe extern "C" fn rt_jit_add_ref(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        let value = match variant_operand_value_with_as_new(run, state, operand) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
         };
         if !matches!(value.vtype(), VarType::Object) {
-            return rt_raise_runtime_error_number(state, 424);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_runtime_error_number(state, 424) };
         }
         run.explicit_refs.push(value);
         ST_OK
@@ -13743,18 +13848,24 @@ unsafe extern "C" fn rt_jit_release(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
-        let value = match variant_operand_value_with_as_new(run, state, operand) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let identity = match object_identity_for_is(state, &value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let identity = match unsafe { object_identity_for_is(state, &value) } {
             Ok(identity) => identity,
             Err(status) => return status,
         };
         if let Some(index) = run
             .explicit_refs
             .iter()
-            .rposition(|held| object_identity_for_is(state, held).ok() == Some(identity))
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            .rposition(|held| unsafe { object_identity_for_is(state, held) }.ok() == Some(identity))
         {
             run.explicit_refs.remove(index);
         }
@@ -13836,7 +13947,9 @@ unsafe extern "C" fn rt_jit_new_collection_to_slot(
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
-        replace_jit_slot_with_cleanup(state, slot, value)
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        unsafe { replace_jit_slot_with_cleanup(state, slot, value) }
     })
 }
 
@@ -13859,12 +13972,16 @@ unsafe extern "C" fn rt_jit_new_object_to_slot(
             return ST_FAULT;
         }
         let mut value = Variant::empty();
-        let status = rt_project_new_object(
-            state,
-            program_index as usize,
-            class_index as usize,
-            &mut value,
-        );
+        // SAFETY: null state was rejected and is live for this JIT boundary;
+        // `value` is initialized, uniquely borrowed Variant output storage.
+        let status = unsafe {
+            rt_project_new_object(
+                state,
+                program_index as usize,
+                class_index as usize,
+                &mut value,
+            )
+        };
         if status != ST_OK {
             return status;
         }
@@ -13873,7 +13990,9 @@ unsafe extern "C" fn rt_jit_new_object_to_slot(
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
-        replace_jit_slot_with_cleanup(state, slot, value)
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        unsafe { replace_jit_slot_with_cleanup(state, slot, value) }
     })
 }
 
@@ -13896,12 +14015,16 @@ unsafe extern "C" fn rt_jit_predeclared_to_slot(
             return ST_FAULT;
         }
         let mut value = Variant::empty();
-        let status = rt_project_predeclared_instance(
-            state,
-            program_index as usize,
-            class_index as usize,
-            &mut value,
-        );
+        // SAFETY: null state was rejected and is live for this JIT boundary;
+        // `value` is initialized, uniquely borrowed Variant output storage.
+        let status = unsafe {
+            rt_project_predeclared_instance(
+                state,
+                program_index as usize,
+                class_index as usize,
+                &mut value,
+            )
+        };
         if status != ST_OK {
             return status;
         }
@@ -13910,7 +14033,9 @@ unsafe extern "C" fn rt_jit_predeclared_to_slot(
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
-        replace_jit_slot_with_cleanup(state, slot, value)
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        unsafe { replace_jit_slot_with_cleanup(state, slot, value) }
     })
 }
 
@@ -13934,20 +14059,30 @@ unsafe extern "C" fn rt_jit_predeclared_set(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the source is cloned before the ABI call.
         let run = unsafe { &mut *run };
-        let value = match variant_operand_value_with_as_new(run, state, operand) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        rt_project_set_predeclared_instance(
-            state,
-            program_index as usize,
-            class_index as usize,
-            &value,
-        )
+        // SAFETY: null state was rejected and remains live; `value` is an owned,
+        // initialized Variant that cannot alias runtime destination storage.
+        unsafe {
+            rt_project_set_predeclared_instance(
+                state,
+                program_index as usize,
+                class_index as usize,
+                &value,
+            )
+        }
     })
 }
 
-fn variant_to_project_object_for_jit(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn variant_to_project_object_for_jit(
     state: *mut RawExecState,
     value: &Variant,
 ) -> Result<oxvba_runtime::object_ref::ObjectRef, i32> {
@@ -13958,17 +14093,25 @@ fn variant_to_project_object_for_jit(
         value.vtype(),
         VarType::Object | VarType::Empty | VarType::Null
     ) {
-        return Err(rt_raise_runtime_error_number(state, 91));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_runtime_error_number(state, 91) });
     }
-    Err(rt_raise_runtime_error_number(state, 424))
+    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+    Err(unsafe { rt_raise_runtime_error_number(state, 424) })
 }
 
+/// Reconstitutes the execution state behind the opaque runtime ABI handle.
+///
+/// # Safety
+/// `state` must be null or the exact result of `exec_state_as_raw` for a live,
+/// uniquely borrowed, same-thread `ExecState` that remains valid for `'a`.
+/// No access to that state may overlap the returned mutable borrow.
 unsafe fn jit_exec_state_mut<'a>(state: *mut RawExecState) -> Option<&'a mut ExecState<'a>> {
     if state.is_null() {
         None
     } else {
-        // SAFETY: JIT helpers receive pointers produced by `exec_state_as_raw` for a
-        // live `ExecState` during the synchronous compiled run.
+        // SAFETY: this is the conversion whose complete validity, lifetime,
+        // alignment, same-thread, and exclusivity contract is imposed on callers.
         Some(unsafe { &mut *(state as *mut ExecState<'a>) })
     }
 }
@@ -13992,10 +14135,16 @@ fn jit_withevents_binding(key: i64) -> i64 {
     key & 0xFFFF_FFFF
 }
 
-fn clear_jit_withevents_owners_before_releasing_values<'a>(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn clear_jit_withevents_owners_before_releasing_values<'a>(
     state: *mut RawExecState,
     values: impl IntoIterator<Item = &'a Variant>,
 ) -> i32 {
+    // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+    // execution-state handle contract from its checked compiled-run caller.
     let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
         return ST_FAULT;
     };
@@ -14034,13 +14183,19 @@ fn clear_jit_withevents_owners_before_releasing_values<'a>(
     ST_OK
 }
 
-fn replace_jit_slot_with_cleanup(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn replace_jit_slot_with_cleanup(
     state: *mut RawExecState,
     slot: &mut Variant,
     value: Variant,
 ) -> i32 {
     let status =
-        clear_jit_withevents_owners_before_releasing_values(state, std::iter::once(&*slot));
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        unsafe { clear_jit_withevents_owners_before_releasing_values(state, std::iter::once(&*slot)) };
     if status != ST_OK {
         return status;
     }
@@ -14048,15 +14203,29 @@ fn replace_jit_slot_with_cleanup(
     ST_OK
 }
 
-fn cleanup_jit_frame_withevents_owners(state: *mut RawExecState, frame: &JitFrame) -> i32 {
-    clear_jit_withevents_owners_before_releasing_values(
-        state,
-        frame.locals.iter().chain(frame.temps.iter()),
-    )
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn cleanup_jit_frame_withevents_owners(state: *mut RawExecState, frame: &JitFrame) -> i32 {
+    // SAFETY: this helper inherits the live unique state handle; the frame's
+    // Variant storage remains initialized and immutably borrowed for the call.
+    unsafe {
+        clear_jit_withevents_owners_before_releasing_values(
+            state,
+            frame.locals.iter().chain(frame.temps.iter()),
+        )
+    }
 }
 
-fn after_jit_frame_pop(run: &mut JitRun, state: *mut RawExecState, frame: &JitFrame) -> i32 {
-    let status = cleanup_jit_frame_withevents_owners(state, frame);
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn after_jit_frame_pop(run: &mut JitRun, state: *mut RawExecState, frame: &JitFrame) -> i32 {
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let status = unsafe { cleanup_jit_frame_withevents_owners(state, frame) };
     if status != ST_OK {
         return status;
     }
@@ -14082,15 +14251,22 @@ unsafe extern "C" fn rt_jit_withevents_get_to_slot(
         let owner_operand = unsafe { *owner };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let owner_value = match variant_operand_value_with_as_new(run, state, owner_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let owner_ref = match variant_to_project_object_for_jit(state, &owner_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let owner_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, owner_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let owner_ref = match unsafe { variant_to_project_object_for_jit(state, &owner_value) } {
             Ok(owner) => owner,
             Err(status) => return status,
         };
         let key = jit_withevents_key(&owner_ref, binding as i64);
+        // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+        // execution-state handle contract from its checked compiled-run caller.
         let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
             return ST_FAULT;
         };
@@ -14124,19 +14300,28 @@ unsafe extern "C" fn rt_jit_withevents_set_to_slot(
         let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let owner_value = match variant_operand_value_with_as_new(run, state, operands[0]) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let owner_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operands[1]) } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let value = match variant_operand_value_with_as_new(run, state, operands[1]) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let owner_ref = match variant_to_project_object_for_jit(state, &owner_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let owner_ref = match unsafe { variant_to_project_object_for_jit(state, &owner_value) } {
             Ok(owner) => owner,
             Err(status) => return status,
         };
         let key = jit_withevents_key(&owner_ref, binding as i64);
+        // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+        // execution-state handle contract from its checked compiled-run caller.
         let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
             return ST_FAULT;
         };
@@ -14177,15 +14362,22 @@ unsafe extern "C" fn rt_jit_withevents_clear_owner_to_slot(
         let owner_operand = unsafe { *owner };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let owner_value = match variant_operand_value_with_as_new(run, state, owner_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let owner_ref = match variant_to_project_object_for_jit(state, &owner_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let owner_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, owner_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let owner_ref = match unsafe { variant_to_project_object_for_jit(state, &owner_value) } {
             Ok(owner) => owner,
             Err(status) => return status,
         };
         let owner_raw = owner_ref.raw();
+        // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+        // execution-state handle contract from its checked compiled-run caller.
         let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
             return ST_FAULT;
         };
@@ -14216,12 +14408,17 @@ unsafe extern "C" fn rt_jit_withevents_first_owner_to_slot(
         let source_operand = unsafe { *source };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let source_value = match variant_operand_value_with_as_new(run, state, source_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let source_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, source_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
         let mut owners: Vec<(u64, ObjectRef)> = Vec::new();
         if !jit_is_nothing(&source_value) {
+            // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+            // execution-state handle contract from its checked compiled-run caller.
             let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
                 return ST_FAULT;
             };
@@ -14239,6 +14436,8 @@ unsafe extern "C" fn rt_jit_withevents_first_owner_to_slot(
         let owners: Vec<ObjectRef> = owners.into_iter().map(|(_, owner)| owner).collect();
         let value = match owners.first().cloned() {
             Some(first) => {
+                // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+                // execution-state handle contract from its checked compiled-run caller.
                 let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
                     return ST_FAULT;
                 };
@@ -14265,6 +14464,8 @@ unsafe extern "C" fn rt_jit_withevents_next_owner_to_slot(
         if state.is_null() || run.is_null() || dst_area < 0 || dst_index < 0 {
             return ST_FAULT;
         }
+        // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+        // execution-state handle contract from its checked compiled-run caller.
         let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
             return ST_FAULT;
         };
@@ -14324,16 +14525,24 @@ unsafe extern "C" fn rt_jit_raise_event(
         let source_operand = unsafe { *source };
         // SAFETY: null was rejected and this helper clones before invoking handlers.
         let run = unsafe { &mut *run };
-        let source_value = match variant_operand_value_with_as_new(run, state, source_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let source_object = match variant_to_project_object_for_jit(state, &source_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let source_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, source_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let source_object = match unsafe { variant_to_project_object_for_jit(state, &source_value) }
+        {
             Ok(object) => object,
             Err(status) => return status,
         };
         let source_id = source_object.raw();
         let targets: Vec<(u64, Variant, usize, usize)> = {
+            // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
+            // execution-state handle contract from its checked compiled-run caller.
             let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
                 return ST_FAULT;
             };
@@ -14374,7 +14583,19 @@ unsafe extern "C" fn rt_jit_raise_event(
         ];
         for (_, sink, handler, owner_bundle) in targets {
             if let Err(status) =
-                invoke_project_member_with_me(run, state, owner_bundle, handler, sink, args, &names)
+                // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                // typed references and owned values remain live and nonaliasing for this call.
+                unsafe {
+                    invoke_project_member_with_me(
+                        run,
+                        state,
+                        owner_bundle,
+                        handler,
+                        sink,
+                        args,
+                        &names,
+                    )
+                }
             {
                 return status;
             }
@@ -14399,18 +14620,26 @@ unsafe extern "C" fn rt_jit_project_field_get_to_slot(
         let object_operand = unsafe { *object };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let object_value = match variant_operand_value_with_as_new(run, state, object_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let object = match variant_to_project_object_for_jit(state, &object_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, object_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object = match unsafe { variant_to_project_object_for_jit(state, &object_value) } {
             Ok(object) => object,
             Err(status) => return status,
         };
-        let value = match project_field_get_with_as_new_for_jit(run, state, &object, field) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value =
+            match unsafe { project_field_get_with_as_new_for_jit(run, state, &object, field) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -14433,22 +14662,30 @@ unsafe extern "C" fn rt_jit_project_field_set(
         let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
         // SAFETY: null was rejected and this helper clones before mutating object state.
         let run = unsafe { &mut *run };
-        let object_value = match variant_operand_value_with_as_new(run, state, operands[0]) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operands[1]) } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let value = match variant_operand_value_with_as_new(run, state, operands[1]) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let object = match variant_to_project_object_for_jit(state, &object_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object = match unsafe { variant_to_project_object_for_jit(state, &object_value) } {
             Ok(object) => object,
             Err(status) => return status,
         };
         if object.project_field_set(field, value) {
             ST_OK
         } else {
-            rt_raise_runtime_error_number(state, 438)
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            unsafe { rt_raise_runtime_error_number(state, 438) }
         }
     })
 }
@@ -14488,7 +14725,11 @@ fn project_default_member_for_jit<'a>(
     })
 }
 
-fn invoke_project_member_with_me(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn invoke_project_member_with_me(
     run: &mut JitRun,
     state: *mut RawExecState,
     program_index: usize,
@@ -14522,9 +14763,12 @@ fn invoke_project_member_with_me(
     } else {
         None
     };
-    let ordered_args = order_project_member_call_args(state, func, args, names)?;
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let ordered_args = unsafe { order_project_member_call_args(state, func, args, names) }?;
     if run.frames.len() >= MAX_JIT_FRAMES {
-        return Err(rt_raise_out_of_stack(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_out_of_stack(state) });
     }
     let Some(caller_frame) = run.frames.len().checked_sub(1) else {
         return Err(ST_FAULT);
@@ -14532,20 +14776,25 @@ fn invoke_project_member_with_me(
     let mut frame = new_jit_frame(program, program_index, func).map_err(|_| ST_FAULT)?;
     frame.locals[0] = me;
     let mut pending_param_array_aliases = Vec::new();
-    let seed_status = seed_jit_member_frame_args(
-        state,
-        run,
-        func,
-        &mut frame,
-        caller_frame,
-        &ordered_args,
-        &mut pending_param_array_aliases,
-    );
+    // SAFETY: this helper inherits the live unique state handle; all remaining
+    // arguments are live typed references with disjoint mutable storage.
+    let seed_status = unsafe {
+        seed_jit_member_frame_args(
+            state,
+            run,
+            func,
+            &mut frame,
+            caller_frame,
+            &ordered_args,
+            &mut pending_param_array_aliases,
+        )
+    };
     if seed_status != ST_OK {
         return Err(seed_status);
     }
     let mut saved_err = RtSavedErrState::default();
-    let enter_status = rt_err_enter_activation(state, &mut saved_err);
+    // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+    let enter_status = unsafe { rt_err_enter_activation(state, &mut saved_err) };
     if enter_status != ST_OK {
         return Err(enter_status);
     }
@@ -14578,11 +14827,14 @@ fn invoke_project_member_with_me(
     let Some(frame) = run.frames.pop() else {
         return Err(ST_FAULT);
     };
-    let cleanup_status = after_jit_frame_pop(run, state, &frame);
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
     if cleanup_status != ST_OK {
         return Err(cleanup_status);
     }
-    let restore_status = rt_err_restore_activation(state, &saved_err);
+    // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+    let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
     if restore_status != ST_OK {
         return Err(restore_status);
     }
@@ -14592,16 +14844,23 @@ fn invoke_project_member_with_me(
     Ok(return_value.unwrap_or_else(Variant::empty))
 }
 
-fn invoke_project_default_member_values(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn invoke_project_default_member_values(
     run: &mut JitRun,
     state: *mut RawExecState,
     recv_value: Variant,
     kind: ProjectMemberKind,
     values: &[Variant],
 ) -> Result<Variant, i32> {
-    let object = variant_to_project_object_for_jit(state, &recv_value)?;
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let object = unsafe { variant_to_project_object_for_jit(state, &recv_value) }?;
     if !object.is_project_instance() {
-        return Err(rt_raise_runtime_error_number(state, 438));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_runtime_error_number(state, 438) });
     }
     let program_index = object.bundle_id() as usize;
     let Some(image) = program_image(run, program_index) else {
@@ -14613,9 +14872,11 @@ fn invoke_project_default_member_values(
     let class = program
         .classes
         .get(class_idx)
-        .ok_or_else(|| rt_raise_runtime_error_number(state, 438))?;
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        .ok_or_else(|| unsafe { rt_raise_runtime_error_number(state, 438) })?;
     let member = project_default_member_for_jit(class, kind, values.is_empty())
-        .ok_or_else(|| rt_raise_runtime_error_number(state, 438))?;
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        .ok_or_else(|| unsafe { rt_raise_runtime_error_number(state, 438) })?;
     let args: Vec<JitCallArgDesc> = values
         .iter()
         .enumerate()
@@ -14644,19 +14905,25 @@ fn invoke_project_default_member_values(
         saved_err: RtSavedErrState::default(),
     };
     run.frames.push(frame);
-    let result = invoke_project_member_with_me(
-        run,
-        state,
-        program_index,
-        member.proc.0,
-        recv_value,
-        &args,
-        &names,
-    );
+    // SAFETY: this helper inherits the live unique state handle; `run`, argument
+    // descriptors, names, and the owned receiver remain live and nonaliasing.
+    let result = unsafe {
+        invoke_project_member_with_me(
+            run,
+            state,
+            program_index,
+            member.proc.0,
+            recv_value,
+            &args,
+            &names,
+        )
+    };
     let Some(frame) = run.frames.pop() else {
         return Err(ST_FAULT);
     };
-    let cleanup_status = after_jit_frame_pop(run, state, &frame);
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
     if cleanup_status != ST_OK {
         return Err(cleanup_status);
     }
@@ -14722,15 +14989,28 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
         let recv_operand = unsafe { *recv };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let recv_value = match variant_operand_value_with_as_new(run, state, recv_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        invoke_project_member_to_slot_for_jit(state, run, recv_value, name, kind, args, names, dst)
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let recv_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, recv_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        unsafe {
+            invoke_project_member_to_slot_for_jit(
+                state, run, recv_value, name, kind, args, names, dst,
+            )
+        }
     })
 }
 
-fn invoke_project_member_to_slot_for_jit(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn invoke_project_member_to_slot_for_jit(
     state: *mut RawExecState,
     run: &mut JitRun,
     recv_value: Variant,
@@ -14740,20 +15020,27 @@ fn invoke_project_member_to_slot_for_jit(
     names: &[JitCallArgNameDesc],
     dst: Option<(u32, u32)>,
 ) -> i32 {
-    let object = match variant_to_project_object_for_jit(state, &recv_value) {
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let object = match unsafe { variant_to_project_object_for_jit(state, &recv_value) } {
         Ok(object) => object,
         Err(status) => return status,
     };
     if !object.is_project_instance() {
-        return invoke_foreign_member_to_slot_for_jit(
-            state, run, object, name, kind, args, names, dst,
-        );
+        // SAFETY: this helper inherits the live unique state handle; all other
+        // inputs are owned values or live typed references for this call.
+        return unsafe {
+            invoke_foreign_member_to_slot_for_jit(state, run, object, name, kind, args, names, dst)
+        };
     }
     if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
-        let value = match dispatch_collection_member_for_jit(state, run, &object, name, args) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value =
+            match unsafe { dispatch_collection_member_for_jit(state, run, &object, name, args) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
         if let Some((area, index)) = dst {
             let Some(slot) = slot_mut(run, area, index) else {
                 return ST_FAULT;
@@ -14773,7 +15060,8 @@ fn invoke_project_member_to_slot_for_jit(
     // SAFETY: installed from the owning CompiledImage for this run.
     let program = unsafe { &*image.program };
     let Some(class) = program.classes.get(class_idx) else {
-        return rt_raise_runtime_error_number(state, 438);
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return unsafe { rt_raise_runtime_error_number(state, 438) };
     };
     let member = if name.is_empty() {
         project_default_member_for_jit(class, kind, args.is_empty())
@@ -14799,17 +15087,22 @@ fn invoke_project_member_to_slot_for_jit(
         })
     };
     let Some(member) = member else {
-        return rt_raise_runtime_error_number(state, 438);
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return unsafe { rt_raise_runtime_error_number(state, 438) };
     };
-    let value = match invoke_project_member_with_me(
-        run,
-        state,
-        program_index,
-        member.proc.0,
-        recv_value,
-        args,
-        names,
-    ) {
+    // SAFETY: this helper inherits the live unique state handle; `run`, argument
+    // descriptors, names, and the owned receiver remain live and nonaliasing.
+    let value = match unsafe {
+        invoke_project_member_with_me(
+            run,
+            state,
+            program_index,
+            member.proc.0,
+            recv_value,
+            args,
+            names,
+        )
+    } {
         Ok(value) => value,
         Err(status) => return status,
     };
@@ -14822,7 +15115,11 @@ fn invoke_project_member_to_slot_for_jit(
     ST_OK
 }
 
-fn dispatch_collection_member_for_jit(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn dispatch_collection_member_for_jit(
     state: *mut RawExecState,
     run: &JitRun,
     object: &ObjectRef,
@@ -14830,21 +15127,25 @@ fn dispatch_collection_member_for_jit(
     args: &[JitCallArgDesc],
 ) -> Result<Variant, i32> {
     let native = vba_collection_native_method_for_jit(name)
-        .ok_or_else(|| rt_raise_runtime_error_number(state, 438))?;
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        .ok_or_else(|| unsafe { rt_raise_runtime_error_number(state, 438) })?;
     let method = match native {
         oxvba_bundle::NativeMethodId::CollectionAdd => CollectionMethod::Add,
         oxvba_bundle::NativeMethodId::CollectionItem => CollectionMethod::Item,
         oxvba_bundle::NativeMethodId::CollectionCount => CollectionMethod::Count,
         oxvba_bundle::NativeMethodId::CollectionRemove => CollectionMethod::Remove,
         oxvba_bundle::NativeMethodId::CollectionNewEnum => {
-            return Err(rt_raise_runtime_error_number(state, 438));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_runtime_error_number(state, 438) });
         }
     };
     let argv = collection_call_arg_values_for_jit(run, args)?;
     object
         .with_native_collection(|data| dispatch_collection(method, data, &argv))
         .ok_or(ST_FAULT)?
-        .map_err(|err| raise_collection_error_for_jit(state, err))
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        .map_err(|err| unsafe { raise_collection_error_for_jit(state, err) })
 }
 
 fn collection_call_arg_values_for_jit(
@@ -14871,12 +15172,20 @@ fn vba_collection_native_method_for_jit(member: &str) -> Option<oxvba_bundle::Na
     }
 }
 
-fn raise_collection_error_for_jit(state: *mut RawExecState, err: CollectionError) -> i32 {
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn raise_collection_error_for_jit(state: *mut RawExecState, err: CollectionError) -> i32 {
     match err {
-        CollectionError::NotFound => rt_raise_subscript_out_of_range(state),
-        CollectionError::DuplicateKey => rt_raise_runtime_error_number(state, 457),
-        CollectionError::BadArgument => rt_raise_runtime_error_number(state, 5),
-        CollectionError::ArgNotOptional => rt_raise_runtime_error_number(state, 449),
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        CollectionError::NotFound => unsafe { rt_raise_subscript_out_of_range(state) },
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        CollectionError::DuplicateKey => unsafe { rt_raise_runtime_error_number(state, 457) },
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        CollectionError::BadArgument => unsafe { rt_raise_runtime_error_number(state, 5) },
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        CollectionError::ArgNotOptional => unsafe { rt_raise_runtime_error_number(state, 449) },
     }
 }
 
@@ -14897,7 +15206,11 @@ fn foreign_member_selector_for_jit(name: &str) -> DynamicMemberSelector {
     }
 }
 
-fn invoke_foreign_member_to_slot_for_jit(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn invoke_foreign_member_to_slot_for_jit(
     state: *mut RawExecState,
     run: &mut JitRun,
     object: ObjectRef,
@@ -15063,40 +15376,54 @@ unsafe extern "C" fn rt_jit_call_by_name_to_slot(
         let operands = unsafe { std::slice::from_raw_parts(operands, 3) };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let object = match variant_operand_value_with_as_new(run, state, operands[0]) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object = match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let name_value = match variant_operand_value_with_as_new(run, state, operands[1]) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let name_value = match unsafe { variant_operand_value_with_as_new(run, state, operands[1]) }
+        {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let calltype_value = match variant_operand_value_with_as_new(run, state, operands[2]) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let calltype_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, operands[2]) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
         let member_name = call_by_name_member_name(&name_value);
         let calltype = match call_by_name_calltype(&calltype_value) {
             Ok(value) => value,
-            Err(code) => return rt_raise_runtime_error_number(state, code),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(code) => return unsafe { rt_raise_runtime_error_number(state, code) },
         };
         let kind = match calltype {
             1 => ProjectMemberKind::Method,
             2 => ProjectMemberKind::PropertyGet,
             4 => ProjectMemberKind::PropertyLet,
             8 => ProjectMemberKind::PropertySet,
-            _ => return rt_raise_runtime_error_number(state, 5),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            _ => return unsafe { rt_raise_runtime_error_number(state, 5) },
         };
-        invoke_project_member_to_slot_for_jit(
-            state,
-            run,
-            object,
-            &member_name,
-            kind,
-            args,
-            names,
-            dst,
-        )
+        // SAFETY: the checked JIT entry owns the live unique state and run;
+        // descriptors, member name, and destination metadata remain live.
+        unsafe {
+            invoke_project_member_to_slot_for_jit(
+                state,
+                run,
+                object,
+                &member_name,
+                kind,
+                args,
+                names,
+                dst,
+            )
+        }
     })
 }
 
@@ -15115,7 +15442,9 @@ unsafe extern "C" fn rt_jit_project_type_name_to_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let value = match variant_operand_value_with_as_new(run, state, operand) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
         };
@@ -15126,7 +15455,9 @@ unsafe extern "C" fn rt_jit_project_type_name_to_slot(
             ) {
             "Nothing".to_string()
         } else {
-            let object = match variant_to_project_object_for_jit(state, &value) {
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            let object = match unsafe { variant_to_project_object_for_jit(state, &value) } {
                 Ok(object) => object,
                 Err(status) => return status,
             };
@@ -15168,11 +15499,13 @@ unsafe extern "C" fn rt_jit_new_record_to_slot(
         };
         let layout = match vba_record_layout_for_fields(fields) {
             Ok(layout) => layout,
-            Err(_) => return rt_raise_type_mismatch(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => return unsafe { rt_raise_type_mismatch(state) },
         };
         let record = match VbaRecord::new_default(layout) {
             Ok(record) => record,
-            Err(_) => return rt_raise_type_mismatch(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => return unsafe { rt_raise_type_mismatch(state) },
         };
         // SAFETY: null was rejected and the new owned record is independent of source
         // metadata before overwriting the destination slot.
@@ -15212,7 +15545,8 @@ unsafe extern "C" fn rt_jit_record_get_to_slot(
         };
         let value = match record.read_record_field_variant(field_index as usize) {
             Ok(value) => value,
-            Err(_) => return rt_raise_type_mismatch(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => return unsafe { rt_raise_type_mismatch(state) },
         };
         // SAFETY: null was rejected and the value no longer borrows from source slots.
         let run = unsafe { &mut *run };
@@ -15256,7 +15590,8 @@ unsafe extern "C" fn rt_jit_record_set(
         };
         match record.write_record_field_variant(field_index as usize, &value) {
             Ok(()) => ST_OK,
-            Err(_) => rt_raise_type_mismatch(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => unsafe { rt_raise_type_mismatch(state) },
         }
     })
 }
@@ -15291,41 +15626,55 @@ unsafe extern "C" fn rt_jit_record_lset(
         };
         match record.lset_record_from(&value) {
             Ok(()) => ST_OK,
-            Err(_) => rt_raise_type_mismatch(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => unsafe { rt_raise_type_mismatch(state) },
         }
     })
 }
 
-fn jit_flat_index_from_bounds(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_flat_index_from_bounds(
     state: *mut RawExecState,
     bounds: &[SafeArrayBound],
     len: usize,
     indices: &[i32],
 ) -> Result<usize, i32> {
     if indices.len() != bounds.len() {
-        return Err(rt_raise_subscript_out_of_range(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_subscript_out_of_range(state) });
     }
     let mut flat = 0usize;
     for (&raw, bound) in indices.iter().zip(bounds) {
         let offset = i64::from(raw) - i64::from(bound.lower);
         if offset < 0 || offset >= i64::from(bound.count) {
-            return Err(rt_raise_subscript_out_of_range(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_subscript_out_of_range(state) });
         }
         let Ok(offset) = usize::try_from(offset) else {
-            return Err(rt_raise_subscript_out_of_range(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_subscript_out_of_range(state) });
         };
         flat = flat
             .checked_mul(bound.count as usize)
             .and_then(|base| base.checked_add(offset))
-            .ok_or_else(|| rt_raise_subscript_out_of_range(state))?;
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            .ok_or_else(|| unsafe { rt_raise_subscript_out_of_range(state) })?;
     }
     if flat >= len {
-        return Err(rt_raise_subscript_out_of_range(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_subscript_out_of_range(state) });
     }
     Ok(flat)
 }
 
-fn jit_record_array_flat_index(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_record_array_flat_index(
     state: *mut RawExecState,
     record: &Variant,
     field_index: usize,
@@ -15333,46 +15682,67 @@ fn jit_record_array_flat_index(
 ) -> Result<usize, i32> {
     let bounds_len = match record.record_array_field_bounds_len(field_index) {
         Ok(Some(bounds_len)) => bounds_len,
-        Ok(None) => return Err(rt_raise_expected_array(state)),
-        Err(_) => return Err(rt_raise_type_mismatch(state)),
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        Ok(None) => return Err(unsafe { rt_raise_expected_array(state) }),
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        Err(_) => return Err(unsafe { rt_raise_type_mismatch(state) }),
     };
     let (bounds, len) = bounds_len;
-    jit_flat_index_from_bounds(state, &bounds, len, indices)
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    unsafe { jit_flat_index_from_bounds(state, &bounds, len, indices) }
 }
 
-fn jit_array_element_value(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_array_element_value(
     state: *mut RawExecState,
     array: &Variant,
     indices: &[i32],
 ) -> Result<Variant, i32> {
     if array.vtype() != VarType::ArrayVariant {
-        return Err(rt_raise_expected_array(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_expected_array(state) });
     }
-    let flat = jit_flat_index(state, array, indices)?;
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let flat = unsafe { jit_flat_index(state, array, indices) }?;
     if let Some(result) = array.safearray_i32_element(flat) {
         match result {
             Ok(Some(value)) => return Ok(Variant::from_i32(value)),
             Ok(None) => {}
-            Err(_) => return Err(rt_raise_type_mismatch(state)),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => return Err(unsafe { rt_raise_type_mismatch(state) }),
         }
     }
     match array.safearray_element(flat) {
         Some(Ok(value)) => Ok(value),
-        Some(Err(_)) => Err(rt_raise_type_mismatch(state)),
-        None => Err(rt_raise_expected_array(state)),
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        Some(Err(_)) => Err(unsafe { rt_raise_type_mismatch(state) }),
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        None => Err(unsafe { rt_raise_expected_array(state) }),
     }
 }
 
-fn jit_array_element_set(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_array_element_set(
     state: *mut RawExecState,
     array: &mut Variant,
     indices: &[i32],
     value: &Variant,
 ) -> Result<(), i32> {
     if array.vtype() != VarType::ArrayVariant {
-        return Err(rt_raise_expected_array(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_expected_array(state) });
     }
-    let flat = jit_flat_index(state, array, indices)?;
+    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+    // typed references and owned values remain live and nonaliasing for this call.
+    let flat = unsafe { jit_flat_index(state, array, indices) }?;
     if let Some(value_i32) = value.as_i32()
         && let Some(result) = array.set_safearray_i32_element(flat, value_i32)
     {
@@ -15380,13 +15750,16 @@ fn jit_array_element_set(
             Ok(true) => Ok(()),
             Ok(false) => array
                 .set_safearray_element(flat, value)
-                .map_err(|_| rt_raise_type_mismatch(state)),
-            Err(_) => Err(rt_raise_type_mismatch(state)),
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                .map_err(|_| unsafe { rt_raise_type_mismatch(state) }),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => Err(unsafe { rt_raise_type_mismatch(state) }),
         };
     }
     array
         .set_safearray_element(flat, value)
-        .map_err(|_| rt_raise_type_mismatch(state))
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        .map_err(|_| unsafe { rt_raise_type_mismatch(state) })
 }
 
 unsafe extern "C" fn rt_jit_record_array_get_to_slot(
@@ -15421,15 +15794,20 @@ unsafe extern "C" fn rt_jit_record_array_get_to_slot(
         let Some(record) = variant_operand_value(run_ref, record) else {
             return ST_FAULT;
         };
-        let flat = match jit_record_array_flat_index(state, &record, field_index as usize, indices)
-        {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let flat = match unsafe {
+            jit_record_array_flat_index(state, &record, field_index as usize, indices)
+        } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
         let value = match record.record_array_field_element(field_index as usize, flat) {
             Ok(Some(value)) => value,
-            Ok(None) => return rt_raise_expected_array(state),
-            Err(_) => return rt_raise_type_mismatch(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Ok(None) => return unsafe { rt_raise_expected_array(state) },
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => return unsafe { rt_raise_type_mismatch(state) },
         };
         // SAFETY: null was rejected and value no longer borrows from source slots.
         let run = unsafe { &mut *run };
@@ -15476,7 +15854,11 @@ unsafe extern "C" fn rt_jit_record_array_set(
         let Some(record) = slot_ref(run_ref, record_area as u32, record_index as u32) else {
             return ST_FAULT;
         };
-        let flat = match jit_record_array_flat_index(state, record, field_index as usize, indices) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let flat = match unsafe {
+            jit_record_array_flat_index(state, record, field_index as usize, indices)
+        } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
@@ -15487,8 +15869,10 @@ unsafe extern "C" fn rt_jit_record_array_set(
         };
         match record.set_record_array_field_element(field_index as usize, flat, &value) {
             Ok(Some(())) => ST_OK,
-            Ok(None) => rt_raise_expected_array(state),
-            Err(_) => rt_raise_type_mismatch(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Ok(None) => unsafe { rt_raise_expected_array(state) },
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(_) => unsafe { rt_raise_type_mismatch(state) },
         }
     })
 }
@@ -15521,11 +15905,16 @@ unsafe extern "C" fn rt_jit_project_field_array_get_to_slot(
         let object_operand = unsafe { *object };
         // SAFETY: null was rejected and this helper clones before mutating destination slots.
         let run = unsafe { &mut *run };
-        let object_value = match variant_operand_value_with_as_new(run, state, object_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
-        let object = match variant_to_project_object_for_jit(state, &object_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, object_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object = match unsafe { variant_to_project_object_for_jit(state, &object_value) } {
             Ok(object) => object,
             Err(status) => return status,
         };
@@ -15535,7 +15924,9 @@ unsafe extern "C" fn rt_jit_project_field_array_get_to_slot(
                 if stored.as_object_ref().is_some() {
                     return None;
                 }
-                Some(jit_array_element_value(state, stored, indices))
+                // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                // typed references and owned values remain live and nonaliasing for this call.
+                Some(unsafe { jit_array_element_value(state, stored, indices) })
             })
             .flatten();
         let value = match fast {
@@ -15543,25 +15934,33 @@ unsafe extern "C" fn rt_jit_project_field_array_get_to_slot(
             Some(Err(status)) => return status,
             None => {
                 let field_value =
-                    match project_field_get_with_as_new_for_jit(run, state, &object, field) {
+                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                    // typed references and owned values remain live and nonaliasing for this call.
+                    match unsafe { project_field_get_with_as_new_for_jit(run, state, &object, field) } {
                         Ok(value) => value,
                         Err(status) => return status,
                     };
                 if field_value.as_object_ref().is_some() {
                     let args: Vec<Variant> =
                         indices.iter().copied().map(Variant::from_i32).collect();
-                    match invoke_project_default_member_values(
-                        run,
-                        state,
-                        field_value,
-                        ProjectMemberKind::PropertyGet,
-                        &args,
-                    ) {
+                    // SAFETY: the checked JIT entry owns the live unique state;
+                    // `run`, the owned receiver, and `args` remain live for the call.
+                    match unsafe {
+                        invoke_project_default_member_values(
+                            run,
+                            state,
+                            field_value,
+                            ProjectMemberKind::PropertyGet,
+                            &args,
+                        )
+                    } {
                         Ok(value) => value,
                         Err(status) => return status,
                     }
                 } else {
-                    match jit_array_element_value(state, &field_value, indices) {
+                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                    // typed references and owned values remain live and nonaliasing for this call.
+                    match unsafe { jit_array_element_value(state, &field_value, indices) } {
                         Ok(value) => value,
                         Err(status) => return status,
                     }
@@ -15600,18 +15999,24 @@ unsafe extern "C" fn rt_jit_project_field_array_set(
         let indices = unsafe { std::slice::from_raw_parts(indices, dimensions) };
         // SAFETY: compiled caller provides live descriptors.
         let object_operand = unsafe { *object };
+        // SAFETY: the same checked descriptor pair keeps `value` live for this load.
         let value_operand = unsafe { *value };
         // SAFETY: null was rejected and value/object are cloned before field mutation.
         let run = unsafe { &mut *run };
-        let object_value = match variant_operand_value_with_as_new(run, state, object_operand) {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object_value =
+            match unsafe { variant_operand_value_with_as_new(run, state, object_operand) } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
         let value = match variant_operand_value(run, value_operand) {
             Some(value) => value,
             None => return ST_FAULT,
         };
-        let object = match variant_to_project_object_for_jit(state, &object_value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let object = match unsafe { variant_to_project_object_for_jit(state, &object_value) } {
             Ok(object) => object,
             Err(status) => return status,
         };
@@ -15620,7 +16025,9 @@ unsafe extern "C" fn rt_jit_project_field_array_set(
                 if stored.as_object_ref().is_some() {
                     return None;
                 }
-                Some(jit_array_element_set(state, stored, indices, &value))
+                // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                // typed references and owned values remain live and nonaliasing for this call.
+                Some(unsafe { jit_array_element_set(state, stored, indices, &value) })
             })
             .flatten();
         match fast {
@@ -15630,7 +16037,9 @@ unsafe extern "C" fn rt_jit_project_field_array_set(
         }
 
         let mut field_value =
-            match project_field_get_with_as_new_for_jit(run, state, &object, field) {
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            match unsafe { project_field_get_with_as_new_for_jit(run, state, &object, field) } {
                 Ok(value) => value,
                 Err(status) => return status,
             };
@@ -15642,24 +16051,29 @@ unsafe extern "C" fn rt_jit_project_field_array_set(
             } else {
                 ProjectMemberKind::PropertyLet
             };
-            return match invoke_project_default_member_values(
-                run,
-                state,
-                field_value,
-                invoke_kind,
-                &args,
-            ) {
+            // SAFETY: the checked JIT entry owns the live unique state; `run`,
+            // the owned receiver, and `args` remain live for the call.
+            return match unsafe {
+                invoke_project_default_member_values(run, state, field_value, invoke_kind, &args)
+            } {
                 Ok(_) => ST_OK,
                 Err(status) => status,
             };
         }
-        if let Err(status) = jit_array_element_set(state, &mut field_value, indices, &value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        if let Err(status) =
+            // SAFETY: `state` is the current live unique handle; `field_value`,
+            // indices, and source value are initialized, live, and nonaliasing.
+            unsafe { jit_array_element_set(state, &mut field_value, indices, &value) }
+        {
             return status;
         }
         if object.project_field_set(field, field_value) {
             ST_OK
         } else {
-            rt_raise_runtime_error_number(state, 438)
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            unsafe { rt_raise_runtime_error_number(state, 438) }
         }
     })
 }
@@ -15692,30 +16106,41 @@ unsafe extern "C" fn rt_jit_validate_assignment(
         };
         let is_object = matches!(value.vtype(), VarType::Object) || jit_is_nothing(&value);
         match intent {
-            JIT_ASSIGN_INTENT_SET if !is_object => rt_raise_runtime_error_number(state, 424),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            JIT_ASSIGN_INTENT_SET if !is_object => unsafe {
+                rt_raise_runtime_error_number(state, 424)
+            },
             JIT_ASSIGN_INTENT_LET
                 if target_kind == JIT_ASSIGN_TARGET_VARIANT
                     && matches!(value.vtype(), VarType::Object)
                     && jit_is_nothing(&value) =>
             {
-                rt_raise_runtime_error_number(state, 91)
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                unsafe { rt_raise_runtime_error_number(state, 91) }
             }
             JIT_ASSIGN_INTENT_LET if target_kind == JIT_ASSIGN_TARGET_OBJECT && is_object => {
-                rt_raise_runtime_error_number(state, 91)
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                unsafe { rt_raise_runtime_error_number(state, 91) }
             }
             JIT_ASSIGN_INTENT_LET if target_kind == JIT_ASSIGN_TARGET_OBJECT => {
-                rt_raise_runtime_error_number(state, 424)
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                unsafe { rt_raise_runtime_error_number(state, 424) }
             }
             JIT_ASSIGN_INTENT_SET
                 if matches!(value.vtype(), VarType::Object) && target_type_name_len > 0 =>
             {
-                validate_jit_project_set_compatibility(
-                    state,
-                    run_ref,
-                    &value,
-                    target_type_name_ptr,
-                    target_type_name_len,
-                )
+                // SAFETY: the JIT entry contract supplies the live state and a
+                // pointer/length pair for one initialized target-name byte range;
+                // typed `run_ref` and `value` borrows remain live and nonaliasing.
+                unsafe {
+                    validate_jit_project_set_compatibility(
+                        state,
+                        run_ref,
+                        &value,
+                        target_type_name_ptr,
+                        target_type_name_len,
+                    )
+                }
             }
             JIT_ASSIGN_INTENT_IMPLICIT | JIT_ASSIGN_INTENT_LET | JIT_ASSIGN_INTENT_SET => ST_OK,
             _ => ST_FAULT,
@@ -15723,7 +16148,11 @@ unsafe extern "C" fn rt_jit_validate_assignment(
     })
 }
 
-fn validate_jit_project_set_compatibility(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn validate_jit_project_set_compatibility(
     state: *mut RawExecState,
     run: &JitRun,
     value: &Variant,
@@ -15788,7 +16217,8 @@ fn validate_jit_project_set_compatibility(
     if compatible {
         ST_OK
     } else {
-        rt_raise_type_mismatch(state)
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        unsafe { rt_raise_type_mismatch(state) }
     }
 }
 
@@ -15883,7 +16313,11 @@ unsafe extern "C" fn rt_jit_array_literal_to_slot(
     })
 }
 
-fn jit_build_array_bounds(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_build_array_bounds(
     state: *mut RawExecState,
     lower_bounds: &[i32],
     upper_bounds: &[i32],
@@ -15894,18 +16328,24 @@ fn jit_build_array_bounds(
     let mut bounds = Vec::with_capacity(upper_bounds.len());
     for (&lower, &upper) in lower_bounds.iter().zip(upper_bounds) {
         if upper < lower {
-            return Err(rt_raise_subscript_out_of_range(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_subscript_out_of_range(state) });
         }
         let span = i64::from(upper) - i64::from(lower) + 1;
         let Ok(count) = u32::try_from(span) else {
-            return Err(rt_raise_out_of_memory(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_out_of_memory(state) });
         };
         bounds.push(SafeArrayBound { count, lower });
     }
     Ok(bounds)
 }
 
-fn jit_array_element_count(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_array_element_count(
     state: *mut RawExecState,
     bounds: &[SafeArrayBound],
 ) -> Result<usize, i32> {
@@ -15913,7 +16353,8 @@ fn jit_array_element_count(
     for bound in bounds {
         count = count
             .checked_mul(bound.count as usize)
-            .ok_or_else(|| rt_raise_out_of_memory(state))?;
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            .ok_or_else(|| unsafe { rt_raise_out_of_memory(state) })?;
     }
     Ok(count)
 }
@@ -15961,29 +16402,40 @@ fn jit_redim_default_safearray(
         .map_err(|_| JitRedimDefaultArrayError::TypeMismatch)
 }
 
-fn jit_flat_index(
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_flat_index(
     state: *mut RawExecState,
     value: &Variant,
     indices: &[i32],
 ) -> Result<usize, i32> {
     let Some((bounds, len)) = value.safearray_bounds_len() else {
         return if value.vtype() == VarType::ArrayVariant {
-            Err(rt_raise_array_has_no_bounds(state))
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(unsafe { rt_raise_array_has_no_bounds(state) })
         } else {
-            Err(rt_raise_expected_array(state))
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(unsafe { rt_raise_expected_array(state) })
         };
     };
     if indices.len() != bounds.len() {
-        return Err(rt_raise_subscript_out_of_range(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_subscript_out_of_range(state) });
     }
     if let ([raw], [bound]) = (indices, bounds.as_slice()) {
         let offset = i64::from(*raw) - i64::from(bound.lower);
         if offset < 0 || offset >= i64::from(bound.count) {
-            return Err(rt_raise_subscript_out_of_range(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_subscript_out_of_range(state) });
         }
-        let flat = usize::try_from(offset).map_err(|_| rt_raise_subscript_out_of_range(state))?;
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        let flat = usize::try_from(offset)
+            .map_err(|_| unsafe { rt_raise_subscript_out_of_range(state) })?;
         if flat >= len {
-            return Err(rt_raise_subscript_out_of_range(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_subscript_out_of_range(state) });
         }
         return Ok(flat);
     }
@@ -15991,40 +16443,59 @@ fn jit_flat_index(
     for (&raw, bound) in indices.iter().zip(&bounds) {
         let offset = i64::from(raw) - i64::from(bound.lower);
         if offset < 0 || offset >= i64::from(bound.count) {
-            return Err(rt_raise_subscript_out_of_range(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_subscript_out_of_range(state) });
         }
         let Ok(offset) = usize::try_from(offset) else {
-            return Err(rt_raise_subscript_out_of_range(state));
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return Err(unsafe { rt_raise_subscript_out_of_range(state) });
         };
         flat = flat
             .checked_mul(bound.count as usize)
             .and_then(|base| base.checked_add(offset))
-            .ok_or_else(|| rt_raise_subscript_out_of_range(state))?;
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            .ok_or_else(|| unsafe { rt_raise_subscript_out_of_range(state) })?;
     }
     if flat >= len {
-        return Err(rt_raise_subscript_out_of_range(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_subscript_out_of_range(state) });
     }
     Ok(flat)
 }
 
-fn jit_flat_index_1d(state: *mut RawExecState, value: &Variant, index: i32) -> Result<usize, i32> {
+// SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
+// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
+// and length arguments must identify the initialized, nonaliasing storage described
+// by their typed parameters for the complete synchronous call.
+unsafe fn jit_flat_index_1d(
+    state: *mut RawExecState,
+    value: &Variant,
+    index: i32,
+) -> Result<usize, i32> {
     let Some((bounds, len)) = value.safearray_bounds_len() else {
         return if value.vtype() == VarType::ArrayVariant {
-            Err(rt_raise_array_has_no_bounds(state))
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(unsafe { rt_raise_array_has_no_bounds(state) })
         } else {
-            Err(rt_raise_expected_array(state))
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Err(unsafe { rt_raise_expected_array(state) })
         };
     };
     let [bound] = bounds.as_slice() else {
-        return Err(rt_raise_subscript_out_of_range(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_subscript_out_of_range(state) });
     };
     let offset = i64::from(index) - i64::from(bound.lower);
     if offset < 0 || offset >= i64::from(bound.count) {
-        return Err(rt_raise_subscript_out_of_range(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_subscript_out_of_range(state) });
     }
-    let flat = usize::try_from(offset).map_err(|_| rt_raise_subscript_out_of_range(state))?;
+    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+    let flat =
+        usize::try_from(offset).map_err(|_| unsafe { rt_raise_subscript_out_of_range(state) })?;
     if flat >= len {
-        return Err(rt_raise_subscript_out_of_range(state));
+        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+        return Err(unsafe { rt_raise_subscript_out_of_range(state) });
     }
     Ok(flat)
 }
@@ -16081,8 +16552,11 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
         // SAFETY: null was rejected and the compiled caller writes exactly `dimensions`
         // lower/upper values to stack slots that stay live for this helper call.
         let lower_bounds = unsafe { std::slice::from_raw_parts(lower_bounds, dimensions) };
+        // SAFETY: the same checked pointer/length contract covers the upper-bound array.
         let upper_bounds = unsafe { std::slice::from_raw_parts(upper_bounds, dimensions) };
-        let bounds = match jit_build_array_bounds(state, lower_bounds, upper_bounds) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let bounds = match unsafe { jit_build_array_bounds(state, lower_bounds, upper_bounds) } {
             Ok(bounds) => bounds,
             Err(status) => return status,
         };
@@ -16097,10 +16571,13 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
                 .as_safearray()
                 .is_some_and(|array| array.is_fixed_size())
             {
-                return rt_raise_fixed_or_temporarily_locked_array(state);
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                return unsafe { rt_raise_fixed_or_temporarily_locked_array(state) };
             }
         }
-        let count = match jit_array_element_count(state, &bounds) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let count = match unsafe { jit_array_element_count(state, &bounds) } {
             Ok(count) => count,
             Err(status) => return status,
         };
@@ -16111,16 +16588,19 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
             match jit_redim_default_safearray(bounds, &element, count, fixed != 0) {
                 Ok(array) => array,
                 Err(JitRedimDefaultArrayError::OutOfMemory) => {
-                    return rt_raise_out_of_memory(state);
+                    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                    return unsafe { rt_raise_out_of_memory(state) };
                 }
                 Err(JitRedimDefaultArrayError::TypeMismatch) => {
-                    return rt_raise_type_mismatch(state);
+                    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                    return unsafe { rt_raise_type_mismatch(state) };
                 }
             }
         } else {
             let mut values = Vec::new();
             if values.try_reserve_exact(count).is_err() {
-                return rt_raise_out_of_memory(state);
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                return unsafe { rt_raise_out_of_memory(state) };
             }
             values.resize_with(count, || default_array_element(&element));
             // SAFETY: null was rejected; all element reads clone into `values` before the
@@ -16138,7 +16618,8 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
                         _ => false,
                     };
                 if illegal {
-                    return rt_raise_subscript_out_of_range(state);
+                    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                    return unsafe { rt_raise_subscript_out_of_range(state) };
                 }
                 for index in 0..old_len {
                     let Some(new_index) = jit_remap_preserve_index(index, &old_bounds, &bounds)
@@ -16146,19 +16627,23 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
                         continue;
                     };
                     if new_index >= values.len() {
-                        return rt_raise_subscript_out_of_range(state);
+                        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                        return unsafe { rt_raise_subscript_out_of_range(state) };
                     }
                     let value = match current.safearray_element(index) {
                         Some(Ok(value)) => value,
-                        Some(Err(_)) => return rt_raise_type_mismatch(state),
-                        None => return rt_raise_expected_array(state),
+                        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                        Some(Err(_)) => return unsafe { rt_raise_type_mismatch(state) },
+                        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                        None => return unsafe { rt_raise_expected_array(state) },
                     };
                     values[new_index] = value;
                 }
             }
             match redim_safearray_from_elements(bounds, &element, values, fixed != 0) {
                 Ok(array) => array,
-                Err(_) => return rt_raise_type_mismatch(state),
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                Err(_) => return unsafe { rt_raise_type_mismatch(state) },
             }
         };
         // SAFETY: null was rejected and the freshly built array no longer borrows from `run`.
@@ -16218,7 +16703,8 @@ unsafe extern "C" fn rt_jit_array_erase_variant_slot(
                     values.resize_with(count, || default_array_element(&element));
                     match redim_safearray_from_elements(bounds, &element, values, true) {
                         Ok(array) => Variant::from_safearray(array),
-                        Err(_) => return rt_raise_type_mismatch(state),
+                        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                        Err(_) => return unsafe { rt_raise_type_mismatch(state) },
                     }
                 }
             }
@@ -16255,9 +16741,12 @@ unsafe extern "C" fn rt_jit_array_get_i32_1d_to_slot(
             return ST_FAULT;
         };
         if array.vtype() != VarType::ArrayVariant {
-            return rt_raise_expected_array(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_expected_array(state) };
         }
-        let flat = match jit_flat_index_1d(state, array, index) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let flat = match unsafe { jit_flat_index_1d(state, array, index) } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
@@ -16265,11 +16754,15 @@ unsafe extern "C" fn rt_jit_array_get_i32_1d_to_slot(
             Some(Ok(Some(value))) => Variant::from_i32(value),
             Some(Ok(None)) => match array.safearray_element(flat) {
                 Some(Ok(value)) => value,
-                Some(Err(_)) => return rt_raise_type_mismatch(state),
-                None => return rt_raise_expected_array(state),
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                Some(Err(_)) => return unsafe { rt_raise_type_mismatch(state) },
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                None => return unsafe { rt_raise_expected_array(state) },
             },
-            Some(Err(_)) => return rt_raise_type_mismatch(state),
-            None => return rt_raise_expected_array(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Some(Err(_)) => return unsafe { rt_raise_type_mismatch(state) },
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            None => return unsafe { rt_raise_expected_array(state) },
         };
         // SAFETY: null was rejected and the element value no longer borrows from `run`.
         let run = unsafe { &mut *run };
@@ -16313,13 +16806,17 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
                 let args: Vec<Variant> = indices.iter().copied().map(Variant::from_i32).collect();
                 // SAFETY: null was rejected and source clones no longer borrow from `run`.
                 let run = unsafe { &mut *run };
-                let value = match invoke_project_default_member_values(
-                    run,
-                    state,
-                    recv_value,
-                    ProjectMemberKind::PropertyGet,
-                    &args,
-                ) {
+                // SAFETY: the checked JIT entry owns the live unique state; `run`,
+                // the owned receiver, and `args` remain live for the call.
+                let value = match unsafe {
+                    invoke_project_default_member_values(
+                        run,
+                        state,
+                        recv_value,
+                        ProjectMemberKind::PropertyGet,
+                        &args,
+                    )
+                } {
                     Ok(value) => value,
                     Err(status) => return status,
                 };
@@ -16329,9 +16826,12 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
                 *slot = value;
                 return ST_OK;
             }
-            return rt_raise_expected_array(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_expected_array(state) };
         }
-        let flat = match jit_flat_index(state, array, indices) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let flat = match unsafe { jit_flat_index(state, array, indices) } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
@@ -16347,13 +16847,16 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
                     return ST_OK;
                 }
                 Ok(None) => {}
-                Err(_) => return rt_raise_type_mismatch(state),
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                Err(_) => return unsafe { rt_raise_type_mismatch(state) },
             }
         }
         let value = match array.safearray_element(flat) {
             Some(Ok(value)) => value,
-            Some(Err(_)) => return rt_raise_type_mismatch(state),
-            None => return rt_raise_expected_array(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Some(Err(_)) => return unsafe { rt_raise_type_mismatch(state) },
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            None => return unsafe { rt_raise_expected_array(state) },
         };
         // SAFETY: null was rejected and the element clone no longer borrows from `run`.
         let run = unsafe { &mut *run };
@@ -16383,9 +16886,12 @@ unsafe extern "C" fn rt_jit_array_set_i32_1d_slot(
             return ST_FAULT;
         };
         if array.vtype() != VarType::ArrayVariant {
-            return rt_raise_expected_array(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_expected_array(state) };
         }
-        let flat = match jit_flat_index_1d(state, array, index) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let flat = match unsafe { jit_flat_index_1d(state, array, index) } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
@@ -16404,13 +16910,20 @@ unsafe extern "C" fn rt_jit_array_set_i32_1d_slot(
             Some(Ok(true)) => {}
             Some(Ok(false)) => {
                 if array.set_safearray_element(flat, &value_variant).is_err() {
-                    return rt_raise_type_mismatch(state);
+                    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                    return unsafe { rt_raise_type_mismatch(state) };
                 }
             }
-            Some(Err(_)) => return rt_raise_type_mismatch(state),
-            None => return rt_raise_expected_array(state),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            Some(Err(_)) => return unsafe { rt_raise_type_mismatch(state) },
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            None => return unsafe { rt_raise_expected_array(state) },
         }
-        match mirror_param_array_element_write(state, run, array_alias, flat, &value_variant) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        match unsafe {
+            mirror_param_array_element_write(state, run, array_alias, flat, &value_variant)
+        } {
             Ok(()) => ST_OK,
             Err(status) => status,
         }
@@ -16462,20 +16975,21 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
                 };
                 // SAFETY: null was rejected and source clones no longer borrow from `run`.
                 let run = unsafe { &mut *run };
-                return match invoke_project_default_member_values(
-                    run,
-                    state,
-                    recv_value,
-                    invoke_kind,
-                    &args,
-                ) {
+                // SAFETY: the checked JIT entry owns the live unique state; `run`,
+                // the owned receiver, and `args` remain live for the call.
+                return match unsafe {
+                    invoke_project_default_member_values(run, state, recv_value, invoke_kind, &args)
+                } {
                     Ok(_) => ST_OK,
                     Err(status) => status,
                 };
             }
-            return rt_raise_expected_array(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_expected_array(state) };
         }
-        let flat = match jit_flat_index(state, array, indices) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let flat = match unsafe { jit_flat_index(state, array, indices) } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
@@ -16494,25 +17008,27 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
         {
             match result {
                 Ok(true) => {
-                    return match mirror_param_array_element_write(
-                        state,
-                        run,
-                        array_alias,
-                        flat,
-                        &value,
-                    ) {
+                    // SAFETY: the checked JIT entry owns the live unique state;
+                    // `run` and the initialized source Variant remain live.
+                    return match unsafe {
+                        mirror_param_array_element_write(state, run, array_alias, flat, &value)
+                    } {
                         Ok(()) => ST_OK,
                         Err(status) => status,
                     };
                 }
                 Ok(false) => {}
-                Err(_) => return rt_raise_type_mismatch(state),
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                Err(_) => return unsafe { rt_raise_type_mismatch(state) },
             }
         }
         if array.set_safearray_element(flat, &value).is_err() {
-            return rt_raise_type_mismatch(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_type_mismatch(state) };
         }
-        match mirror_param_array_element_write(state, run, array_alias, flat, &value) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        match unsafe { mirror_param_array_element_write(state, run, array_alias, flat, &value) } {
             Ok(()) => ST_OK,
             Err(status) => status,
         }
@@ -16542,32 +17058,39 @@ unsafe extern "C" fn rt_jit_bound_to_slot(
         };
         let Some((bounds, _len)) = src.safearray_bounds_len() else {
             return if src.vtype() == VarType::ArrayVariant {
-                rt_raise_array_has_no_bounds(state)
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                unsafe { rt_raise_array_has_no_bounds(state) }
             } else {
-                rt_raise_expected_array(state)
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                unsafe { rt_raise_expected_array(state) }
             };
         };
         if dimension <= 0 {
-            return rt_raise_subscript_out_of_range(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_subscript_out_of_range(state) };
         }
         let Ok(index) = usize::try_from(dimension - 1) else {
-            return rt_raise_subscript_out_of_range(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_subscript_out_of_range(state) };
         };
         let Some(bound) = bounds.get(index) else {
-            return rt_raise_subscript_out_of_range(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_subscript_out_of_range(state) };
         };
         let value = match which {
             0 => bound.lower,
             1 => {
                 let Ok(count) = i32::try_from(bound.count) else {
-                    return rt_raise_subscript_out_of_range(state);
+                    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                    return unsafe { rt_raise_subscript_out_of_range(state) };
                 };
                 let Some(value) = bound
                     .lower
                     .checked_add(count)
                     .and_then(|value| value.checked_sub(1))
                 else {
-                    return rt_raise_subscript_out_of_range(state);
+                    // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                    return unsafe { rt_raise_subscript_out_of_range(state) };
                 };
                 value
             }
@@ -16603,7 +17126,8 @@ unsafe extern "C" fn rt_jit_for_each_init_variant_array(
             return ST_FAULT;
         };
         let Some(array) = source.as_safearray() else {
-            return rt_raise_type_mismatch(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_type_mismatch(state) };
         };
         let elements = array.variant_elements().unwrap_or_default();
         let Some(iter_alias) = current_frame_slot(run_ref, iter_area, iter_index)
@@ -16710,7 +17234,8 @@ unsafe extern "C" fn rt_jit_gosub_pop(
                 }
                 ST_OK
             }
-            None => rt_raise_runtime_error_number(state, 3),
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            None => unsafe { rt_raise_runtime_error_number(state, 3) },
         }
     })
 }
@@ -16737,7 +17262,8 @@ unsafe extern "C" fn rt_jit_unbox_to_slot(
             return ST_FAULT;
         };
         if checked != 0 && !variant_matches_unbox_target(&src, target) {
-            return rt_raise_type_mismatch(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_type_mismatch(state) };
         }
         // SAFETY: null was rejected and the source clone no longer borrows from `run`.
         let run = unsafe { &mut *run };
@@ -16779,7 +17305,8 @@ unsafe extern "C" fn rt_jit_arith_v_to_slot(
         let Some(out) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        rt_arith_v(state, op, mode, &lhs, &rhs, out)
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        unsafe { rt_arith_v(state, op, mode, &lhs, &rhs, out) }
     })
 }
 
@@ -16852,7 +17379,8 @@ unsafe extern "C" fn rt_jit_neg_v_to_slot(
         let Some(out) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        rt_neg_v(state, mode, &src, out)
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        unsafe { rt_neg_v(state, mode, &src, out) }
     })
 }
 
@@ -16886,7 +17414,8 @@ unsafe extern "C" fn rt_jit_compare_v_to_slot(
         let Some(out) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        rt_compare_v(state, op, mode, &lhs, &rhs, out)
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        unsafe { rt_compare_v(state, op, mode, &lhs, &rhs, out) }
     })
 }
 
@@ -16907,22 +17436,32 @@ unsafe extern "C" fn rt_jit_compare_object_is_to_bool_slot(
         // SAFETY: null was rejected and operand values are cloned before destination
         // storage takes a mutable borrow.
         let run = unsafe { &mut *run };
-        let lhs = match variant_operand_value_with_as_new(run, state, operands[0]) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let lhs = match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let rhs = match variant_operand_value_with_as_new(run, state, operands[1]) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let rhs = match unsafe { variant_operand_value_with_as_new(run, state, operands[1]) } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let lhs_id = match object_identity_for_is(state, &lhs) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let lhs_id = match unsafe { object_identity_for_is(state, &lhs) } {
             Ok(id) => id,
             Err(status) => return status,
         };
-        let rhs_id = match object_identity_for_is(state, &rhs) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let rhs_id = match unsafe { object_identity_for_is(state, &rhs) } {
             Ok(id) => id,
             Err(status) => return status,
         };
+        // SAFETY: null run was rejected and the compiled destination identifies a
+        // live Boolean carrier slot owned by this synchronous helper call.
         unsafe {
             rt_jit_store_bool(
                 run,
@@ -16964,7 +17503,9 @@ unsafe extern "C" fn rt_jit_type_of_is_to_bool_slot(
         // SAFETY: null was rejected and operand values are cloned before destination storage
         // takes a mutable borrow.
         let run = unsafe { &mut *run };
-        let value = match variant_operand_value_with_as_new(run, state, operand) {
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
         };
@@ -16975,7 +17516,9 @@ unsafe extern "C" fn rt_jit_type_of_is_to_bool_slot(
             ) {
             false
         } else {
-            let object = match variant_to_project_object_for_jit(state, &value) {
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            let object = match unsafe { variant_to_project_object_for_jit(state, &value) } {
                 Ok(object) => object,
                 Err(status) => return status,
             };
@@ -16990,6 +17533,8 @@ unsafe extern "C" fn rt_jit_type_of_is_to_bool_slot(
                     .iter()
                     .any(|name| name.eq_ignore_ascii_case(bare))
         };
+        // SAFETY: null run was rejected and the compiled destination identifies a
+        // live Boolean carrier slot owned by this synchronous helper call.
         unsafe { rt_jit_store_bool(run, dst_area, dst_index, if matches { 1 } else { 0 }) }
     })
 }
@@ -17023,7 +17568,8 @@ unsafe extern "C" fn rt_jit_logical_v_to_slot(
         let Some(out) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        rt_logical_v(state, op, &lhs, &rhs, out)
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        unsafe { rt_logical_v(state, op, &lhs, &rhs, out) }
     })
 }
 
@@ -17051,7 +17597,8 @@ unsafe extern "C" fn rt_jit_not_v_to_slot(
         let Some(out) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        rt_not_v(state, &src, out)
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        unsafe { rt_not_v(state, &src, out) }
     })
 }
 
@@ -17075,7 +17622,8 @@ unsafe extern "C" fn rt_jit_truthy_v_to_bool_slot(
             return ST_FAULT;
         };
         let mut truthy = 0;
-        let status = rt_truthy_v(state, &src, &mut truthy);
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        let status = unsafe { rt_truthy_v(state, &src, &mut truthy) };
         if status != ST_OK {
             return status;
         }
@@ -17141,7 +17689,8 @@ unsafe extern "C" fn rt_jit_coerce_numeric_v_to_slot(
         let Some(out) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
-        rt_coerce_numeric_v(state, target, &src, out)
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        unsafe { rt_coerce_numeric_v(state, target, &src, out) }
     })
 }
 
@@ -17165,7 +17714,8 @@ unsafe extern "C" fn rt_jit_coerce_string_v_to_slot(
             return ST_FAULT;
         };
         let mut coerced = Variant::empty();
-        let status = rt_coerce_string_v(state, &src, &mut coerced);
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        let status = unsafe { rt_coerce_string_v(state, &src, &mut coerced) };
         if status != ST_OK {
             return status;
         }
@@ -17200,7 +17750,8 @@ unsafe extern "C" fn rt_jit_coerce_fixed_string_v_to_slot(
             return ST_FAULT;
         };
         let mut coerced = Variant::empty();
-        let status = rt_coerce_fixed_string_v(state, len, &src, &mut coerced);
+        // SAFETY: the enclosing JIT boundary validated the live state and all Variant input/output pointers are initialized, live, and nonaliasing.
+        let status = unsafe { rt_coerce_fixed_string_v(state, len, &src, &mut coerced) };
         if status != ST_OK {
             return status;
         }
@@ -17244,13 +17795,15 @@ unsafe extern "C" fn rt_jit_direct_enter_noarg_sub(
             return ST_FAULT;
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
 
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17273,11 +17826,14 @@ unsafe extern "C" fn rt_jit_direct_exit_noarg_sub(
         let Some(frame) = run.frames.pop() else {
             return ST_FAULT;
         };
-        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
         if cleanup_status != ST_OK {
             return cleanup_status;
         }
-        let restore_status = rt_err_restore_activation(state, &frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let restore_status = unsafe { rt_err_restore_activation(state, &frame.saved_err) };
         if restore_status != ST_OK {
             restore_status
         } else {
@@ -17316,13 +17872,15 @@ unsafe extern "C" fn rt_jit_direct_enter_noarg_func(
             return ST_FAULT;
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
 
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17382,11 +17940,14 @@ unsafe extern "C" fn rt_jit_direct_exit_noarg_func(
         let Some(frame) = run.frames.pop() else {
             return ST_FAULT;
         };
-        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
         if cleanup_status != ST_OK {
             return cleanup_status;
         }
-        let restore_status = rt_err_restore_activation(state, &frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let restore_status = unsafe { rt_err_restore_activation(state, &frame.saved_err) };
         if restore_status != ST_OK {
             return restore_status;
         }
@@ -17445,14 +18006,16 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_sub(
             return ST_FAULT;
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
 
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.locals[0] = Variant::from_i32(arg0);
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17509,14 +18072,16 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_func(
             return ST_FAULT;
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
 
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
         };
         frame.locals[0] = Variant::from_i32(arg0);
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17568,7 +18133,8 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_sub(
             return ST_FAULT;
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
         let Some(alias) = direct_call_arg_alias(run, arg_area, arg_index) else {
             return ST_FAULT;
@@ -17581,7 +18147,8 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_sub(
             return ST_FAULT;
         };
         frame.aliases[0] = Some(alias);
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17639,7 +18206,8 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_func(
             return ST_FAULT;
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
         let Some(alias) = direct_call_arg_alias(run, arg_area, arg_index) else {
             return ST_FAULT;
@@ -17652,7 +18220,8 @@ unsafe extern "C" fn rt_jit_direct_enter_one_i32_byref_func(
             return ST_FAULT;
         };
         frame.aliases[0] = Some(alias);
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17704,7 +18273,8 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_sub(
             }
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
 
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
@@ -17712,7 +18282,8 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_sub(
         };
         frame.locals[0] = Variant::from_i32(arg0);
         frame.locals[1] = Variant::from_i32(arg1);
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17770,7 +18341,8 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_func(
             }
         }
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
 
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
@@ -17778,7 +18350,8 @@ unsafe extern "C" fn rt_jit_direct_enter_two_i32_func(
         };
         frame.locals[0] = Variant::from_i32(arg0);
         frame.locals[1] = Variant::from_i32(arg1);
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -17830,7 +18403,8 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
             return ST_FAULT;
         };
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
 
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
@@ -17886,11 +18460,13 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
                     if param_info.variadic && value.safearray_bounds_len().is_none() {
                         return ST_FAULT;
                     }
-                    frame.locals[index] = match coerce_call_arg_for_param(state, &param.ty, &value)
-                    {
-                        Ok(value) => value,
-                        Err(status) => return status,
-                    };
+                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                    // typed references and owned values remain live and nonaliasing for this call.
+                    frame.locals[index] =
+                        match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
+                            Ok(value) => value,
+                            Err(status) => return status,
+                        };
                     if let Some(aliases) = param_array_aliases {
                         pending_param_array_aliases.push((index, aliases));
                     }
@@ -17907,7 +18483,9 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
                             return ST_FAULT;
                         };
                         frame.locals[index] =
-                            match coerce_call_arg_for_param(state, &param.ty, &value) {
+                            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                            // typed references and owned values remain live and nonaliasing for this call.
+                            match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
                                 Ok(value) => value,
                                 Err(status) => return status,
                             };
@@ -17940,7 +18518,8 @@ unsafe extern "C" fn rt_jit_direct_enter_proc_i32(
             }
         }
 
-        let enter_status = rt_err_enter_activation(state, &mut frame.saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut frame.saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -18019,7 +18598,8 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
             return ST_FAULT;
         };
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
@@ -18088,11 +18668,13 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
                     if param_info.variadic && value.safearray_bounds_len().is_none() {
                         return ST_FAULT;
                     }
-                    frame.locals[index] = match coerce_call_arg_for_param(state, &param.ty, &value)
-                    {
-                        Ok(value) => value,
-                        Err(status) => return status,
-                    };
+                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                    // typed references and owned values remain live and nonaliasing for this call.
+                    frame.locals[index] =
+                        match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
+                            Ok(value) => value,
+                            Err(status) => return status,
+                        };
                     if let Some(aliases) = param_array_aliases {
                         pending_param_array_aliases.push((index, aliases));
                     }
@@ -18109,7 +18691,9 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
                             return ST_FAULT;
                         };
                         frame.locals[index] =
-                            match coerce_call_arg_for_param(state, &param.ty, &value) {
+                            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                            // typed references and owned values remain live and nonaliasing for this call.
+                            match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
                                 Ok(value) => value,
                                 Err(status) => return status,
                             };
@@ -18143,7 +18727,8 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
         }
 
         let mut saved_err = RtSavedErrState::default();
-        let enter_status = rt_err_enter_activation(state, &mut saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -18177,11 +18762,14 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
         let Some(frame) = run.frames.pop() else {
             return ST_FAULT;
         };
-        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
         if cleanup_status != ST_OK {
             return cleanup_status;
         }
-        let restore_status = rt_err_restore_activation(state, &saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
         if restore_status != ST_OK {
             return restore_status;
         }
@@ -18256,7 +18844,8 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
             return ST_FAULT;
         };
         if run.frames.len() >= MAX_JIT_FRAMES {
-            return rt_raise_out_of_stack(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_out_of_stack(state) };
         }
         let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
             return ST_FAULT;
@@ -18325,11 +18914,13 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
                     if param_info.variadic && value.safearray_bounds_len().is_none() {
                         return ST_FAULT;
                     }
-                    frame.locals[index] = match coerce_call_arg_for_param(state, &param.ty, &value)
-                    {
-                        Ok(value) => value,
-                        Err(status) => return status,
-                    };
+                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                    // typed references and owned values remain live and nonaliasing for this call.
+                    frame.locals[index] =
+                        match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
+                            Ok(value) => value,
+                            Err(status) => return status,
+                        };
                     if let Some(aliases) = param_array_aliases {
                         pending_param_array_aliases.push((index, aliases));
                     }
@@ -18346,7 +18937,9 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
                             return ST_FAULT;
                         };
                         frame.locals[index] =
-                            match coerce_call_arg_for_param(state, &param.ty, &value) {
+                            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                            // typed references and owned values remain live and nonaliasing for this call.
+                            match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
                                 Ok(value) => value,
                                 Err(status) => return status,
                             };
@@ -18380,7 +18973,8 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
         }
 
         let mut saved_err = RtSavedErrState::default();
-        let enter_status = rt_err_enter_activation(state, &mut saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let enter_status = unsafe { rt_err_enter_activation(state, &mut saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
@@ -18414,11 +19008,14 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
         let Some(frame) = run.frames.pop() else {
             return ST_FAULT;
         };
-        let cleanup_status = after_jit_frame_pop(run, state, &frame);
+        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+        // typed references and owned values remain live and nonaliasing for this call.
+        let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
         if cleanup_status != ST_OK {
             return cleanup_status;
         }
-        let restore_status = rt_err_restore_activation(state, &saved_err);
+        // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
+        let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
         if restore_status != ST_OK {
             return restore_status;
         }
@@ -18458,13 +19055,15 @@ unsafe extern "C" fn rt_jit_expect_proc_ref_i32(
         let resolved = slot_ref(run_ref, target_area as u32, target_index as u32)
             .and_then(Variant::as_proc_ref);
         let Some(proc) = resolved else {
-            return rt_raise_invalid_proc_ref(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_invalid_proc_ref(state) };
         };
         let Some((_program_index, image)) = current_program_image(run_ref) else {
             return ST_FAULT;
         };
         if proc >= image.function_count || proc > i32::MAX as usize {
-            return rt_raise_invalid_proc_ref(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_invalid_proc_ref(state) };
         }
         if proc != expected_proc as usize {
             return ST_FAULT;
@@ -18495,13 +19094,15 @@ unsafe extern "C" fn rt_jit_call_proc_ref_i32(
         let resolved = slot_ref(run_ref, target_area as u32, target_index as u32)
             .and_then(Variant::as_proc_ref);
         let Some(proc) = resolved else {
-            return rt_raise_invalid_proc_ref(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_invalid_proc_ref(state) };
         };
         let Some((_program_index, image)) = current_program_image(run_ref) else {
             return ST_FAULT;
         };
         if proc >= image.function_count || proc > i32::MAX as usize {
-            return rt_raise_invalid_proc_ref(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_invalid_proc_ref(state) };
         }
         let signature_proc = if expected_proc >= 0 {
             let expected = expected_proc as usize;
@@ -18524,7 +19125,8 @@ unsafe extern "C" fn rt_jit_call_proc_ref_i32(
         // SAFETY: `program` is installed from the owning CompiledImage for this run.
         let program = unsafe { &*image.program };
         let Some(func) = program.funcs.get(proc) else {
-            return rt_raise_invalid_proc_ref(state);
+            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+            return unsafe { rt_raise_invalid_proc_ref(state) };
         };
         let argc_usize = argc as usize;
         if argc_usize != func.param_count {
@@ -18545,10 +19147,13 @@ unsafe extern "C" fn rt_jit_call_proc_ref_i32(
                 return ST_FAULT;
             }
         } else {
-            let arg_shape = match unknown_proc_ref_arg_shape(state, run_ref, func, arg_descs) {
-                Ok(shape) => shape,
-                Err(status) => return status,
-            };
+            // SAFETY: the current compiled-run boundary owns the live unique state handle;
+            // typed references and owned values remain live and nonaliasing for this call.
+            let arg_shape =
+                match unsafe { unknown_proc_ref_arg_shape(state, run_ref, func, arg_descs) } {
+                    Ok(shape) => shape,
+                    Err(status) => return status,
+                };
             if matches!((dst_area, dst_index), (-1, -1)) {
                 if dynamic_ret_kind != JIT_PROC_REF_RET_NONE
                     || !matches!(
@@ -18652,14 +19257,19 @@ unsafe extern "C" fn rt_jit_lib_invoke_to_slot(
             argv.push(value);
         }
         let mut out = Variant::empty();
-        let status = rt_lib_invoke_with_policy(
-            state,
-            native_id,
-            argv.as_ptr(),
-            argv.len(),
-            string_typed_alias,
-            &mut out,
-        );
+        // SAFETY: null state was rejected; `argv` is one live allocation containing
+        // exactly `argv.len()` initialized Variants, and `out` is unique initialized
+        // Variant storage that does not alias the argument allocation.
+        let status = unsafe {
+            rt_lib_invoke_with_policy(
+                state,
+                native_id,
+                argv.as_ptr(),
+                argv.len(),
+                string_typed_alias,
+                &mut out,
+            )
+        };
         if status != ST_OK {
             return status;
         }
@@ -18683,7 +19293,8 @@ unsafe extern "C" fn rt_jit_add_i32_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_add_i32)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_add_i32) }
 }
 
 unsafe extern "C" fn rt_jit_sub_i32_to_slot(
@@ -18694,7 +19305,8 @@ unsafe extern "C" fn rt_jit_sub_i32_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_sub_i32)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_sub_i32) }
 }
 
 unsafe extern "C" fn rt_jit_mul_i32_to_slot(
@@ -18705,7 +19317,8 @@ unsafe extern "C" fn rt_jit_mul_i32_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_mul_i32)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_mul_i32) }
 }
 
 unsafe extern "C" fn rt_jit_div_i32_to_slot(
@@ -18716,7 +19329,8 @@ unsafe extern "C" fn rt_jit_div_i32_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_div_i32)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_div_i32) }
 }
 
 unsafe extern "C" fn rt_jit_rem_i32_to_slot(
@@ -18727,7 +19341,8 @@ unsafe extern "C" fn rt_jit_rem_i32_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_rem_i32)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i32_to_slot(state, run, lhs, rhs, area, index, rt_rem_i32) }
 }
 
 unsafe extern "C" fn rt_jit_add_i16_to_slot(
@@ -18738,7 +19353,8 @@ unsafe extern "C" fn rt_jit_add_i16_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i16_to_slot(state, run, lhs, rhs, area, index, rt_add_i16)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i16_to_slot(state, run, lhs, rhs, area, index, rt_add_i16) }
 }
 
 unsafe extern "C" fn rt_jit_sub_i16_to_slot(
@@ -18749,7 +19365,8 @@ unsafe extern "C" fn rt_jit_sub_i16_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i16_to_slot(state, run, lhs, rhs, area, index, rt_sub_i16)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i16_to_slot(state, run, lhs, rhs, area, index, rt_sub_i16) }
 }
 
 unsafe extern "C" fn rt_jit_mul_i16_to_slot(
@@ -18760,7 +19377,8 @@ unsafe extern "C" fn rt_jit_mul_i16_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i16_to_slot(state, run, lhs, rhs, area, index, rt_mul_i16)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i16_to_slot(state, run, lhs, rhs, area, index, rt_mul_i16) }
 }
 
 unsafe extern "C" fn rt_jit_add_u8_to_slot(
@@ -18771,7 +19389,8 @@ unsafe extern "C" fn rt_jit_add_u8_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_u8_to_slot(state, run, lhs, rhs, area, index, rt_add_u8)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_u8_to_slot(state, run, lhs, rhs, area, index, rt_add_u8) }
 }
 
 unsafe extern "C" fn rt_jit_sub_u8_to_slot(
@@ -18782,7 +19401,8 @@ unsafe extern "C" fn rt_jit_sub_u8_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_u8_to_slot(state, run, lhs, rhs, area, index, rt_sub_u8)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_u8_to_slot(state, run, lhs, rhs, area, index, rt_sub_u8) }
 }
 
 unsafe extern "C" fn rt_jit_mul_u8_to_slot(
@@ -18793,7 +19413,8 @@ unsafe extern "C" fn rt_jit_mul_u8_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_u8_to_slot(state, run, lhs, rhs, area, index, rt_mul_u8)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_u8_to_slot(state, run, lhs, rhs, area, index, rt_mul_u8) }
 }
 
 unsafe extern "C" fn rt_jit_add_i64_to_slot(
@@ -18804,7 +19425,8 @@ unsafe extern "C" fn rt_jit_add_i64_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_add_i64)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_add_i64) }
 }
 
 unsafe extern "C" fn rt_jit_sub_i64_to_slot(
@@ -18815,7 +19437,8 @@ unsafe extern "C" fn rt_jit_sub_i64_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_sub_i64)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_sub_i64) }
 }
 
 unsafe extern "C" fn rt_jit_mul_i64_to_slot(
@@ -18826,7 +19449,8 @@ unsafe extern "C" fn rt_jit_mul_i64_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_mul_i64)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_mul_i64) }
 }
 
 unsafe extern "C" fn rt_jit_div_i64_to_slot(
@@ -18837,7 +19461,8 @@ unsafe extern "C" fn rt_jit_div_i64_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_div_i64)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_div_i64) }
 }
 
 unsafe extern "C" fn rt_jit_rem_i64_to_slot(
@@ -18848,7 +19473,8 @@ unsafe extern "C" fn rt_jit_rem_i64_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_rem_i64)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_i64_to_slot(state, run, lhs, rhs, area, index, rt_rem_i64) }
 }
 
 unsafe extern "C" fn rt_jit_add_currency_to_slot(
@@ -18859,7 +19485,8 @@ unsafe extern "C" fn rt_jit_add_currency_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_currency_to_slot(state, run, lhs, rhs, area, index, rt_currency_add)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_currency_to_slot(state, run, lhs, rhs, area, index, rt_currency_add) }
 }
 
 unsafe extern "C" fn rt_jit_sub_currency_to_slot(
@@ -18870,7 +19497,8 @@ unsafe extern "C" fn rt_jit_sub_currency_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_currency_to_slot(state, run, lhs, rhs, area, index, rt_currency_sub)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_currency_to_slot(state, run, lhs, rhs, area, index, rt_currency_sub) }
 }
 
 unsafe extern "C" fn rt_jit_mul_currency_to_slot(
@@ -18881,58 +19509,73 @@ unsafe extern "C" fn rt_jit_mul_currency_to_slot(
     area: u32,
     index: u32,
 ) -> i32 {
-    checked_currency_to_slot(state, run, lhs, rhs, area, index, rt_currency_mul)
+    // SAFETY: compiled code supplies the live run/state pointers and typed scalar operands.
+    unsafe { checked_currency_to_slot(state, run, lhs, rhs, area, index, rt_currency_mul) }
 }
 
-fn checked_i32_to_slot(
+unsafe fn checked_i32_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
     lhs: i32,
     rhs: i32,
     area: u32,
     index: u32,
-    shim: extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
+    shim: unsafe extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
 ) -> i32 {
-    checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_i32)
+    // SAFETY: callers uphold the raw execution-state and run-pointer contracts;
+    // the selected runtime shim and store use the matching scalar representations.
+    unsafe {
+        checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_i32)
+    }
 }
 
-fn checked_i16_to_slot(
+unsafe fn checked_i16_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
     lhs: i32,
     rhs: i32,
     area: u32,
     index: u32,
-    shim: extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
+    shim: unsafe extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
 ) -> i32 {
-    checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_i16)
+    // SAFETY: callers uphold the raw execution-state and run-pointer contracts;
+    // the selected runtime shim and store use the matching scalar representations.
+    unsafe {
+        checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_i16)
+    }
 }
 
-fn checked_u8_to_slot(
+unsafe fn checked_u8_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
     lhs: i32,
     rhs: i32,
     area: u32,
     index: u32,
-    shim: extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
+    shim: unsafe extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
 ) -> i32 {
-    checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_u8)
+    // SAFETY: callers uphold the raw execution-state and run-pointer contracts;
+    // the selected runtime shim and store use the matching scalar representations.
+    unsafe {
+        checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_u8)
+    }
 }
 
-fn checked_i32_to_slot_with_store(
+unsafe fn checked_i32_to_slot_with_store(
     state: *mut RawExecState,
     run: *mut JitRun,
     lhs: i32,
     rhs: i32,
     area: u32,
     index: u32,
-    shim: extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
+    shim: unsafe extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
     store: unsafe extern "C" fn(*mut JitRun, u32, u32, i32) -> i32,
 ) -> i32 {
     status_guard(|| {
         let mut out = 0;
-        let status = shim(state, lhs, rhs, &mut out);
+        // SAFETY: the caller supplies a live execution state and this initialized,
+        // uniquely borrowed local has the scalar output type required by `shim`.
+        let status = unsafe { shim(state, lhs, rhs, &mut out) };
         if status != ST_OK {
             return status;
         }
@@ -18941,18 +19584,20 @@ fn checked_i32_to_slot_with_store(
     })
 }
 
-fn checked_i64_to_slot(
+unsafe fn checked_i64_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
     lhs: i64,
     rhs: i64,
     area: u32,
     index: u32,
-    shim: extern "C" fn(*mut RawExecState, i64, i64, *mut i64) -> i32,
+    shim: unsafe extern "C" fn(*mut RawExecState, i64, i64, *mut i64) -> i32,
 ) -> i32 {
     status_guard(|| {
         let mut out = 0;
-        let status = shim(state, lhs, rhs, &mut out);
+        // SAFETY: the caller supplies a live execution state and this initialized,
+        // uniquely borrowed local has the scalar output type required by `shim`.
+        let status = unsafe { shim(state, lhs, rhs, &mut out) };
         if status != ST_OK {
             return status;
         }
@@ -18961,18 +19606,20 @@ fn checked_i64_to_slot(
     })
 }
 
-fn checked_currency_to_slot(
+unsafe fn checked_currency_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
     lhs: i64,
     rhs: i64,
     area: u32,
     index: u32,
-    shim: extern "C" fn(*mut RawExecState, i64, i64, *mut i64) -> i32,
+    shim: unsafe extern "C" fn(*mut RawExecState, i64, i64, *mut i64) -> i32,
 ) -> i32 {
     status_guard(|| {
         let mut out = 0;
-        let status = shim(state, lhs, rhs, &mut out);
+        // SAFETY: the caller supplies a live execution state and this initialized,
+        // uniquely borrowed local has the scalar output type required by `shim`.
+        let status = unsafe { shim(state, lhs, rhs, &mut out) };
         if status != ST_OK {
             return status;
         }
@@ -20969,6 +21616,8 @@ mod tests {
         exec.programs = vec![build_loaded(&program).expect("loaded")];
         let state = exec_state_as_raw(&mut exec);
 
+        // SAFETY: `run` and `exec` are owned test locals; `state` was derived from
+        // the unique live `exec`, and the zero-argument call permits a null args pointer.
         let status =
             unsafe { rt_jit_call_proc_i32(&mut run, state, 0, 0, std::ptr::null(), -1, -1) };
         assert_eq!(status, ST_FAULT);
@@ -21009,6 +21658,8 @@ mod tests {
         let state = exec_state_as_raw(&mut exec);
         let entry = compiled.functions[0][0];
 
+        // SAFETY: the entry pointer was compiled for `JitEntryFn`; owned `run` and
+        // the uniquely borrowed execution state remain live for the synchronous call.
         let status = unsafe { entry(&mut run, state) };
         assert_eq!(status, ST_FAULT);
         assert_eq!(exec.err_engine.err.number, 28);
@@ -33739,6 +34390,8 @@ mod tests {
             area: AREA_GLOBAL as i32,
             index: 0,
         }];
+        // SAFETY: owned `run` and the uniquely borrowed state remain live; `args`
+        // contains the single initialized descriptor required by `argc`.
         let status = unsafe {
             rt_jit_call_proc_ref_i32(
                 &mut run,
@@ -33789,6 +34442,8 @@ mod tests {
         let mut exec = ExecState::new(&host);
         exec.programs = vec![build_loaded(&program).expect("loaded")];
         let state = exec_state_as_raw(&mut exec);
+        // SAFETY: owned `run` and the uniquely borrowed execution state remain live;
+        // the helper reads only the initialized procedure-reference slot.
         let status =
             unsafe { rt_jit_expect_proc_ref_i32(&mut run, state, AREA_LOCAL as i32, 1, 1) };
         assert_eq!(status, ST_FAULT);
@@ -33882,6 +34537,8 @@ mod tests {
             area: 0,
             index: 0,
         }];
+        // SAFETY: owned `run` and the uniquely borrowed state remain live; `args`
+        // contains the single initialized descriptor required by `argc`.
         let status = unsafe { rt_jit_call_proc_i32(&mut run, state, 0, 1, args.as_ptr(), -1, -1) };
         assert_eq!(status, ST_OK);
     }
@@ -33965,6 +34622,8 @@ mod tests {
         let mut exec = ExecState::new(&host);
         exec.programs = vec![build_loaded(&program).expect("loaded")];
         let state = exec_state_as_raw(&mut exec);
+        // SAFETY: owned `run` and the uniquely borrowed state remain live; this
+        // zero-argument call permits null args and writes to a valid global slot.
         let status = unsafe {
             rt_jit_call_proc_i32(
                 &mut run,

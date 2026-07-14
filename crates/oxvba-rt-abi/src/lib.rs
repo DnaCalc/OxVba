@@ -177,6 +177,7 @@ pub type ProjectEventSink<'h> =
 
 /// Shared event fabric state. Procedure execution remains engine-owned; the cells that
 /// describe subscriptions, ordering, and host sinks are VM-agnostic session state.
+#[derive(Default)]
 pub struct EventFabric<'h> {
     pub withevents: HashMap<i64, EventBinding>,
     pub next_withevents_order: u64,
@@ -185,20 +186,6 @@ pub struct EventFabric<'h> {
     pub pumping: bool,
     pub withevents_iters: Vec<(Vec<ObjectRef>, usize)>,
     pub project_event_sink: Option<ProjectEventSink<'h>>,
-}
-
-impl<'h> Default for EventFabric<'h> {
-    fn default() -> Self {
-        Self {
-            withevents: HashMap::new(),
-            next_withevents_order: 0,
-            com_subscriptions: HashMap::new(),
-            com_subscriptions_by_key: HashMap::new(),
-            pumping: false,
-            withevents_iters: Vec::new(),
-            project_event_sink: None,
-        }
-    }
 }
 
 pub type ProcInvokeFn = unsafe extern "C" fn(
@@ -364,33 +351,38 @@ fn runtime_as_new_field_descriptor(
     }
 }
 
-fn runtime_member_descriptor(
-    program: &OxProgram,
-    method: &OxClassMethod,
-    display_name: &str,
+struct RuntimeMemberDescriptorInput<'a> {
+    method: &'a OxClassMethod,
+    display_name: &'a str,
     dispatch_index: usize,
     dispatch_id: Option<i32>,
     vtable_slot: Option<u16>,
     is_default_member: bool,
     is_enumerator_member: bool,
+}
+
+fn runtime_member_descriptor(
+    program: &OxProgram,
+    input: RuntimeMemberDescriptorInput<'_>,
 ) -> RuntimeMemberDescriptor {
-    let proc = program.funcs.get(method.proc.0);
+    let proc = program.funcs.get(input.method.proc.0);
     let params: &'static [RuntimeParamDescriptor] = Box::leak(
         proc.map(runtime_member_params)
             .unwrap_or_default()
             .into_boxed_slice(),
     );
     RuntimeMemberDescriptor {
-        name: leak_runtime_str(display_name),
-        dispatch_id: dispatch_id
-            .unwrap_or_else(|| synthetic_dispatch_id(dispatch_index, is_default_member)),
-        vtable_slot,
-        invoke_kind: runtime_member_invoke_kind(method.kind),
+        name: leak_runtime_str(input.display_name),
+        dispatch_id: input.dispatch_id.unwrap_or_else(|| {
+            synthetic_dispatch_id(input.dispatch_index, input.is_default_member)
+        }),
+        vtable_slot: input.vtable_slot,
+        invoke_kind: runtime_member_invoke_kind(input.method.kind),
         arity: params.len(),
         params,
         return_type: proc.and_then(runtime_return_type),
-        is_default_member,
-        is_enumerator_member,
+        is_default_member: input.is_default_member,
+        is_enumerator_member: input.is_enumerator_member,
     }
 }
 
@@ -443,15 +435,19 @@ fn runtime_project_interface_descriptor(
         let index = members.len();
         members.push(runtime_member_descriptor(
             program,
-            implementation_method,
-            &interface_method.name,
-            index,
-            interface_method.dispid.or(implementation_method.dispid),
-            interface_method
-                .vtable_slot
-                .or(implementation_method.vtable_slot),
-            interface_method.is_default_member || implementation_method.is_default_member,
-            interface_method.is_enumerator_member || implementation_method.is_enumerator_member,
+            RuntimeMemberDescriptorInput {
+                method: implementation_method,
+                display_name: &interface_method.name,
+                dispatch_index: index,
+                dispatch_id: interface_method.dispid.or(implementation_method.dispid),
+                vtable_slot: interface_method
+                    .vtable_slot
+                    .or(implementation_method.vtable_slot),
+                is_default_member: interface_method.is_default_member
+                    || implementation_method.is_default_member,
+                is_enumerator_member: interface_method.is_enumerator_member
+                    || implementation_method.is_enumerator_member,
+            },
         ));
     }
     let members: &'static [RuntimeMemberDescriptor] = Box::leak(members.into_boxed_slice());
@@ -523,13 +519,15 @@ fn build_runtime_class_descriptor(
             .map(|(index, method)| {
                 runtime_member_descriptor(
                     program,
-                    method,
-                    &method.name,
-                    index,
-                    method.dispid,
-                    method.vtable_slot,
-                    method.is_default_member,
-                    method.is_enumerator_member,
+                    RuntimeMemberDescriptorInput {
+                        method,
+                        display_name: &method.name,
+                        dispatch_index: index,
+                        dispatch_id: method.dispid,
+                        vtable_slot: method.vtable_slot,
+                        is_default_member: method.is_default_member,
+                        is_enumerator_member: method.is_enumerator_member,
+                    },
                 )
             })
             .collect::<Vec<_>>()
@@ -872,6 +870,26 @@ pub struct RtSavedErrState {
 }
 
 /// Opaque raw pointer type used by C-ABI shims.
+///
+/// A non-null pointer of this type is valid only when produced by [`exec_state_as_raw`]
+/// from a live, uniquely borrowed [`ExecState`] that remains on the originating thread
+/// for the entire helper call. Generated code may pass null to obtain `ST_FAULT`, but
+/// any other invalid, stale, misaligned, aliased, or cross-thread state pointer violates
+/// the helper contract. Likewise, every non-null value/input pointer must be aligned and
+/// readable as its declared type for the documented extent, every non-null output pointer
+/// must be aligned, initialized as its declared type, and uniquely writable, and pointer
+/// ranges must not overlap in a way that violates
+/// Rust aliasing. Pointer/length pairs must describe one allocated object and lengths must
+/// fit that allocation. Unless a helper explicitly transfers or releases a value, the
+/// caller retains ownership and all borrows end when the synchronous call returns.
+///
+/// Safe Rust cannot invoke these entry points directly:
+///
+/// ```compile_fail
+/// use oxvba_rt_abi::rt_err_clear;
+///
+/// let _ = rt_err_clear(std::ptr::null_mut());
+/// ```
 pub enum RawExecState {}
 
 pub fn exec_state_as_raw(state: &mut ExecState<'_>) -> *mut RawExecState {
@@ -882,18 +900,29 @@ fn with_status(work: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(work)).unwrap_or(ST_FAULT)
 }
 
+/// Reconstitutes the typed execution state behind an ABI handle.
+///
+/// # Safety
+/// `state` must be null or must be the exact pointer returned by [`exec_state_as_raw`]
+/// for a live, uniquely borrowed, same-thread [`ExecState`] that remains valid for `'a`.
+/// No other access to that state may overlap the returned mutable borrow.
 unsafe fn state_from_raw<'a>(state: *mut RawExecState) -> Option<&'a mut ExecState<'a>> {
     if state.is_null() {
         None
     } else {
-        // SAFETY: callers pass pointers produced from a live `ExecState`; the ABI treats
-        // the state as opaque and same-thread.
+        // SAFETY: this is the pointer conversion whose complete validity, lifetime,
+        // alignment, same-thread, and exclusivity obligations are imposed on the caller.
         Some(unsafe { &mut *(state as *mut ExecState<'a>) })
     }
 }
 
-fn seat_fault(state: *mut RawExecState, fault: Fault) -> i32 {
-    // SAFETY: the raw pointer is validated by `state_from_raw`.
+/// Records `fault` in an ABI execution state and returns `ST_FAULT`.
+///
+/// # Safety
+/// `state` must be null or satisfy [`state_from_raw`]'s complete execution-state contract.
+unsafe fn seat_fault(state: *mut RawExecState, fault: Fault) -> i32 {
+    // SAFETY: the caller upholds `state_from_raw`'s contract; that function performs
+    // only the null check and pointer conversion, not runtime pointer validation.
     if let Some(state) = unsafe { state_from_raw(state) } {
         state
             .err_engine
@@ -902,23 +931,46 @@ fn seat_fault(state: *mut RawExecState, fault: Fault) -> i32 {
     ST_FAULT
 }
 
-fn write_out<T>(state: *mut RawExecState, out: *mut T, value: T) -> i32 {
+/// Assigns a typed result through an ABI output pointer.
+///
+/// # Safety
+/// `state` must be null or satisfy [`state_from_raw`]'s contract. If non-null, `out`
+/// must be aligned, writable, uniquely accessible, and initialized as a valid `T` so
+/// assignment may replace its prior value. It must remain live for this call.
+unsafe fn write_out<T>(state: *mut RawExecState, out: *mut T, value: T) -> i32 {
     if out.is_null() {
-        return seat_fault(state, Fault::new(5, "runtime ABI output pointer is null"));
+        // SAFETY: the caller upholds the execution-state contract even when output
+        // validation fails and a fault must be recorded.
+        return unsafe { seat_fault(state, Fault::new(5, "runtime ABI output pointer is null")) };
     }
-    // SAFETY: null was rejected and the ABI requires `out` to name writable storage for `T`.
+    // SAFETY: null was rejected and the caller guarantees `out` names aligned,
+    // initialized, uniquely writable storage for `T` for this assignment.
     unsafe {
         *out = value;
     }
     ST_OK
 }
 
-fn read_in<'a, T>(state: *mut RawExecState, input: *const T, name: &str) -> Result<&'a T, i32> {
+/// Borrows a typed input through an ABI pointer.
+///
+/// # Safety
+/// `state` must be null or satisfy [`state_from_raw`]'s contract. If non-null, `input`
+/// must be aligned, initialized as a valid `T`, readable for `'a`, and not overlap any
+/// mutable access for the duration of the returned borrow.
+unsafe fn read_in<'a, T>(
+    state: *mut RawExecState,
+    input: *const T,
+    name: &str,
+) -> Result<&'a T, i32> {
     if input.is_null() {
-        Err(seat_fault(
-            state,
-            Fault::new(5, format!("runtime ABI {name} pointer is null")),
-        ))
+        // SAFETY: the caller upholds the execution-state contract even when input
+        // validation fails and a fault must be recorded.
+        Err(unsafe {
+            seat_fault(
+                state,
+                Fault::new(5, format!("runtime ABI {name} pointer is null")),
+            )
+        })
     } else {
         // SAFETY: null was rejected and the ABI requires `input` to name a live `T`.
         Ok(unsafe { &*input })
@@ -1037,7 +1089,12 @@ fn saved_err_from_raw(raw: RtSavedErrState) -> Result<SavedErrState, Fault> {
     })
 }
 
-fn release_variant_slot(value: *mut Variant, expected: Option<VarType>) -> i32 {
+/// Releases a runtime-owned Variant slot when its type matches `expected`.
+///
+/// # Safety
+/// A non-null `value` must be aligned, initialized as a valid [`Variant`], uniquely
+/// writable for this call, and live through replacement with [`Variant::empty`].
+unsafe fn release_variant_slot(value: *mut Variant, expected: Option<VarType>) -> i32 {
     if value.is_null() {
         return ST_OK;
     }
@@ -1050,184 +1107,398 @@ fn release_variant_slot(value: *mut Variant, expected: Option<VarType>) -> i32 {
     ST_OK
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_add_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_add_i32(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_add(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i32)
         {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_sub_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_sub_i32(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_sub(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i32)
         {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_mul_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_mul_i32(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_mul(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i32)
         {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_div_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_div_i32(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_binop(typed::CheckedIntBinOp::Div, i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i32)
         {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_rem_i32(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_rem_i32(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_binop(typed::CheckedIntBinOp::Rem, i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i32)
         {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_add_i16(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_add_i16(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_add(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i16)
         {
-            Ok(value) => write_out(state, out, i32::from(value)),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, i32::from(value)) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_sub_i16(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_sub_i16(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_sub(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i16)
         {
-            Ok(value) => write_out(state, out, i32::from(value)),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, i32::from(value)) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_mul_i16(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_mul_i16(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_mul(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_i16)
         {
-            Ok(value) => write_out(state, out, i32::from(value)),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, i32::from(value)) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_add_u8(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_add_u8(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_add(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_u8)
         {
-            Ok(value) => write_out(state, out, i32::from(value)),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, i32::from(value)) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_sub_u8(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_sub_u8(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_sub(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_u8)
         {
-            Ok(value) => write_out(state, out, i32::from(value)),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, i32::from(value)) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_mul_u8(state: *mut RawExecState, lhs: i32, rhs: i32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_mul_u8(
+    state: *mut RawExecState,
+    lhs: i32,
+    rhs: i32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
         match typed::checked_i64_mul(i64::from(lhs), i64::from(rhs))
             .and_then(typed::narrow_i64_to_u8)
         {
-            Ok(value) => write_out(state, out, i32::from(value)),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, i32::from(value)) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_add_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+pub unsafe extern "C" fn rt_add_i64(
+    state: *mut RawExecState,
+    lhs: i64,
+    rhs: i64,
+    out: *mut i64,
+) -> i32 {
     with_status(|| match typed::checked_i64_add(lhs, rhs) {
-        Ok(value) => write_out(state, out, value),
-        Err(err) => seat_fault(state, Fault::from_arith(err)),
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        Ok(value) => unsafe { write_out(state, out, value) },
+        // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+        Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_sub_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+pub unsafe extern "C" fn rt_sub_i64(
+    state: *mut RawExecState,
+    lhs: i64,
+    rhs: i64,
+    out: *mut i64,
+) -> i32 {
     with_status(|| match typed::checked_i64_sub(lhs, rhs) {
-        Ok(value) => write_out(state, out, value),
-        Err(err) => seat_fault(state, Fault::from_arith(err)),
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        Ok(value) => unsafe { write_out(state, out, value) },
+        // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+        Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_mul_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+pub unsafe extern "C" fn rt_mul_i64(
+    state: *mut RawExecState,
+    lhs: i64,
+    rhs: i64,
+    out: *mut i64,
+) -> i32 {
     with_status(|| match typed::checked_i64_mul(lhs, rhs) {
-        Ok(value) => write_out(state, out, value),
-        Err(err) => seat_fault(state, Fault::from_arith(err)),
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        Ok(value) => unsafe { write_out(state, out, value) },
+        // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+        Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_div_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+pub unsafe extern "C" fn rt_div_i64(
+    state: *mut RawExecState,
+    lhs: i64,
+    rhs: i64,
+    out: *mut i64,
+) -> i32 {
     with_status(
         || match typed::checked_i64_binop(typed::CheckedIntBinOp::Div, lhs, rhs) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         },
     )
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_rem_i64(state: *mut RawExecState, lhs: i64, rhs: i64, out: *mut i64) -> i32 {
+pub unsafe extern "C" fn rt_rem_i64(
+    state: *mut RawExecState,
+    lhs: i64,
+    rhs: i64,
+    out: *mut i64,
+) -> i32 {
     with_status(
         || match typed::checked_i64_binop(typed::CheckedIntBinOp::Rem, lhs, rhs) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         },
     )
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_currency_add(
+pub unsafe extern "C" fn rt_currency_add(
     state: *mut RawExecState,
     lhs_scaled: i64,
     rhs_scaled: i64,
@@ -1235,14 +1506,22 @@ pub extern "C" fn rt_currency_add(
 ) -> i32 {
     with_status(
         || match typed::currency_add_scaled(lhs_scaled, rhs_scaled) {
-            Ok(value) => write_out(state, out_scaled, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out_scaled, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         },
     )
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_currency_sub(
+pub unsafe extern "C" fn rt_currency_sub(
     state: *mut RawExecState,
     lhs_scaled: i64,
     rhs_scaled: i64,
@@ -1250,14 +1529,22 @@ pub extern "C" fn rt_currency_sub(
 ) -> i32 {
     with_status(
         || match typed::currency_sub_scaled(lhs_scaled, rhs_scaled) {
-            Ok(value) => write_out(state, out_scaled, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out_scaled, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         },
     )
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null output pointer must identify aligned, initialized, uniquely writable storage for one `i64`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_currency_mul(
+pub unsafe extern "C" fn rt_currency_mul(
     state: *mut RawExecState,
     lhs_scaled: i64,
     rhs_scaled: i64,
@@ -1265,14 +1552,22 @@ pub extern "C" fn rt_currency_mul(
 ) -> i32 {
     with_status(|| {
         match typed::currency_mul_scaled_i128(i128::from(lhs_scaled), i128::from(rhs_scaled)) {
-            Ok(value) => write_out(state, out_scaled, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out_scaled, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `lhs` and `rhs` must identify initialized `Variant`s; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap either input.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_arith_v(
+pub unsafe extern "C" fn rt_arith_v(
     state: *mut RawExecState,
     op: u32,
     mode: u32,
@@ -1281,17 +1576,20 @@ pub extern "C" fn rt_arith_v(
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let lhs = match read_in(state, lhs, "lhs") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let lhs = match unsafe { read_in(state, lhs, "lhs") } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let rhs = match read_in(state, rhs, "rhs") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let rhs = match unsafe { read_in(state, rhs, "rhs") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         let mode = match numeric_mode_from_raw(mode) {
             Ok(mode) => mode,
-            Err(fault) => return seat_fault(state, fault),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
         };
         let result = match op {
             RT_ARITH_ADD => arith::add(lhs, rhs, mode),
@@ -1301,40 +1599,64 @@ pub extern "C" fn rt_arith_v(
             RT_ARITH_INT_DIV => arith::int_div(lhs, rhs, mode),
             RT_ARITH_MOD => arith::modulo(lhs, rhs, mode),
             RT_ARITH_POW => arith::pow(lhs, rhs),
-            _ => return seat_fault(state, Fault::new(5, format!("unknown arithmetic op {op}"))),
+            _ => {
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(state, Fault::new(5, format!("unknown arithmetic op {op}")))
+                };
+            }
         };
         match result {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `src` must identify an initialized `Variant`; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap `src`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_neg_v(
+pub unsafe extern "C" fn rt_neg_v(
     state: *mut RawExecState,
     mode: u32,
     src: *const Variant,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let src = match read_in(state, src, "src") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let src = match unsafe { read_in(state, src, "src") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         let mode = match numeric_mode_from_raw(mode) {
             Ok(mode) => mode,
-            Err(fault) => return seat_fault(state, fault),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
         };
         match arith::neg(src, mode) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `lhs` and `rhs` must identify initialized `Variant`s; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap either input.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_logical_v(
+pub unsafe extern "C" fn rt_logical_v(
     state: *mut RawExecState,
     op: u32,
     lhs: *const Variant,
@@ -1342,11 +1664,13 @@ pub extern "C" fn rt_logical_v(
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let lhs = match read_in(state, lhs, "lhs") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let lhs = match unsafe { read_in(state, lhs, "lhs") } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let rhs = match read_in(state, rhs, "rhs") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let rhs = match unsafe { read_in(state, rhs, "rhs") } {
             Ok(value) => value,
             Err(status) => return status,
         };
@@ -1356,49 +1680,85 @@ pub extern "C" fn rt_logical_v(
             RT_LOGIC_XOR => arith::xor(lhs, rhs),
             RT_LOGIC_EQV => arith::eqv(lhs, rhs),
             RT_LOGIC_IMP => arith::imp(lhs, rhs),
-            _ => return seat_fault(state, Fault::new(5, format!("unknown logical op {op}"))),
+            _ => {
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(state, Fault::new(5, format!("unknown logical op {op}")))
+                };
+            }
         };
         match result {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `src` must identify an initialized `Variant`; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap `src`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_not_v(
+pub unsafe extern "C" fn rt_not_v(
     state: *mut RawExecState,
     src: *const Variant,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let src = match read_in(state, src, "src") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let src = match unsafe { read_in(state, src, "src") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         match arith::not(src) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `src` must identify an initialized `Variant`, and a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_truthy_v(state: *mut RawExecState, src: *const Variant, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_truthy_v(
+    state: *mut RawExecState,
+    src: *const Variant,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
-        let src = match read_in(state, src, "src") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let src = match unsafe { read_in(state, src, "src") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         match arith::is_truthy(src) {
-            Ok(value) => write_out(state, out, i32::from(u8::from(value))),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, i32::from(u8::from(value))) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `lhs` and `rhs` must identify initialized `Variant`s; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap either input.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_compare_v(
+pub unsafe extern "C" fn rt_compare_v(
     state: *mut RawExecState,
     op: u32,
     mode: u32,
@@ -1407,158 +1767,251 @@ pub extern "C" fn rt_compare_v(
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let lhs = match read_in(state, lhs, "lhs") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let lhs = match unsafe { read_in(state, lhs, "lhs") } {
             Ok(value) => value,
             Err(status) => return status,
         };
-        let rhs = match read_in(state, rhs, "rhs") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let rhs = match unsafe { read_in(state, rhs, "rhs") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         let op = match compare_op_from_raw(op) {
             Ok(op) => op,
-            Err(fault) => return seat_fault(state, fault),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
         };
         let mode = match string_compare_mode_from_raw(mode) {
             Ok(mode) => mode,
-            Err(fault) => return seat_fault(state, fault),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
         };
         match arith::compare(lhs, rhs, mode, op) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `src` must identify an initialized `Variant`; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap `src`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_coerce_numeric_v(
+pub unsafe extern "C" fn rt_coerce_numeric_v(
     state: *mut RawExecState,
     target: u32,
     src: *const Variant,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let src = match read_in(state, src, "src") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let src = match unsafe { read_in(state, src, "src") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         let target = match numeric_target_from_raw(target) {
             Ok(target) => target,
-            Err(fault) => return seat_fault(state, fault),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
         };
         match arith::coerce_numeric(src, target) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `src` must identify an initialized `Variant`; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap `src`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_coerce_string_v(
+pub unsafe extern "C" fn rt_coerce_string_v(
     state: *mut RawExecState,
     src: *const Variant,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let src = match read_in(state, src, "src") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let src = match unsafe { read_in(state, src, "src") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         match arith::coerce_string(src) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `src` must identify an initialized `Variant`; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap `src`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_coerce_fixed_string_v(
+pub unsafe extern "C" fn rt_coerce_fixed_string_v(
     state: *mut RawExecState,
     len: u32,
     src: *const Variant,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        let src = match read_in(state, src, "src") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let src = match unsafe { read_in(state, src, "src") } {
             Ok(value) => value,
             Err(status) => return status,
         };
         match arith::coerce_fixed_string(src, len as usize) {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_arith(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_arith(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `src` must identify an initialized `Variant`; a non-null `out` must identify an initialized, uniquely writable `Variant` and must not overlap `src`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_variant_clone(
+pub unsafe extern "C" fn rt_variant_clone(
     state: *mut RawExecState,
     src: *const Variant,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
         if src.is_null() {
-            return seat_fault(state, Fault::new(5, "runtime ABI source pointer is null"));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(state, Fault::new(5, "runtime ABI source pointer is null"))
+            };
         }
         // SAFETY: null was rejected and the ABI requires `src` to name a live `Variant`.
         let value = unsafe { (*src).clone() };
-        write_out(state, out, value)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out, value) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `value` may be null; otherwise it must uniquely identify an initialized, uniquely writable `Variant` slot for the full call. `state` is not dereferenced.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_variant_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
+pub unsafe extern "C" fn rt_variant_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
     with_status(|| {
         let _ = state;
-        release_variant_slot(value, None)
+        // SAFETY: the exported release contract guarantees a non-null slot is an initialized, uniquely writable live Variant.
+        unsafe { release_variant_slot(value, None) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `value` may be null; otherwise it must uniquely identify an initialized, uniquely writable `Variant` slot for the full call. `state` is not dereferenced.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_bstr_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
+pub unsafe extern "C" fn rt_bstr_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
     with_status(|| {
         let _ = state;
-        release_variant_slot(value, Some(VarType::String))
+        // SAFETY: the exported release contract guarantees a non-null slot is an initialized, uniquely writable live Variant.
+        unsafe { release_variant_slot(value, Some(VarType::String)) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `value` may be null; otherwise it must uniquely identify an initialized, uniquely writable `Variant` slot for the full call. `state` is not dereferenced.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_object_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
+pub unsafe extern "C" fn rt_object_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
     with_status(|| {
         let _ = state;
-        release_variant_slot(value, Some(VarType::Object))
+        // SAFETY: the exported release contract guarantees a non-null slot is an initialized, uniquely writable live Variant.
+        unsafe { release_variant_slot(value, Some(VarType::Object)) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `value` may be null; otherwise it must uniquely identify an initialized, uniquely writable `Variant` slot for the full call. `state` is not dereferenced.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_array_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
+pub unsafe extern "C" fn rt_array_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
     with_status(|| {
         let _ = state;
-        release_variant_slot(value, Some(VarType::ArrayVariant))
+        // SAFETY: the exported release contract guarantees a non-null slot is an initialized, uniquely writable live Variant.
+        unsafe { release_variant_slot(value, Some(VarType::ArrayVariant)) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `value` may be null; otherwise it must uniquely identify an initialized, uniquely writable `Variant` slot for the full call. `state` is not dereferenced.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_record_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
+pub unsafe extern "C" fn rt_record_release(state: *mut RawExecState, value: *mut Variant) -> i32 {
     with_status(|| {
         let _ = state;
-        release_variant_slot(value, Some(VarType::Record))
+        // SAFETY: the exported release contract guarantees a non-null slot is an initialized, uniquely writable live Variant.
+        unsafe { release_variant_slot(value, Some(VarType::Record)) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `args` may be null only when `argc == 0`; otherwise it must identify `argc` consecutive initialized `Variant`s. A non-null `out` must identify an initialized, uniquely writable `Variant` that does not overlap that slice.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_lib_invoke(
+pub unsafe extern "C" fn rt_lib_invoke(
     state: *mut RawExecState,
     native_id: u32,
     args: *const Variant,
     argc: usize,
     out: *mut Variant,
 ) -> i32 {
-    rt_lib_invoke_with_policy(state, native_id, args, argc, 0, out)
+    // SAFETY: this entry point forwards the exact state, argument slice, and output-slot
+    // contract required by `rt_lib_invoke_with_policy` without retaining any pointer.
+    unsafe { rt_lib_invoke_with_policy(state, native_id, args, argc, 0, out) }
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, `args` may be null only when `argc == 0`; otherwise it must identify `argc` consecutive initialized `Variant`s. A non-null `out` must identify an initialized, uniquely writable `Variant` that does not overlap that slice.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_lib_invoke_with_policy(
+pub unsafe extern "C" fn rt_lib_invoke_with_policy(
     state: *mut RawExecState,
     native_id: u32,
     args: *const Variant,
@@ -1570,50 +2023,77 @@ pub extern "C" fn rt_lib_invoke_with_policy(
         let id = match NativeImplId::ALL.get(native_id as usize).copied() {
             Some(id) => id,
             None => {
-                return seat_fault(
-                    state,
-                    Fault::new(5, format!("unknown library id {native_id}")),
-                );
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(
+                        state,
+                        Fault::new(5, format!("unknown library id {native_id}")),
+                    )
+                };
             }
         };
         if args.is_null() && argc != 0 {
-            return seat_fault(state, Fault::new(5, "runtime ABI args pointer is null"));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe { seat_fault(state, Fault::new(5, "runtime ABI args pointer is null")) };
         }
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
         // SAFETY: null with nonzero length was rejected; zero-length null is permitted.
         let argv = unsafe { slice::from_raw_parts(args, argc) };
         if string_typed_alias != 0 && argv.iter().any(|arg| arg.vtype() == VarType::Null) {
-            return seat_fault(state, Fault::new(94, "invalid use of Null"));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe { seat_fault(state, Fault::new(94, "invalid use of Null")) };
         }
         let result = oxvba_lib::invoke(id, argv, exec.host, &mut exec.lib);
         match result {
-            Ok(value) => write_out(state, out, value),
-            Err(err) => seat_fault(state, Fault::from_lib(err)),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(value) => unsafe { write_out(state, out, value) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(err) => unsafe { seat_fault(state, Fault::from_lib(err)) },
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_maybe_drain(state: *mut RawExecState) -> i32 {
+pub unsafe extern "C" fn rt_maybe_drain(state: *mut RawExecState) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
         maybe_drain_with_bridge(exec)
             .map(|_| ST_OK)
-            .unwrap_or_else(|fault| seat_fault(state, fault))
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            .unwrap_or_else(|fault| unsafe { seat_fault(state, fault) })
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed; when `invoke` is present, `ctx` must satisfy that callback and remain valid until the bridge is replaced or cleared.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_install_proc_invoker(
+pub unsafe extern "C" fn rt_install_proc_invoker(
     state: *mut RawExecState,
     ctx: *mut c_void,
     invoke: Option<ProcInvokeFn>,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1622,9 +2102,17 @@ pub extern "C" fn rt_install_proc_invoker(
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_clear_proc_invoker(state: *mut RawExecState) -> i32 {
+pub unsafe extern "C" fn rt_clear_proc_invoker(state: *mut RawExecState) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1633,28 +2121,46 @@ pub extern "C" fn rt_clear_proc_invoker(state: *mut RawExecState) -> i32 {
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must remain uniquely borrowed through any synchronous initializer callback, and a non-null `out` must identify an initialized, uniquely writable `Variant`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_project_new_object(
+pub unsafe extern "C" fn rt_project_new_object(
     state: *mut RawExecState,
     program_index: usize,
     class_index: usize,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
         let Some(loaded) = exec.programs.get(program_index) else {
-            return seat_fault(
-                state,
-                Fault::new(5, format!("unknown program {program_index}")),
-            );
+            // SAFETY: the exported helper contract guarantees that non-null
+            // `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(
+                    state,
+                    Fault::new(5, format!("unknown program {program_index}")),
+                )
+            };
         };
         let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
-            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
+            };
         };
         let Some(class) = loaded.program.classes.get(class_index) else {
-            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
+            };
         };
         let instance_id = exec.next_instance_id;
         exec.next_instance_id += 1;
@@ -1668,13 +2174,17 @@ pub extern "C" fn rt_project_new_object(
         let value = Variant::from_object_ref(object.clone());
         if let Some(init) = class.initialize {
             let Some(bridge) = exec.proc_invoker else {
-                return seat_fault(
-                    state,
-                    Fault::new(
-                        5,
-                        "rt_project_new_object requires an installed ProcInvoker for Class_Initialize",
-                    ),
-                );
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(
+                        state,
+                        Fault::new(
+                            5,
+                            "rt_project_new_object requires an installed ProcInvoker for Class_Initialize",
+                        ),
+                    )
+                };
             };
             // SAFETY: the installed bridge owns its opaque context for this run. The `Me`
             // Variant is borrowed only for the duration of the synchronous initializer call.
@@ -1683,7 +2193,8 @@ pub extern "C" fn rt_project_new_object(
                 return status;
             }
         }
-        write_out(state, out, value)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out, value) }
     })
 }
 
@@ -1708,14 +2219,22 @@ fn object_identity(value: &Variant) -> i32 {
         .unwrap_or(0)
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must remain uniquely borrowed through any synchronous initializer callback, and a non-null `out` must identify an initialized, uniquely writable `Variant`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_project_predeclared_instance(
+pub unsafe extern "C" fn rt_project_predeclared_instance(
     state: *mut RawExecState,
     program_index: usize,
     class_index: usize,
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1724,19 +2243,30 @@ pub extern "C" fn rt_project_predeclared_instance(
             .get(program_index)
             .and_then(|loaded| loaded.predeclared_singletons.get(&class_index))
         {
-            return write_out(state, out, existing.clone());
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            return unsafe { write_out(state, out, existing.clone()) };
         }
         let Some(loaded) = exec.programs.get(program_index) else {
-            return seat_fault(
-                state,
-                Fault::new(5, format!("unknown program {program_index}")),
-            );
+            // SAFETY: the exported helper contract guarantees that non-null
+            // `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(
+                    state,
+                    Fault::new(5, format!("unknown program {program_index}")),
+                )
+            };
         };
         let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
-            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
+            };
         };
         let Some(class) = loaded.program.classes.get(class_index) else {
-            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
+            };
         };
         let initialize = class.initialize;
         let has_terminate = class.terminate.is_some();
@@ -1751,24 +2281,34 @@ pub extern "C" fn rt_project_predeclared_instance(
         );
         let value = Variant::from_object_ref(object.clone());
         let Some(loaded) = exec.programs.get_mut(program_index) else {
-            return seat_fault(
-                state,
-                Fault::new(5, format!("unknown program {program_index}")),
-            );
+            // SAFETY: the exported helper contract guarantees that non-null
+            // `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(
+                    state,
+                    Fault::new(5, format!("unknown program {program_index}")),
+                )
+            };
         };
         loaded
             .predeclared_singletons
             .insert(class_index, value.clone());
         if let Some(init) = initialize {
             let Some(bridge) = exec.proc_invoker else {
-                return seat_fault(
-                    state,
-                    Fault::new(
-                        5,
-                        "rt_project_predeclared_instance requires an installed ProcInvoker for Class_Initialize",
-                    ),
-                );
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(
+                        state,
+                        Fault::new(
+                            5,
+                            "rt_project_predeclared_instance requires an installed ProcInvoker for Class_Initialize",
+                        ),
+                    )
+                };
             };
+            // SAFETY: the installed bridge owns its opaque context for this run. The `Me`
+            // Variant is borrowed only for the duration of the synchronous initializer call.
             let status = unsafe { (bridge.invoke)(bridge.ctx, program_index, init.0, &value, 0) };
             if status != ST_OK {
                 let failed_identity = object_identity(&value);
@@ -1786,33 +2326,50 @@ pub extern "C" fn rt_project_predeclared_instance(
                 return status;
             }
         }
-        write_out(state, out, value)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out, value) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed and `value` must identify an initialized `Variant` that remains readable for the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_project_set_predeclared_instance(
+pub unsafe extern "C" fn rt_project_set_predeclared_instance(
     state: *mut RawExecState,
     program_index: usize,
     class_index: usize,
     value: *const Variant,
 ) -> i32 {
     with_status(|| {
-        let value = match read_in(state, value, "predeclared value") {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let value = match unsafe { read_in(state, value, "predeclared value") } {
             Ok(value) => value,
             Err(status) => return status,
         };
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
         let Some(loaded) = exec.programs.get_mut(program_index) else {
-            return seat_fault(
-                state,
-                Fault::new(5, format!("unknown program {program_index}")),
-            );
+            // SAFETY: the exported helper contract guarantees that non-null
+            // `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(
+                    state,
+                    Fault::new(5, format!("unknown program {program_index}")),
+                )
+            };
         };
         if class_index >= loaded.program.classes.len() {
-            return seat_fault(state, Fault::new(5, format!("unknown class {class_index}")));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe {
+                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
+            };
         }
         if variant_is_nothing(value) {
             loaded.predeclared_singletons.remove(&class_index);
@@ -1825,9 +2382,17 @@ pub extern "C" fn rt_project_set_predeclared_instance(
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_err_clear(state: *mut RawExecState) -> i32 {
+pub unsafe extern "C" fn rt_err_clear(state: *mut RawExecState) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1836,19 +2401,40 @@ pub extern "C" fn rt_err_clear(state: *mut RawExecState) -> i32 {
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed and a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_err_number(state: *mut RawExecState, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_err_number(state: *mut RawExecState, out: *mut i32) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
-        write_out(state, out, exec.err_engine.err.number)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out, exec.err_engine.err.number) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed and a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_err_i32_field(state: *mut RawExecState, field: u32, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_err_i32_field(
+    state: *mut RawExecState,
+    field: u32,
+    out: *mut i32,
+) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1856,20 +2442,32 @@ pub extern "C" fn rt_err_i32_field(state: *mut RawExecState, field: u32, out: *m
             RT_ERR_FIELD_NUMBER => exec.err_engine.err.number,
             RT_ERR_FIELD_HELP_CONTEXT => exec.err_engine.err.help_context,
             RT_ERR_FIELD_LAST_DLL_ERROR => exec.err_engine.last_dll_error,
-            _ => return seat_fault(state, Fault::new(5, "Err field is not numeric")),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            _ => return unsafe { seat_fault(state, Fault::new(5, "Err field is not numeric")) },
         };
-        write_out(state, out, value)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out, value) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// On success, `out_ptr` receives a borrow into `state`; it remains valid only while that
+/// state and the selected Err string remain alive and unmodified.
+/// Specifically, non-null `state` must be uniquely borrowed; non-null `out_ptr` and `out_len` must identify initialized, uniquely writable pointer and `i32` slots and must not overlap.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_err_string_field_utf8(
+pub unsafe extern "C" fn rt_err_string_field_utf8(
     state: *mut RawExecState,
     field: u32,
     out_ptr: *mut *const u8,
     out_len: *mut i32,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1877,26 +2475,38 @@ pub extern "C" fn rt_err_string_field_utf8(
             RT_ERR_FIELD_DESCRIPTION => &exec.err_engine.err.description,
             RT_ERR_FIELD_SOURCE => &exec.err_engine.err.source,
             RT_ERR_FIELD_HELP_FILE => &exec.err_engine.err.help_file,
-            _ => return seat_fault(state, Fault::new(5, "Err field is not string")),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            _ => return unsafe { seat_fault(state, Fault::new(5, "Err field is not string")) },
         };
         let Ok(len) = i32::try_from(value.len()) else {
-            return seat_fault(state, Fault::new(5, "Err field string is too long"));
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            return unsafe { seat_fault(state, Fault::new(5, "Err field string is too long")) };
         };
-        let status = write_out(state, out_ptr, value.as_ptr());
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        let status = unsafe { write_out(state, out_ptr, value.as_ptr()) };
         if status != ST_OK {
             return status;
         }
-        write_out(state, out_len, len)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out_len, len) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_set_error_handler(
+pub unsafe extern "C" fn rt_set_error_handler(
     state: *mut RawExecState,
     handler_kind: u32,
     block: u32,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1906,10 +2516,14 @@ pub extern "C" fn rt_set_error_handler(
             RT_ERROR_HANDLER_GOTO_LABEL => ErrorHandler::GotoLabel(BlockId(block as usize)),
             RT_ERROR_HANDLER_GOTO_MINUS_1 => ErrorHandler::GotoMinus1,
             _ => {
-                return seat_fault(
-                    state,
-                    Fault::new(5, format!("unknown error handler kind {handler_kind}")),
-                );
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(
+                        state,
+                        Fault::new(5, format!("unknown error handler kind {handler_kind}")),
+                    )
+                };
             }
         };
         exec.err_engine.set_error_handler(&handler);
@@ -1917,19 +2531,36 @@ pub extern "C" fn rt_set_error_handler(
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed and a non-null `out` must identify aligned, initialized, uniquely writable storage for one `i32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_last_dll_error(state: *mut RawExecState, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn rt_last_dll_error(state: *mut RawExecState, out: *mut i32) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
-        write_out(state, out, exec.err_engine.last_dll_error)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out, exec.err_engine.last_dll_error) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_set_last_dll_error(state: *mut RawExecState, value: i32) -> i32 {
+pub unsafe extern "C" fn rt_set_last_dll_error(state: *mut RawExecState, value: i32) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -1938,63 +2569,116 @@ pub extern "C" fn rt_set_last_dll_error(state: *mut RawExecState, value: i32) ->
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed and a non-null `out_saved` must identify aligned, initialized, uniquely writable storage for one `RtSavedErrState`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_err_enter_activation(
+pub unsafe extern "C" fn rt_err_enter_activation(
     state: *mut RawExecState,
     out_saved: *mut RtSavedErrState,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
         let saved = saved_err_to_raw(exec.err_engine.enter_activation());
-        write_out(state, out_saved, saved)
+        // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out_saved, saved) }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed and `saved` must identify an initialized `RtSavedErrState` that remains readable for the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_err_restore_activation(
+pub unsafe extern "C" fn rt_err_restore_activation(
     state: *mut RawExecState,
     saved: *const RtSavedErrState,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
-        let Ok(saved) = read_in(state, saved, "saved error state") else {
+        // SAFETY: the exported helper contract guarantees live unique state and an aligned, initialized, nonaliasing input valid for the borrow.
+        let Ok(saved) = (unsafe { read_in(state, saved, "saved error state") }) else {
             return ST_FAULT;
         };
         let saved = match saved_err_from_raw(*saved) {
             Ok(saved) => saved,
-            Err(fault) => return seat_fault(state, fault),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
         };
         exec.err_engine.restore(saved);
         ST_OK
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_out_of_stack(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(28, default_error_message(28))))
+pub unsafe extern "C" fn rt_raise_out_of_stack(state: *mut RawExecState) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(28, default_error_message(28))) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_out_of_memory(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(7, default_error_message(7))))
+pub unsafe extern "C" fn rt_raise_out_of_memory(state: *mut RawExecState) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(7, default_error_message(7))) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_invalid_proc_ref(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(490, "invalid procedure reference")))
+pub unsafe extern "C" fn rt_raise_invalid_proc_ref(state: *mut RawExecState) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(490, "invalid procedure reference")) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_type_mismatch(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(13, default_error_message(13))))
+pub unsafe extern "C" fn rt_raise_type_mismatch(state: *mut RawExecState) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(13, default_error_message(13))) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, when `source_len > 0`, `source_ptr` must identify exactly that many readable bytes in one allocation; null is permitted only for a zero-length source. Invalid UTF-8 is reported as a fault rather than being assumed valid.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_error_number(
+pub unsafe extern "C" fn rt_raise_error_number(
     state: *mut RawExecState,
     number: i32,
     inherit_fields: i32,
@@ -2002,24 +2686,42 @@ pub extern "C" fn rt_raise_error_number(
     source_len: i32,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
         let source_len = match usize::try_from(source_len) {
             Ok(value) => value,
-            Err(_) => return seat_fault(state, Fault::new(5, "invalid Err.Raise source length")),
+            Err(_) => {
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(state, Fault::new(5, "invalid Err.Raise source length"))
+                };
+            }
         };
         let default_source = if source_len == 0 {
             "VBAProject"
         } else {
             if source_ptr.is_null() {
-                return seat_fault(state, Fault::new(5, "invalid Err.Raise source pointer"));
+                // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(state, Fault::new(5, "invalid Err.Raise source pointer"))
+                };
             }
-            // SAFETY: the JIT passes a pointer/length pair from the live OxProgram unit name.
+            // SAFETY: the exported helper contract requires this non-null pointer
+            // and converted length to describe one live readable byte allocation.
             let bytes = unsafe { std::slice::from_raw_parts(source_ptr, source_len) };
             match std::str::from_utf8(bytes) {
                 Ok(value) => value,
-                Err(_) => return seat_fault(state, Fault::new(5, "invalid Err.Raise source utf8")),
+                Err(_) => {
+                    // SAFETY: the exported helper contract guarantees that non-null
+                    // `state` is the live, uniquely borrowed execution state.
+                    return unsafe {
+                        seat_fault(state, Fault::new(5, "invalid Err.Raise source utf8"))
+                    };
+                }
             }
         };
         let inherit = inherit_fields != 0 && exec.err_engine.err.inherit_fields;
@@ -2038,46 +2740,96 @@ pub extern "C" fn rt_raise_error_number(
                 None,
             )
         };
-        seat_fault(
-            state,
-            Fault {
-                code: number,
-                message,
-                source,
-                help_file,
-                help_context,
-            },
-        )
+        // SAFETY: the exported helper contract guarantees that non-null `state`
+        // is the live, uniquely borrowed execution state.
+        unsafe {
+            seat_fault(
+                state,
+                Fault {
+                    code: number,
+                    message,
+                    source,
+                    help_file,
+                    help_context,
+                },
+            )
+        }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_runtime_error_number(state: *mut RawExecState, number: i32) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(number, default_error_message(number))))
+pub unsafe extern "C" fn rt_raise_runtime_error_number(
+    state: *mut RawExecState,
+    number: i32,
+) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(number, default_error_message(number))) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_expected_array(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(13, "expected an array")))
+pub unsafe extern "C" fn rt_raise_expected_array(state: *mut RawExecState) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(13, "expected an array")) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_array_has_no_bounds(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(9, "array has no bounds")))
+pub unsafe extern "C" fn rt_raise_array_has_no_bounds(state: *mut RawExecState) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(9, "array has no bounds")) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_fixed_or_temporarily_locked_array(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(10, default_error_message(10))))
+pub unsafe extern "C" fn rt_raise_fixed_or_temporarily_locked_array(
+    state: *mut RawExecState,
+) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(10, default_error_message(10))) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_raise_subscript_out_of_range(state: *mut RawExecState) -> i32 {
-    with_status(|| seat_fault(state, Fault::new(9, "subscript out of range")))
+pub unsafe extern "C" fn rt_raise_subscript_out_of_range(state: *mut RawExecState) -> i32 {
+    // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+    with_status(|| unsafe { seat_fault(state, Fault::new(9, "subscript out of range")) })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed; non-null `out_dispatch` and `out_block` must identify separate aligned, initialized, uniquely writable `i32` and `u32` slots.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_route_fault(
+pub unsafe extern "C" fn rt_route_fault(
     state: *mut RawExecState,
     resume: u32,
     resume_next: u32,
@@ -2086,6 +2838,8 @@ pub extern "C" fn rt_route_fault(
     out_block: *mut u32,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -2095,37 +2849,51 @@ pub extern "C" fn rt_route_fault(
             current_line,
         ) {
             Ok(action) => action,
-            Err(msg) => return seat_fault(state, Fault::new(5, msg)),
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(msg) => return unsafe { seat_fault(state, Fault::new(5, msg)) },
         };
         match action {
             FaultAction::Propagate(fault) => {
                 exec.err_engine.pending_fault = Some(fault);
-                write_out(state, out_dispatch, RT_FAULT_DISP_UNWIND)
+                // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+                unsafe { write_out(state, out_dispatch, RT_FAULT_DISP_UNWIND) }
             }
             FaultAction::ResumeNext(block) => {
-                if write_out(state, out_block, block.0 as u32) != ST_OK {
+                // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+                if unsafe { write_out(state, out_block, block.0 as u32) } != ST_OK {
                     return ST_FAULT;
                 }
-                write_out(state, out_dispatch, RT_FAULT_DISP_RESUME_NEXT)
+                // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+                unsafe { write_out(state, out_dispatch, RT_FAULT_DISP_RESUME_NEXT) }
             }
             FaultAction::Handle(block) => {
-                if write_out(state, out_block, block.0 as u32) != ST_OK {
+                // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+                if unsafe { write_out(state, out_block, block.0 as u32) } != ST_OK {
                     return ST_FAULT;
                 }
-                write_out(state, out_dispatch, RT_FAULT_DISP_HANDLER)
+                // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+                unsafe { write_out(state, out_dispatch, RT_FAULT_DISP_HANDLER) }
             }
         }
     })
 }
 
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed and a non-null `out_block` must identify aligned, initialized, uniquely writable storage for one `u32`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rt_resume(
+pub unsafe extern "C" fn rt_resume(
     state: *mut RawExecState,
     target_kind: u32,
     label: u32,
     out_block: *mut u32,
 ) -> i32 {
     with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
@@ -2134,15 +2902,21 @@ pub extern "C" fn rt_resume(
             RT_RESUME_NEXT => ResumeTarget::Next,
             RT_RESUME_LABEL => ResumeTarget::Label(BlockId(label as usize)),
             _ => {
-                return seat_fault(
-                    state,
-                    Fault::new(5, format!("unknown resume target {target_kind}")),
-                );
+                // SAFETY: the exported helper contract guarantees that non-null
+                // `state` is the live, uniquely borrowed execution state.
+                return unsafe {
+                    seat_fault(
+                        state,
+                        Fault::new(5, format!("unknown resume target {target_kind}")),
+                    )
+                };
             }
         };
         match exec.err_engine.resume(target) {
-            Ok(block) => write_out(state, out_block, block.0 as u32),
-            Err(fault) => seat_fault(state, fault),
+            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
+            Ok(block) => unsafe { write_out(state, out_block, block.0 as u32) },
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
+            Err(fault) => unsafe { seat_fault(state, fault) },
         }
     })
 }
@@ -2325,603 +3099,731 @@ mod tests {
 
     #[test]
     fn checked_i32_shim_writes_output() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_i32(exec_state_as_raw(&mut state), 2, 5, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 7);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_i32(exec_state_as_raw(&mut state), 2, 5, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 7);
+        }
     }
 
     #[test]
     fn checked_i32_shim_seats_overflow_fault() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_i32(exec_state_as_raw(&mut state), i32::MAX, 1, &mut out);
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 6);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_i32(exec_state_as_raw(&mut state), i32::MAX, 1, &mut out);
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 6);
+        }
     }
 
     #[test]
     fn raise_error_number_respects_legacy_error_defaults_and_err_raise_inheritance() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let source = b"Main";
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let source = b"Main";
 
-        state.err_engine.err = ErrState {
-            number: 100,
-            description: "previous description".to_string(),
-            source: "PreviousSource".to_string(),
-            help_file: "previous.chm".to_string(),
-            help_context: 77,
-            inherit_fields: true,
-        };
+            state.err_engine.err = ErrState {
+                number: 100,
+                description: "previous description".to_string(),
+                source: "PreviousSource".to_string(),
+                help_file: "previous.chm".to_string(),
+                help_context: 77,
+                inherit_fields: true,
+            };
 
-        let status = rt_raise_error_number(
-            exec_state_as_raw(&mut state),
-            5,
-            0,
-            source.as_ptr(),
-            source.len() as i32,
-        );
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 5);
-        assert_eq!(state.err_engine.err.description, default_error_message(5));
-        assert_eq!(state.err_engine.err.source, "Main");
-        assert_eq!(state.err_engine.err.help_file, default_error_help_file());
-        assert_eq!(
-            state.err_engine.err.help_context,
-            default_error_help_context(5)
-        );
+            let status = rt_raise_error_number(
+                exec_state_as_raw(&mut state),
+                5,
+                0,
+                source.as_ptr(),
+                source.len() as i32,
+            );
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 5);
+            assert_eq!(state.err_engine.err.description, default_error_message(5));
+            assert_eq!(state.err_engine.err.source, "Main");
+            assert_eq!(state.err_engine.err.help_file, default_error_help_file());
+            assert_eq!(
+                state.err_engine.err.help_context,
+                default_error_help_context(5)
+            );
 
-        state.err_engine.err = ErrState {
-            number: 100,
-            description: "previous description".to_string(),
-            source: "PreviousSource".to_string(),
-            help_file: "previous.chm".to_string(),
-            help_context: 77,
-            inherit_fields: true,
-        };
+            state.err_engine.err = ErrState {
+                number: 100,
+                description: "previous description".to_string(),
+                source: "PreviousSource".to_string(),
+                help_file: "previous.chm".to_string(),
+                help_context: 77,
+                inherit_fields: true,
+            };
 
-        let status = rt_raise_error_number(
-            exec_state_as_raw(&mut state),
-            42,
-            1,
-            source.as_ptr(),
-            source.len() as i32,
-        );
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 42);
-        assert_eq!(state.err_engine.err.description, "previous description");
-        assert_eq!(state.err_engine.err.source, "PreviousSource");
-        assert_eq!(state.err_engine.err.help_file, "previous.chm");
-        assert_eq!(state.err_engine.err.help_context, 77);
+            let status = rt_raise_error_number(
+                exec_state_as_raw(&mut state),
+                42,
+                1,
+                source.as_ptr(),
+                source.len() as i32,
+            );
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 42);
+            assert_eq!(state.err_engine.err.description, "previous description");
+            assert_eq!(state.err_engine.err.source, "PreviousSource");
+            assert_eq!(state.err_engine.err.help_file, "previous.chm");
+            assert_eq!(state.err_engine.err.help_context, 77);
+        }
     }
 
     #[test]
     fn err_field_getters_project_current_and_cleared_state() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        state
-            .err_engine
-            .raise(Fault::new(9, default_error_message(9)), "VBAProject");
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state
+                .err_engine
+                .raise(Fault::new(9, default_error_message(9)), "VBAProject");
 
-        let mut number = 0;
-        let status = rt_err_i32_field(
-            exec_state_as_raw(&mut state),
-            RT_ERR_FIELD_NUMBER,
-            &mut number,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(number, 9);
+            let mut number = 0;
+            let status = rt_err_i32_field(
+                exec_state_as_raw(&mut state),
+                RT_ERR_FIELD_NUMBER,
+                &mut number,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(number, 9);
 
-        let mut help_context = 0;
-        let status = rt_err_i32_field(
-            exec_state_as_raw(&mut state),
-            RT_ERR_FIELD_HELP_CONTEXT,
-            &mut help_context,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(help_context, default_error_help_context(9));
+            let mut help_context = 0;
+            let status = rt_err_i32_field(
+                exec_state_as_raw(&mut state),
+                RT_ERR_FIELD_HELP_CONTEXT,
+                &mut help_context,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(help_context, default_error_help_context(9));
 
-        let mut ptr = std::ptr::null();
-        let mut len = 0;
-        let status = rt_err_string_field_utf8(
-            exec_state_as_raw(&mut state),
-            RT_ERR_FIELD_DESCRIPTION,
-            &mut ptr,
-            &mut len,
-        );
-        assert_eq!(status, ST_OK);
-        // SAFETY: the ABI returned a pointer/length to the live state's UTF-8 string.
-        let description =
-            unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len as usize)) };
-        assert_eq!(description, default_error_message(9));
+            let mut ptr = std::ptr::null();
+            let mut len = 0;
+            let status = rt_err_string_field_utf8(
+                exec_state_as_raw(&mut state),
+                RT_ERR_FIELD_DESCRIPTION,
+                &mut ptr,
+                &mut len,
+            );
+            assert_eq!(status, ST_OK);
+            // SAFETY: the ABI returned a pointer/length to the live state's UTF-8 string.
+            let description =
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len as usize));
+            assert_eq!(description, default_error_message(9));
 
-        let status = rt_err_clear(exec_state_as_raw(&mut state));
-        assert_eq!(status, ST_OK);
+            let status = rt_err_clear(exec_state_as_raw(&mut state));
+            assert_eq!(status, ST_OK);
 
-        let status = rt_err_i32_field(
-            exec_state_as_raw(&mut state),
-            RT_ERR_FIELD_NUMBER,
-            &mut number,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(number, 0);
+            let status = rt_err_i32_field(
+                exec_state_as_raw(&mut state),
+                RT_ERR_FIELD_NUMBER,
+                &mut number,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(number, 0);
 
-        let status = rt_err_string_field_utf8(
-            exec_state_as_raw(&mut state),
-            RT_ERR_FIELD_DESCRIPTION,
-            &mut ptr,
-            &mut len,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(len, 0);
-        assert!(!ptr.is_null());
+            let status = rt_err_string_field_utf8(
+                exec_state_as_raw(&mut state),
+                RT_ERR_FIELD_DESCRIPTION,
+                &mut ptr,
+                &mut len,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(len, 0);
+            assert!(!ptr.is_null());
+        }
     }
 
     #[test]
     fn checked_i32_div_rem_shims_write_output() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_div_i32(exec_state_as_raw(&mut state), 17, 5, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 3);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_div_i32(exec_state_as_raw(&mut state), 17, 5, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 3);
 
-        let status = rt_rem_i32(exec_state_as_raw(&mut state), 17, 5, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 2);
+            let status = rt_rem_i32(exec_state_as_raw(&mut state), 17, 5, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 2);
+        }
     }
 
     #[test]
     fn checked_i32_div_rem_shims_seat_division_by_zero_fault() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_div_i32(exec_state_as_raw(&mut state), 17, 0, &mut out);
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 11);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_div_i32(exec_state_as_raw(&mut state), 17, 0, &mut out);
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 11);
 
-        state.err_engine.clear_err();
-        let status = rt_rem_i32(exec_state_as_raw(&mut state), 17, 0, &mut out);
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 11);
+            state.err_engine.clear_err();
+            let status = rt_rem_i32(exec_state_as_raw(&mut state), 17, 0, &mut out);
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 11);
+        }
     }
 
     #[test]
     fn checked_i16_shim_writes_output() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_i16(exec_state_as_raw(&mut state), 32_000, 12, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 32_012);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_i16(exec_state_as_raw(&mut state), 32_000, 12, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 32_012);
+        }
     }
 
     #[test]
     fn checked_i16_shim_seats_overflow_fault() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_i16(
-            exec_state_as_raw(&mut state),
-            i32::from(i16::MAX),
-            1,
-            &mut out,
-        );
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 6);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_i16(
+                exec_state_as_raw(&mut state),
+                i32::from(i16::MAX),
+                1,
+                &mut out,
+            );
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 6);
+        }
     }
 
     #[test]
     fn checked_u8_shim_writes_output() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_u8(exec_state_as_raw(&mut state), 12, 5, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 17);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_u8(exec_state_as_raw(&mut state), 12, 5, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 17);
+        }
     }
 
     #[test]
     fn checked_u8_shim_seats_overflow_fault() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_u8(
-            exec_state_as_raw(&mut state),
-            i32::from(u8::MAX),
-            1,
-            &mut out,
-        );
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 6);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_u8(
+                exec_state_as_raw(&mut state),
+                i32::from(u8::MAX),
+                1,
+                &mut out,
+            );
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 6);
+        }
     }
 
     #[test]
     fn checked_i64_shim_writes_output() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_i64(exec_state_as_raw(&mut state), 5_000_000_000, 12, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 5_000_000_012);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_i64(exec_state_as_raw(&mut state), 5_000_000_000, 12, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 5_000_000_012);
+        }
     }
 
     #[test]
     fn checked_i64_shim_seats_overflow_fault() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_add_i64(exec_state_as_raw(&mut state), i64::MAX, 1, &mut out);
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 6);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_add_i64(exec_state_as_raw(&mut state), i64::MAX, 1, &mut out);
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 6);
+        }
     }
 
     #[test]
     fn checked_i64_div_rem_shims_write_output() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_div_i64(exec_state_as_raw(&mut state), 5_000_000_017, 5, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 1_000_000_003);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_div_i64(exec_state_as_raw(&mut state), 5_000_000_017, 5, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 1_000_000_003);
 
-        let status = rt_rem_i64(exec_state_as_raw(&mut state), 5_000_000_017, 5, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 2);
+            let status = rt_rem_i64(exec_state_as_raw(&mut state), 5_000_000_017, 5, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 2);
+        }
     }
 
     #[test]
     fn out_of_stack_shim_seats_vba_error_28() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let status = rt_raise_out_of_stack(exec_state_as_raw(&mut state));
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 28);
-        assert_eq!(state.err_engine.err.description, "Out of stack space");
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let status = rt_raise_out_of_stack(exec_state_as_raw(&mut state));
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 28);
+            assert_eq!(state.err_engine.err.description, "Out of stack space");
+        }
     }
 
     #[test]
     fn invalid_proc_ref_shim_seats_vba_error_490() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let status = rt_raise_invalid_proc_ref(exec_state_as_raw(&mut state));
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 490);
-        assert_eq!(
-            state.err_engine.err.description,
-            "invalid procedure reference"
-        );
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let status = rt_raise_invalid_proc_ref(exec_state_as_raw(&mut state));
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 490);
+            assert_eq!(
+                state.err_engine.err.description,
+                "invalid procedure reference"
+            );
+        }
     }
 
     #[test]
     fn activation_shims_clear_and_restore_error_policy() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        state.err_engine.error_mode = ErrorMode::Goto(BlockId(7));
-        state.err_engine.active_error = Some(ResumePoint {
-            resume: BlockId(2),
-            resume_next: BlockId(3),
-            handler: ErrorMode::ResumeNext,
-        });
-
-        let mut saved = RtSavedErrState::default();
-        let status = rt_err_enter_activation(exec_state_as_raw(&mut state), &mut saved);
-        assert_eq!(status, ST_OK);
-        assert_eq!(state.err_engine.error_mode, ErrorMode::None);
-        assert_eq!(state.err_engine.active_error, None);
-
-        let status = rt_err_restore_activation(exec_state_as_raw(&mut state), &saved);
-        assert_eq!(status, ST_OK);
-        assert_eq!(state.err_engine.error_mode, ErrorMode::Goto(BlockId(7)));
-        assert_eq!(
-            state.err_engine.active_error,
-            Some(ResumePoint {
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state.err_engine.error_mode = ErrorMode::Goto(BlockId(7));
+            state.err_engine.active_error = Some(ResumePoint {
                 resume: BlockId(2),
                 resume_next: BlockId(3),
                 handler: ErrorMode::ResumeNext,
-            })
-        );
+            });
+
+            let mut saved = RtSavedErrState::default();
+            let status = rt_err_enter_activation(exec_state_as_raw(&mut state), &mut saved);
+            assert_eq!(status, ST_OK);
+            assert_eq!(state.err_engine.error_mode, ErrorMode::None);
+            assert_eq!(state.err_engine.active_error, None);
+
+            let status = rt_err_restore_activation(exec_state_as_raw(&mut state), &saved);
+            assert_eq!(status, ST_OK);
+            assert_eq!(state.err_engine.error_mode, ErrorMode::Goto(BlockId(7)));
+            assert_eq!(
+                state.err_engine.active_error,
+                Some(ResumePoint {
+                    resume: BlockId(2),
+                    resume_next: BlockId(3),
+                    handler: ErrorMode::ResumeNext,
+                })
+            );
+        }
     }
 
     #[test]
     fn currency_shim_uses_scaled_i128_kernel() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let mut out = 0;
-        let status = rt_currency_mul(exec_state_as_raw(&mut state), 12_345, 67_891, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 83_811);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let mut out = 0;
+            let status = rt_currency_mul(exec_state_as_raw(&mut state), 12_345, 67_891, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 83_811);
+        }
     }
 
     #[test]
     fn variant_arith_shim_writes_variant_result() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let lhs = Variant::from_i32(20);
-        let rhs = Variant::from_i32(22);
-        let mut out = Variant::empty();
-        let status = rt_arith_v(
-            exec_state_as_raw(&mut state),
-            RT_ARITH_ADD,
-            RT_NUMERIC_CHECKED_LONG,
-            &lhs,
-            &rhs,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_i32(), Some(42));
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let lhs = Variant::from_i32(20);
+            let rhs = Variant::from_i32(22);
+            let mut out = Variant::empty();
+            let status = rt_arith_v(
+                exec_state_as_raw(&mut state),
+                RT_ARITH_ADD,
+                RT_NUMERIC_CHECKED_LONG,
+                &lhs,
+                &rhs,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_i32(), Some(42));
+        }
     }
 
     #[test]
     fn variant_div_pow_shim_write_double_results() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let lhs = Variant::from_f64(9.0);
-        let rhs = Variant::from_f64(2.0);
-        let mut out = Variant::empty();
-        let status = rt_arith_v(
-            exec_state_as_raw(&mut state),
-            RT_ARITH_DIV,
-            RT_NUMERIC_WIDENING,
-            &lhs,
-            &rhs,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_f64(), Some(4.5));
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let lhs = Variant::from_f64(9.0);
+            let rhs = Variant::from_f64(2.0);
+            let mut out = Variant::empty();
+            let status = rt_arith_v(
+                exec_state_as_raw(&mut state),
+                RT_ARITH_DIV,
+                RT_NUMERIC_WIDENING,
+                &lhs,
+                &rhs,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_f64(), Some(4.5));
 
-        let status = rt_arith_v(
-            exec_state_as_raw(&mut state),
-            RT_ARITH_POW,
-            RT_NUMERIC_WIDENING,
-            &lhs,
-            &rhs,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_f64(), Some(81.0));
+            let status = rt_arith_v(
+                exec_state_as_raw(&mut state),
+                RT_ARITH_POW,
+                RT_NUMERIC_WIDENING,
+                &lhs,
+                &rhs,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_f64(), Some(81.0));
+        }
     }
 
     #[test]
     fn variant_neg_shim_writes_variant_result() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let src = Variant::from_f64(2.5);
-        let mut out = Variant::empty();
-        let status = rt_neg_v(
-            exec_state_as_raw(&mut state),
-            RT_NUMERIC_WIDENING,
-            &src,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_f64(), Some(-2.5));
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let src = Variant::from_f64(2.5);
+            let mut out = Variant::empty();
+            let status = rt_neg_v(
+                exec_state_as_raw(&mut state),
+                RT_NUMERIC_WIDENING,
+                &src,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_f64(), Some(-2.5));
+        }
     }
 
     #[test]
     fn variant_logical_shim_uses_shared_null_logic() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let lhs = Variant::null();
-        let rhs = Variant::from_bool(false);
-        let mut out = Variant::empty();
-        let status = rt_logical_v(
-            exec_state_as_raw(&mut state),
-            RT_LOGIC_AND,
-            &lhs,
-            &rhs,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_bool(), Some(false));
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let lhs = Variant::null();
+            let rhs = Variant::from_bool(false);
+            let mut out = Variant::empty();
+            let status = rt_logical_v(
+                exec_state_as_raw(&mut state),
+                RT_LOGIC_AND,
+                &lhs,
+                &rhs,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_bool(), Some(false));
+        }
     }
 
     #[test]
     fn variant_not_shim_preserves_null() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let src = Variant::null();
-        let mut out = Variant::empty();
-        let status = rt_not_v(exec_state_as_raw(&mut state), &src, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.vtype(), VarType::Null);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let src = Variant::null();
+            let mut out = Variant::empty();
+            let status = rt_not_v(exec_state_as_raw(&mut state), &src, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.vtype(), VarType::Null);
+        }
     }
 
     #[test]
     fn variant_truthy_shim_treats_null_as_false() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let src = Variant::null();
-        let mut out = -1;
-        let status = rt_truthy_v(exec_state_as_raw(&mut state), &src, &mut out);
-        assert_eq!(status, ST_OK);
-        assert_eq!(out, 0);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let src = Variant::null();
+            let mut out = -1;
+            let status = rt_truthy_v(exec_state_as_raw(&mut state), &src, &mut out);
+            assert_eq!(status, ST_OK);
+            assert_eq!(out, 0);
+        }
     }
 
     #[test]
     fn variant_compare_shim_preserves_null() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let lhs = Variant::null();
-        let rhs = Variant::from_i32(1);
-        let mut out = Variant::empty();
-        let status = rt_compare_v(
-            exec_state_as_raw(&mut state),
-            RT_COMPARE_EQ,
-            RT_STRING_COMPARE_BINARY,
-            &lhs,
-            &rhs,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.vtype(), VarType::Null);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let lhs = Variant::null();
+            let rhs = Variant::from_i32(1);
+            let mut out = Variant::empty();
+            let status = rt_compare_v(
+                exec_state_as_raw(&mut state),
+                RT_COMPARE_EQ,
+                RT_STRING_COMPARE_BINARY,
+                &lhs,
+                &rhs,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.vtype(), VarType::Null);
+        }
     }
 
     #[test]
     fn variant_numeric_coerce_shim_writes_variant_result() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let src = Variant::from_f64(6.5);
-        let mut out = Variant::empty();
-        let status = rt_coerce_numeric_v(
-            exec_state_as_raw(&mut state),
-            RT_NUMERIC_CHECKED_DOUBLE,
-            &src,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_f64(), Some(6.5));
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let src = Variant::from_f64(6.5);
+            let mut out = Variant::empty();
+            let status = rt_coerce_numeric_v(
+                exec_state_as_raw(&mut state),
+                RT_NUMERIC_CHECKED_DOUBLE,
+                &src,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_f64(), Some(6.5));
+        }
     }
 
     #[test]
     fn variant_numeric_coerce_shim_writes_boolean_result() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let src = Variant::from_i32(2);
-        let mut out = Variant::empty();
-        let status = rt_coerce_numeric_v(
-            exec_state_as_raw(&mut state),
-            RT_NUMERIC_CHECKED_BOOLEAN,
-            &src,
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_bool(), Some(true));
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let src = Variant::from_i32(2);
+            let mut out = Variant::empty();
+            let status = rt_coerce_numeric_v(
+                exec_state_as_raw(&mut state),
+                RT_NUMERIC_CHECKED_BOOLEAN,
+                &src,
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_bool(), Some(true));
+        }
     }
 
     #[test]
     fn type_specific_releases_are_null_safe_and_match_only_their_type() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        assert_eq!(
-            rt_bstr_release(exec_state_as_raw(&mut state), std::ptr::null_mut()),
-            ST_OK
-        );
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            assert_eq!(
+                rt_bstr_release(exec_state_as_raw(&mut state), std::ptr::null_mut()),
+                ST_OK
+            );
 
-        let mut text = Variant::from_string("abc");
-        let status = rt_bstr_release(exec_state_as_raw(&mut state), &mut text);
-        assert_eq!(status, ST_OK);
-        assert_eq!(text.vtype(), VarType::Empty);
+            let mut text = Variant::from_string("abc");
+            let status = rt_bstr_release(exec_state_as_raw(&mut state), &mut text);
+            assert_eq!(status, ST_OK);
+            assert_eq!(text.vtype(), VarType::Empty);
 
-        let mut number = Variant::from_i32(7);
-        let status = rt_bstr_release(exec_state_as_raw(&mut state), &mut number);
-        assert_eq!(status, ST_OK);
-        assert_eq!(number.as_i32(), Some(7));
+            let mut number = Variant::from_i32(7);
+            let status = rt_bstr_release(exec_state_as_raw(&mut state), &mut number);
+            assert_eq!(status, ST_OK);
+            assert_eq!(number.as_i32(), Some(7));
+        }
     }
 
     #[test]
     fn lib_invoke_shim_calls_shared_library_context() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        let len_id = NativeImplId::ALL
-            .iter()
-            .position(|id| *id == NativeImplId::Len)
-            .expect("Len id") as u32;
-        let args = [Variant::from_string("abcd")];
-        let mut out = Variant::empty();
-        let status = rt_lib_invoke(
-            exec_state_as_raw(&mut state),
-            len_id,
-            args.as_ptr(),
-            args.len(),
-            &mut out,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(out.as_i32(), Some(4));
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let len_id = NativeImplId::ALL
+                .iter()
+                .position(|id| *id == NativeImplId::Len)
+                .expect("Len id") as u32;
+            let args = [Variant::from_string("abcd")];
+            let mut out = Variant::empty();
+            let status = rt_lib_invoke(
+                exec_state_as_raw(&mut state),
+                len_id,
+                args.as_ptr(),
+                args.len(),
+                &mut out,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_i32(), Some(4));
+        }
     }
 
     #[test]
     fn err_and_fault_shims_route_through_err_engine() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        state.err_engine.error_mode = ErrorMode::Goto(BlockId(9));
-        state
-            .err_engine
-            .raise(Fault::new(11, "division by zero"), "TestProject");
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state.err_engine.error_mode = ErrorMode::Goto(BlockId(9));
+            state
+                .err_engine
+                .raise(Fault::new(11, "division by zero"), "TestProject");
 
-        let mut dispatch = -1;
-        let mut block = 0;
-        let status = rt_route_fault(
-            exec_state_as_raw(&mut state),
-            1,
-            2,
-            77,
-            &mut dispatch,
-            &mut block,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(dispatch, RT_FAULT_DISP_HANDLER);
-        assert_eq!(block, 9);
+            let mut dispatch = -1;
+            let mut block = 0;
+            let status = rt_route_fault(
+                exec_state_as_raw(&mut state),
+                1,
+                2,
+                77,
+                &mut dispatch,
+                &mut block,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(dispatch, RT_FAULT_DISP_HANDLER);
+            assert_eq!(block, 9);
 
-        let mut resumed = 0;
-        let status = rt_resume(
-            exec_state_as_raw(&mut state),
-            RT_RESUME_NEXT,
-            0,
-            &mut resumed,
-        );
-        assert_eq!(status, ST_OK);
-        assert_eq!(resumed, 2);
+            let mut resumed = 0;
+            let status = rt_resume(
+                exec_state_as_raw(&mut state),
+                RT_RESUME_NEXT,
+                0,
+                &mut resumed,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(resumed, 2);
 
-        let mut number = -1;
-        assert_eq!(
-            rt_err_number(exec_state_as_raw(&mut state), &mut number),
-            ST_OK
-        );
-        assert_eq!(number, 0);
-        assert_eq!(
-            rt_set_last_dll_error(exec_state_as_raw(&mut state), 1234),
-            ST_OK
-        );
-        let mut last = 0;
-        assert_eq!(
-            rt_last_dll_error(exec_state_as_raw(&mut state), &mut last),
-            ST_OK
-        );
-        assert_eq!(last, 1234);
+            let mut number = -1;
+            assert_eq!(
+                rt_err_number(exec_state_as_raw(&mut state), &mut number),
+                ST_OK
+            );
+            assert_eq!(number, 0);
+            assert_eq!(
+                rt_set_last_dll_error(exec_state_as_raw(&mut state), 1234),
+                ST_OK
+            );
+            let mut last = 0;
+            assert_eq!(
+                rt_last_dll_error(exec_state_as_raw(&mut state), &mut last),
+                ST_OK
+            );
+            assert_eq!(last, 1234);
+        }
     }
 
     #[test]
     fn rt_resume_without_active_error_uses_state_default_source() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        state.default_error_source = "Main".to_string();
-        state.err_engine.error_mode = ErrorMode::ResumeNext;
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state.default_error_source = "Main".to_string();
+            state.err_engine.error_mode = ErrorMode::ResumeNext;
 
-        let mut resumed = 0;
-        let status = rt_resume(
-            exec_state_as_raw(&mut state),
-            RT_RESUME_NEXT,
-            0,
-            &mut resumed,
-        );
+            let mut resumed = 0;
+            let status = rt_resume(
+                exec_state_as_raw(&mut state),
+                RT_RESUME_NEXT,
+                0,
+                &mut resumed,
+            );
 
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 20);
-        assert_eq!(state.err_engine.err.source, "Main");
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 20);
+            assert_eq!(state.err_engine.err.source, "Main");
+        }
     }
 
     #[test]
     fn type_mismatch_shim_seats_error_13() {
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
 
-        let status = rt_raise_type_mismatch(exec_state_as_raw(&mut state));
+            let status = rt_raise_type_mismatch(exec_state_as_raw(&mut state));
 
-        assert_eq!(status, ST_FAULT);
-        assert_eq!(state.err_engine.err.number, 13);
-        assert_eq!(state.err_engine.err.description, "Type mismatch");
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(state.err_engine.err.number, 13);
+            assert_eq!(state.err_engine.err.description, "Type mismatch");
+        }
     }
 
     #[test]
     fn maybe_drain_shim_is_ok_when_queue_is_empty() {
-        oxvba_runtime::reset_pending_terminations();
-        let host = NullHostServices::new(HostPolicy::default());
-        let mut state = ExecState::new(&host);
-        assert_eq!(rt_maybe_drain(exec_state_as_raw(&mut state)), ST_OK);
+        // SAFETY: this test passes a uniquely borrowed live ExecState and only
+        // initialized local input/output slots that remain valid for every helper call.
+        unsafe {
+            oxvba_runtime::reset_pending_terminations();
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            assert_eq!(rt_maybe_drain(exec_state_as_raw(&mut state)), ST_OK);
+        }
     }
 }
