@@ -5141,7 +5141,10 @@ fn inst_kind(inst: &OxInst) -> &'static str {
 mod tests {
     use super::*;
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
 
     use oxvba_bundle::coreir::{
         ClassId as CoreClassId, CoreArg, CoreAsNew, CoreBinOp, CoreCallee, CoreClass,
@@ -6632,6 +6635,13 @@ mod tests {
     struct FakeForeignObject {
         unknown: RawRuntimeIUnknown,
         ref_count: AtomicU32,
+        drop_count: Arc<AtomicU32>,
+    }
+
+    impl Drop for FakeForeignObject {
+        fn drop(&mut self) {
+            self.drop_count.fetch_add(1, Ordering::AcqRel);
+        }
     }
 
     static FAKE_FOREIGN_VTBL: RawRuntimeIUnknownVtbl = RawRuntimeIUnknownVtbl {
@@ -6674,20 +6684,66 @@ mod tests {
         remaining
     }
 
-    fn fake_foreign_object() -> ObjectRef {
+    fn fake_foreign_object_with_drop_count(drop_count: Arc<AtomicU32>) -> ObjectRef {
         let boxed = Box::new(FakeForeignObject {
             unknown: RawRuntimeIUnknown {
                 vtbl: &FAKE_FOREIGN_VTBL,
             },
             ref_count: AtomicU32::new(1),
+            drop_count,
         });
         let raw = Box::into_raw(boxed);
-        // SAFETY: raw points to a live FakeForeignObject whose first field is a valid
-        // RawRuntimeIUnknown. Ownership of the initial reference moves into ObjectRef.
+        // SAFETY: `FakeForeignObject` is `repr(C)` with `unknown` first. Casting the
+        // complete allocation pointer gives the field's exact address while retaining
+        // the full-box provenance that AddRef/Release need to access the adjacent
+        // refcount and eventually reconstruct the Box. The initial reference transfers
+        // to the returned ObjectRef.
         unsafe {
-            ObjectRef::from_raw_iunknown_owned(&mut (*raw).unknown as *mut RawRuntimeIUnknown)
+            ObjectRef::from_raw_iunknown_owned(raw.cast::<RawRuntimeIUnknown>())
                 .expect("fake object pointer is non-null")
         }
+    }
+
+    fn fake_foreign_object() -> ObjectRef {
+        fake_foreign_object_with_drop_count(Arc::new(AtomicU32::new(0)))
+    }
+
+    unsafe fn fake_foreign_object_ref_count(raw: *mut RawRuntimeIUnknown) -> u32 {
+        let object = raw.cast::<FakeForeignObject>();
+        // SAFETY: the caller supplies the live complete-allocation-derived interface
+        // pointer minted by `fake_foreign_object_with_drop_count`.
+        unsafe { (*object).ref_count.load(Ordering::Acquire) }
+    }
+
+    #[test]
+    fn fake_foreign_object_addref_release_preserves_complete_allocation_provenance() {
+        let drop_count = Arc::new(AtomicU32::new(0));
+        let object = fake_foreign_object_with_drop_count(Arc::clone(&drop_count));
+        let raw = object.raw_iunknown();
+
+        // SAFETY: `object` owns the initial live reference to the fake allocation.
+        assert_eq!(unsafe { fake_foreign_object_ref_count(raw) }, 1);
+        let clone = object.clone();
+        // SAFETY: the original and clone keep the same fake allocation live.
+        assert_eq!(unsafe { fake_foreign_object_ref_count(raw) }, 2);
+        // SAFETY: `raw` is a borrowed live IUnknown; this constructor takes one
+        // additional reference and returns the matching owned ObjectRef.
+        let retained = unsafe { ObjectRef::from_raw_iunknown_addref(raw) }
+            .expect("borrowed fake object pointer is non-null");
+        // SAFETY: three ObjectRef owners now keep the fake allocation live.
+        assert_eq!(unsafe { fake_foreign_object_ref_count(raw) }, 3);
+
+        drop(object);
+        // SAFETY: `clone` and `retained` still keep the allocation live.
+        assert_eq!(unsafe { fake_foreign_object_ref_count(raw) }, 2);
+        assert_eq!(drop_count.load(Ordering::Acquire), 0);
+        drop(clone);
+        // SAFETY: `retained` still owns the final live reference.
+        assert_eq!(unsafe { fake_foreign_object_ref_count(raw) }, 1);
+        assert_eq!(drop_count.load(Ordering::Acquire), 0);
+        drop(retained);
+        assert_eq!(drop_count.load(Ordering::Acquire), 1);
+        assert_eq!(Arc::strong_count(&drop_count), 1);
     }
 
     /// Elaborate a hand-built `CoreProgram` and run it on vm3 with a chosen host.
