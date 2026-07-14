@@ -3,6 +3,8 @@ Set-StrictMode -Version Latest
 $script:IdealEnvironmentManifestPath = "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv"
 $script:IdealWindowsFixtureManifestPath = "docs/validation/IDEAL_WINDOWS_X64_FIXTURE_MANIFEST_V1.csv"
 $script:IdealEnvironmentCaptureSchema = "oxvba-windows-x64-environment-capture-v1"
+$script:IdealCertificationEnvironmentPlanSchema = "oxvba-windows-x64-certification-environment-plan-v1"
+$script:IdealCertificationEnvironmentPlanSealSchema = "oxvba-windows-x64-certification-environment-plan-seal-v1"
 
 function ConvertTo-IdealCaptureCanonicalJson {
     param([Parameter(Mandatory = $true)]$Value)
@@ -388,6 +390,368 @@ function Assert-IdealCaptureCertificationCaseContract {
         throw "$Owner does not bind the exact controlled environment-capture path"
     }
     return $expectedPath
+}
+
+function ConvertTo-IdealCertificationEnvironmentPlanCanonicalValue {
+    param([Parameter(Mandatory = $true)]$Plan)
+
+    return [pscustomobject][ordered]@{
+        schema_id = [string]$Plan.schema_id
+        schema_version = [int64]$Plan.schema_version
+        plan_id = [string]$Plan.plan_id
+        case_id = [string]$Plan.case_id
+        matrix_id = [string]$Plan.matrix_id
+        row_id = [string]$Plan.row_id
+        environment_id = [string]$Plan.environment_id
+        role = [string]$Plan.role
+        profile = [string]$Plan.profile
+        target_arch = [string]$Plan.target_arch
+        os_build = [string]$Plan.os_build
+        office_product = [string]$Plan.office_product
+        office_version = [string]$Plan.office_version
+        office_build = [string]$Plan.office_build
+        office_channel = [string]$Plan.office_channel
+        office_bitness = [string]$Plan.office_bitness
+        locale = [string]$Plan.locale
+        default_locale = [string]$Plan.default_locale
+        locale_policy = [string]$Plan.locale_policy
+        ansi_codepage = [int64]$Plan.ansi_codepage
+        oem_codepage = [int64]$Plan.oem_codepage
+        snapshot_or_image = [string]$Plan.snapshot_or_image
+        reset_policy = [string]$Plan.reset_policy
+        fixture_manifest = [string]$Plan.fixture_manifest
+        fixture_root_contract_sha256 = [string]$Plan.fixture_root_contract_sha256
+        fixture_recipe_sha256 = [string]$Plan.fixture_recipe_sha256
+        fixture_artifact_sha256 = [string]$Plan.fixture_artifact_sha256
+        environment_capture_path = [string]$Plan.environment_capture_path
+        environment_capture_schema = [string]$Plan.environment_capture_schema
+        owned_process_policy = [string]$Plan.owned_process_policy
+        uia_modal_policy = [string]$Plan.uia_modal_policy
+        required_attestation_schema = [string]$Plan.required_attestation_schema
+        environment_evidence_state = [string]$Plan.environment_evidence_state
+        certification_authority = [bool]$Plan.certification_authority
+        noncertifying = [bool]$Plan.noncertifying
+    }
+}
+
+function Assert-IdealCertificationEnvironmentPlanValue {
+    param(
+        [Parameter(Mandatory = $true)]$Plan,
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)]$Case,
+        [Parameter(Mandatory = $true)]$FixtureRow,
+        [Parameter(Mandatory = $true)]$Contract,
+        [Parameter(Mandatory = $true)]$FixtureFacts,
+        [string]$Owner = "certification environment plan"
+    )
+
+    Assert-WindowsFixtureExactJsonProperties -Value $Plan -Expected @(
+        "schema_id", "schema_version", "plan_id", "case_id", "matrix_id", "row_id",
+        "environment_id", "role", "profile", "target_arch", "os_build", "office_product",
+        "office_version", "office_build", "office_channel", "office_bitness", "locale",
+        "default_locale", "locale_policy", "ansi_codepage", "oem_codepage", "snapshot_or_image", "reset_policy",
+        "fixture_manifest", "fixture_root_contract_sha256", "fixture_recipe_sha256",
+        "fixture_artifact_sha256", "environment_capture_path", "environment_capture_schema",
+        "owned_process_policy", "uia_modal_policy", "required_attestation_schema",
+        "environment_evidence_state", "certification_authority", "noncertifying"
+    ) -Owner $Owner
+    Assert-WindowsFixtureJsonStringProperties -Value $Plan -Properties @(
+        "schema_id", "plan_id", "case_id", "matrix_id", "row_id", "environment_id", "role",
+        "profile", "target_arch", "os_build", "office_product", "office_version", "office_build",
+        "office_channel", "office_bitness", "locale", "default_locale", "locale_policy", "snapshot_or_image",
+        "reset_policy", "fixture_manifest", "fixture_root_contract_sha256", "fixture_recipe_sha256",
+        "fixture_artifact_sha256", "environment_capture_path", "environment_capture_schema",
+        "owned_process_policy", "uia_modal_policy", "required_attestation_schema",
+        "environment_evidence_state"
+    ) -Owner $Owner
+    if (-not (Test-WindowsFixtureJsonInteger -Value $Plan.schema_version) -or
+        [int64]$Plan.schema_version -ne 1 -or
+        -not (Test-WindowsFixtureJsonInteger -Value $Plan.ansi_codepage) -or
+        [int64]$Plan.ansi_codepage -le 0 -or
+        -not (Test-WindowsFixtureJsonInteger -Value $Plan.oem_codepage) -or
+        [int64]$Plan.oem_codepage -le 0 -or
+        $Plan.certification_authority -isnot [bool] -or
+        $Plan.noncertifying -isnot [bool]) {
+        throw "$Owner schema/version/codepage/authority field types are invalid"
+    }
+    foreach ($field in @("ansi_codepage", "oem_codepage")) {
+        try {
+            $encoding = [Text.Encoding]::GetEncoding([int]$Plan.$field)
+            if ([int]$encoding.CodePage -ne [int]$Plan.$field) {
+                throw "resolved codepage differs"
+            }
+        }
+        catch {
+            throw "$Owner $field is not a supported Windows code page"
+        }
+    }
+
+    $environmentId = [string]$Environment.environment_id
+    $expectedCapturePath = Assert-IdealCaptureCertificationCaseContract `
+        -Case $Case `
+        -Environment $Environment `
+        -FixtureRow $FixtureRow `
+        -Contract $Contract `
+        -Owner $Owner
+    $expected = [ordered]@{
+        schema_id = $script:IdealCertificationEnvironmentPlanSchema
+        plan_id = "$environmentId-certification-plan-v1"
+        case_id = [string]$Case.case_id
+        matrix_id = [string]$Case.matrix_id
+        row_id = [string]$Case.row_id
+        environment_id = $environmentId
+        role = [string]$Environment.role
+        profile = [string]$Environment.profile
+        target_arch = [string]$Environment.target_arch
+        os_build = [string]$Environment.os_build
+        office_product = [string]$Environment.office_product
+        office_version = [string]$Environment.office_version
+        office_build = [string]$Environment.office_build
+        office_channel = [string]$Environment.office_channel
+        office_bitness = [string]$Environment.office_bitness
+        locale = [string]$Environment.locale
+        locale_policy = "explicit-non-default"
+        snapshot_or_image = [string]$Environment.snapshot_or_image
+        reset_policy = [string]$Environment.reset_policy
+        fixture_manifest = [string]$Environment.fixture_manifest
+        fixture_root_contract_sha256 = [string]$FixtureFacts.controlled_artifact_root_contract_sha256
+        fixture_recipe_sha256 = [string]$FixtureRow.source_recipe_hash
+        fixture_artifact_sha256 = [string]$FixtureRow.built_artifact_hash
+        environment_capture_path = $expectedCapturePath
+        environment_capture_schema = [string]$Contract.Schema
+        owned_process_policy = [string]$Environment.owned_process_policy
+        uia_modal_policy = [string]$Environment.uia_modal_policy
+        required_attestation_schema = "oxvba-windows-x64-pinned-image-restore-session-attestation-v1"
+        environment_evidence_state = [string]$Environment.evidence_state
+    }
+    foreach ($field in $expected.Keys) {
+        if ([string]$Plan.$field -cne [string]$expected[$field]) {
+            throw "$Owner field '$field' differs from its canonical producer input"
+        }
+    }
+    if ([string]$Environment.role -ne "certification-vm" -or
+        [string]$Environment.profile -ne "windows-x64" -or
+        [string]$Environment.target_arch -ne "x64" -or
+        [string]$Environment.office_bitness -ne "64") {
+        throw "$Owner is not a Windows x64/Office64 certification plan"
+    }
+    foreach ($field in @(
+        "environment_id", "os_build", "office_version", "office_build", "office_channel", "locale",
+        "snapshot_or_image", "fixture_manifest", "fixture_hash"
+    )) {
+        if (Test-WindowsFixturePlaceholder -Value ([string]$Environment.$field)) {
+            throw "$Owner canonical environment retains placeholder '$field=$($Environment.$field)'"
+        }
+    }
+    foreach ($field in @("locale", "default_locale")) {
+        if (Test-WindowsFixturePlaceholder -Value ([string]$Plan.$field)) {
+            throw "$Owner $field must be a concrete locale identity"
+        }
+        try {
+            $culture = [Globalization.CultureInfo]::GetCultureInfo([string]$Plan.$field)
+            if ($culture.IsNeutralCulture -or [string]$culture.Name -cne [string]$Plan.$field) {
+                throw "locale identity is neutral or not canonical"
+            }
+        }
+        catch {
+            throw "$Owner $field is not a canonical supported locale identity"
+        }
+    }
+    if ([string]$Plan.locale -ceq [string]$Plan.default_locale) {
+        throw "$Owner locale must differ from the declared default_locale"
+    }
+    if ([string]$Environment.snapshot_or_image -notmatch '^(?:[A-Za-z0-9._-]+@)?sha256:[0-9a-f]{64}$') {
+        throw "$Owner snapshot_or_image lacks an immutable SHA-256 identity"
+    }
+    foreach ($field in @("fixture_root_contract_sha256", "fixture_recipe_sha256", "fixture_artifact_sha256")) {
+        if ([string]$Plan.$field -notmatch '^sha256:[0-9a-f]{64}$') {
+            throw "$Owner $field lacks an immutable SHA-256 identity"
+        }
+    }
+    if ([string]$Environment.fixture_manifest -cne [string]$FixtureFacts.manifest_path -or
+        [string]$Environment.fixture_hash -cne [string]$FixtureFacts.controlled_artifact_root_contract_sha256) {
+        throw "$Owner fixture manifest/root hash differs from the controlled fixture authority"
+    }
+    if ([string]$FixtureRow.fixture_id -cne [string]$Case.fixture.fixture_id -or
+        [string]$FixtureRow.recipe_id -cne [string]$Case.fixture.recipe_id -or
+        [string]$FixtureRow.built_artifact_id -cne [string]$Case.fixture.built_artifact_id) {
+        throw "$Owner fixture identity differs from the certification case"
+    }
+    if ([string]$Environment.reset_policy -notmatch '(?i)(revert|reset).*(pinned|snapshot|image)|(pinned|snapshot|image).*(revert|reset)') {
+        throw "$Owner reset policy does not require a pinned-image reset/revert"
+    }
+    if ([string]$Environment.owned_process_policy -notmatch '(?i)owned' -or
+        [string]$Environment.owned_process_policy -notmatch '(?i)(never-kill-unowned|kill-owned)') {
+        throw "$Owner owned-process policy does not confine cleanup to recorded owned processes"
+    }
+    if ([string]$Environment.uia_modal_policy -notmatch '(?i)(UIA|UI Automation).*(modal|dialog)') {
+        throw "$Owner UIA policy does not require owned Excel/VBE modal interception"
+    }
+    if ([bool]$Plan.certification_authority -or -not [bool]$Plan.noncertifying) {
+        throw "$Owner must remain noncertifying until trusted restore/session attestation is verified"
+    }
+    $canonicalPlan = ConvertTo-IdealCertificationEnvironmentPlanCanonicalValue -Plan $Plan
+    return Get-IdealCaptureObjectHash -Value $canonicalPlan
+}
+
+function New-IdealCertificationEnvironmentPlanValue {
+    param(
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)]$Case,
+        [Parameter(Mandatory = $true)]$FixtureRow,
+        [Parameter(Mandatory = $true)]$Contract,
+        [Parameter(Mandatory = $true)]$FixtureFacts,
+        [Parameter(Mandatory = $true)][string]$DefaultLocale,
+        [Parameter(Mandatory = $true)][int64]$AnsiCodepage,
+        [Parameter(Mandatory = $true)][int64]$OemCodepage
+    )
+
+    $environmentId = [string]$Environment.environment_id
+    $capturePath = "$($Contract.Root)/$($Contract.Name)"
+    $plan = [pscustomobject][ordered]@{
+        schema_id = $script:IdealCertificationEnvironmentPlanSchema
+        schema_version = 1
+        plan_id = "$environmentId-certification-plan-v1"
+        case_id = [string]$Case.case_id
+        matrix_id = [string]$Case.matrix_id
+        row_id = [string]$Case.row_id
+        environment_id = $environmentId
+        role = [string]$Environment.role
+        profile = [string]$Environment.profile
+        target_arch = [string]$Environment.target_arch
+        os_build = [string]$Environment.os_build
+        office_product = [string]$Environment.office_product
+        office_version = [string]$Environment.office_version
+        office_build = [string]$Environment.office_build
+        office_channel = [string]$Environment.office_channel
+        office_bitness = [string]$Environment.office_bitness
+        locale = [string]$Environment.locale
+        default_locale = $DefaultLocale
+        locale_policy = "explicit-non-default"
+        ansi_codepage = $AnsiCodepage
+        oem_codepage = $OemCodepage
+        snapshot_or_image = [string]$Environment.snapshot_or_image
+        reset_policy = [string]$Environment.reset_policy
+        fixture_manifest = [string]$Environment.fixture_manifest
+        fixture_root_contract_sha256 = [string]$FixtureFacts.controlled_artifact_root_contract_sha256
+        fixture_recipe_sha256 = [string]$FixtureRow.source_recipe_hash
+        fixture_artifact_sha256 = [string]$FixtureRow.built_artifact_hash
+        environment_capture_path = $capturePath
+        environment_capture_schema = [string]$Contract.Schema
+        owned_process_policy = [string]$Environment.owned_process_policy
+        uia_modal_policy = [string]$Environment.uia_modal_policy
+        required_attestation_schema = "oxvba-windows-x64-pinned-image-restore-session-attestation-v1"
+        environment_evidence_state = [string]$Environment.evidence_state
+        certification_authority = $false
+        noncertifying = $true
+    }
+    [void](Assert-IdealCertificationEnvironmentPlanValue `
+        -Plan $plan `
+        -Environment $Environment `
+        -Case $Case `
+        -FixtureRow $FixtureRow `
+        -Contract $Contract `
+        -FixtureFacts $FixtureFacts)
+    return $plan
+}
+
+function Assert-IdealCertificationEnvironmentPlanSealValue {
+    param(
+        [Parameter(Mandatory = $true)]$Seal,
+        [Parameter(Mandatory = $true)]$Plan,
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)]$Case,
+        [Parameter(Mandatory = $true)]$FixtureRow,
+        [Parameter(Mandatory = $true)]$Contract,
+        [Parameter(Mandatory = $true)]$FixtureFacts,
+        [string]$Owner = "certification environment plan seal"
+    )
+
+    Assert-WindowsFixtureExactJsonProperties -Value $Seal -Expected @(
+        "schema_id", "schema_version", "seal_id", "plan_id", "plan_sha256", "environment_id",
+        "case_id", "environment_capture_path", "required_attestation_schema", "attestation_state",
+        "certification_authority", "noncertifying"
+    ) -Owner $Owner
+    Assert-WindowsFixtureJsonStringProperties -Value $Seal -Properties @(
+        "schema_id", "seal_id", "plan_id", "plan_sha256", "environment_id", "case_id",
+        "environment_capture_path", "required_attestation_schema", "attestation_state"
+    ) -Owner $Owner
+    if (-not (Test-WindowsFixtureJsonInteger -Value $Seal.schema_version) -or
+        [int64]$Seal.schema_version -ne 1 -or
+        $Seal.certification_authority -isnot [bool] -or
+        $Seal.noncertifying -isnot [bool]) {
+        throw "$Owner schema/version/authority field types are invalid"
+    }
+    $planHash = Assert-IdealCertificationEnvironmentPlanValue `
+        -Plan $Plan `
+        -Environment $Environment `
+        -Case $Case `
+        -FixtureRow $FixtureRow `
+        -Contract $Contract `
+        -FixtureFacts $FixtureFacts `
+        -Owner "$Owner plan"
+    $expected = [ordered]@{
+        schema_id = $script:IdealCertificationEnvironmentPlanSealSchema
+        seal_id = "$($Plan.plan_id)-seal-v1"
+        plan_id = [string]$Plan.plan_id
+        plan_sha256 = $planHash
+        environment_id = [string]$Plan.environment_id
+        case_id = [string]$Plan.case_id
+        environment_capture_path = [string]$Plan.environment_capture_path
+        required_attestation_schema = [string]$Plan.required_attestation_schema
+        attestation_state = "required-unavailable"
+    }
+    foreach ($field in $expected.Keys) {
+        if ([string]$Seal.$field -cne [string]$expected[$field]) {
+            throw "$Owner field '$field' differs from the immutable plan binding"
+        }
+    }
+    if ([bool]$Seal.certification_authority -or -not [bool]$Seal.noncertifying) {
+        throw "$Owner is only a plan seal and cannot claim certification authority"
+    }
+    return $planHash
+}
+
+function New-IdealCertificationEnvironmentPlanSealValue {
+    param(
+        [Parameter(Mandatory = $true)]$Plan,
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)]$Case,
+        [Parameter(Mandatory = $true)]$FixtureRow,
+        [Parameter(Mandatory = $true)]$Contract,
+        [Parameter(Mandatory = $true)]$FixtureFacts
+    )
+
+    $planHash = Assert-IdealCertificationEnvironmentPlanValue `
+        -Plan $Plan `
+        -Environment $Environment `
+        -Case $Case `
+        -FixtureRow $FixtureRow `
+        -Contract $Contract `
+        -FixtureFacts $FixtureFacts
+    $seal = [pscustomobject][ordered]@{
+        schema_id = $script:IdealCertificationEnvironmentPlanSealSchema
+        schema_version = 1
+        seal_id = "$($Plan.plan_id)-seal-v1"
+        plan_id = [string]$Plan.plan_id
+        plan_sha256 = $planHash
+        environment_id = [string]$Plan.environment_id
+        case_id = [string]$Plan.case_id
+        environment_capture_path = [string]$Plan.environment_capture_path
+        required_attestation_schema = [string]$Plan.required_attestation_schema
+        attestation_state = "required-unavailable"
+        certification_authority = $false
+        noncertifying = $true
+    }
+    [void](Assert-IdealCertificationEnvironmentPlanSealValue `
+        -Seal $seal `
+        -Plan $Plan `
+        -Environment $Environment `
+        -Case $Case `
+        -FixtureRow $FixtureRow `
+        -Contract $Contract `
+        -FixtureFacts $FixtureFacts)
+    return $seal
 }
 
 function Get-IdealDevHostFingerprint {
