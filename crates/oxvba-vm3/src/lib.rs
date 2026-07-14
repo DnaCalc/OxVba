@@ -131,16 +131,28 @@ fn runtime_member_params(func: &oxvba_oxir::OxFunc) -> Vec<RuntimeParamDescripto
         .collect()
 }
 
-fn runtime_member_descriptor(
-    program: &OxProgram,
-    method: &oxvba_oxir::program::OxClassMethod,
-    display_name: &str,
+struct RuntimeMemberDescriptorInput<'a> {
+    program: &'a OxProgram,
+    method: &'a oxvba_oxir::program::OxClassMethod,
+    display_name: &'a str,
     dispatch_index: usize,
     dispatch_id: Option<i32>,
     vtable_slot: Option<u16>,
     is_default_member: bool,
     is_enumerator_member: bool,
-) -> RuntimeMemberDescriptor {
+}
+
+fn runtime_member_descriptor(input: RuntimeMemberDescriptorInput<'_>) -> RuntimeMemberDescriptor {
+    let RuntimeMemberDescriptorInput {
+        program,
+        method,
+        display_name,
+        dispatch_index,
+        dispatch_id,
+        vtable_slot,
+        is_default_member,
+        is_enumerator_member,
+    } = input;
     let proc = program.funcs.get(method.proc.0);
     let params: &'static [RuntimeParamDescriptor] = Box::leak(
         proc.map(runtime_member_params)
@@ -280,18 +292,20 @@ fn runtime_project_interface_descriptor(
             continue;
         };
         let index = members.len();
-        members.push(runtime_member_descriptor(
+        members.push(runtime_member_descriptor(RuntimeMemberDescriptorInput {
             program,
-            implementation_method,
-            &interface_method.name,
-            index,
-            interface_method.dispid.or(implementation_method.dispid),
-            interface_method
+            method: implementation_method,
+            display_name: &interface_method.name,
+            dispatch_index: index,
+            dispatch_id: interface_method.dispid.or(implementation_method.dispid),
+            vtable_slot: interface_method
                 .vtable_slot
                 .or(implementation_method.vtable_slot),
-            interface_method.is_default_member || implementation_method.is_default_member,
-            interface_method.is_enumerator_member || implementation_method.is_enumerator_member,
-        ));
+            is_default_member: interface_method.is_default_member
+                || implementation_method.is_default_member,
+            is_enumerator_member: interface_method.is_enumerator_member
+                || implementation_method.is_enumerator_member,
+        }));
     }
     let members: &'static [RuntimeMemberDescriptor] = Box::leak(members.into_boxed_slice());
     let qualified_name = if program.unit_name.is_empty() {
@@ -3065,21 +3079,21 @@ impl<'h> Vm3<'h> {
         self.exec.programs[self.cur]
             .predeclared_singletons
             .insert(class_idx, value.clone());
-        if let Some(init) = initialize {
-            if let Err(err) = self.run_proc_with_me(self.cur, init, value.clone(), &[], false) {
-                let failed_identity = object_identity(&value);
-                let slot_still_points_to_failed_instance = self.exec.programs[self.cur]
+        if let Some(init) = initialize
+            && let Err(err) = self.run_proc_with_me(self.cur, init, value.clone(), &[], false)
+        {
+            let failed_identity = object_identity(&value);
+            let slot_still_points_to_failed_instance = self.exec.programs[self.cur]
+                .predeclared_singletons
+                .get(&class_idx)
+                .map(|current| object_identity(current) == failed_identity)
+                .unwrap_or(false);
+            if slot_still_points_to_failed_instance {
+                self.exec.programs[self.cur]
                     .predeclared_singletons
-                    .get(&class_idx)
-                    .map(|current| object_identity(current) == failed_identity)
-                    .unwrap_or(false);
-                if slot_still_points_to_failed_instance {
-                    self.exec.programs[self.cur]
-                        .predeclared_singletons
-                        .remove(&class_idx);
-                }
-                return Err(err);
+                    .remove(&class_idx);
             }
+            return Err(err);
         }
         Ok(value)
     }
