@@ -130,6 +130,7 @@ function Stop-RecordedOwnedResources {
 $outputBase = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $repoRoot $OutputRoot }
 $runClaim = Enter-ExcelOracleRunClaim -OutputBase $outputBase -RunId $RunId
 $outputDirectory = [string]$runClaim.output_directory
+$primaryRunFailure = $null
 try {
 $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDirectory "plan.json") -Encoding utf8NoBOM
 
@@ -160,14 +161,16 @@ $containedWorker = Start-ExcelOracleContainedProcess -JobName "OxVbaExcelOracle-
 }
 $job = $containedWorker.job
 $worker = $containedWorker.process
+$workerStartUtc = $worker.StartTime.ToUniversalTime().ToString("o")
+$workerExecutablePath = [string]$worker.Path
 try {
     [ordered]@{
         schema = "oxvba.excel-vba-oracle-containment-ready.v1"
         run_id = $RunId
         containment_token = $containmentToken
         worker_pid = $worker.Id
-        worker_process_start_utc = $worker.StartTime.ToUniversalTime().ToString("o")
-        worker_executable_path = [string]$worker.Path
+        worker_process_start_utc = $workerStartUtc
+        worker_executable_path = $workerExecutablePath
         worker_job_membership_verified = $true
         published_utc = [DateTime]::UtcNow.ToString("o")
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $containmentReadyFile -Encoding utf8NoBOM
@@ -263,6 +266,8 @@ $postCleanup = Resolve-ExcelOraclePostCleanupResult `
     -SelectedCaseDescriptors $selectedCaseDescriptors `
     -RunId $RunId `
     -ExpectedWorkerPid $worker.Id `
+    -ExpectedWorkerStartUtc $workerStartUtc `
+    -ExpectedWorkerExecutablePath $workerExecutablePath `
     -ExpectedContainmentToken $containmentToken `
     -ExpectedDiagnosticOnly (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) `
     -WorkerExitCode $workerExitCode `
@@ -342,8 +347,12 @@ else {
 }
 Write-Output "excel-vba-oracle: $outputDirectory"
 }
+catch {
+    $primaryRunFailure = $_.Exception
+    throw
+}
 finally {
     # Release only the exact stream/path returned by the successful CreateNew
     # claim. Failed run directories and evidence remain intact and fail closed.
-    Exit-ExcelOracleRunClaim -Claim $runClaim
+    Exit-ExcelOracleRunClaim -Claim $runClaim -PrimaryFailure $primaryRunFailure
 }

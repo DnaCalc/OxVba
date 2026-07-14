@@ -86,10 +86,11 @@ function ConvertFrom-ExcelOracleRuntimeErr {
     param([Parameter(Mandatory = $true)][string]$Json)
 
     $err = $Json | ConvertFrom-Json
-    foreach ($field in @("number", "source", "description", "help_file", "help_context", "erl")) {
-        if ($err.PSObject.Properties.Name -notcontains $field) {
-            throw "excel-vba-oracle-contract: runtime Err payload is missing '$field'"
-        }
+    $fields = @("number", "source", "description", "help_file", "help_context", "erl")
+    if ($null -eq $err -or (@($err.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($fields | Sort-Object) -join "`n") -or
+        @(@("number", "help_context", "erl") | Where-Object { $err.$_ -isnot [int] -and $err.$_ -isnot [long] }).Count -gt 0 -or
+        @(@("source", "description", "help_file") | Where-Object { $err.$_ -isnot [string] }).Count -gt 0) {
+        throw "excel-vba-oracle-contract: runtime Err payload has an invalid exact field/type shape"
     }
     return [pscustomobject]@{
         schema = "oxvba.excel-vba-oracle-runtime-err.v1"
@@ -494,9 +495,26 @@ function Enter-ExcelOracleRunClaim {
 }
 
 function Exit-ExcelOracleRunClaim {
-    param([Parameter(Mandatory = $true)]$Claim)
+    param(
+        [Parameter(Mandatory = $true)]$Claim,
+        [AllowNull()][Exception]$PrimaryFailure = $null,
+        [scriptblock]$RemoveClaim = { param($Path) Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
+    )
+    $cleanupErrors = [Collections.Generic.List[string]]::new()
     try { $Claim.stream.Dispose() }
-    finally { Remove-Item -LiteralPath ([string]$Claim.claim_path) -Force -ErrorAction SilentlyContinue }
+    catch { $cleanupErrors.Add("claim stream dispose failed: $($_.Exception.Message)") }
+    try { & $RemoveClaim ([string]$Claim.claim_path) }
+    catch { $cleanupErrors.Add("claim marker deletion failed: $($_.Exception.Message)") }
+    if (Test-Path -LiteralPath ([string]$Claim.claim_path)) {
+        $cleanupErrors.Add("claim marker remains after deletion attempt: $([string]$Claim.claim_path)")
+    }
+    if ($cleanupErrors.Count -gt 0) {
+        $cleanupFailure = "excel-vba-oracle-contract: run claim cleanup failed: $($cleanupErrors -join '; ')"
+        if ($null -ne $PrimaryFailure) {
+            throw "excel-vba-oracle-contract: primary failure: $($PrimaryFailure.Message); $cleanupFailure"
+        }
+        throw $cleanupFailure
+    }
 }
 
 function ConvertFrom-ExcelOracleGuardianControl {
@@ -897,6 +915,8 @@ function Resolve-ExcelOraclePostCleanupResult {
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$SelectedCaseDescriptors,
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][int]$ExpectedWorkerPid,
+        [Parameter(Mandatory = $true)][string]$ExpectedWorkerStartUtc,
+        [Parameter(Mandatory = $true)][string]$ExpectedWorkerExecutablePath,
         [Parameter(Mandatory = $true)][string]$ExpectedContainmentToken,
         [Parameter(Mandatory = $true)][bool]$ExpectedDiagnosticOnly,
         [Parameter(Mandatory = $true)][int]$WorkerExitCode,
@@ -942,9 +962,10 @@ function Resolve-ExcelOraclePostCleanupResult {
         [string]$Results.schema -cne "oxvba.excel-vba-oracle-results.v1" -or [string]$Results.run_id -cne $RunId) {
         $errors.Add("results schema or run identity is invalid")
     }
+    $generatedUtc = $null
     try {
         if ($Results.generated_utc -isnot [string]) { throw "not a string" }
-        [void][DateTime]::Parse([string]$Results.generated_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+        $generatedUtc = [DateTime]::Parse([string]$Results.generated_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
     }
     catch { $errors.Add("results generated_utc is invalid") }
     if (($Results.worker_pid -isnot [long] -and $Results.worker_pid -isnot [int]) -or [int]$Results.worker_pid -ne $ExpectedWorkerPid) {
@@ -970,6 +991,8 @@ function Resolve-ExcelOraclePostCleanupResult {
         [string]$authority.schema -cne "oxvba.excel-vba-oracle-containment-ready.v1" -or
         [string]$authority.run_id -cne $RunId -or [string]$authority.containment_token -cne $ExpectedContainmentToken -or
         ($authority.worker_pid -isnot [long] -and $authority.worker_pid -isnot [int]) -or [int]$authority.worker_pid -ne $ExpectedWorkerPid -or
+        [string]$authority.worker_process_start_utc -cne $ExpectedWorkerStartUtc -or
+        -not [StringComparer]::OrdinalIgnoreCase.Equals([string]$authority.worker_executable_path, $ExpectedWorkerExecutablePath) -or
         $authority.worker_job_membership_verified -isnot [bool] -or -not [bool]$authority.worker_job_membership_verified -or
         [string]::IsNullOrWhiteSpace([string]$authority.worker_process_start_utc) -or
         [string]::IsNullOrWhiteSpace([string]$authority.worker_executable_path) -or
@@ -978,8 +1001,12 @@ function Resolve-ExcelOraclePostCleanupResult {
     }
     else {
         try {
-            [void][DateTime]::Parse([string]$authority.worker_process_start_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
-            [void][DateTime]::Parse([string]$authority.published_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+            $expectedWorkerStart = [DateTime]::Parse($ExpectedWorkerStartUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            $authorityWorkerStart = [DateTime]::Parse([string]$authority.worker_process_start_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            $authorityPublished = [DateTime]::Parse([string]$authority.published_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            if ($authorityWorkerStart -ne $expectedWorkerStart -or $authorityPublished -lt $authorityWorkerStart -or $null -eq $generatedUtc -or $generatedUtc -lt $authorityPublished) {
+                throw "worker start/publish/result timestamp order is invalid"
+            }
         }
         catch { $errors.Add("results containment authority timestamps are invalid") }
     }
@@ -1047,6 +1074,8 @@ function Resolve-ExcelOraclePostCleanupResult {
             $errors.Add("case result $index observed Excel PID is invalid")
         }
         if ($null -ne $case.transport_error -and $case.transport_error -isnot [string]) { $errors.Add("case result $index transport type is invalid") }
+        if ($null -ne $case.run_value -and $case.run_value -isnot [string]) { $errors.Add("case result $index run_value type is invalid") }
+        if ($null -ne $case.macro_failure_disposition -and $case.macro_failure_disposition -isnot [string]) { $errors.Add("case result $index macro failure disposition type is invalid") }
 
         $descriptor = if ($index -lt $SelectedCaseDescriptors.Count) { $SelectedCaseDescriptors[$index] } else { $null }
         if ($null -eq $descriptor) {
@@ -1172,7 +1201,7 @@ function Resolve-ExcelOraclePostCleanupResult {
         $compileEvents = @($compileLedger.records)
         $runEvents = @($runLedger.records)
         $compileHealthy = Test-GuardianOperationHealthy -Events $compileEvents
-        $runHealthy = if ([string]$case.run_status -ceq "not-run") { $false } else { Test-GuardianOperationHealthy -Events $runEvents }
+        $runHealthy = Test-GuardianOperationHealthy -Events $runEvents
         $compileErrorComplete = if ($null -ne $descriptor -and $null -ne $descriptor.expected_selected_token -and $null -ne $descriptor.expected_expanded_line) {
             Test-CompileErrorEvidence -Events $compileEvents -InjectedSource ([string]$descriptor.module_source) -ExpectedToken ([string]$descriptor.expected_selected_token) -ExpectedLine ([string]$descriptor.expected_expanded_line)
         } else { $false }
@@ -1190,12 +1219,27 @@ function Resolve-ExcelOraclePostCleanupResult {
             }
         }
 
+        # Compiler outcome authority comes from the exact command, Execute
+        # result, active context, and guardian ledger. An Execute exception is
+        # always a harness failure; a coincident modal cannot downgrade it into
+        # a language compile error without future independent evidence.
+        $derivedCompileStatus = if (-not $compileCommandValid -or -not $compileExecutionValid -or -not $compileContextValid) { "harness-error" }
+            elseif ($null -ne $case.compile_execution.exception) { "harness-error" }
+            elseif ($compileErrorObserved) { "compile-error" }
+            elseif (-not [bool]$case.compile_command.enabled_after -and (Test-NoDialogObservations -Events $compileEvents)) { "ok" }
+            else { "no-dialog-unverified" }
+        $shouldInvoke = $derivedCompileStatus -ceq "ok" -and $null -ne $descriptor.run_procedure
+
         $evidenceStatusValid = $false
+        $guardianHealthyBeforeCleanup = $false
         if ($null -ne $case.evidence_status) {
             $evidenceFields = @("schema", "guardian_healthy_before_cleanup", "compile_operation_healthy", "run_operation_healthy", "compile_error_modal_complete", "ambiguous_macro_modal_and_dismissal_complete", "runtime_error_modal_and_dismissal_complete", "authoritative_evidence_passed")
             $evidenceStatusValid = (@($case.evidence_status.PSObject.Properties.Name | Sort-Object) -join "`n") -ceq (@($evidenceFields | Sort-Object) -join "`n") -and
                 [string]$case.evidence_status.schema -ceq "oxvba.excel-vba-oracle-evidence-status.v1" -and
                 @($evidenceFields | Where-Object { $_ -ne "schema" -and $case.evidence_status.$_ -isnot [bool] }).Count -eq 0
+            if ($evidenceStatusValid) {
+                $guardianHealthyBeforeCleanup = [bool]$case.evidence_status.guardian_healthy_before_cleanup
+            }
             if ($evidenceStatusValid -and
                 ([bool]$case.evidence_status.compile_operation_healthy -ne $compileHealthy -or
                  [bool]$case.evidence_status.run_operation_healthy -ne $runHealthy -or
@@ -1208,20 +1252,15 @@ function Resolve-ExcelOraclePostCleanupResult {
             if (-not $evidenceStatusValid) { $errors.Add("case result $index evidence_status does not match independently derived evidence") }
         }
 
-        $derivedCompileStatus = if (-not $compileCommandValid -or -not $compileExecutionValid -or -not $compileContextValid) { "harness-error" }
-            elseif ($compileErrorObserved) { "compile-error" }
-            elseif ($null -ne $case.compile_execution.exception) { "harness-error" }
-            elseif (-not [bool]$case.compile_command.enabled_after -and (Test-NoDialogObservations -Events $compileEvents)) { "ok" }
-            else { "no-dialog-unverified" }
-
         $runtimeMeasurementMatchesDescriptor = $runtimeMeasurementValid
+        $entryObserved = $false
         if ($runtimeMeasurementMatchesDescriptor) {
             $expectedInvocationEntry = $descriptor.run_procedure
             $expectedProbeTarget = $descriptor.macro_probe_target
             $invocationEntryExists = $null -ne $expectedInvocationEntry
             $probeTargetExists = $null -ne $expectedProbeTarget -and $null -ne $expectedInvocationEntry -and
                 [string]$expectedProbeTarget -ceq [string]$expectedInvocationEntry
-            $invocationObserved = $derivedCompileStatus -ceq "ok" -and $null -ne $expectedInvocationEntry
+            $entryObserved = [bool]$case.runtime_measurement.invocation_entry_observed
             $runtimeMeasurementMatchesDescriptor = [bool]$case.runtime_measurement.access_vbom -and
                 (($null -eq $expectedInvocationEntry -and $null -eq $case.runtime_measurement.invocation_entry) -or
                  ($null -ne $expectedInvocationEntry -and [string]$case.runtime_measurement.invocation_entry -ceq [string]$expectedInvocationEntry)) -and
@@ -1230,23 +1269,69 @@ function Resolve-ExcelOraclePostCleanupResult {
                  ($null -ne $expectedProbeTarget -and [string]$case.runtime_measurement.macro_probe_target -ceq [string]$expectedProbeTarget)) -and
                 [bool]$case.runtime_measurement.macro_probe_target_exists -eq $probeTargetExists -and
                 [int]$case.runtime_measurement.automation_security -eq 1 -and [bool]$case.runtime_measurement.macros_configured_for_automation -and
-                [bool]$case.runtime_measurement.invocation_entry_observed -eq $invocationObserved -and
-                [bool]$case.runtime_measurement.macros_runnable_entry -eq $invocationObserved -and
-                (($invocationObserved -and $case.runtime_measurement.invocation_observation -is [string] -and
+                [bool]$case.runtime_measurement.macros_runnable_entry -eq $entryObserved -and
+                (($entryObserved -and $case.runtime_measurement.invocation_observation -is [string] -and
                     -not [string]::IsNullOrWhiteSpace([string]$case.runtime_measurement.invocation_observation)) -or
-                 (-not $invocationObserved -and $null -eq $case.runtime_measurement.invocation_observation))
+                 (-not $entryObserved -and $null -eq $case.runtime_measurement.invocation_observation))
             if (-not $runtimeMeasurementMatchesDescriptor) { $errors.Add("case result $index runtime measurement does not match the selected descriptor and observed invocation contract") }
         }
 
-        $derivedRunStatus = if ($derivedCompileStatus -cne "ok" -or $null -eq $descriptor.run_procedure) { "not-run" }
-            elseif (-not $runtimeMeasurementMatchesDescriptor) { "runtime-evidence-invalid" }
-            elseif ($runtimeErrorComplete) { "runtime-error-modal" }
-            elseif ($ambiguousComplete) { "missing-macro" }
-            elseif ($null -ne $case.runtime_err) { "runtime-err-captured" }
-            elseif ($runHealthy -and (Test-NoDialogObservations -Events $runEvents)) { "ok" }
-            else { "non-macro-runtime-failure" }
+        $runValueErrMatches = $false
+        if ($case.run_value -is [string] -and $null -ne $case.runtime_err -and $runtimeErrValid) {
+            try {
+                $parsedRunValueErr = ConvertFrom-ExcelOracleRuntimeErr -Json ([string]$case.run_value)
+                $runValueErrMatches = @(@("number", "source", "description", "help_file", "help_context", "erl") | Where-Object { $parsedRunValueErr.$_ -ne $case.runtime_err.$_ }).Count -eq 0
+            }
+            catch { $runValueErrMatches = $false }
+        }
+        $derivedMacroDisposition = $null
+        $ambiguousValueShape = $runtimeMeasurementMatchesDescriptor -and $case.run_value -is [string] -and
+            -not [string]::IsNullOrWhiteSpace([string]$descriptor.invocation_observation_prefix) -and
+            ([string]$case.run_value).StartsWith([string]$descriptor.invocation_observation_prefix, [StringComparison]::Ordinal)
+        if ($ambiguousValueShape) {
+            $macroMessage = ([string]$case.run_value).Substring(([string]$descriptor.invocation_observation_prefix).Length)
+            if (-not [string]::IsNullOrWhiteSpace($macroMessage)) {
+                $derivedMacroDisposition = Get-ExcelOracleMacroFailureDisposition -Message $macroMessage -CompileStatus $derivedCompileStatus `
+                    -AccessVbom ([bool]$case.runtime_measurement.access_vbom) -RunnableEntryObserved $entryObserved `
+                    -TargetExists ([bool]$case.runtime_measurement.macro_probe_target_exists)
+            }
+        }
+        $noRunPayload = $runEvents.Count -eq 0 -and $null -eq $case.run_value -and $null -eq $case.runtime_err -and $null -eq $case.macro_failure_disposition
+        $returnSuccessShape = $shouldInvoke -and $runHealthy -and $runtimeMeasurementMatchesDescriptor -and $entryObserved -and
+            [string]$case.runtime_measurement.invocation_observation -ceq "qualified-entry-returned" -and
+            (Test-NoDialogObservations -Events $runEvents) -and $case.run_value -is [string] -and $null -eq $case.runtime_err
+        $fullErrShape = $shouldInvoke -and $runHealthy -and $runtimeMeasurementMatchesDescriptor -and $entryObserved -and
+            [string]$case.runtime_measurement.invocation_observation -ceq "qualified-entry-returned" -and
+            (Test-NoDialogObservations -Events $runEvents) -and $runValueErrMatches
+        $ambiguousShape = $shouldInvoke -and $runHealthy -and $runtimeMeasurementMatchesDescriptor -and $entryObserved -and
+            [string]$case.runtime_measurement.invocation_observation -ceq "case-specific-return-sentinel" -and
+            $ambiguousComplete -and -not $runtimeErrorComplete -and $null -eq $case.runtime_err -and $ambiguousValueShape -and
+            [string]$derivedMacroDisposition -ceq "missing-macro"
+        $runtimeModalShape = $shouldInvoke -and $runHealthy -and $runtimeMeasurementMatchesDescriptor -and $entryObserved -and
+            [string]$case.runtime_measurement.invocation_observation -ceq "owned-runtime-error-modal" -and
+            $runtimeErrorComplete -and -not $ambiguousComplete -and $null -eq $case.run_value -and $null -eq $case.runtime_err
+        if (-not $shouldInvoke -and [bool]$case.excel_ownership_recorded -and (-not $noRunPayload -or $entryObserved)) {
+            $errors.Add("case result $index compile-not-run shape contains runtime operation, payload, Err, disposition, or observation evidence")
+        }
+        $runtimeShapeCount = @(@($returnSuccessShape, $fullErrShape, $ambiguousShape, $runtimeModalShape) | Where-Object { $_ }).Count
+        if ($shouldInvoke -and [bool]$case.excel_ownership_recorded -and $runtimeShapeCount -ne 1) {
+            $errors.Add("case result $index runtime evidence does not form exactly one admitted mutually exclusive outcome")
+        }
+        $derivedRunStatus = if (-not $shouldInvoke) { "not-run" }
+            elseif ($runtimeModalShape) { "runtime-error-modal" }
+            elseif ($ambiguousShape) { "missing-macro" }
+            elseif ($fullErrShape) { "runtime-err-captured" }
+            elseif ($returnSuccessShape) { "ok" }
+            else { "runtime-evidence-invalid" }
+        $expectedMacroDisposition = if ($ambiguousShape) { $derivedMacroDisposition }
+            elseif ($runtimeModalShape) { "non-macro-runtime-failure" }
+            else { $null }
         if ([string]$case.compile_status -cne $derivedCompileStatus) { $errors.Add("case result $index compile status contradicts command/execution/modal evidence") }
         if ([string]$case.run_status -cne $derivedRunStatus) { $errors.Add("case result $index run status contradicts invocation/runtime/modal evidence") }
+        if (($null -eq $expectedMacroDisposition -and $null -ne $case.macro_failure_disposition) -or
+            ($null -ne $expectedMacroDisposition -and [string]$case.macro_failure_disposition -cne [string]$expectedMacroDisposition)) {
+            $errors.Add("case result $index macro failure disposition contradicts derived runtime evidence")
+        }
 
         $behaviorPassed = $null -ne $descriptor -and $derivedCompileStatus -ceq [string]$descriptor.expected_compile_status -and
             $derivedRunStatus -ceq [string]$descriptor.expected_run_status
@@ -1260,7 +1345,7 @@ function Resolve-ExcelOraclePostCleanupResult {
         $cleanupPassed = $case.excel_ownership_recorded -is [bool] -and [bool]$case.excel_ownership_recorded -and
             [string]$case.cleanup_status -ceq "owned-process-zero" -and @($case.cleanup_authority_errors).Count -eq 0
         $derivedCasePasses.Add([bool]($behaviorPassed -and $runtimeMeasurementMatchesDescriptor -and $runtimeErrValid -and
-            $evidenceStatusValid -and $authoritativeEvidencePassed -and $cleanupPassed))
+            $evidenceStatusValid -and $guardianHealthyBeforeCleanup -and $authoritativeEvidencePassed -and $cleanupPassed))
     }
     if ($caseFieldSetInvalid) {
         return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }

@@ -157,18 +157,29 @@ function New-TestPostCleanupCase {
         run_procedure = $descriptor.run_procedure
         run_status = $RunStatus
         expected_run_status = $descriptor.expected_run_status
-        run_value = $descriptor.expected_value
-        runtime_err = if ($null -ne $descriptor.expected_runtime_err) { [ordered]@{
+        run_value = if (-not $runHealthy) { $null } elseif ($null -ne $descriptor.expected_runtime_err) {
+            [ordered]@{ number = [int]$descriptor.expected_runtime_err.number; source = [string]$descriptor.expected_runtime_err.source; description = [string]$descriptor.expected_runtime_err.description; help_file = [string]$descriptor.expected_runtime_err.help_file; help_context = [int]$descriptor.expected_runtime_err.help_context; erl = [int]$descriptor.expected_runtime_err.erl } | ConvertTo-Json -Compress
+        } elseif ([string]$descriptor.id -eq "ambiguous-macro-failure") { "oracle-ambiguous-entry-observed:Cannot run the macro" }
+          else { $descriptor.expected_value }
+        runtime_err = if ($runHealthy -and $null -ne $descriptor.expected_runtime_err) { [ordered]@{
             schema = "oxvba.excel-vba-oracle-runtime-err.v1"; number = [int]$descriptor.expected_runtime_err.number; source = [string]$descriptor.expected_runtime_err.source
             description = [string]$descriptor.expected_runtime_err.description; help_file = [string]$descriptor.expected_runtime_err.help_file
             help_context = [int]$descriptor.expected_runtime_err.help_context; erl = [int]$descriptor.expected_runtime_err.erl
         } } else { $null }
-        macro_failure_disposition = $null
+        macro_failure_disposition = if (-not $runHealthy) { $null }
+            elseif ([string]$descriptor.id -eq "ambiguous-macro-failure") { "missing-macro" }
+            elseif ([string]$descriptor.id -eq "runtime-unhandled-modal") { "non-macro-runtime-failure" }
+            else { $null }
         runtime_measurement = if ($hasExecutionEvidence) { [ordered]@{
             schema = "oxvba.excel-vba-oracle-runtime-measurement.v1"; measured_utc = "2026-07-14T00:00:05Z"; access_vbom = $true
             invocation_entry = $descriptor.run_procedure; invocation_entry_exists = $null -ne $descriptor.run_procedure
             macro_probe_target = $descriptor.macro_probe_target; macro_probe_target_exists = $null -ne $descriptor.macro_probe_target -and $null -ne $descriptor.run_procedure -and [string]$descriptor.macro_probe_target -ceq [string]$descriptor.run_procedure; automation_security = 1
-            macros_configured_for_automation = $true; invocation_entry_observed = $runHealthy; invocation_observation = if ($runHealthy) { "fixture" } else { $null }; macros_runnable_entry = $runHealthy
+            macros_configured_for_automation = $true; invocation_entry_observed = $runHealthy
+            invocation_observation = if (-not $runHealthy) { $null }
+                elseif ([string]$descriptor.id -eq "ambiguous-macro-failure") { "case-specific-return-sentinel" }
+                elseif ([string]$descriptor.id -eq "runtime-unhandled-modal") { "owned-runtime-error-modal" }
+                else { "qualified-entry-returned" }
+            macros_runnable_entry = $runHealthy
         } } else { $null }
         transport_error = $TransportError
         run_dialogs = @($runEvents)
@@ -245,6 +256,8 @@ function Invoke-TestPostCleanupResolution {
         [int]$WorkerExitCode = 0,
         [bool]$DiagnosticOnly = $false,
         [int]$WorkerPid = 43210,
+        [string]$WorkerStartUtc = "2026-07-14T00:00:01Z",
+        [string]$WorkerExecutablePath = "C:\Program Files\PowerShell\7\pwsh.exe",
         [string]$ContainmentToken = "11111111-2222-3333-4444-555555555555",
         [bool]$WorkerQuiesced = $true,
         [bool]$WorkerTimedOut = $false,
@@ -252,7 +265,8 @@ function Invoke-TestPostCleanupResolution {
     )
     if ($null -eq $SelectedCaseDescriptors) { $SelectedCaseDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds $ExpectedCaseIds) }
     return Resolve-ExcelOraclePostCleanupResult -Results $Results -ExcelLedger $ExcelLedger -HelperLedger $HelperLedger `
-        -SelectedCaseDescriptors $SelectedCaseDescriptors -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedContainmentToken $ContainmentToken `
+        -SelectedCaseDescriptors $SelectedCaseDescriptors -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedWorkerStartUtc $WorkerStartUtc `
+        -ExpectedWorkerExecutablePath $WorkerExecutablePath -ExpectedContainmentToken $ContainmentToken `
         -ExpectedDiagnosticOnly $DiagnosticOnly -WorkerExitCode $WorkerExitCode -WorkerQuiesced $WorkerQuiesced -WorkerTimedOut $WorkerTimedOut
 }
 
@@ -599,12 +613,57 @@ $fiveCompleteExcelLedger = New-TestPostCleanupLedger -CaseIds $fiveSelectedIds -
 $fiveCompleteHelperLedger = New-TestPostCleanupLedger -CaseIds $fiveSelectedIds -Guardian
 $fiveCompleteResolution = Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds
 Assert-True ([bool]$fiveCompleteResolution.valid -and [string]$fiveCompleteResolution.disposition -eq "complete-success") "all five default descriptors must derive their compile/run outcomes from exact nested evidence"
+
+# Permanent contradictions from fresh-eyes review: no worker-authored outcome
+# label or aggregate Boolean may repair incompatible retained evidence.
+$compileModalWithExceptionResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$compileModalWithExceptionResults.cases[1].compile_execution.exception = [pscustomobject][ordered]@{
+    schema = "oxvba.excel-vba-oracle-compile-exception.v1"; message = "well-formed Execute exception"
+    hresult = "0x80004005"; type = "System.Runtime.InteropServices.COMException"
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $compileModalWithExceptionResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "compile modal plus non-null Execute exception must derive harness-error before comparing the compile-error label"
+$falseGuardianHealthResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$falseGuardianHealthResults.cases[0].evidence_status.guardian_healthy_before_cleanup = $false
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $falseGuardianHealthResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "a successful case must independently require guardian_healthy_before_cleanup=true"
+$compileNotRunWithRunLedgerResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$compileNotRunWithRunLedgerResults.cases[1].run_dialogs = @(New-TestGuardianOperationEvents -CaseId "compile-failure" -Phase run -ExcelPid 7102 -DialogKind none)
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $compileNotRunWithRunLedgerResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "compile-not-run label must not suppress a contradictory healthy run-operation ledger"
+$attackerRuntimeErrValueResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$attackerRuntimeErrValueResults.cases[4].run_value = "attacker text"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $attackerRuntimeErrValueResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "runtime-full-err must bind the returned exact Err JSON to the separately parsed runtime_err"
+$ambiguousWithUnrelatedErrResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$ambiguousWithUnrelatedErrResults.cases[2].runtime_err = [pscustomobject][ordered]@{
+    schema = "oxvba.excel-vba-oracle-runtime-err.v1"; number = 5; source = "attacker"; description = "unrelated"
+    help_file = ""; help_context = 0; erl = 0
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $ambiguousWithUnrelatedErrResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "ambiguous macro outcome must exclude any unrelated runtime_err payload"
+$ambiguousWithoutRuntimeMeasurementResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$ambiguousWithoutRuntimeMeasurementResults.cases[2].runtime_measurement = $null
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $ambiguousWithoutRuntimeMeasurementResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "missing ambiguous runtime measurement must fail closed without dereferencing worker-authored labels"
+$successWithRuntimeErrResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$successWithRuntimeErrResults.cases[0].runtime_err = Copy-TestJsonObject -Value $ambiguousWithUnrelatedErrResults.cases[2].runtime_err
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $successWithRuntimeErrResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "return-value success must exclude runtime Err evidence"
+$successWithRuntimeModalResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$successWithRuntimeModalResults.cases[0].run_dialogs = @(New-TestGuardianOperationEvents -CaseId "success" -Phase run -ExcelPid 7101 -DialogKind runtime-error)
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $successWithRuntimeModalResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "return-value success must exclude runtime modal evidence"
+$wrongInvocationObservationResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$wrongInvocationObservationResults.cases[0].runtime_measurement.invocation_observation = "attacker-observation"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongInvocationObservationResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "runtime outcome derivation must require the exact case-specific invocation observation"
+
 $runtimeDiagnosticIds = @("runtime-unhandled-modal")
 $runtimeDiagnosticCase = New-TestPostCleanupCase -Id $runtimeDiagnosticIds[0] -OwnedPid 7199 -ObservedPid 7199
 $runtimeDiagnosticResults = New-TestPostCleanupResults -Cases @($runtimeDiagnosticCase) -SelectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true
 $runtimeDiagnosticResolution = Invoke-TestPostCleanupResolution -Results $runtimeDiagnosticResults -ExcelLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -FirstPid 7199) `
     -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true
 Assert-True ([bool]$runtimeDiagnosticResolution.valid -and [string]$runtimeDiagnosticResolution.disposition -eq "complete-success") "bounded unhandled-runtime diagnostic must derive its modal outcome from exact nested evidence"
+$runtimeDiagnosticWithErrResults = Copy-TestJsonObject -Value $runtimeDiagnosticResults
+$runtimeDiagnosticWithErrResults.cases[0].runtime_err = Copy-TestJsonObject -Value $ambiguousWithUnrelatedErrResults.cases[2].runtime_err
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $runtimeDiagnosticWithErrResults -ExcelLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -FirstPid 7199) `
+    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true).valid) "runtime diagnostic modal shape must exclude a runtime_err payload"
+$runtimeDiagnosticWithValueResults = Copy-TestJsonObject -Value $runtimeDiagnosticResults
+$runtimeDiagnosticWithValueResults.cases[0].run_value = "attacker value"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $runtimeDiagnosticWithValueResults -ExcelLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -FirstPid 7199) `
+    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true).valid) "runtime diagnostic modal shape must exclude a return value"
 $preOwnershipCase = New-TestPostCleanupCase -Id $fiveSelectedIds[0] -Passed $false -OwnershipRecorded $false -OwnedPid $null -ObservedPid 9123 -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "durable ownership write failed"
 $preOwnershipResults = New-TestPostCleanupResults -Cases @($preOwnershipCase) -AggregatePassed $false -SelectedCaseIds $fiveSelectedIds
 $emptyLedger = New-TestPostCleanupLedger -CaseIds @()
@@ -632,6 +691,18 @@ Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $null -ExcelL
 $wrongWorkerResults = Copy-TestJsonObject -Value $completeResults
 $wrongWorkerResults.worker_pid = 99999
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongWorkerResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "foreign results worker PID must fail"
+$wrongWorkerStartResults = Copy-TestJsonObject -Value $completeResults
+$wrongWorkerStartResults.containment_authority.worker_process_start_utc = "2026-07-14T00:00:00Z"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongWorkerStartResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "plausible but foreign worker start time must not replace the retained supervisor Process identity"
+$wrongWorkerPathResults = Copy-TestJsonObject -Value $completeResults
+$wrongWorkerPathResults.containment_authority.worker_executable_path = "C:\Program Files\PowerShell\7-preview\pwsh.exe"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongWorkerPathResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "plausible but foreign worker executable path must not replace the retained supervisor Process identity"
+$publishedBeforeWorkerStartResults = Copy-TestJsonObject -Value $completeResults
+$publishedBeforeWorkerStartResults.containment_authority.published_utc = "2026-07-14T00:00:00Z"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $publishedBeforeWorkerStartResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "containment publication must not predate the exact worker start"
+$resultsBeforeContainmentResults = Copy-TestJsonObject -Value $completeResults
+$resultsBeforeContainmentResults.generated_utc = "2026-07-14T00:00:01Z"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $resultsBeforeContainmentResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "results generation must not predate containment publication"
 $missingWorkerFieldResults = Copy-TestJsonObject -Value $completeResults
 $missingWorkerFieldResults.PSObject.Properties.Remove("worker_pid")
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $missingWorkerFieldResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "missing results authority field must return invalid without throwing"
@@ -836,6 +907,34 @@ finally {
     Remove-Item -LiteralPath $claimRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$claimCleanupRoot = Join-Path ([IO.Path]::GetTempPath()) "oxvba-oracle-claim-cleanup-$([Guid]::NewGuid().ToString('N'))"
+$deletionFailureClaim = $null
+try {
+    $deletionFailureClaim = Enter-ExcelOracleRunClaim -OutputBase $claimCleanupRoot -RunId "delete-failure"
+    $combinedFailureObserved = $false
+    try {
+        Exit-ExcelOracleRunClaim -Claim $deletionFailureClaim -PrimaryFailure ([InvalidOperationException]::new("injected primary failure")) `
+            -RemoveClaim { param($Path) throw "injected deletion failure for $Path" }
+    }
+    catch {
+        $combinedFailureObserved = $_.Exception.Message -match "injected primary failure" -and $_.Exception.Message -match "injected deletion failure"
+    }
+    Assert-True $combinedFailureObserved "claim deletion failure must surface without erasing the primary failure context"
+    Assert-True (Test-Path -LiteralPath $deletionFailureClaim.claim_path) "injected deletion failure must leave the exact marker visible for fail-closed diagnosis"
+    Remove-Item -LiteralPath $deletionFailureClaim.claim_path -Force -ErrorAction Stop
+
+    $staleMarkerClaim = Enter-ExcelOracleRunClaim -OutputBase $claimCleanupRoot -RunId "stale-marker"
+    $staleMarkerRejected = $false
+    try { Exit-ExcelOracleRunClaim -Claim $staleMarkerClaim -RemoveClaim { param($Path) } }
+    catch { $staleMarkerRejected = $_.Exception.Message -match "claim marker remains after deletion attempt" }
+    Assert-True ($staleMarkerRejected -and (Test-Path -LiteralPath $staleMarkerClaim.claim_path)) "a no-op deletion must be detected by exact post-cleanup marker absence verification"
+    Remove-Item -LiteralPath $staleMarkerClaim.claim_path -Force -ErrorAction Stop
+}
+finally {
+    if ($deletionFailureClaim -and $deletionFailureClaim.stream) { $deletionFailureClaim.stream.Dispose() }
+    Remove-Item -LiteralPath $claimCleanupRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $failureRoot = Join-Path ([IO.Path]::GetTempPath()) "oxvba-oracle-claim-failure-$([Guid]::NewGuid().ToString('N'))"
 $failedClaim = $null
 $failedClaimPath = $null
@@ -879,7 +978,7 @@ foreach ($field in @("number", "source", "description", "help_file", "help_conte
 }
 $missingErrRejected = $false
 try { [void](ConvertFrom-ExcelOracleRuntimeErr -Json '{"number":513}') }
-catch { $missingErrRejected = $_.Exception.Message -match "missing" }
+catch { $missingErrRejected = $_.Exception.Message -match "invalid exact field/type shape" }
 Assert-True $missingErrRejected "incomplete runtime Err payload must fail closed"
 
 $ownedRecord = [pscustomobject]@{
@@ -1089,6 +1188,11 @@ Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $threeArgumentMuta
 $compileIndex = $workerSource.IndexOf('$compileControl.Execute()')
 $runIndex = $workerSource.IndexOf('$runValue = $excel.Run($qualifiedName)')
 Assert-True ($compileIndex -ge 0 -and $runIndex -gt $compileIndex) "forced VBE compile must precede Application.Run"
+$compileExceptionDecision = $workerSource.IndexOf('if ($executeException) { $compileStatus = "harness-error" }')
+$compileModalDecision = $workerSource.IndexOf('elseif ($compileKinds -contains "compile-error") { $compileStatus = "compile-error" }')
+Assert-True ($compileExceptionDecision -gt $compileIndex -and $compileModalDecision -gt $compileExceptionDecision) "worker compile classification must give any Execute exception precedence over modal classification"
+Assert-True ($workerSource -match '\$runOperationHealthy = Test-GuardianOperationHealthy -Events \$runEvents' -and
+    $workerSource -notmatch '\$runOperationHealthy = if \(\$runStatus') "worker operation health must derive from the run ledger without consulting run_status"
 Assert-True ($workerSource -match "Wait-GuardianReady" -and $workerSource.IndexOf('Wait-GuardianReady') -lt $compileIndex) "guardian readiness must precede forced compile"
 Assert-True ($workerSource -match "module_sha256") "case evidence must seal module source"
 Assert-True ($workerSource -match "Get-VbeSelectionFromCom" -and $workerSource -match "diagnostic only" -and $workerSource -notmatch "vbe-com-post-dialog-fallback") "post-dismiss COM selection must remain diagnostic-only and never repair authority"
@@ -1142,6 +1246,7 @@ Assert-True ($runnerSource -match 'Enter-ExcelOracleRunClaim' -and $runnerSource
 $claimIndex = $runnerSource.IndexOf('$runClaim = Enter-ExcelOracleRunClaim')
 $postClaimTryIndex = $runnerSource.IndexOf('try {', $claimIndex)
 Assert-True ($claimIndex -ge 0 -and $postClaimTryIndex -gt $claimIndex -and $postClaimTryIndex -lt $runnerSource.IndexOf('$plan | ConvertTo-Json', $claimIndex) -and $runnerSource.LastIndexOf('Exit-ExcelOracleRunClaim -Claim $runClaim') -gt $runnerSource.IndexOf('Set-Content -LiteralPath (Join-Path $outputDirectory "summary.md")')) "every post-claim runner path must release the exact held claim through top-level finally"
+Assert-True ($runnerSource -match 'Exit-ExcelOracleRunClaim -Claim \$runClaim -PrimaryFailure \$primaryRunFailure') "top-level claim cleanup must preserve primary failure context while surfacing cleanup failure"
 Assert-True ($runnerSource -match '\$RunId = \("excel_vba_oracle_\{0\}" -f \[Guid\]::NewGuid') "default RunId must include a GUID rather than timestamp-only uniqueness"
 Assert-True ($runnerSource -match '\$worker\.WaitForExit\(10000\)' -and $runnerSource.IndexOf('$worker.WaitForExit(10000)') -lt $runnerSource.LastIndexOf('Stop-RecordedOwnedResources')) "timeout cleanup must wait for the exact worker before reading ledgers"
 Assert-True ($runnerSource.IndexOf('$containedWorker = Start-ExcelOracleContainedProcess') -ge 0 -and $runnerSource.IndexOf('$containedWorker = Start-ExcelOracleContainedProcess') -lt $runnerSource.IndexOf('oxvba.excel-vba-oracle-containment-ready.v1') -and

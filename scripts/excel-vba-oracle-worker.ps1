@@ -811,8 +811,8 @@ function Invoke-HarnessCase {
         if ($compileKinds -contains "security-or-trust" -or $compileKinds -contains "unrecognized-modal") {
             throw "excel-vba-oracle-worker: compile was blocked by a security/trust or unrecognized owned modal"
         }
-        if ($compileKinds -contains "compile-error") { $compileStatus = "compile-error" }
-        elseif ($executeException) { $compileStatus = "harness-error" }
+        if ($executeException) { $compileStatus = "harness-error" }
+        elseif ($compileKinds -contains "compile-error") { $compileStatus = "compile-error" }
         elseif (-not [bool]$compileCommand.enabled_after) { $compileStatus = "ok" }
         else { $compileStatus = "no-dialog-unverified" }
 
@@ -882,7 +882,7 @@ function Invoke-HarnessCase {
 
         $guardianHealthy = $guardian -and -not $guardian.HasExited
         $compileOperationHealthy = Test-GuardianOperationHealthy -Events $compileEvents
-        $runOperationHealthy = if ($runStatus -eq "not-run") { $false } else { Test-GuardianOperationHealthy -Events $runEvents }
+        $runOperationHealthy = Test-GuardianOperationHealthy -Events $runEvents
         $compileErrorEvidence = if ($Descriptor.expected_compile_status -eq "compile-error") {
             Test-CompileErrorEvidence -Events $compileEvents -InjectedSource $injectedSource -ExpectedToken ([string]$Descriptor.expected_selected_token) -ExpectedLine ([string]$Descriptor.expected_expanded_line)
         } else { $false }
