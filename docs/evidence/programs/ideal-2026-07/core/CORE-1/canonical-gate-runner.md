@@ -1,16 +1,12 @@
 # CORE-1 Versioned Core-Profile Gate Runner
 
-Date: 2026-07-11
+Date: 2026-07-14
 
 Bead: `bd-59co.2.2.9`
 
-Base: `d51bb1ffc302f7d4066cf2e32cd8af1eceb59d6e`
+Implementation: `b7e3f5f40489260373d7a4f304671e7ea1d7c63a`
 
-Initial implementation: `7f43d4477b8ebe56e034807898c579c9909f1d15`
-
-Trust-boundary hardening: `4e27cb1560a1dc054ec0657c2301c1a8c92e4fb6`
-
-Implementation tree: `4127e3cefb6fcc2a7a0a511ffeb23850ac96816f`
+Implementation tree: `96dbaaa1f7176baf45c657c2c88991accb969038`
 
 Clause: `CONF-QUALITY-001`
 
@@ -20,33 +16,35 @@ Matrix route: `CORE-READINESS/CORE-BASELINE-CROSS-PLATFORM-GATES`
 
 The repository has one versioned, portable Core-profile gate plan at
 `ci/core-profile/gates-v1.json` and one entry point at
-`scripts/run-core-profile-gates.ps1`. The runner is now an x64-only,
-fail-closed trust boundary rather than a command loop: it binds execution to a
-clean committed source tree, exact tool and command identities, an owned
-process tree, and immutable terminal evidence.
+`scripts/run-core-profile-gates.ps1`. The runner is an x64-only, fail-closed
+trust boundary. It binds execution to a clean committed source tree, sealed
+tool and command identities, exact owned process trees, bounded deadlines and
+immutable terminal evidence.
 
-This bead proves the runner contract and its adversarial failure behavior on
-the Windows x64 development host. It does **not** claim that the canonical Core
-gates have passed. It also does not claim Linux runtime execution, Excel/VBA
-compatibility, or terminal matrix advancement. `bd-59co.2.2.10` owns the
-Windows development transcript, `bd-59co.2.2.11` owns execution in the pinned
-Linux x64 environment, and `bd-59co.2.2.12` owns the reconciled cross-platform
-terminal baseline.
+This bead proves that contract and its adversarial failure behavior on the
+Windows x64 development host. Native WSL Ubuntu x64 checks additionally prove
+the Linux pidfd/subreaper ownership helper, including the pre-confirmation abort
+path, and the child-free shell readiness transport. It does **not** claim that
+the canonical six Core gates have passed and does not advance the terminal Core
+matrix. `bd-59co.2.2.10` owns the Windows development transcript,
+`bd-59co.2.2.11` owns the pinned Linux x64 execution, and `bd-59co.2.2.12` owns
+the reconciled cross-platform terminal baseline.
 
 ## Sealed implementation identity
 
-The implementation commit contains these exact raw-file SHA-256 identities:
+Implementation commit `b7e3f5f40489260373d7a4f304671e7ea1d7c63a`
+contains these exact raw-file SHA-256 identities:
 
 | surface | SHA-256 |
 |---|---|
-| `ci/core-profile/gates-v1.json` | `44ab21919ce3f7b64bfd5d2b9e082ee237417ffc246a96ac2223844ed323aba5` |
-| `scripts/run-core-profile-gates.ps1` | `6244db82e13c3b455f43f269196f873a3a9b65d26cd1b64d651bdfb4f3cad926` |
-| `scripts/test-core-profile-gates.ps1` | `969d5988e55c9b0ef57aa44df5b40c6cd8182b340c4202a3bff2c05e7d05ed15` |
-| `scripts/core-gate-process-supervisor.cs` | `19f0ca6949cef9159b87b56497f1dbdd6254d92331521798ad16586e1b7b2b1f` |
-| `scripts/core-gate-linux-supervisor.sh` | `5505dee95e09c8f6dccdec36cd7f25ade74af9ccc1796cbb379123c57f09b29e` |
+| `ci/core-profile/gates-v1.json` | `eddfff47d6d24076fba24f8d03cae83c52ef9de9e851bbf2c8d35fecade14eca` |
+| `scripts/run-core-profile-gates.ps1` | `d8132f5dce592acfcf0ca4f2a0e8d43f748dd0b43cdf4d3eed98d87ee42199f8` |
+| `scripts/test-core-profile-gates.ps1` | `5fa9ab54d8b713f2818ece0b52179479a47e1332695a976e146db4d9b33ef1fd` |
+| `scripts/core-gate-process-supervisor.cs` | `5aa0abefe4e0a3bf9dd279cc0f16715019561d26998e2ead20d028c4b75ce665` |
+| `scripts/core-gate-linux-supervisor.sh` | `95d7f8e057ef8161b8782ab00722637a2074ffb8002ea8fc5708b610c23ba001` |
 
 The manifest digest is also its strict UTF-8/LF-canonical digest. The Linux
-supervisor is tracked with mode `100755`.
+supervisor is tracked with mode `100755` and contains LF-only line endings.
 
 ## Versioned plan
 
@@ -70,110 +68,107 @@ their explicit scheduler environment. Truth reconciliation is check-only.
 
 ## Execution trust contract
 
-### x64 and committed-source identity
+### x64, source and tool identity
 
 Every mode requires `OSArchitecture=x64`, `ProcessArchitecture=x64` and
-`Is64BitProcess=true`. The architecture tuple is recorded in both plan and run
-evidence. A fail-only injected x86 identity proves the negative path.
+`Is64BitProcess=true`; the tuple is recorded in plan and run evidence. A
+fail-only injected x86 identity proves the negative path.
 
-Before `NoArtifacts` execution, the runner requires:
+Before `NoArtifacts` execution, the runner requires a valid tracked `HEAD` and
+exact tree identity, a clean staged/working/untracked state, tracked runner and
+command surfaces, and no reparse/symlink component in their ancestry. It
+rechecks the committed tree, manifest, source/command bytes and tool byte/link
+identities before and after each selected gate and at terminal validation.
 
-- a valid tracked `HEAD` and its exact tree identity;
-- no staged, working-tree or untracked drift according to Git status;
-- every runner, manifest, supervisor and PowerShell command file to be tracked;
-- no reparse/symlink component in repository, manifest, runner, supervisor or
-  command ancestry.
-
-The runner rechecks committed source identity, the versioned manifest, every
-command/source byte hash and every tool byte/link identity before and after
-each selected gate and again at terminal validation.
-
-### Exact tools and command plans
-
-Git, the active PowerShell Core process, Cargo and, on Linux, exact
-`/usr/bin/setsid` are resolved once. Their absolute paths, raw hashes, versions
-and link targets are recorded. All subsequent probes and gate launches use
-those exact paths rather than a fresh `PATH` lookup. The child `PATH` puts the
-sealed tool directories first.
+Candidate paths and bytes are resolved without executing the candidate. The
+repo-native C# supervisor is loaded only after those seals exist. All later
+version and Git queries run under the same Windows Job or Linux pidfd ownership
+used by product gates and write output to confined owned files rather than
+inherited pipes. The sealed executable set is Git, the active PowerShell Core
+process and Cargo; Linux additionally seals exact `/usr/bin/setsid` and
+`/usr/bin/bash`. The v4 Linux supervisor no longer executes or seals `mv` or
+`sleep`.
 
 Each plan row records executor path/hash, command or script hash, arguments,
-environment actions and a deterministic digest over that complete command
-shape. PowerShell gates invoke the sealed `pwsh`; Cargo gates invoke the sealed
-Cargo executable. Mid-run source, command, manifest or tool replacement fails
-before another gate can run.
+environment actions and a deterministic digest over that complete shape.
+PowerShell gates invoke sealed `pwsh`; Cargo gates invoke sealed Cargo. Mid-run
+source, command, manifest or tool replacement fails before another gate runs.
 
-### Complete process-tree ownership and one gate deadline
+### Exact process ownership and one gate deadline
 
-After the separately bounded Cargo-lock acquisition, one gate deadline covers
-direct-process execution, descendants, output-handle closure, termination and
-reaping:
+After separately bounded Cargo-lock acquisition, one gate deadline covers the
+direct process, descendants, output closure, termination and reaping. The
+product runner contains no `Process.Kill`, numeric PID signal or numeric
+process-group signal path.
 
-- Windows uses a kill-on-close Job Object. The direct process is created
-  suspended with owned stdout/stderr files, assigned to the job, and only then
-  resumed. Assignment/start failure terminates the suspended process.
-- Linux starts the tracked supervisor through exact `setsid`, verifies that the
-  child PID is the new process-group identity, redirects to owned files, and
-  performs bounded group `TERM`, then `KILL`, before the deadline.
-- Direct-process exit cannot pass while descendants remain. A short bounded
-  observation window converts that state into an explicit failure and cleans
-  the complete job/group.
-- A selected row can pass only with status `passed`, exit code `0`, and
-  `tree_cleanup=complete`. Transport and total deadline are recorded per row.
+On Windows:
 
-The adversarial grandchild fixture starts a 30-second child, keeps the direct
-parent alive for more than one second, then lets the parent exit. The runner
-fails the row as `descendant-processes-remained-after-direct-exit`, records the
-platform transport, empties the Job Object and verifies that the published
-grandchild PID no longer exists.
+- `STARTUPINFOEX` supplies an exact stdin/stdout/stderr handle allowlist; an
+  inheritable parent-owned event excluded from that list proves no ambient
+  handle leak;
+- the direct process is created suspended, assigned to a kill-on-close Job
+  Object and resumed; start/assignment failure terminates it while suspended;
+- direct exit cannot pass while the Job still reports active descendants.
 
-### Immutable evidence and exact terminal success
+On Linux:
+
+- the runner becomes a child subreaper and starts exact `setsid` plus Bash;
+- immediately after `Process.Start`, it opens and retains the exact root pidfd
+  **before** any fallible `/proc`, parent or start-tick confirmation;
+- after reading `/proc` and confirming the direct parent, it sends signal zero
+  through that retained pidfd before setting `_rootConfirmed`, preventing PID
+  reuse from attaching the retained authority to a different numeric task;
+- every pre-confirmation failure remains unconfirmed and takes a dedicated
+  abort path that STOP/KILLs only the retained root pidfd; the caller then
+  reaps its `Process` handle and requires zero retained pidfds;
+- the Bash supervisor creates no external helper or background child before
+  acknowledgement. It writes a newline-terminated readiness record directly,
+  uses Bash `read` and `EPOCHREALTIME` for a bounded built-in acknowledgement
+  poll, and only then `exec`s the gate;
+- readiness binds nonce, PID, process group, session and `/proc` start ticks;
+- confirmed descendants are retained with `pidfd_open` after exact ancestry
+  and start-tick revalidation. Cleanup freezes parents via pidfd `SIGSTOP`,
+  repeats discovery until the exact stopped set is stable, then sends `SIGKILL`
+  through retained pidfds until the deadline;
+- adopted zombies are reaped with exact `waitpid`; the direct root is reaped by
+  `System.Diagnostics.Process`; success requires no live owned process and zero
+  retained pidfds.
+
+The Linux transport descriptor is
+`setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr`.
+A selected row can pass only with status `passed`, exit code `0`, complete tree
+cleanup, ownership readiness and the exact platform containment descriptor.
+
+The controlled fake-Cargo fixture exits after spawning a descendant that
+retains stdout/stderr. The runner reports
+`descendant-processes-remained-after-direct-exit`, empties the owned tree, and
+the test proves that descendant gone while an unrelated live sentinel remains.
+
+### Immutable evidence, closed schema and serialization
 
 Execution requires a new bounded run ID and refuses an existing evidence root.
-It writes only below:
-
-```text
-temp/no-artifacts/core-profile-gates/<run-id>/
-```
-
-The plan and initial `running` run manifest are constructed in memory and
-written as exact UTF-8 bytes. Between gates, those bytes must remain identical;
-children may not create the terminal summary or digest early, nor alter any
-prior log/result bytes. Each executed row records SHA-256 for `stdout.log`,
-`stderr.log` and `result.json`.
+It writes only below `temp/no-artifacts/core-profile-gates/<run-id>/`. Plan and
+initial run-manifest bytes remain immutable between gates. Children cannot
+create terminal summaries/digests early or alter earlier result/log bytes. Each
+row records SHA-256 for stdout, stderr and result JSON.
 
 Terminal success is reconstructed from immutable in-memory results. Selected
 rows must be exact passed/exit-0/clean-tree results; nonselected rows must be
-exact `not-applicable` results with `platform:<current-x64-platform>`. The
-runner then writes and byte-compares:
+exact `not-applicable` results. The runner byte-compares plan, run manifest,
+summary, digest and every row artifact, then performs one final input seal
+before printing `core-profile-gates: ok`.
 
-- `plan.json`;
-- `run-manifest.json`, including architecture, source, tools, commands,
-  supervision, run status/failure and the exact result list;
-- `summary.txt`, whose digest is bound into the run manifest;
-- `run-manifest.sha256`, binding the final manifest digest and relative name;
-- all per-row logs/results against their recorded content hashes.
-
-Only after that validation and one final input-identity check does the runner
-print `core-profile-gates: ok`. If terminal validation fails, it rewrites the
-run and summary state as failed and never prints the marker.
-
-### Mutation and serialization boundaries
-
-The closed manifest schema rejects malformed UTF-8/JSON, duplicate properties,
-unknown or mis-cased keys, scalar/array confusion, non-x64 or missing platform
-coverage, missing/escaping commands, unsafe environment names, invalid
-deadlines, unlocked Cargo commands, and noncanonical/colliding evidence paths.
-
-Command and environment surfaces reject snapshot mutation or acceptance. The
-runner removes inherited OxVba bless families, snapshot-update/acceptance
-families, `INSTA_UPDATE` and `UPDATE_EXPECT`; the allowlist cannot add them
-back. Every `cargo_workspace=true` row acquires a repository-derived named
-cross-process mutex. Concurrent runners remain source-read-safe and cannot
-overlap Cargo gates for the same checkout.
+The closed manifest rejects malformed UTF-8/JSON, duplicate or unknown keys,
+wrong casing/types, non-x64 or incomplete platform coverage, escaping command
+paths, unsafe environment names, invalid deadlines, unlocked Cargo commands,
+noncanonical evidence paths and changed containment descriptors. The runner
+removes inherited bless/snapshot-update environment families. Every
+`cargo_workspace=true` row acquires one repository-derived cross-process mutex;
+concurrent runners cannot overlap Cargo gates for the same checkout.
 
 ## Invocation contract
 
-Manifest validation and deterministic projection are side-effect free:
+Validation and projection are side-effect free:
 
 ```powershell
 ./scripts/run-core-profile-gates.ps1 -Mode ValidateManifest
@@ -181,7 +176,7 @@ Manifest validation and deterministic projection are side-effect free:
 ./scripts/run-core-profile-gates.ps1 -DryRun
 ```
 
-Execution is a distinct mode and requires a lowercase bounded identity:
+Execution is distinct and requires a lowercase bounded identity:
 
 ```powershell
 ./scripts/run-core-profile-gates.ps1 -Mode NoArtifacts -RunId <run-id>
@@ -190,52 +185,63 @@ Execution is a distinct mode and requires a lowercase bounded identity:
 ## Checks executed
 
 ```text
+PowerShell AST parse + Add-Type compilation
+PASS: runner and test parse; native Windows/POSIX supervisor compiles.
+
 ./scripts/run-core-profile-gates.ps1 -Mode ValidateManifest
 PASS: six-row closed-schema manifest on Windows x64.
-PASS: manifest SHA-256 44ab21919ce3f7b64bfd5d2b9e082ee237417ffc246a96ac2223844ed323aba5.
+PASS: digest eddfff47d6d24076fba24f8d03cae83c52ef9de9e851bbf2c8d35fecade14eca.
 
-./scripts/run-core-profile-gates.ps1 -List
-PASS: exact six-row Windows x64 projection; Linux lane remains visible as N/A.
+Static authority and ordering audit
+PASS: no Process.Kill, SignalGroup, GroupExists or native numeric kill path.
+PASS: root confirmation order is /proc read, retained-pidfd signal zero, then
+      _rootConfirmed=true.
+PASS: the pre-ack shell has no mv/sleep/helper child and uses a built-in bounded
+      EPOCHREALTIME poll.
 
-PowerShell parser + Add-Type compilation
-PASS: runner/test parse; C# Windows/POSIX ownership helper compiles.
+./scripts/test-core-profile-gates.ps1 -Phase All
+PASS on the final implementation candidate before the narrow post-/proc pidfd
+      liveness amendment: 583,681 ms, exit 0, empty stderr.
+PASS summary: x64=1 exact-success=1 failures=1 timeouts=1 descendants=1
+      evidence-tamper=6 source-tool-seals=5 path-confinement=2
+      manifest-mutations=27 cargo-concurrency=2.
+PASS: maximum observed Cargo-lock wait 2,286 ms.
 
-./scripts/test-core-profile-gates.ps1
-PASS in 200.6 s: default All phase.
-PASS: x64 injection, exact positive plan/run/summary/digest and content hashes,
-      command failure, one-second timeout, long-lived grandchild cleanup,
-      stale evidence and hostile inherited environment.
-PASS: six independent evidence attacks: plan, run status, early summary, prior
-      log, prior result, and consistent forged result/run state. No failing
-      case printed the terminal success marker.
-PASS: dirty source, mid-run command replacement, manifest drift, mutable exact
-      Cargo found through PATH, missing Cargo and reparse command ancestry.
-PASS: 25 strict manifest mutations.
-PASS: two concurrent runners; command intervals did not overlap and the
-      observed maximum Cargo-lock wait was 1,763 ms.
-PASS: process-unique temporary mini-repositories and published test PIDs were
-      removed/absent after completion.
+./scripts/test-core-profile-gates.ps1 -Phase Core
+PASS on exact implementation b7e3f5f4: 402,478 ms, exit 0, empty stderr.
+PASS: final ordering assertion, deterministic/x64 gate, exact success, fast
+      exit, nonzero command, timeout, descendant cleanup, evidence attacks and
+      committed source/command/manifest seals.
 
-git diff --check / staged mode check
-PASS: no whitespace errors; Linux supervisor is mode 100755.
+WSL Ubuntu x64 native .NET 10 confirmed-tree harness
+PASS: core9-pidfd-harness: ok root=1053 escaped=1254 retained=1 reaped=1
+      non_target=1052:alive.
+PASS: confirmed ArmRoot path, 200-child short-exit storm, escaped setsid
+      descendant, adopted-zombie reap, zero retained pidfds and unrelated
+      process preservation on exact implementation b7e3f5f4.
 
-./scripts/check-governance.ps1
-PARTIAL: Linux contract validation and 20 mutations, docs, active-program sync,
-         divergence, deferred-oracle, PMR follow-up and project integration
-         checks passed. The command then stopped at the inherited stale
-         docs/generated/PMR_EVENT_DIAGNOSTICS_SNIPPET.md, the same unrelated
-         base-state drift recorded before this hardening.
+WSL Ubuntu x64 forced unconfirmed-root harness
+PASS: core9-unconfirmed-root: ok root=1257 retained_before=1 retained_after=0
+      reaped=1 non_target=1256:alive gate=not-run.
+PASS: failure after pidfd retention and before acknowledgement; exact root
+      abort/reap, zero retained pidfds, gate not executed, unrelated sentinel
+      preserved on exact implementation b7e3f5f4.
 
-Downstream governance checks run directly after that inherited stop
-PASS: PMR diagnostic sync, validation ownership, Windows x64 surfaces,
-      contract-clause disposition, environment manifest, legacy migration,
-      closure taxonomy, bead traceability, workset rollout, 24 negative
-      validator cases and derived-summary check.
+WSL exact shell readiness/ack harness
+PASS: core-gate-linux-supervisor-handshake: ok pid=1285
+      hostile-path=not-executed.
+PASS: direct complete readiness, built-in acknowledgement poll and hostile PATH
+      non-execution on exact implementation b7e3f5f4.
+
+git diff --check / staged scope check / executable-mode check
+PASS: no whitespace errors; implementation/evidence scopes separated; Linux
+      supervisor is mode 100755 and LF-only.
 ```
 
-The Linux environment validator ran in contract-only mode on Windows; this is
-not Linux runtime evidence. The canonical six gate commands were deliberately
-not executed by this bead.
+The WSL environment has native .NET 10 but no usable Linux `pwsh`, so the full
+PowerShell runner was not executed there. The native pidfd and shell slices are
+not a substitute for `bd-59co.2.2.11`'s pinned Linux run. The canonical six gate
+commands were deliberately not executed by this bead.
 
 ## Residual and limitation
 
@@ -243,11 +249,10 @@ not executed by this bead.
   development host and retain the transcript/evidence summary.
 - `bd-59co.2.2.11` must execute the same manifest in the exact digest-pinned
   Linux x64 CI environment and retain its transcript/evidence summary.
-- `bd-59co.2.2.12` must compare both platform results, resolve divergence, and
-  keep the matrix planned until every terminal baseline gate is green.
-- The remaining local limitation is a non-hostile atomic filesystem race: a
-  concurrent process could replace a validated path in the narrow interval
-  between the last identity check and use. Persistent drift and reparse ancestry
-  are rejected. Fully removing this check/use interval needs a future
-  handle-relative/open-by-identity launch path; another path recheck cannot
-  eliminate it.
+- `bd-59co.2.2.12` must reconcile both platform results and keep the matrix
+  planned until every terminal baseline gate is green.
+- `bd-59co.2.2.23` narrowly owns the remaining pathname check/use race. Current
+  reparse/path/hash checks fail closed at explicit boundaries, but a later named
+  open/exec is not yet bound to a retained nonreplaceable Windows handle or
+  Linux directory/file descriptor. A concurrent pathname replacement can race
+  that interval; another path recheck alone cannot remove it.
