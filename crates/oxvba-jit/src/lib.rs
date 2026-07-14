@@ -1050,6 +1050,39 @@ struct LoweredVariantOperand {
     index: Value,
 }
 
+struct BinaryVariantOperands<'a> {
+    lhs: &'a OxOperand,
+    rhs: &'a OxOperand,
+}
+
+struct ProjectClassTarget {
+    program_index: usize,
+    class_index: usize,
+}
+
+struct ProjectMemberCallInputs<'a> {
+    recv: &'a OxOperand,
+    name: &'a str,
+    default_member: bool,
+    invoke_kind: TypeLibMemberInvokeKind,
+    args: &'a [OxCallArg],
+}
+
+struct CallByNameInputs<'a> {
+    object: &'a OxOperand,
+    name: &'a OxOperand,
+    calltype: &'a OxOperand,
+    args: &'a [OxCallArg],
+}
+
+struct ArrayRedimInputs<'a> {
+    upper_bounds: &'a [OxOperand],
+    lower_bounds: &'a [OxOperand],
+    element: &'a ArrayElementType,
+    preserve: bool,
+    fixed: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ProcRefStaticTarget {
     Unique(FuncId),
@@ -1309,11 +1342,13 @@ impl<'a> LowerFunc<'a> {
                 builder,
                 module,
                 *dst,
-                recv,
-                name,
-                *default_member,
-                *invoke_kind,
-                args,
+                ProjectMemberCallInputs {
+                    recv,
+                    name,
+                    default_member: *default_member,
+                    invoke_kind: *invoke_kind,
+                    args,
+                },
             ),
             OxInst::CallByName {
                 dst,
@@ -1321,9 +1356,17 @@ impl<'a> LowerFunc<'a> {
                 name,
                 calltype,
                 args,
-            } => {
-                self.emit_call_by_name_to_slot(builder, module, *dst, object, name, calltype, args)
-            }
+            } => self.emit_call_by_name_to_slot(
+                builder,
+                module,
+                *dst,
+                CallByNameInputs {
+                    object,
+                    name,
+                    calltype,
+                    args,
+                },
+            ),
             OxInst::Box { dst, src, from } => {
                 self.ensure_variant_place(*dst)?;
                 if !is_jit_supported_slot_ty(from) {
@@ -1350,11 +1393,13 @@ impl<'a> LowerFunc<'a> {
                 builder,
                 module,
                 *dst,
-                upper_bounds,
-                lower_bounds,
-                element,
-                *preserve,
-                *fixed,
+                ArrayRedimInputs {
+                    upper_bounds,
+                    lower_bounds,
+                    element,
+                    preserve: *preserve,
+                    fixed: *fixed,
+                },
             ),
             OxInst::ArrayGet {
                 dst,
@@ -1506,9 +1551,14 @@ impl<'a> LowerFunc<'a> {
                 rhs,
                 mode,
             } => match place_ty(self.program, self.func, *dst)? {
-                OxTy::Variant => {
-                    self.emit_variant_arith_slot_call(builder, module, *dst, *op, *mode, lhs, rhs)
-                }
+                OxTy::Variant => self.emit_variant_arith_slot_call(
+                    builder,
+                    module,
+                    *dst,
+                    *op,
+                    *mode,
+                    BinaryVariantOperands { lhs, rhs },
+                ),
                 OxTy::Long => {
                     let helper = match (op, mode) {
                         (ArithOp::Add, NumericMode::Checked(NumericCoerceTarget::Long)) => {
@@ -1540,7 +1590,12 @@ impl<'a> LowerFunc<'a> {
                         )?
                     {
                         return self.emit_variant_arith_slot_call(
-                            builder, module, *dst, *op, *mode, lhs, rhs,
+                            builder,
+                            module,
+                            *dst,
+                            *op,
+                            *mode,
+                            BinaryVariantOperands { lhs, rhs },
                         );
                     }
                     let lhs = self.lower_operand_i32(builder, module, lhs)?;
@@ -1572,7 +1627,12 @@ impl<'a> LowerFunc<'a> {
                         )?
                     {
                         return self.emit_variant_arith_slot_call(
-                            builder, module, *dst, *op, *mode, lhs, rhs,
+                            builder,
+                            module,
+                            *dst,
+                            *op,
+                            *mode,
+                            BinaryVariantOperands { lhs, rhs },
                         );
                     }
                     let lhs = self.lower_operand_i16_i32(builder, module, lhs)?;
@@ -1604,7 +1664,12 @@ impl<'a> LowerFunc<'a> {
                         )?
                     {
                         return self.emit_variant_arith_slot_call(
-                            builder, module, *dst, *op, *mode, lhs, rhs,
+                            builder,
+                            module,
+                            *dst,
+                            *op,
+                            *mode,
+                            BinaryVariantOperands { lhs, rhs },
                         );
                     }
                     let lhs = self.lower_operand_u8_i32(builder, module, lhs)?;
@@ -1642,7 +1707,12 @@ impl<'a> LowerFunc<'a> {
                         NumericCoerceTarget::LongLong,
                     )? {
                         return self.emit_variant_arith_slot_call(
-                            builder, module, *dst, *op, *mode, lhs, rhs,
+                            builder,
+                            module,
+                            *dst,
+                            *op,
+                            *mode,
+                            BinaryVariantOperands { lhs, rhs },
                         );
                     }
                     let lhs = self.lower_operand_i64(builder, module, lhs)?;
@@ -1674,7 +1744,12 @@ impl<'a> LowerFunc<'a> {
                         NumericCoerceTarget::Currency,
                     )? {
                         return self.emit_variant_arith_slot_call(
-                            builder, module, *dst, *op, *mode, lhs, rhs,
+                            builder,
+                            module,
+                            *dst,
+                            *op,
+                            *mode,
+                            BinaryVariantOperands { lhs, rhs },
                         );
                     }
                     let lhs = self.lower_operand_currency_i64(builder, module, lhs)?;
@@ -1703,7 +1778,12 @@ impl<'a> LowerFunc<'a> {
                         )?
                     {
                         return self.emit_variant_arith_slot_call(
-                            builder, module, *dst, *op, *mode, lhs, rhs,
+                            builder,
+                            module,
+                            *dst,
+                            *op,
+                            *mode,
+                            BinaryVariantOperands { lhs, rhs },
                         );
                     }
                     let lhs = self.lower_operand_f32(builder, module, lhs)?;
@@ -1738,7 +1818,12 @@ impl<'a> LowerFunc<'a> {
                         )?
                     {
                         return self.emit_variant_arith_slot_call(
-                            builder, module, *dst, *op, *mode, lhs, rhs,
+                            builder,
+                            module,
+                            *dst,
+                            *op,
+                            *mode,
+                            BinaryVariantOperands { lhs, rhs },
                         );
                     }
                     let lhs = self.lower_operand_f64(builder, module, lhs)?;
@@ -1763,8 +1848,7 @@ impl<'a> LowerFunc<'a> {
                     *dst,
                     RT_ARITH_DIV,
                     RT_NUMERIC_WIDENING,
-                    lhs,
-                    rhs,
+                    BinaryVariantOperands { lhs, rhs },
                 )
             }
             OxInst::Pow { dst, lhs, rhs } => {
@@ -1775,8 +1859,7 @@ impl<'a> LowerFunc<'a> {
                     *dst,
                     RT_ARITH_POW,
                     RT_NUMERIC_WIDENING,
-                    lhs,
-                    rhs,
+                    BinaryVariantOperands { lhs, rhs },
                 )
             }
             OxInst::Concat { dst, lhs, rhs } => {
@@ -1940,9 +2023,14 @@ impl<'a> LowerFunc<'a> {
                 rhs,
                 mode,
             } => match place_ty(self.program, self.func, *dst)? {
-                OxTy::Variant => {
-                    self.emit_variant_compare_slot_call(builder, module, *dst, *op, *mode, lhs, rhs)
-                }
+                OxTy::Variant => self.emit_variant_compare_slot_call(
+                    builder,
+                    module,
+                    *dst,
+                    *op,
+                    *mode,
+                    BinaryVariantOperands { lhs, rhs },
+                ),
                 OxTy::Bool => {
                     let lhs_float_lane = self.compare_float_lane(lhs)?;
                     let rhs_float_lane = self.compare_float_lane(rhs)?;
@@ -3008,14 +3096,13 @@ impl<'a> LowerFunc<'a> {
         dst: OxPlace,
         op: ArithOp,
         mode: NumericMode,
-        lhs: &OxOperand,
-        rhs: &OxOperand,
+        operands: BinaryVariantOperands<'_>,
     ) -> Result<(), JitError> {
         let op = raw_arith_op(op).ok_or_else(|| {
             JitError::unsupported(format!("M4-4 Variant arithmetic does not lower {op:?}"))
         })?;
         let mode = raw_numeric_mode(mode)?;
-        self.emit_variant_arith_raw_slot_call(builder, module, dst, op, mode, lhs, rhs)
+        self.emit_variant_arith_raw_slot_call(builder, module, dst, op, mode, operands)
     }
 
     fn emit_variant_arith_raw_slot_call(
@@ -3025,12 +3112,11 @@ impl<'a> LowerFunc<'a> {
         dst: OxPlace,
         op: u32,
         mode: u32,
-        lhs: &OxOperand,
-        rhs: &OxOperand,
+        operands: BinaryVariantOperands<'_>,
     ) -> Result<(), JitError> {
         let operands = [
-            self.lower_variant_operand(builder, lhs)?,
-            self.lower_variant_operand(builder, rhs)?,
+            self.lower_variant_operand(builder, operands.lhs)?,
+            self.lower_variant_operand(builder, operands.rhs)?,
         ];
         let operands_ptr = self.emit_variant_operand_descriptors(builder, module, &operands)?;
         let (area, index) = place_addr(dst);
@@ -3115,12 +3201,11 @@ impl<'a> LowerFunc<'a> {
         dst: OxPlace,
         op: CmpOp,
         mode: StringCompareMode,
-        lhs: &OxOperand,
-        rhs: &OxOperand,
+        operands: BinaryVariantOperands<'_>,
     ) -> Result<(), JitError> {
         let operands = [
-            self.lower_variant_operand(builder, lhs)?,
-            self.lower_variant_operand(builder, rhs)?,
+            self.lower_variant_operand(builder, operands.lhs)?,
+            self.lower_variant_operand(builder, operands.rhs)?,
         ];
         let operands_ptr = self.emit_variant_operand_descriptors(builder, module, &operands)?;
         let (area, index) = place_addr(dst);
@@ -3502,8 +3587,10 @@ impl<'a> LowerFunc<'a> {
             builder,
             module,
             dst,
-            program_index,
-            class_index,
+            ProjectClassTarget {
+                program_index,
+                class_index,
+            },
             self.imports.new_object_slot,
             "NewExtern",
         )
@@ -3547,8 +3634,10 @@ impl<'a> LowerFunc<'a> {
             builder,
             module,
             dst,
-            program_index,
-            class_index,
+            ProjectClassTarget {
+                program_index,
+                class_index,
+            },
             self.imports.predeclared_slot,
             "PredeclaredExtern",
         )
@@ -3559,16 +3648,15 @@ impl<'a> LowerFunc<'a> {
         builder: &mut FunctionBuilder<'_>,
         module: &mut JITModule,
         dst: OxPlace,
-        program_index: usize,
-        class_index: usize,
+        target: ProjectClassTarget,
         callee_id: ClifFuncId,
         label: &'static str,
     ) -> Result<(), JitError> {
         self.ensure_variant_carrier_place(dst)?;
-        let program_index = i32::try_from(program_index).map_err(|_| {
+        let program_index = i32::try_from(target.program_index).map_err(|_| {
             JitError::unsupported(format!("JIT {label} program index is too large"))
         })?;
-        let class_index = i32::try_from(class_index)
+        let class_index = i32::try_from(target.class_index)
             .map_err(|_| JitError::unsupported(format!("JIT {label} class index is too large")))?;
         let (area, index) = place_addr(dst);
         let program = builder.ins().iconst(types::I32, i64::from(program_index));
@@ -3953,12 +4041,15 @@ impl<'a> LowerFunc<'a> {
         builder: &mut FunctionBuilder<'_>,
         module: &mut JITModule,
         dst: Option<OxPlace>,
-        recv: &OxOperand,
-        name: &str,
-        default_member: bool,
-        invoke_kind: TypeLibMemberInvokeKind,
-        args: &[OxCallArg],
+        inputs: ProjectMemberCallInputs<'_>,
     ) -> Result<(), JitError> {
+        let ProjectMemberCallInputs {
+            recv,
+            name,
+            default_member,
+            invoke_kind,
+            args,
+        } = inputs;
         if let Some(dst) = dst {
             self.ensure_variant_carrier_place(dst)?;
         }
@@ -4018,11 +4109,14 @@ impl<'a> LowerFunc<'a> {
         builder: &mut FunctionBuilder<'_>,
         module: &mut JITModule,
         dst: Option<OxPlace>,
-        object: &OxOperand,
-        name: &OxOperand,
-        calltype: &OxOperand,
-        args: &[OxCallArg],
+        inputs: CallByNameInputs<'_>,
     ) -> Result<(), JitError> {
+        let CallByNameInputs {
+            object,
+            name,
+            calltype,
+            args,
+        } = inputs;
         if let Some(dst) = dst {
             self.ensure_variant_carrier_place(dst)?;
         }
@@ -4886,12 +4980,15 @@ impl<'a> LowerFunc<'a> {
         builder: &mut FunctionBuilder<'_>,
         module: &mut JITModule,
         dst: OxPlace,
-        upper_bounds: &[OxOperand],
-        lower_bounds: &[OxOperand],
-        element: &ArrayElementType,
-        preserve: bool,
-        fixed: bool,
+        inputs: ArrayRedimInputs<'_>,
     ) -> Result<(), JitError> {
+        let ArrayRedimInputs {
+            upper_bounds,
+            lower_bounds,
+            element,
+            preserve,
+            fixed,
+        } = inputs;
         let dst_ty = place_ty(self.program, self.func, dst)?;
         let supported_dst = if matches!(dst_ty, OxTy::Variant) {
             true
@@ -7077,35 +7174,35 @@ impl<'a> LowerFunc<'a> {
         args: &[oxvba_oxir::OxArg],
         native_impl: NativeImplId,
     ) -> Result<(), JitError> {
-        if let Some(shape) = scalar_optional_fixed_call_extern_shape(native_impl) {
-            if args.len() > 1 {
-                return self.validate_call_extern_scalar_optional_fixed_shape(
-                    dst,
-                    args,
-                    native_impl,
-                    shape,
-                );
-            }
+        if let Some(shape) = scalar_optional_fixed_call_extern_shape(native_impl)
+            && args.len() > 1
+        {
+            return self.validate_call_extern_scalar_optional_fixed_shape(
+                dst,
+                args,
+                native_impl,
+                shape,
+            );
         }
-        if let Some(shape) = date_part_optional_fixed_call_extern_shape(native_impl) {
-            if args.len() > 1 {
-                return self.validate_call_extern_date_part_optional_fixed_shape(
-                    dst,
-                    args,
-                    native_impl,
-                    shape,
-                );
-            }
+        if let Some(shape) = date_part_optional_fixed_call_extern_shape(native_impl)
+            && args.len() > 1
+        {
+            return self.validate_call_extern_date_part_optional_fixed_shape(
+                dst,
+                args,
+                native_impl,
+                shape,
+            );
         }
-        if let Some(shape) = date_name_optional_call_extern_shape(native_impl) {
-            if args.len() > 1 {
-                return self.validate_call_extern_date_name_optional_shape(
-                    dst,
-                    args,
-                    native_impl,
-                    shape,
-                );
-            }
+        if let Some(shape) = date_name_optional_call_extern_shape(native_impl)
+            && args.len() > 1
+        {
+            return self.validate_call_extern_date_name_optional_shape(
+                dst,
+                args,
+                native_impl,
+                shape,
+            );
         }
         if let Some(shape) = random_call_extern_shape(native_impl) {
             return self.validate_call_extern_random_shape(dst, args, native_impl, shape);
@@ -7116,25 +7213,20 @@ impl<'a> LowerFunc<'a> {
         if let Some(shape) = scalar_double_call_extern_shape(native_impl) {
             return self.validate_call_extern_scalar_double_shape(dst, args, native_impl, shape);
         }
-        if args.len() == 2 {
-            if let Some(shape) = variant_double_call_extern_shape(native_impl) {
-                return self.validate_call_extern_variant_double_shape(dst, args, shape);
-            }
+        if args.len() == 2
+            && let Some(shape) = variant_double_call_extern_shape(native_impl)
+        {
+            return self.validate_call_extern_variant_double_shape(dst, args, shape);
         }
-        if args.len() == 3 {
-            if let Some(shape) = variant_triple_call_extern_shape(native_impl) {
-                return self.validate_call_extern_variant_triple_shape(
-                    dst,
-                    args,
-                    native_impl,
-                    shape,
-                );
-            }
+        if args.len() == 3
+            && let Some(shape) = variant_triple_call_extern_shape(native_impl)
+        {
+            return self.validate_call_extern_variant_triple_shape(dst, args, native_impl, shape);
         }
-        if args.len() == 4 {
-            if let Some(shape) = variant_quad_call_extern_shape(native_impl) {
-                return self.validate_call_extern_variant_quad_shape(dst, args, shape);
-            }
+        if args.len() == 4
+            && let Some(shape) = variant_quad_call_extern_shape(native_impl)
+        {
+            return self.validate_call_extern_variant_quad_shape(dst, args, shape);
         }
         if let Some(shape) = variant_string_optional_call_extern_shape(native_impl) {
             return self.validate_call_extern_variant_string_optional_shape(
@@ -7144,15 +7236,15 @@ impl<'a> LowerFunc<'a> {
                 shape,
             );
         }
-        if args.len() == 2 {
-            if let Some(shape) = variant_fixed_double_call_extern_shape(native_impl) {
-                return self.validate_call_extern_variant_fixed_double_shape(
-                    dst,
-                    args,
-                    native_impl,
-                    shape,
-                );
-            }
+        if args.len() == 2
+            && let Some(shape) = variant_fixed_double_call_extern_shape(native_impl)
+        {
+            return self.validate_call_extern_variant_fixed_double_shape(
+                dst,
+                args,
+                native_impl,
+                shape,
+            );
         }
         if let Some(shape) = variant_fixed_triple_call_extern_shape(native_impl) {
             return self.validate_call_extern_variant_fixed_triple_shape(
@@ -9119,7 +9211,7 @@ impl<'a> LowerFunc<'a> {
         module: &mut JITModule,
         id: ClifFuncId,
     ) -> ir::FuncRef {
-        module.declare_func_in_func(id, &mut builder.func)
+        module.declare_func_in_func(id, builder.func)
     }
 
     fn ensure_long_place(&self, place: OxPlace) -> Result<(), JitError> {
@@ -13457,10 +13549,10 @@ unsafe fn unknown_proc_ref_arg_shape(
         let Some(param_info) = param.param.as_ref() else {
             return false;
         };
-        if !(matches!(param.ty, OxTy::Str)
-            && !param_info.by_ref
-            && !param_info.variadic
-            && arg.kind == JIT_CALL_ARG_BYVAL_VARIANT)
+        if !matches!(param.ty, OxTy::Str)
+            || param_info.by_ref
+            || param_info.variadic
+            || arg.kind != JIT_CALL_ARG_BYVAL_VARIANT
         {
             return false;
         }
@@ -13486,7 +13578,7 @@ unsafe fn unknown_proc_ref_arg_shape(
             let Some(param_info) = param.param.as_ref() else {
                 return false;
             };
-            if !(matches!(param.ty, OxTy::Str) && !param_info.variadic) {
+            if !matches!(param.ty, OxTy::Str) || param_info.variadic {
                 return false;
             }
             if param_info.by_ref {
@@ -14809,11 +14901,19 @@ fn project_member_kind_from_raw(raw: i32) -> Option<ProjectMemberKind> {
     }
 }
 
-fn project_default_member_for_jit<'a>(
-    class: &'a OxClass,
+struct ProjectMemberInvocation<'a> {
+    name: &'a str,
+    kind: ProjectMemberKind,
+    args: &'a [JitCallArgDesc],
+    names: &'a [JitCallArgNameDesc],
+    dst: Option<(u32, u32)>,
+}
+
+fn project_default_member_for_jit(
+    class: &OxClass,
     kind: ProjectMemberKind,
     args_empty: bool,
-) -> Option<&'a OxClassMethod> {
+) -> Option<&OxClassMethod> {
     let exact = class
         .methods
         .iter()
@@ -15138,26 +15238,38 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
         // typed references and owned values remain live and nonaliasing for this call.
         unsafe {
             invoke_project_member_to_slot_for_jit(
-                state, run, recv_value, name, kind, args, names, dst,
+                state,
+                run,
+                recv_value,
+                ProjectMemberInvocation {
+                    name,
+                    kind,
+                    args,
+                    names,
+                    dst,
+                },
             )
         }
     })
 }
 
 // SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
-// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
-// and length arguments must identify the initialized, nonaliasing storage described
-// by their typed parameters for the complete synchronous call.
+// same-thread handle produced by `exec_state_as_raw`; `run` must be the matching
+// stable run root, and the invocation's text and descriptor slices must remain
+// initialized, live, and nonaliasing for the complete synchronous call.
 unsafe fn invoke_project_member_to_slot_for_jit(
     state: *mut RawExecState,
     run: *mut JitRun,
     recv_value: Variant,
-    name: &str,
-    kind: ProjectMemberKind,
-    args: &[JitCallArgDesc],
-    names: &[JitCallArgNameDesc],
-    dst: Option<(u32, u32)>,
+    invocation: ProjectMemberInvocation<'_>,
 ) -> i32 {
+    let ProjectMemberInvocation {
+        name,
+        kind,
+        args,
+        names,
+        dst,
+    } = invocation;
     if run.is_null() {
         return ST_FAULT;
     }
@@ -15171,7 +15283,18 @@ unsafe fn invoke_project_member_to_slot_for_jit(
         // SAFETY: this helper inherits the live unique state handle; all other
         // inputs are owned values or live typed references for this call.
         return unsafe {
-            invoke_foreign_member_to_slot_for_jit(state, run, object, name, kind, args, names, dst)
+            invoke_foreign_member_to_slot_for_jit(
+                state,
+                run,
+                object,
+                ProjectMemberInvocation {
+                    name,
+                    kind,
+                    args,
+                    names,
+                    dst,
+                },
+            )
         };
     }
     if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
@@ -15356,19 +15479,22 @@ fn foreign_member_selector_for_jit(name: &str) -> DynamicMemberSelector {
 }
 
 // SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
-// same-thread handle produced by `exec_state_as_raw`; any additional raw pointer
-// and length arguments must identify the initialized, nonaliasing storage described
-// by their typed parameters for the complete synchronous call.
+// same-thread handle produced by `exec_state_as_raw`; `run` must be the matching
+// stable run root, and the invocation's text and descriptor slices must remain
+// initialized, live, and nonaliasing for the complete synchronous call.
 unsafe fn invoke_foreign_member_to_slot_for_jit(
     state: *mut RawExecState,
     run: *mut JitRun,
     object: ObjectRef,
-    name: &str,
-    kind: ProjectMemberKind,
-    args: &[JitCallArgDesc],
-    names: &[JitCallArgNameDesc],
-    dst: Option<(u32, u32)>,
+    invocation: ProjectMemberInvocation<'_>,
 ) -> i32 {
+    let ProjectMemberInvocation {
+        name,
+        kind,
+        args,
+        names,
+        dst,
+    } = invocation;
     if run.is_null() || args.len() != names.len() {
         return ST_FAULT;
     }
@@ -15579,11 +15705,13 @@ unsafe extern "C" fn rt_jit_call_by_name_to_slot(
                 state,
                 run,
                 object,
-                &member_name,
-                kind,
-                args,
-                names,
-                dst,
+                ProjectMemberInvocation {
+                    name: &member_name,
+                    kind,
+                    args,
+                    names,
+                    dst,
+                },
             )
         }
     })
@@ -19737,6 +19865,11 @@ unsafe extern "C" fn rt_jit_mul_currency_to_slot(
     unsafe { checked_currency_to_slot(state, run, lhs, rhs, area, index, rt_currency_mul) }
 }
 
+struct JitSlotAddress {
+    area: u32,
+    index: u32,
+}
+
 unsafe fn checked_i32_to_slot(
     state: *mut RawExecState,
     run: *mut JitRun,
@@ -19749,7 +19882,15 @@ unsafe fn checked_i32_to_slot(
     // SAFETY: callers uphold the raw execution-state and run-pointer contracts;
     // the selected runtime shim and store use the matching scalar representations.
     unsafe {
-        checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_i32)
+        checked_i32_to_slot_with_store(
+            state,
+            run,
+            lhs,
+            rhs,
+            JitSlotAddress { area, index },
+            shim,
+            rt_jit_store_i32,
+        )
     }
 }
 
@@ -19765,7 +19906,15 @@ unsafe fn checked_i16_to_slot(
     // SAFETY: callers uphold the raw execution-state and run-pointer contracts;
     // the selected runtime shim and store use the matching scalar representations.
     unsafe {
-        checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_i16)
+        checked_i32_to_slot_with_store(
+            state,
+            run,
+            lhs,
+            rhs,
+            JitSlotAddress { area, index },
+            shim,
+            rt_jit_store_i16,
+        )
     }
 }
 
@@ -19781,7 +19930,15 @@ unsafe fn checked_u8_to_slot(
     // SAFETY: callers uphold the raw execution-state and run-pointer contracts;
     // the selected runtime shim and store use the matching scalar representations.
     unsafe {
-        checked_i32_to_slot_with_store(state, run, lhs, rhs, area, index, shim, rt_jit_store_u8)
+        checked_i32_to_slot_with_store(
+            state,
+            run,
+            lhs,
+            rhs,
+            JitSlotAddress { area, index },
+            shim,
+            rt_jit_store_u8,
+        )
     }
 }
 
@@ -19790,8 +19947,7 @@ unsafe fn checked_i32_to_slot_with_store(
     run: *mut JitRun,
     lhs: i32,
     rhs: i32,
-    area: u32,
-    index: u32,
+    destination: JitSlotAddress,
     shim: unsafe extern "C" fn(*mut RawExecState, i32, i32, *mut i32) -> i32,
     store: unsafe extern "C" fn(*mut JitRun, u32, u32, i32) -> i32,
 ) -> i32 {
@@ -19804,7 +19960,7 @@ unsafe fn checked_i32_to_slot_with_store(
             return status;
         }
         // SAFETY: forwarding the same run pointer received from compiled code.
-        unsafe { store(run, area, index, out) }
+        unsafe { store(run, destination.area, destination.index, out) }
     })
 }
 
