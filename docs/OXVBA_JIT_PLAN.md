@@ -17,7 +17,7 @@ What is in place:
 
 - **vm3 is a complete, oracle-validated executable specification.** M3 is complete; the `bd-4ktq` spec-gap epic is closed (all Critical/High SilentWrong items fixed; the ~70 remaining Tier-3/4/5 inventory items are open but non-blocking and covered by the lockstep rule in §9). Since the vm2-retirement worksets executed, vm3 is the **sole product runtime** — comhost cdylib, CLI, and host sessions all run `OxImage` on vm3; `oxvba-vm2` is deleted.
 - **OxIR was designed for native lowering.** It is a fully typed basic-block CFG: 65 `OxInst` variants and 12 terminators (`crates/oxvba-oxir/src/inst.rs`), an 18-variant type lattice with documented machine-representation invariants (`ty.rs`, `box_unbox_is_identity`), explicit per-statement fault edges (`OxBlock.fault_target` + `FaultDispatch { resume, resume_next }`), `is_fallible()` contracts on every op, typed COM descriptors interned inline in the program, and an existing verifier (`verify.rs`). The instruction documentation itself says fallible ops "lower cleanly to a branch on a returned status" — the IR anticipated exactly the compilation model in §3.
-- **The runtime is already a library.** ~73K lines of runtime services are cleanly separable and JIT-reusable: `oxvba-eval` (arith/compare/coerce as free functions), `oxvba-lib::invoke` (every builtin), `oxvba-runtime` (Variant/BSTR/SafeArray/VbaRecord/ObjectRef + the termination queue), `oxvba-com` and `oxvba-hal` behind `&dyn HostServices`. Only ~6K lines of `oxvba-vm3` are interpreter-specific.
+- **The runtime is already a library.** ~73K lines of runtime services are cleanly separable and JIT-reusable: `oxvba-eval` (arith/compare/coerce as free functions), `oxvba-lib::{invoke_context_free, invoke_contextual}` (disjoint host-capable and context-bearing builtin dispatch), `oxvba-runtime` (Variant/BSTR/SafeArray/VbaRecord/ObjectRef + the termination queue), `oxvba-com` and `oxvba-hal` behind `&dyn HostServices`. Only ~6K lines of `oxvba-vm3` are interpreter-specific.
 - **The regression net exists.** ~300-program conformance corpus; `crates/oxvba-differential/vm3_golden.snap` (insta; re-bless via `OXVBA_BLESS_GOLDEN=1`); live-Excel oracle captures under `docs/evidence/conformance/`; live com_matrix suites in `oxvba-host`; six differential axes (result values, Err state, side-effect journal, Init/Terminate timing, COM transport counts, COM typed-arg fidelity).
 - **The error model is normative and largely IR-encoded.** R1–R14 in `OXIR_VM3_ERROR_MODEL.md`; fault edges, landing pads, `ClearErr`-on-Exit, and GoSub terminators are already in the IR, so most of the model is shared between engines by construction.
 
@@ -366,7 +366,7 @@ Classification:
 | Family | OxInsts | Backing |
 |---|---|---|
 | arith | Arith/Div/Pow/Neg/Concat/Compare/Logical/Not/Truthy/Coerce/Unbox{checked}/CompareObjectIs/TypeOfIs/VariantChanged/ValidateAssignment | `oxvba-eval` kernels (typed + Variant facades) |
-| calls | CallNative → `oxvba_lib::invoke`; CallByName → member resolver | lib / image tables |
+| calls | CallNative → disjoint `oxvba_lib::{invoke_context_free, invoke_contextual}` dispatch; CallByName → member resolver | lib / image tables |
 | COM | ComCallEarly / ComCallLate | HAL; per-site immutable descriptors in a compile-time arena, referenced by absolute-address iconst |
 | objects | NewObject/NewExtern/Predeclared*/FieldGet/FieldSet/FieldArray*/AddRef/Release/DrainTerminations | `oxvba-runtime` object model |
 | records | NewRecord/RecordGet/Set/LSet/ArrayGet/ArraySet | VbaRecord |

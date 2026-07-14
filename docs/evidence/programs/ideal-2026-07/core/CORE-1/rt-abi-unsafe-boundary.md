@@ -6,16 +6,18 @@ Bead: `bd-59co.2.2.26`
 
 Baseline: `b5604905554d29d14277fbf17d4720184cdf12ed`
 
-Repair commits: `a2c012bb`, `648936d7`, and `b94abfda`
+Repair commits: `a2c012bb`, `648936d7`, `b94abfda`, `60b4d88a`, and
+`37796392`
 
 Branch: `codex/bd-59co-2-2-26-rt-abi-safety`
 
 Status: the bounded raw runtime ABI, synchronous procedure bridge, stable JIT
-run-root, library-context split, and termination-cleanup repair is implemented
-and passes its focused gates. Independent controller review and integration
-remain required. This evidence does not claim full `RUNTIME-ABI-001`, Windows
-COM behavior, product helper-catalog completion, or workspace strict-Clippy
-closure.
+run-root, disjoint library-context dispatch, current VM3 queued-DoEvents
+boundary, and termination-cleanup repair is implemented and passes its focused
+gates and independent non-author review. Controller integration remains
+required. This evidence does not claim full `RUNTIME-ABI-001`, a stable raw VM3
+session root, synchronous same-VM VM3 re-entry, Windows COM behavior, product
+helper-catalog completion, or workspace strict-Clippy closure.
 
 ## Resulting boundary
 
@@ -53,15 +55,35 @@ structural:
   `LibContext`.
 - `invoke_contextual` accepts only `Rnd` and `Randomize`; it receives mutable
   `LibContext` but no host.
-- the existing `invoke` API remains as a compatibility wrapper over those two
-  paths, so this is additive rather than a versioned public break;
+- `is_contextual` is the shared classifier. A `NativeImplId::ALL` regression
+  proves that its complete contextual set is exactly `Rnd` and `Randomize`;
+- the generic safe `invoke(id, args, host, &mut LibContext)` API was removed.
+  Such a signature cannot express that host-capable dispatch and mutable
+  execution context must not overlap;
 - `rt_lib_invoke_with_policy` copies the host under a short state borrow, drops
   that borrow before context-free host dispatch, and borrows RNG context only
-  for the non-host contextual branch.
+  for the non-host contextual branch;
+- VM3 now makes the same explicit classification. Contextual RNG dispatch takes
+  only `&mut LibContext`; every other ID takes only the host and fails closed if
+  classification ever disagrees with the exhaustive context-free dispatcher.
 
-This removes the previous unsound possibility that a host call such as
-`DoEvents` could re-enter VBA while an `ExecState`/`LibContext` borrow remained
-live.
+This removes the safe library API that permitted a host call such as `DoEvents`
+while the same call also retained mutable `LibContext`. The JIT/runtime-ABI path
+uses its stable raw session root and short pre/post borrows. Current VM3 has a
+narrower event model: `HostServices` exposes shared HAL facets but grants no VM
+or session callback authority; `StandardHostServices::DoEvents` performs a
+bounded pump and marks queued COM work, returns, and VM3 polls/dispatches the
+queue from the following `StmtBoundary`. A custom host can synchronously access
+the same VM only by obtaining and dereferencing separate unsafe/raw authority;
+the safe `HostServices`/VM3 APIs do not enable that operation.
+
+Consequently this repair does **not** pretend that a leaf raw helper makes VM3
+synchronously re-entrant. A sound future same-VM callback design must convert
+the complete VM3/session execution boundary to one stable root and cover every
+top-level and nested run-loop producer. That work is owned by exact delivery
+successor `bd-59co.2.7.4`, `CORE-5 establish a stable VM3 synchronous reentry
+root`, traced to `CORE-RUNTIME-HELPER-SESSION`, plus its Windows synchronous
+event/callback consumers.
 
 ## Lifecycle and subscription reconciliation
 
@@ -83,7 +105,14 @@ removed.
 The added tests prove:
 
 - context-free and contextual built-in routing cannot cross the host/context
-  ownership boundary;
+  ownership boundary, and the complete native catalog classifies only `Rnd` and
+  `Randomize` as contextual;
+- VM3 can execute `Rnd`, `DoEvents`, then `Rnd` again; the host probe proves
+  `DoEvents` exits before VM3 polls callbacks at `StmtBoundary`, and the RNG
+  context remains usable on both sides;
+- the controlled Windows `StandardHostServices` COM event lifecycle proves the
+  real adapter queues, pumps, exposes, releases, and drains its callback payload
+  without receiving a VM pointer;
 - a missing initializer bridge does not consume an instance identity;
 - recursive predeclared initialization exposes the in-flight singleton, failed
   initialization removes that identity, and a re-entrant replacement survives;
@@ -108,10 +137,13 @@ are unchanged. No C ABI version change is required. The internal explicit-drain
 generated-helper signature carries the current run pointer; it is private and
 changed coherently with its declaration, emission, and implementation.
 
-The Rust source surface was intentionally hardened by making the bridge and its
-state cell private. An untracked external Rust caller that constructed those
-private details would need to use the install/clear ABI, but no repository
-consumer did so.
+The Rust source surface was intentionally hardened in two ways: the procedure
+bridge and its state cell became private, and the public generic
+`oxvba_lib::invoke` wrapper was removed. The latter is a deliberate Rust source
+API break for any untracked external crate; callers must choose
+`invoke_context_free` or `invoke_contextual` and therefore state which authority
+they need. All repository consumers were migrated or already used the split
+APIs. This is not a C ABI or versioned product-contract change.
 
 Observable repairs are:
 
@@ -126,25 +158,33 @@ Observable repairs are:
 
 ## Exact command evidence
 
-Executed in the isolated worker worktree after `b94abfda`:
+Executed in the isolated worker worktree after `37796392`:
 
 | Command | Result |
 |---|---|
 | `cargo fmt --all -- --check` | Pass. |
-| `cargo check -p oxvba-lib -p oxvba-rt-abi -p oxvba-jit` | Pass. |
+| `cargo check -p oxvba-lib -p oxvba-vm3 -p oxvba-rt-abi -p oxvba-jit` | Pass. |
+| `cargo doc -p oxvba-lib --no-deps` | Pass; the split public dispatcher documentation has no broken intra-doc links. |
 | `cargo clippy -p oxvba-lib -p oxvba-rt-abi --all-targets -- -D warnings` | Pass; zero warnings. |
+| `cargo clippy -p oxvba-vm3 --all-targets -- -D warnings` | Not green: exactly two inherited warnings, listed below. No pass is claimed. |
+| `cargo clippy -p oxvba-vm3 --all-targets -- -D warnings -A clippy::too_many_arguments -A clippy::collapsible_if` | Pass after naming only the two inherited warning classes; no new warning is hidden. |
 | `cargo clippy -p oxvba-jit --all-targets -- -D clippy::undocumented_unsafe_blocks -D clippy::missing_safety_doc -D unsafe_op_in_unsafe_fn` | Pass for all selected safety lints; the 21 inherited warnings below remain. |
-| `cargo test -p oxvba-lib -p oxvba-rt-abi` | Pass: 44 library tests, 40 runtime ABI tests, and 1 compile-fail doctest. |
-| `cargo test -p oxvba-jit` | Pass: 167 tests; 0 failed. |
+| `cargo test -p oxvba-lib -p oxvba-vm3 -p oxvba-rt-abi -p oxvba-jit --no-fail-fast` | Pass: 45 library tests, 35 VM3 unit tests, 8 VM3 cross-program tests, 40 runtime ABI tests, 167 JIT tests, and 1 compile-fail doctest; 0 failed. |
+| `cargo test -p oxvba-hal windows_native_com_event_subscription_lifecycle_is_tracked -- --nocapture --test-threads=1` | Pass: 1 controlled Windows StandardHost event/queue lifecycle test; 0 failed. |
 | `cargo test -p oxvba-differential --test jit_project_objects -- --nocapture` | Pass: 45 tests; 0 failed. |
 | `cargo test -p oxvba-differential --test class_lifecycle_vm3 -- --nocapture` | Pass: 6 tests; 0 failed. |
-| `cargo test -p oxvba-differential jit_scope_snapshot -- --nocapture` | Inconclusive: command-level timeout during broad target enumeration/build, with no test result emitted. No pass is claimed. |
+| `cargo test -p oxvba-differential --lib jit_scope_snapshot -- --nocapture` | Pass: 1 test; 0 failed. The earlier broad-target timeout is superseded by this exact library-target run. |
 | `cargo miri --version` | Unavailable: stable MSVC has no `miri` component. No Miri run is claimed. |
 | `git diff --check` | Pass before the code commit. |
 
 ## Inherited warnings and non-claims
 
-Workspace strict Clippy is not green. The exact unchanged JIT warning roster is:
+Workspace strict Clippy is not green. VM3 has two inherited warnings:
+
+- `clippy::too_many_arguments`: line 134;
+- `clippy::collapsible_if`: line 3068.
+
+The exact unchanged JIT warning roster is:
 
 - `clippy::too_many_arguments`: lines 3004, 3021, 3111, 3557, 3951, 4016,
   4884, 15151, 15362, and 19788;
@@ -157,19 +197,30 @@ Workspace strict Clippy is not green. The exact unchanged JIT warning roster is:
 Those baseline warnings belong to the separate strict-Clippy cleanup bead and
 were not absorbed here.
 
-The repair is a complete answer to the fresh-review borrow/re-entry findings in
-this bounded slice. It does not claim a versioned product helper catalog,
-general typed-primary JIT ABI, cross-platform COM plan, apartment policy,
-Windows callback proof, or Miri proof. Those remain owned by the Ideal Core and
-Windows worksets.
+The repair is a complete answer to the unsafe generic library-dispatch and
+current JIT/runtime-ABI borrow findings in this bounded slice. It does not claim
+a stable raw VM3 session root, synchronous same-VM VM3 callback safety, a
+versioned product helper catalog, general typed-primary JIT ABI, cross-platform
+COM plan, apartment policy, Windows callback proof, or Miri proof. Those remain
+owned by the Ideal Core and Windows worksets.
 
-## Worker review verdict
+## Independent review verdict
 
-The final worker pass searched for safe raw entry points, null/zero slice
-construction, public bridge bypass, typed state/run/context borrows crossing
-callbacks, every compiled-entry call, As-New and default-member paths, dynamic
-host/library invocation, subscription extraction/reconciliation, error/frame/map
-cleanup on failure, symbol/signature drift, missing safety comments, and lint
-suppression. Findings from that pass are repaired above or explicitly retained
-as non-claims. A new independent non-author review is required before bead
-acceptance.
+The worker pass searched for safe raw entry points, null/zero slice
+construction, public bridge bypass, all repository callers of the removed
+generic library API, complete native-ID classification, typed
+state/run/context borrows crossing callbacks, every compiled-entry call, VM3's
+top-level and nested run-loop caller chain, current StandardHost event-pump
+authority, As-New and default-member paths, dynamic host/library invocation,
+subscription extraction/reconciliation, error/frame/map cleanup on failure,
+symbol/signature drift, missing safety comments, and lint suppression. Findings
+from that pass are repaired above, assigned to the stable-root successor, or
+explicitly retained as non-claims.
+
+The independent `fresh_review_vm3_lib_split` agent then reviewed code commits
+`60b4d88a` and `37796392` plus the final evidence. It confirmed the disjoint
+catalog routing, fail-closed VM3 branch, queued/polled/released callback order,
+StandardHost's lack of VM authority, honest Rust API-break disclosure, and
+exact residual owner `bd-59co.2.7.4`. Its focused rerun passed all 45 library
+tests, all 43 VM3 tests, and `git diff --check`. Verdict: **PASS with no
+remaining actionable finding**.
