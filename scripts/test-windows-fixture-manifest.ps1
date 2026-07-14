@@ -960,7 +960,7 @@ try {
     }
     Invoke-ExpectedFailure -Name "pending-environment-unowned" -MessagePattern "missing or unknown pending owner" -Mutation {
         param($fixture)
-        Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.environment_owner_bead = "n/a" }
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -Mutation { param($row) $row.environment_owner_bead = "n/a" }
     }
     Invoke-ExpectedFailure -Name "environment-arbitrary-text" -MessagePattern "not valid environment-capture JSON" -Mutation {
         param($fixture)
