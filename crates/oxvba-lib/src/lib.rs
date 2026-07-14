@@ -74,9 +74,10 @@ impl From<HalError> for LibError {
     }
 }
 
-/// Mutable per-execution library state (e.g. the `Rnd` generator). Owned by the
-/// VM and threaded through every [`invoke`]; the host (read-only facets) is
-/// passed separately.
+/// Mutable per-execution library state (currently only the `Rnd` generator).
+/// Contextual built-ins never call the host; context-free built-ins receive no
+/// mutable context, which permits a host operation such as `DoEvents` to re-enter
+/// the owning VBA session without aliasing this state.
 #[derive(Debug, Clone)]
 pub struct LibContext {
     /// `Rnd`/`Randomize` LCG state.
@@ -91,6 +92,15 @@ impl Default for LibContext {
             rng_state: 0x0005_0000,
         }
     }
+}
+
+/// Outcome distinction for the context-free built-in dispatcher.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContextFreeInvokeError {
+    /// This ID belongs to the context-only dispatcher and did not call the host.
+    ContextRequired,
+    /// The context-free body ran and raised a VBA library fault.
+    Library(LibError),
 }
 
 // ── Argument / value helpers (shared by the family modules) ──────────────────
@@ -237,12 +247,16 @@ fn string_fn_propagates_null(id: NativeImplId) -> bool {
     )
 }
 
-pub fn invoke(
+/// Invoke a built-in that does not access [`LibContext`].
+///
+/// The exhaustive match is the admission policy: adding a native ID requires an
+/// explicit decision here. `Rnd` and `Randomize` return `ContextRequired` before
+/// any host or library body is called.
+pub fn invoke_context_free(
     id: NativeImplId,
     args: &[Variant],
     host: &dyn HostServices,
-    ctx: &mut LibContext,
-) -> LibResult<Variant> {
+) -> Result<Variant, ContextFreeInvokeError> {
     use NativeImplId::*;
     // VBA propagates `Null` through the value-returning unsuffixed string functions: if any
     // argument is `Null`, the result is `Null` (these otherwise reach `as_str` →
@@ -252,7 +266,7 @@ pub fn invoke(
     if string_fn_propagates_null(id) && args.iter().any(|a| a.vtype() == Vt::Null) {
         return Ok(Variant::null());
     }
-    match id {
+    let result = match id {
         // ── Strings ──
         Len => pure::len(args),
         LenB => pure::len_b(args),
@@ -350,8 +364,7 @@ pub fn invoke(
         CVar => pure::cvar(args),
 
         // ── Random ──
-        Rnd => pure::rnd(args, ctx),
-        Randomize => pure::randomize(args, ctx),
+        Rnd | Randomize => return Err(ContextFreeInvokeError::ContextRequired),
 
         // ── Financial ──
         Fv => pure::fv(args),
@@ -448,5 +461,74 @@ pub fn invoke(
 
         // ── Diagnostics ──
         DebugPrint => host::debug_print(args, host),
+    };
+    result.map_err(ContextFreeInvokeError::Library)
+}
+
+/// Invoke one of the context-dependent built-ins.
+///
+/// This dispatcher has no host parameter by construction. Passing a context-free
+/// ID is an internal routing fault rather than a fallback to host dispatch.
+pub fn invoke_contextual(
+    id: NativeImplId,
+    args: &[Variant],
+    ctx: &mut LibContext,
+) -> LibResult<Variant> {
+    match id {
+        NativeImplId::Rnd => pure::rnd(args, ctx),
+        NativeImplId::Randomize => pure::randomize(args, ctx),
+        _ => Err(LibError::invalid_call(format!(
+            "context-free built-in {id:?} reached contextual dispatch"
+        ))),
+    }
+}
+
+/// Compatibility dispatcher for callers that already own both host and context.
+pub fn invoke(
+    id: NativeImplId,
+    args: &[Variant],
+    host: &dyn HostServices,
+    ctx: &mut LibContext,
+) -> LibResult<Variant> {
+    match invoke_context_free(id, args, host) {
+        Ok(value) => Ok(value),
+        Err(ContextFreeInvokeError::Library(err)) => Err(err),
+        Err(ContextFreeInvokeError::ContextRequired) => invoke_contextual(id, args, ctx),
+    }
+}
+
+#[cfg(test)]
+mod dispatch_policy_tests {
+    use super::*;
+    use oxvba_hal::HostPolicy;
+    use oxvba_hal::adapters::null::NullHostServices;
+
+    #[test]
+    fn context_free_dispatch_rejects_only_context_bearing_rng_entries() {
+        let host = NullHostServices::new(HostPolicy::default());
+
+        assert_eq!(
+            invoke_context_free(NativeImplId::Rnd, &[], &host),
+            Err(ContextFreeInvokeError::ContextRequired)
+        );
+        assert_eq!(
+            invoke_context_free(NativeImplId::Randomize, &[], &host),
+            Err(ContextFreeInvokeError::ContextRequired)
+        );
+        assert!(matches!(
+            invoke_context_free(NativeImplId::DoEvents, &[], &host),
+            Err(ContextFreeInvokeError::Library(_))
+        ));
+    }
+
+    #[test]
+    fn contextual_dispatch_cannot_reach_host_capable_entries() {
+        let mut ctx = LibContext::default();
+
+        assert!(invoke_contextual(NativeImplId::Rnd, &[], &mut ctx).is_ok());
+        assert!(matches!(
+            invoke_contextual(NativeImplId::DoEvents, &[], &mut ctx),
+            Err(LibError { code: 5, .. })
+        ));
     }
 }

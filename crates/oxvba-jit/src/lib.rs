@@ -260,14 +260,13 @@ impl<'p> CompiledImage<'p> {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
+        let run_root = &raw mut run;
         let state = exec_state_as_raw(&mut exec);
         let mut bridge_ctx = JitProcInvokeCtx {
-            run: &mut run as *mut JitRun,
+            run: run_root,
             state,
         };
-        run.callback_ctx = &raw mut bridge_ctx;
         // SAFETY: `state` is the live same-thread run state, and `bridge_ctx`
         // remains live until the registration guard clears the bridge.
         let install_status = unsafe {
@@ -278,21 +277,17 @@ impl<'p> CompiledImage<'p> {
             )
         };
         if install_status != ST_OK {
-            run.callback_ctx = std::ptr::null_mut();
             return Err(JitError::Runtime(
                 "failed to install the JIT procedure-invocation bridge".to_string(),
             ));
         }
-        let _proc_invoker_registration = ProcInvokerRegistration {
-            state,
-            run: &raw mut run,
-        };
+        let _proc_invoker_registration = ProcInvokerRegistration { state };
 
         oxvba_runtime::reset_pending_terminations();
         if let Some(init) = entry_program.global_initializer {
             // SAFETY: the current compiled-run boundary owns the live unique state handle;
             // typed references and owned values remain live and nonaliasing for this call.
-            let status = unsafe { self.invoke_func(entry_program_index, init, &mut run, state) }?;
+            let status = unsafe { self.invoke_func(entry_program_index, init, run_root, state) }?;
             if status == ST_FAULT {
                 return Ok(JitOutcome {
                     values: Vec::new(),
@@ -312,7 +307,7 @@ impl<'p> CompiledImage<'p> {
         if let Some(entry) = entry_program.entry {
             // SAFETY: the current compiled-run boundary owns the live unique state handle;
             // typed references and owned values remain live and nonaliasing for this call.
-            let status = unsafe { self.invoke_func(entry_program_index, entry, &mut run, state) }?;
+            let status = unsafe { self.invoke_func(entry_program_index, entry, run_root, state) }?;
             if status == ST_FAULT {
                 return Ok(JitOutcome {
                     values: Vec::new(),
@@ -329,7 +324,6 @@ impl<'p> CompiledImage<'p> {
             }
         }
 
-        refresh_proc_invoke_run(&mut run);
         // SAFETY: `state` was derived above from the uniquely borrowed, live `exec`
         // and remains valid for this synchronous runtime call.
         let drain_status = unsafe { rt_maybe_drain(state) };
@@ -356,7 +350,7 @@ impl<'p> CompiledImage<'p> {
         &self,
         program_index: usize,
         func: FuncId,
-        run: &mut JitRun,
+        run: *mut JitRun,
         state: *mut RawExecState,
     ) -> Result<i32, JitError> {
         let program = self
@@ -367,9 +361,9 @@ impl<'p> CompiledImage<'p> {
             .funcs
             .get(func.0)
             .ok_or_else(|| JitError::Runtime(format!("function {} out of range", func.0)))?;
-        run.frames.clear();
-        run.explicit_refs.clear();
-        run.param_array_aliases.clear();
+        if run.is_null() {
+            return Err(JitError::Runtime("JIT run root is null".to_string()));
+        }
         let entry = *self
             .functions
             .get(program_index)
@@ -387,8 +381,16 @@ impl<'p> CompiledImage<'p> {
         if enter_status != ST_OK {
             return Ok(enter_status);
         }
-        run.frames.push(new_jit_frame(program, program_index, f)?);
-        refresh_proc_invoke_run(run);
+        let frame = new_jit_frame(program, program_index, f)?;
+        {
+            // SAFETY: null was rejected and no other typed run borrow is live.
+            // Keep this initialization borrow visibly bounded before compiled entry.
+            let run_ref = unsafe { &mut *run };
+            run_ref.frames.clear();
+            run_ref.explicit_refs.clear();
+            run_ref.param_array_aliases.clear();
+            run_ref.frames.push(frame);
+        }
         // SAFETY: `entry` was produced by Cranelift for the exact `JitEntryFn`
         // signature in `Compiler::entry_signature`; `run` and `state` live for the call.
         let status = unsafe { entry(run, state) };
@@ -414,7 +416,6 @@ struct JitRun {
     next_collection_instance_id: i32,
     programs: *const JitProgramImage,
     program_count: usize,
-    callback_ctx: *mut JitProcInvokeCtx,
 }
 
 #[derive(Clone, Copy)]
@@ -425,7 +426,6 @@ struct JitProcInvokeCtx {
 
 struct ProcInvokerRegistration {
     state: *mut RawExecState,
-    run: *mut JitRun,
 }
 
 impl Drop for ProcInvokerRegistration {
@@ -433,26 +433,6 @@ impl Drop for ProcInvokerRegistration {
         // Clear the runtime-held opaque pointer before its stack storage expires.
         // SAFETY: registration and guard are confined to the same live run state.
         let _ = unsafe { rt_clear_proc_invoker(self.state) };
-        if !self.run.is_null() {
-            // SAFETY: the guard is dropped before the owning `JitRun`, and no
-            // procedure callback can start after the bridge was cleared above.
-            unsafe {
-                std::ptr::addr_of_mut!((*self.run).callback_ctx).write(std::ptr::null_mut());
-            }
-        }
-    }
-}
-
-fn refresh_proc_invoke_run(run: &mut JitRun) {
-    let callback_ctx = run.callback_ctx;
-    if callback_ctx.is_null() {
-        return;
-    }
-    // SAFETY: a non-null pointer is installed only while the registration guard
-    // keeps the stack-owned callback context live. Deriving the pointer from this
-    // current reborrow prevents a callback from reusing a superseded `&mut JitRun`.
-    unsafe {
-        std::ptr::addr_of_mut!((*callback_ctx).run).write(run as *mut JitRun);
     }
 }
 
@@ -481,13 +461,15 @@ unsafe extern "C" fn jit_proc_invoke(
         if ctx.run.is_null() || ctx.state.is_null() {
             return ST_FAULT;
         }
-        // SAFETY: null was rejected and the run is uniquely borrowed by the active helper.
-        let run = unsafe { &mut *ctx.run };
-        if run.programs.is_null() || target_prog >= run.program_count {
-            return ST_FAULT;
-        }
-        // SAFETY: target_prog is bounds-checked and the table is live for the run.
-        let image = unsafe { *run.programs.add(target_prog) };
+        let image = {
+            // SAFETY: null was rejected; this read-only borrow ends before entry.
+            let run = unsafe { &*ctx.run };
+            if run.programs.is_null() || target_prog >= run.program_count {
+                return ST_FAULT;
+            }
+            // SAFETY: target_prog is bounds-checked and the table is live for the run.
+            unsafe { *run.programs.add(target_prog) }
+        };
         if image.program.is_null() || image.functions.is_null() || proc >= image.function_count {
             return ST_FAULT;
         }
@@ -507,7 +489,12 @@ unsafe extern "C" fn jit_proc_invoke(
         {
             return ST_FAULT;
         }
-        if run.frames.len() >= MAX_JIT_FRAMES {
+        // SAFETY: the short read-only borrow ends before any runtime/entry call.
+        let frame_limit_reached = {
+            // SAFETY: null was rejected and this shared borrow ends before entry.
+            unsafe { (&*ctx.run).frames.len() >= MAX_JIT_FRAMES }
+        };
+        if frame_limit_reached {
             // SAFETY: the callback context validation above established that
             // `ctx.state` is the live execution state for this synchronous call.
             return unsafe { rt_raise_out_of_stack(ctx.state) };
@@ -524,26 +511,42 @@ unsafe extern "C" fn jit_proc_invoke(
         if enter_status != ST_OK {
             return enter_status;
         }
-        run.frames.push(frame);
+        {
+            // SAFETY: no other typed run borrow is live; the borrow ends before entry.
+            let run = unsafe { &mut *ctx.run };
+            run.frames.push(frame);
+        }
         // SAFETY: function pointer bounds were checked above.
         let entry = unsafe { *image.functions.add(proc) };
-        refresh_proc_invoke_run(run);
-        // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
-        let status = unsafe { entry(run as *mut JitRun, ctx.state) };
-        let Some(frame) = run.frames.pop() else {
-            return ST_FAULT;
+        // SAFETY: the function pointer uses the JIT entry ABI and the stable raw
+        // run root/state remain live. No typed run borrow spans this call.
+        let status = unsafe { entry(ctx.run, ctx.state) };
+        let cleanup_status = {
+            // SAFETY: entry returned and no typed run borrow is live.
+            let run = unsafe { &mut *ctx.run };
+            let Some(frame) = run.frames.pop() else {
+                // SAFETY: the activation was entered successfully and the live
+                // callback state remains valid even if the run stack is corrupt.
+                let restore_status = unsafe { rt_err_restore_activation(ctx.state, &saved_err) };
+                return if restore_status == ST_OK {
+                    ST_FAULT
+                } else {
+                    restore_status
+                };
+            };
+            // SAFETY: state helpers used by frame cleanup do not invoke entries;
+            // this typed run borrow is confined to the post-entry phase.
+            let cleanup_status = unsafe { after_jit_frame_pop(run, ctx.state, &frame) };
+            drop(frame);
+            cleanup_status
         };
-        // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
-        let cleanup_status = unsafe { after_jit_frame_pop(run, ctx.state, &frame) };
-        if cleanup_status != ST_OK {
-            return cleanup_status;
-        }
         // SAFETY: the callback state remains live and `saved_err` was initialized
         // by the successful enter call above.
         let restore_status = unsafe { rt_err_restore_activation(ctx.state, &saved_err) };
         if restore_status != ST_OK {
             restore_status
+        } else if cleanup_status != ST_OK {
+            cleanup_status
         } else {
             status
         }
@@ -12881,25 +12884,35 @@ macro_rules! variant_operand_value_from_compiled_desc {
 // and length arguments must identify the initialized, nonaliasing storage described
 // by their typed parameters for the complete synchronous call.
 unsafe fn variant_operand_value_with_as_new(
-    run: &mut JitRun,
+    run: *mut JitRun,
     state: *mut RawExecState,
     operand: JitVariantOperandDesc,
 ) -> Result<Variant, i32> {
+    if run.is_null() {
+        return Err(ST_FAULT);
+    }
     if operand.kind != JIT_VARIANT_OPERAND_PLACE {
+        // SAFETY: null was rejected and this borrow cannot reach a callback.
+        let run = unsafe { &*run };
         return variant_operand_value_from_compiled_desc!(run, operand).ok_or(ST_FAULT);
     }
     if operand.area < 0 || operand.index < 0 {
         return Err(ST_FAULT);
     }
-    let Some(alias) = current_frame_slot(run, operand.area as u32, operand.index as u32)
-        .and_then(|alias| resolve_slot_alias(run, alias))
-    else {
-        return Err(ST_FAULT);
+    let (alias, value, binding) = {
+        // SAFETY: null was rejected and the read-only borrow ends before activation.
+        let run = unsafe { &*run };
+        let Some(alias) = current_frame_slot(run, operand.area as u32, operand.index as u32)
+            .and_then(|alias| resolve_slot_alias(run, alias))
+        else {
+            return Err(ST_FAULT);
+        };
+        let Some(value) = slot_alias_ref(run, alias).cloned() else {
+            return Err(ST_FAULT);
+        };
+        (alias, value, run.as_new_slots.get(&alias).cloned())
     };
-    let Some(value) = slot_alias_ref(run, alias).cloned() else {
-        return Err(ST_FAULT);
-    };
-    let Some(binding) = run.as_new_slots.get(&alias).cloned() else {
+    let Some(binding) = binding else {
         return Ok(value);
     };
     if !jit_is_nothing(&value) {
@@ -12908,10 +12921,14 @@ unsafe fn variant_operand_value_with_as_new(
     // SAFETY: the current compiled-run boundary owns the live unique state handle;
     // typed references and owned values remain live and nonaliasing for this call.
     let object = unsafe { instantiate_as_new_for_jit(run, state, 0, binding) }?;
-    let Some(slot) = slot_alias_mut(run, alias) else {
-        return Err(ST_FAULT);
-    };
-    *slot = object.clone();
+    {
+        // SAFETY: activation returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
+        let Some(slot) = slot_alias_mut(run, alias) else {
+            return Err(ST_FAULT);
+        };
+        *slot = object.clone();
+    }
     Ok(object)
 }
 
@@ -12920,15 +12937,17 @@ unsafe fn variant_operand_value_with_as_new(
 // and length arguments must identify the initialized, nonaliasing storage described
 // by their typed parameters for the complete synchronous call.
 unsafe fn instantiate_as_new_for_jit(
-    run: &mut JitRun,
+    run: *mut JitRun,
     state: *mut RawExecState,
     program_index: i32,
     binding: OxAsNew,
 ) -> Result<Variant, i32> {
+    if run.is_null() {
+        return Err(ST_FAULT);
+    }
     match binding {
         OxAsNew::ProjectClass { class } => {
             let mut value = Variant::empty();
-            refresh_proc_invoke_run(run);
             // SAFETY: the enclosing JIT boundary validated the live state; the Variant output is initialized, uniquely borrowed storage.
             let status = unsafe {
                 rt_project_new_object(state, program_index as usize, class.0, &mut value)
@@ -12946,7 +12965,9 @@ unsafe fn instantiate_as_new_for_jit(
             else {
                 return Err(ST_FAULT);
             };
-            new_collection_variant_for_jit(run, program_index)
+            // SAFETY: collection construction cannot invoke the host or an entry;
+            // this short mutable borrow is confined to local ID allocation.
+            new_collection_variant_for_jit(unsafe { &mut *run }, program_index)
         }
         OxAsNew::ExternClass { .. } => Err(ST_FAULT),
     }
@@ -12999,15 +13020,20 @@ fn class_field_as_new_binding_for_jit(
 // and length arguments must identify the initialized, nonaliasing storage described
 // by their typed parameters for the complete synchronous call.
 unsafe fn project_field_get_with_as_new_for_jit(
-    run: &mut JitRun,
+    run: *mut JitRun,
     state: *mut RawExecState,
     object: &oxvba_runtime::object_ref::ObjectRef,
     field: i32,
 ) -> Result<Variant, i32> {
+    if run.is_null() {
+        return Err(ST_FAULT);
+    }
     let value = object
         .project_field_get(field)
         .unwrap_or_else(Variant::empty);
-    let Some(binding) = class_field_as_new_binding_for_jit(run, object, field) else {
+    // SAFETY: null was rejected and this read-only borrow ends before activation.
+    let binding = class_field_as_new_binding_for_jit(unsafe { &*run }, object, field);
+    let Some(binding) = binding else {
         return Ok(value);
     };
     if !jit_is_nothing(&value) {
@@ -13844,14 +13870,14 @@ unsafe extern "C" fn rt_jit_store_variant(
         // SAFETY: null was rejected and the compiled caller writes one descriptor to
         // a stack slot that stays live for this helper call.
         let operand = unsafe { *operand };
-        // SAFETY: null was rejected and the source is cloned before the destination write.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let src = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(src) => src,
             Err(status) => return status,
         };
+        // SAFETY: the callback-capable lookup returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area, dst_index) else {
             return ST_FAULT;
         };
@@ -13870,10 +13896,11 @@ unsafe extern "C" fn rt_jit_stmt_boundary(
         if run.is_null() || state.is_null() || clear_temps_from < 0 {
             return ST_FAULT;
         }
-        // SAFETY: null was rejected and compiled code gives unique run ownership.
-        let run = unsafe { &mut *run };
-        clear_current_statement_temps(run, clear_temps_from as usize);
-        refresh_proc_invoke_run(run);
+        {
+            // SAFETY: null was rejected and compiled code gives unique run ownership.
+            let run = unsafe { &mut *run };
+            clear_current_statement_temps(run, clear_temps_from as usize);
+        }
         // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
         unsafe { rt_maybe_drain(state) }
     })
@@ -13884,9 +13911,6 @@ unsafe extern "C" fn rt_jit_drain_terminations(run: *mut JitRun, state: *mut Raw
         if run.is_null() || state.is_null() {
             return ST_FAULT;
         }
-        // SAFETY: null was rejected and compiled code gives unique run ownership.
-        let run = unsafe { &mut *run };
-        refresh_proc_invoke_run(run);
         // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
         unsafe { rt_maybe_drain(state) }
     })
@@ -13903,10 +13927,8 @@ unsafe extern "C" fn rt_jit_add_ref(
         }
         // SAFETY: descriptor pointer is owned by compiled stack state for this call.
         let operand = unsafe { *operand };
-        // SAFETY: null was rejected and compiled code gives unique run ownership.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
@@ -13915,7 +13937,8 @@ unsafe extern "C" fn rt_jit_add_ref(
             // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
             return unsafe { rt_raise_runtime_error_number(state, 424) };
         }
-        run.explicit_refs.push(value);
+        // SAFETY: callback-capable lookup returned and no typed run borrow is live.
+        unsafe { &mut *run }.explicit_refs.push(value);
         ST_OK
     })
 }
@@ -13931,10 +13954,8 @@ unsafe extern "C" fn rt_jit_release(
         }
         // SAFETY: descriptor pointer is owned by compiled stack state for this call.
         let operand = unsafe { *operand };
-        // SAFETY: null was rejected and compiled code gives unique run ownership.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
@@ -13945,6 +13966,8 @@ unsafe extern "C" fn rt_jit_release(
             Ok(identity) => identity,
             Err(status) => return status,
         };
+        // SAFETY: all callback-capable work returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         if let Some(index) = run
             .explicit_refs
             .iter()
@@ -14057,9 +14080,6 @@ unsafe extern "C" fn rt_jit_new_object_to_slot(
             return ST_FAULT;
         }
         let mut value = Variant::empty();
-        // SAFETY: null was rejected and this short reborrow ends before the
-        // runtime helper can synchronously invoke a compiled initializer.
-        refresh_proc_invoke_run(unsafe { &mut *run });
         // SAFETY: null state was rejected and is live for this JIT boundary;
         // `value` is initialized, uniquely borrowed Variant output storage.
         let status = unsafe {
@@ -14103,9 +14123,6 @@ unsafe extern "C" fn rt_jit_predeclared_to_slot(
             return ST_FAULT;
         }
         let mut value = Variant::empty();
-        // SAFETY: null was rejected and this short reborrow ends before the
-        // runtime helper can synchronously invoke a compiled initializer.
-        refresh_proc_invoke_run(unsafe { &mut *run });
         // SAFETY: null state was rejected and is live for this JIT boundary;
         // `value` is initialized, uniquely borrowed Variant output storage.
         let status = unsafe {
@@ -14148,10 +14165,8 @@ unsafe extern "C" fn rt_jit_predeclared_set(
         }
         // SAFETY: the compiled caller provides one live descriptor.
         let operand = unsafe { *operand };
-        // SAFETY: null was rejected and the source is cloned before the ABI call.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
@@ -14340,10 +14355,8 @@ unsafe extern "C" fn rt_jit_withevents_get_to_slot(
         }
         // SAFETY: the compiled caller provides one live descriptor.
         let owner_operand = unsafe { *owner };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let owner_value =
             match unsafe { variant_operand_value_with_as_new(run, state, owner_operand) } {
                 Ok(value) => value,
@@ -14367,6 +14380,9 @@ unsafe extern "C" fn rt_jit_withevents_get_to_slot(
             .get(&key)
             .map(|binding| binding.source.clone())
             .unwrap_or_else(|| Variant::from_i32(0));
+        let _ = exec;
+        // SAFETY: callback-capable lookup returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -14389,10 +14405,8 @@ unsafe extern "C" fn rt_jit_withevents_set_to_slot(
         }
         // SAFETY: null was rejected and the compiled caller writes two live descriptors.
         let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans possible As-New initializer callbacks.
         let owner_value =
             match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
                 Ok(value) => value,
@@ -14430,6 +14444,9 @@ unsafe extern "C" fn rt_jit_withevents_set_to_slot(
                 },
             );
         }
+        let _ = exec;
+        // SAFETY: callback-capable lookups returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -14451,10 +14468,8 @@ unsafe extern "C" fn rt_jit_withevents_clear_owner_to_slot(
         }
         // SAFETY: the compiled caller provides one live descriptor.
         let owner_operand = unsafe { *owner };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let owner_value =
             match unsafe { variant_operand_value_with_as_new(run, state, owner_operand) } {
                 Ok(value) => value,
@@ -14475,6 +14490,9 @@ unsafe extern "C" fn rt_jit_withevents_clear_owner_to_slot(
         exec.events
             .withevents
             .retain(|key, _| jit_withevents_owner_raw(*key) != owner_raw);
+        let _ = exec;
+        // SAFETY: callback-capable lookup returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -14497,10 +14515,8 @@ unsafe extern "C" fn rt_jit_withevents_first_owner_to_slot(
         }
         // SAFETY: the compiled caller provides one live descriptor.
         let source_operand = unsafe { *source };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let source_value =
             match unsafe { variant_operand_value_with_as_new(run, state, source_operand) } {
                 Ok(value) => value,
@@ -14537,6 +14553,8 @@ unsafe extern "C" fn rt_jit_withevents_first_owner_to_slot(
             }
             None => Variant::from_i32(0),
         };
+        // SAFETY: callback-capable lookup returned and all state borrows are out of scope.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -14614,10 +14632,8 @@ unsafe extern "C" fn rt_jit_raise_event(
         };
         // SAFETY: the compiled caller provides one live descriptor.
         let source_operand = unsafe { *source };
-        // SAFETY: null was rejected and this helper clones before invoking handlers.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let source_value =
             match unsafe { variant_operand_value_with_as_new(run, state, source_operand) } {
                 Ok(value) => value,
@@ -14631,6 +14647,15 @@ unsafe extern "C" fn rt_jit_raise_event(
             Err(status) => return status,
         };
         let source_id = source_object.raw();
+        let current_program = {
+            // SAFETY: callback-capable source lookup returned; this shared borrow is
+            // bounded before any handler entry and supplies only a copied index.
+            unsafe { &*run }
+                .frames
+                .last()
+                .map(|frame| frame.program_index)
+                .unwrap_or(0)
+        };
         let targets: Vec<(u64, Variant, usize, usize)> = {
             // SAFETY: this helper inherits the exact live, uniquely borrowed, same-thread
             // execution-state handle contract from its checked compiled-run caller.
@@ -14647,12 +14672,7 @@ unsafe extern "C" fn rt_jit_raise_event(
                     .owner
                     .as_object_ref()
                     .map(|owner| owner.bundle_id() as usize)
-                    .unwrap_or_else(|| {
-                        run.frames
-                            .last()
-                            .map(|frame| frame.program_index)
-                            .unwrap_or(0)
-                    });
+                    .unwrap_or(current_program);
                 if let Some(&handler) = exec
                     .programs
                     .get(owner_bundle)
@@ -14709,10 +14729,8 @@ unsafe extern "C" fn rt_jit_project_field_get_to_slot(
         }
         // SAFETY: the compiled caller provides one live descriptor.
         let object_operand = unsafe { *object };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans possible As-New initializer callbacks.
         let object_value =
             match unsafe { variant_operand_value_with_as_new(run, state, object_operand) } {
                 Ok(value) => value,
@@ -14731,6 +14749,8 @@ unsafe extern "C" fn rt_jit_project_field_get_to_slot(
                 Ok(value) => value,
                 Err(status) => return status,
             };
+        // SAFETY: callback-capable field lookup returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -14751,10 +14771,8 @@ unsafe extern "C" fn rt_jit_project_field_set(
         }
         // SAFETY: null was rejected and the compiled caller writes two live descriptors.
         let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
-        // SAFETY: null was rejected and this helper clones before mutating object state.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans possible As-New initializer callbacks.
         let object_value =
             match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
                 Ok(value) => value,
@@ -14821,7 +14839,7 @@ fn project_default_member_for_jit<'a>(
 // and length arguments must identify the initialized, nonaliasing storage described
 // by their typed parameters for the complete synchronous call.
 unsafe fn invoke_project_member_with_me(
-    run: &mut JitRun,
+    run: *mut JitRun,
     state: *mut RawExecState,
     program_index: usize,
     proc: usize,
@@ -14829,106 +14847,127 @@ unsafe fn invoke_project_member_with_me(
     args: &[JitCallArgDesc],
     names: &[JitCallArgNameDesc],
 ) -> Result<Variant, i32> {
-    let Some(image) = program_image(run, program_index) else {
-        return Err(ST_FAULT);
-    };
-    if image.program.is_null() || image.functions.is_null() || proc >= image.function_count {
+    if run.is_null() {
         return Err(ST_FAULT);
     }
-    // SAFETY: installed from the owning CompiledImage for this run.
-    let program = unsafe { &*image.program };
-    let Some(func) = program.funcs.get(proc) else {
-        return Err(ST_FAULT);
-    };
-    if hidden_me_receiver_param_count(func) != 1 {
-        return Err(ST_FAULT);
-    }
-    let return_local = if let Some(ret) = func.return_local {
-        let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
+    let (image, return_local, frame, pending_param_array_aliases) = {
+        // SAFETY: null was rejected. This preparation borrow ends before compiled entry.
+        let run_ref = unsafe { &mut *run };
+        let Some(image) = program_image(run_ref, program_index) else {
             return Err(ST_FAULT);
         };
-        if !is_jit_static_call_ty(&ret_ty) {
+        if image.program.is_null() || image.functions.is_null() || proc >= image.function_count {
             return Err(ST_FAULT);
         }
-        Some((ret.0, ret_ty))
-    } else {
-        None
+        // SAFETY: installed from the owning CompiledImage for this run.
+        let program = unsafe { &*image.program };
+        let Some(func) = program.funcs.get(proc) else {
+            return Err(ST_FAULT);
+        };
+        if hidden_me_receiver_param_count(func) != 1 {
+            return Err(ST_FAULT);
+        }
+        let return_local = if let Some(ret) = func.return_local {
+            let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
+                return Err(ST_FAULT);
+            };
+            if !is_jit_static_call_ty(&ret_ty) {
+                return Err(ST_FAULT);
+            }
+            Some((ret.0, ret_ty))
+        } else {
+            None
+        };
+        // SAFETY: descriptors and function metadata remain live for preparation.
+        let ordered_args = unsafe { order_project_member_call_args(state, func, args, names) }?;
+        if run_ref.frames.len() >= MAX_JIT_FRAMES {
+            // SAFETY: the enclosing JIT boundary validated the live execution state.
+            return Err(unsafe { rt_raise_out_of_stack(state) });
+        }
+        let Some(caller_frame) = run_ref.frames.len().checked_sub(1) else {
+            return Err(ST_FAULT);
+        };
+        let mut frame = new_jit_frame(program, program_index, func).map_err(|_| ST_FAULT)?;
+        frame.locals[0] = me;
+        let mut pending_param_array_aliases = Vec::new();
+        // SAFETY: preparation owns the bounded run borrow and disjoint frame storage.
+        let seed_status = unsafe {
+            seed_jit_member_frame_args(
+                state,
+                run_ref,
+                func,
+                &mut frame,
+                caller_frame,
+                &ordered_args,
+                &mut pending_param_array_aliases,
+            )
+        };
+        if seed_status != ST_OK {
+            return Err(seed_status);
+        }
+        (image, return_local, frame, pending_param_array_aliases)
     };
-    // SAFETY: the current compiled-run boundary owns the live unique state handle;
-    // typed references and owned values remain live and nonaliasing for this call.
-    let ordered_args = unsafe { order_project_member_call_args(state, func, args, names) }?;
-    if run.frames.len() >= MAX_JIT_FRAMES {
-        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
-        return Err(unsafe { rt_raise_out_of_stack(state) });
-    }
-    let Some(caller_frame) = run.frames.len().checked_sub(1) else {
-        return Err(ST_FAULT);
-    };
-    let mut frame = new_jit_frame(program, program_index, func).map_err(|_| ST_FAULT)?;
-    frame.locals[0] = me;
-    let mut pending_param_array_aliases = Vec::new();
-    // SAFETY: this helper inherits the live unique state handle; all remaining
-    // arguments are live typed references with disjoint mutable storage.
-    let seed_status = unsafe {
-        seed_jit_member_frame_args(
-            state,
-            run,
-            func,
-            &mut frame,
-            caller_frame,
-            &ordered_args,
-            &mut pending_param_array_aliases,
-        )
-    };
-    if seed_status != ST_OK {
-        return Err(seed_status);
-    }
     let mut saved_err = RtSavedErrState::default();
     // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
     let enter_status = unsafe { rt_err_enter_activation(state, &mut saved_err) };
     if enter_status != ST_OK {
         return Err(enter_status);
     }
-    run.frames.push(frame);
-    let callee_frame = run.frames.len() - 1;
-    for (index, aliases) in pending_param_array_aliases {
-        run.param_array_aliases.insert(
-            SlotAlias {
-                frame: Some(callee_frame),
-                area: AREA_LOCAL,
-                index: index as u32,
-            },
-            aliases,
-        );
+    {
+        // SAFETY: error activation completed and this push borrow ends before entry.
+        let run_ref = unsafe { &mut *run };
+        run_ref.frames.push(frame);
+        let callee_frame = run_ref.frames.len() - 1;
+        for (index, aliases) in pending_param_array_aliases {
+            run_ref.param_array_aliases.insert(
+                SlotAlias {
+                    frame: Some(callee_frame),
+                    area: AREA_LOCAL,
+                    index: index as u32,
+                },
+                aliases,
+            );
+        }
     }
     // SAFETY: function pointer bounds were checked above.
     let entry = unsafe { *image.functions.add(proc) };
-    refresh_proc_invoke_run(run);
-    // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
-    let status = unsafe { entry(run as *mut JitRun, state) };
-    let return_value = if status == ST_OK {
-        return_local.as_ref().and_then(|(local, ty)| {
-            run.frames
-                .last()
-                .and_then(|frame| frame.locals.get(*local))
-                .and_then(|value| call_return_variant(ty, value))
-        })
-    } else {
-        None
+    // SAFETY: entry uses the JIT ABI and the stable raw run root/state remain live.
+    let status = unsafe { entry(run, state) };
+    let (return_value, cleanup_status) = {
+        // SAFETY: entry returned; no typed run borrow spans it.
+        let run_ref = unsafe { &mut *run };
+        let return_value = if status == ST_OK {
+            return_local.as_ref().and_then(|(local, ty)| {
+                run_ref
+                    .frames
+                    .last()
+                    .and_then(|frame| frame.locals.get(*local))
+                    .and_then(|value| call_return_variant(ty, value))
+            })
+        } else {
+            None
+        };
+        let Some(frame) = run_ref.frames.pop() else {
+            // Restore the error activation below even if the entry corrupted the stack.
+            // SAFETY: the activation was entered successfully and state remains live.
+            let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
+            return Err(if restore_status == ST_OK {
+                ST_FAULT
+            } else {
+                restore_status
+            });
+        };
+        // SAFETY: post-entry cleanup owns the bounded run borrow.
+        let cleanup_status = unsafe { after_jit_frame_pop(run_ref, state, &frame) };
+        (return_value, cleanup_status)
     };
-    let Some(frame) = run.frames.pop() else {
-        return Err(ST_FAULT);
-    };
-    // SAFETY: the current compiled-run boundary owns the live unique state handle;
-    // typed references and owned values remain live and nonaliasing for this call.
-    let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
-    if cleanup_status != ST_OK {
-        return Err(cleanup_status);
-    }
     // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
     let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
     if restore_status != ST_OK {
         return Err(restore_status);
+    }
+    if cleanup_status != ST_OK {
+        return Err(cleanup_status);
     }
     if status != ST_OK {
         return Err(status);
@@ -14941,12 +14980,15 @@ unsafe fn invoke_project_member_with_me(
 // and length arguments must identify the initialized, nonaliasing storage described
 // by their typed parameters for the complete synchronous call.
 unsafe fn invoke_project_default_member_values(
-    run: &mut JitRun,
+    run: *mut JitRun,
     state: *mut RawExecState,
     recv_value: Variant,
     kind: ProjectMemberKind,
     values: &[Variant],
 ) -> Result<Variant, i32> {
+    if run.is_null() {
+        return Err(ST_FAULT);
+    }
     // SAFETY: the current compiled-run boundary owns the live unique state handle;
     // typed references and owned values remain live and nonaliasing for this call.
     let object = unsafe { variant_to_project_object_for_jit(state, &recv_value) }?;
@@ -14955,7 +14997,10 @@ unsafe fn invoke_project_default_member_values(
         return Err(unsafe { rt_raise_runtime_error_number(state, 438) });
     }
     let program_index = object.bundle_id() as usize;
-    let Some(image) = program_image(run, program_index) else {
+    let Some(image) = ({
+        // SAFETY: null was rejected and this shared metadata borrow is bounded.
+        program_image(unsafe { &*run }, program_index)
+    }) else {
         return Err(ST_FAULT);
     };
     let class_idx = object.route_key() as usize;
@@ -14996,7 +15041,8 @@ unsafe fn invoke_project_default_member_values(
         gosub_stack: Vec::new(),
         saved_err: RtSavedErrState::default(),
     };
-    run.frames.push(frame);
+    // SAFETY: preparation is complete and this push borrow ends before member entry.
+    unsafe { &mut *run }.frames.push(frame);
     // SAFETY: this helper inherits the live unique state handle; `run`, argument
     // descriptors, names, and the owned receiver remain live and nonaliasing.
     let result = unsafe {
@@ -15010,12 +15056,14 @@ unsafe fn invoke_project_default_member_values(
             &names,
         )
     };
-    let Some(frame) = run.frames.pop() else {
+    // SAFETY: member entry returned and no typed run borrow spans it.
+    let run_ref = unsafe { &mut *run };
+    let Some(frame) = run_ref.frames.pop() else {
         return Err(ST_FAULT);
     };
     // SAFETY: the current compiled-run boundary owns the live unique state handle;
     // typed references and owned values remain live and nonaliasing for this call.
-    let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
+    let cleanup_status = unsafe { after_jit_frame_pop(run_ref, state, &frame) };
     if cleanup_status != ST_OK {
         return Err(cleanup_status);
     }
@@ -15079,10 +15127,8 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
         };
         // SAFETY: the compiled caller provides one live descriptor.
         let recv_operand = unsafe { *recv };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let recv_value =
             match unsafe { variant_operand_value_with_as_new(run, state, recv_operand) } {
                 Ok(value) => value,
@@ -15104,7 +15150,7 @@ unsafe extern "C" fn rt_jit_project_member_get_to_slot(
 // by their typed parameters for the complete synchronous call.
 unsafe fn invoke_project_member_to_slot_for_jit(
     state: *mut RawExecState,
-    run: &mut JitRun,
+    run: *mut JitRun,
     recv_value: Variant,
     name: &str,
     kind: ProjectMemberKind,
@@ -15112,6 +15158,9 @@ unsafe fn invoke_project_member_to_slot_for_jit(
     names: &[JitCallArgNameDesc],
     dst: Option<(u32, u32)>,
 ) -> i32 {
+    if run.is_null() {
+        return ST_FAULT;
+    }
     // SAFETY: the current compiled-run boundary owns the live unique state handle;
     // typed references and owned values remain live and nonaliasing for this call.
     let object = match unsafe { variant_to_project_object_for_jit(state, &recv_value) } {
@@ -15128,12 +15177,15 @@ unsafe fn invoke_project_member_to_slot_for_jit(
     if object.route_key() == VBA_COLLECTION_ROUTE_KEY {
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
         // typed references and owned values remain live and nonaliasing for this call.
-        let value =
-            match unsafe { dispatch_collection_member_for_jit(state, run, &object, name, args) } {
-                Ok(value) => value,
-                Err(status) => return status,
-            };
+        let value = match unsafe {
+            dispatch_collection_member_for_jit(state, &*run, &object, name, args)
+        } {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
         if let Some((area, index)) = dst {
+            // SAFETY: collection dispatch returned and no typed run borrow is live.
+            let run = unsafe { &mut *run };
             let Some(slot) = slot_mut(run, area, index) else {
                 return ST_FAULT;
             };
@@ -15143,7 +15195,10 @@ unsafe fn invoke_project_member_to_slot_for_jit(
     }
     let program_index = object.bundle_id() as usize;
     let class_idx = object.route_key() as usize;
-    let Some(image) = program_image(run, program_index) else {
+    let Some(image) = ({
+        // SAFETY: this shared metadata borrow is bounded before member entry.
+        program_image(unsafe { &*run }, program_index)
+    }) else {
         return ST_FAULT;
     };
     if image.program.is_null() {
@@ -15199,6 +15254,8 @@ unsafe fn invoke_project_member_to_slot_for_jit(
         Err(status) => return status,
     };
     if let Some((area, index)) = dst {
+        // SAFETY: member entry returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, area, index) else {
             return ST_FAULT;
         };
@@ -15304,7 +15361,7 @@ fn foreign_member_selector_for_jit(name: &str) -> DynamicMemberSelector {
 // by their typed parameters for the complete synchronous call.
 unsafe fn invoke_foreign_member_to_slot_for_jit(
     state: *mut RawExecState,
-    run: &mut JitRun,
+    run: *mut JitRun,
     object: ObjectRef,
     name: &str,
     kind: ProjectMemberKind,
@@ -15312,30 +15369,34 @@ unsafe fn invoke_foreign_member_to_slot_for_jit(
     names: &[JitCallArgNameDesc],
     dst: Option<(u32, u32)>,
 ) -> i32 {
-    if args.len() != names.len() {
+    if run.is_null() || args.len() != names.len() {
         return ST_FAULT;
     }
     let mut call_args = Vec::with_capacity(args.len());
-    for (index, (arg, name)) in args.iter().copied().zip(names.iter().copied()).enumerate() {
-        let value = if arg.kind == JIT_CALL_ARG_OMITTED {
-            None
-        } else {
-            match call_arg_variant_value(run, arg) {
-                Some(value) => Some(DynamicValue::from_variant(value)),
-                None => return ST_FAULT,
-            }
-        };
-        // SAFETY: names are compiled descriptors backed by the live OxProgram.
-        let name = match unsafe { call_arg_name_preserved(name) } {
-            Ok(name) => name,
-            Err(status) => return status,
-        };
-        call_args.push(DynamicCallArg {
-            value,
-            name,
-            by_ref: (arg.kind == JIT_CALL_ARG_BYREF_ALIAS)
-                .then(|| RuntimeByRefSlot::new(index as u32, None)),
-        });
+    {
+        // SAFETY: this read-only preparation borrow ends before the host call.
+        let run_ref = unsafe { &*run };
+        for (index, (arg, name)) in args.iter().copied().zip(names.iter().copied()).enumerate() {
+            let value = if arg.kind == JIT_CALL_ARG_OMITTED {
+                None
+            } else {
+                match call_arg_variant_value(run_ref, arg) {
+                    Some(value) => Some(DynamicValue::from_variant(value)),
+                    None => return ST_FAULT,
+                }
+            };
+            // SAFETY: names are compiled descriptors backed by the live OxProgram.
+            let name = match unsafe { call_arg_name_preserved(name) } {
+                Ok(name) => name,
+                Err(status) => return status,
+            };
+            call_args.push(DynamicCallArg {
+                value,
+                name,
+                by_ref: (arg.kind == JIT_CALL_ARG_BYREF_ALIAS)
+                    .then(|| RuntimeByRefSlot::new(index as u32, None)),
+            });
+        }
     }
     let request = DynamicCallRequest {
         object,
@@ -15353,7 +15414,6 @@ unsafe fn invoke_foreign_member_to_slot_for_jit(
         };
         exec.host
     };
-    refresh_proc_invoke_run(run);
     let (value, writebacks) = match host
         .com()
         .dispatch_invoke_dynamic_variant_with_writebacks(&request)
@@ -15369,6 +15429,8 @@ unsafe fn invoke_foreign_member_to_slot_for_jit(
             return ST_FAULT;
         }
     };
+    // SAFETY: the host call returned and no typed run borrow spans it.
+    let run = unsafe { &mut *run };
     for (index, arg) in args.iter().copied().enumerate() {
         if arg.kind != JIT_CALL_ARG_BYREF_ALIAS {
             continue;
@@ -15476,10 +15538,8 @@ unsafe extern "C" fn rt_jit_call_by_name_to_slot(
         };
         // SAFETY: compiled code writes object/name/calltype descriptors in that order.
         let operands = unsafe { std::slice::from_raw_parts(operands, 3) };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans possible As-New initializer callbacks.
         let object = match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
             Ok(value) => value,
             Err(status) => return status,
@@ -15542,10 +15602,8 @@ unsafe extern "C" fn rt_jit_project_type_name_to_slot(
         }
         // SAFETY: the compiled caller provides one live descriptor.
         let operand = unsafe { *operand };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
@@ -15568,6 +15626,8 @@ unsafe extern "C" fn rt_jit_project_type_name_to_slot(
             }
             object.class_descriptor().name.to_string()
         };
+        // SAFETY: callback-capable lookup returned and no typed run borrow is live.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -16005,10 +16065,8 @@ unsafe extern "C" fn rt_jit_project_field_array_get_to_slot(
         let indices = unsafe { std::slice::from_raw_parts(indices, dimensions) };
         // SAFETY: compiled caller provides one live descriptor.
         let object_operand = unsafe { *object };
-        // SAFETY: null was rejected and this helper clones before mutating destination slots.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans possible As-New initializer callbacks.
         let object_value =
             match unsafe { variant_operand_value_with_as_new(run, state, object_operand) } {
                 Ok(value) => value,
@@ -16069,6 +16127,8 @@ unsafe extern "C" fn rt_jit_project_field_array_get_to_slot(
                 }
             }
         };
+        // SAFETY: callback-capable lookups/member entry returned.
+        let run = unsafe { &mut *run };
         let Some(slot) = slot_mut(run, dst_area as u32, dst_index as u32) else {
             return ST_FAULT;
         };
@@ -16103,19 +16163,21 @@ unsafe extern "C" fn rt_jit_project_field_array_set(
         let object_operand = unsafe { *object };
         // SAFETY: the same checked descriptor pair keeps `value` live for this load.
         let value_operand = unsafe { *value };
-        // SAFETY: null was rejected and value/object are cloned before field mutation.
-        let run = unsafe { &mut *run };
+        let value = {
+            // SAFETY: this read-only value borrow is bounded before As-New callbacks.
+            let run_ref = unsafe { &*run };
+            match variant_operand_value_from_compiled_desc!(run_ref, value_operand) {
+                Some(value) => value,
+                None => return ST_FAULT,
+            }
+        };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let object_value =
             match unsafe { variant_operand_value_with_as_new(run, state, object_operand) } {
                 Ok(value) => value,
                 Err(status) => return status,
             };
-        let value = match variant_operand_value_from_compiled_desc!(run, value_operand) {
-            Some(value) => value,
-            None => return ST_FAULT,
-        };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
         // typed references and owned values remain live and nonaliasing for this call.
         let object = match unsafe { variant_to_project_object_for_jit(state, &object_value) } {
@@ -16897,17 +16959,18 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
         // SAFETY: null was rejected and the compiled caller writes exactly `dimensions`
         // subscripts to a stack slot that stays live for this helper call.
         let indices = unsafe { std::slice::from_raw_parts(indices, dimensions) };
-        // SAFETY: null was rejected and the selected element is cloned before the destination write.
-        let run_ref = unsafe { &*run };
-        let Some(array) = slot_ref(run_ref, array_area, array_index) else {
-            return ST_FAULT;
+        let array = {
+            // SAFETY: this source borrow is bounded before possible default-member entry.
+            let run_ref = unsafe { &*run };
+            let Some(array) = slot_ref(run_ref, array_area, array_index) else {
+                return ST_FAULT;
+            };
+            array.clone()
         };
         if array.vtype() != VarType::ArrayVariant {
             if array.as_object_ref().is_some() {
                 let recv_value = array.clone();
                 let args: Vec<Variant> = indices.iter().copied().map(Variant::from_i32).collect();
-                // SAFETY: null was rejected and source clones no longer borrow from `run`.
-                let run = unsafe { &mut *run };
                 // SAFETY: the checked JIT entry owns the live unique state; `run`,
                 // the owned receiver, and `args` remain live for the call.
                 let value = match unsafe {
@@ -16922,6 +16985,8 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
                     Ok(value) => value,
                     Err(status) => return status,
                 };
+                // SAFETY: default-member entry returned and no typed run borrow spans it.
+                let run = unsafe { &mut *run };
                 let Some(slot) = slot_mut(run, dst_area, dst_index) else {
                     return ST_FAULT;
                 };
@@ -16933,7 +16998,7 @@ unsafe extern "C" fn rt_jit_array_get_variant_to_slot(
         }
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
         // typed references and owned values remain live and nonaliasing for this call.
-        let flat = match unsafe { jit_flat_index(state, array, indices) } {
+        let flat = match unsafe { jit_flat_index(state, &array, indices) } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
@@ -17055,14 +17120,16 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
         // SAFETY: null was rejected and the compiled caller writes one descriptor to
         // a stack slot that stays live for this helper call.
         let value = unsafe { *value };
-        // SAFETY: null was rejected and both the assigned value and flat index are resolved
-        // before taking a mutable borrow of the array slot.
-        let run_ref = unsafe { &*run };
-        let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, value) else {
-            return ST_FAULT;
-        };
-        let Some(array) = slot_ref(run_ref, array_area, array_index) else {
-            return ST_FAULT;
+        let (value, array) = {
+            // SAFETY: both source reads are bounded before possible default-member entry.
+            let run_ref = unsafe { &*run };
+            let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, value) else {
+                return ST_FAULT;
+            };
+            let Some(array) = slot_ref(run_ref, array_area, array_index) else {
+                return ST_FAULT;
+            };
+            (value, array.clone())
         };
         if array.vtype() != VarType::ArrayVariant {
             if array.as_object_ref().is_some() {
@@ -17075,8 +17142,6 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
                 } else {
                     ProjectMemberKind::PropertyLet
                 };
-                // SAFETY: null was rejected and source clones no longer borrow from `run`.
-                let run = unsafe { &mut *run };
                 // SAFETY: the checked JIT entry owns the live unique state; `run`,
                 // the owned receiver, and `args` remain live for the call.
                 return match unsafe {
@@ -17091,14 +17156,19 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
         }
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
         // typed references and owned values remain live and nonaliasing for this call.
-        let flat = match unsafe { jit_flat_index(state, array, indices) } {
+        let flat = match unsafe { jit_flat_index(state, &array, indices) } {
             Ok(flat) => flat,
             Err(status) => return status,
         };
-        let Some(array_alias) = current_frame_slot(run_ref, array_area, array_index)
-            .and_then(|alias| resolve_slot_alias(run_ref, alias))
-        else {
-            return ST_FAULT;
+        let array_alias = {
+            // SAFETY: default-member path returned; this alias read is bounded before mutation.
+            let run_ref = unsafe { &*run };
+            let Some(array_alias) = current_frame_slot(run_ref, array_area, array_index)
+                .and_then(|alias| resolve_slot_alias(run_ref, alias))
+            else {
+                return ST_FAULT;
+            };
+            array_alias
         };
         // SAFETY: null was rejected and all immutable borrows ended before the mutable slot write.
         let run = unsafe { &mut *run };
@@ -17535,11 +17605,8 @@ unsafe extern "C" fn rt_jit_compare_object_is_to_bool_slot(
         // SAFETY: null was rejected and the compiled caller writes two descriptors to
         // a stack slot that stays live for this helper call.
         let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
-        // SAFETY: null was rejected and operand values are cloned before destination
-        // storage takes a mutable borrow.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans possible As-New initializer callbacks.
         let lhs = match unsafe { variant_operand_value_with_as_new(run, state, operands[0]) } {
             Ok(value) => value,
             Err(status) => return status,
@@ -17602,11 +17669,8 @@ unsafe extern "C" fn rt_jit_type_of_is_to_bool_slot(
         };
         // SAFETY: the compiled caller provides one live descriptor.
         let operand = unsafe { *operand };
-        // SAFETY: null was rejected and operand values are cloned before destination storage
-        // takes a mutable borrow.
-        let run = unsafe { &mut *run };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
+        // no typed run borrow spans a possible As-New initializer callback.
         let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
             Ok(value) => value,
             Err(status) => return status,
@@ -18667,214 +18731,239 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
             (area, index) if area >= 0 && index >= 0 => Some((area as u32, index as u32)),
             _ => return ST_FAULT,
         };
-        // SAFETY: null was rejected and the compiled call gives unique run ownership.
-        let run = unsafe { &mut *run };
         let program_index = program_index as usize;
-        let Some(image) = program_image(run, program_index) else {
-            return ST_FAULT;
-        };
-        if image.program.is_null() || image.functions.is_null() {
-            return ST_FAULT;
-        }
-        // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*image.program };
-        let proc = proc as usize;
-        let Some(func) = program.funcs.get(proc) else {
-            return ST_FAULT;
-        };
-        let argc = argc as usize;
-        if proc >= image.function_count || argc != func.param_count {
-            return ST_FAULT;
-        }
-        let args = if argc == 0 {
-            &[]
-        } else if args.is_null() {
-            return ST_FAULT;
-        } else {
-            // SAFETY: the compiled caller writes exactly `argc` descriptors to a stack slot
-            // that stays live for this helper call.
-            unsafe { std::slice::from_raw_parts(args, argc) }
-        };
-
-        let Some(caller_frame) = run.frames.len().checked_sub(1) else {
-            return ST_FAULT;
-        };
-        if run.frames.len() >= MAX_JIT_FRAMES {
-            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
-            return unsafe { rt_raise_out_of_stack(state) };
-        }
-        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
-            return ST_FAULT;
-        };
-        let return_local = if dst.is_some() {
-            let Some(ret) = func.return_local else {
+        let (image, proc, frame, return_local, pending_param_array_aliases) = {
+            // SAFETY: null was rejected; this preparation borrow ends before compiled entry.
+            let run = unsafe { &mut *run };
+            let Some(image) = program_image(run, program_index) else {
                 return ST_FAULT;
             };
-            let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
-                return ST_FAULT;
-            };
-            if !is_jit_static_call_ty(&ret_ty) {
+            if image.program.is_null() || image.functions.is_null() {
                 return ST_FAULT;
             }
-            Some((ret.0, ret_ty))
-        } else {
-            None
-        };
-        let mut pending_param_array_aliases = Vec::new();
-        for (index, arg) in args.iter().copied().enumerate() {
-            let Some(param) = func.locals.get(index) else {
+            // SAFETY: `program` is installed from the owning CompiledImage for this run.
+            let program = unsafe { &*image.program };
+            let proc = proc as usize;
+            let Some(func) = program.funcs.get(proc) else {
                 return ST_FAULT;
             };
-            let Some(param_info) = param.param.as_ref() else {
+            let argc = argc as usize;
+            if proc >= image.function_count || argc != func.param_count {
+                return ST_FAULT;
+            }
+            let args = if argc == 0 {
+                &[]
+            } else if args.is_null() {
+                return ST_FAULT;
+            } else {
+                // SAFETY: the compiled caller writes exactly `argc` descriptors to a stack slot
+                // that stays live for this helper call.
+                unsafe { std::slice::from_raw_parts(args, argc) }
+            };
+
+            let Some(caller_frame) = run.frames.len().checked_sub(1) else {
                 return ST_FAULT;
             };
-            if param_info.variadic {
-                if !is_m4_4_supported_paramarray_param(&param.ty, *param_info)
-                    || arg.kind != JIT_CALL_ARG_BYVAL_VARIANT
-                {
+            if run.frames.len() >= MAX_JIT_FRAMES {
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                return unsafe { rt_raise_out_of_stack(state) };
+            }
+            let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
+                return ST_FAULT;
+            };
+            let return_local = if dst.is_some() {
+                let Some(ret) = func.return_local else {
+                    return ST_FAULT;
+                };
+                let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
+                    return ST_FAULT;
+                };
+                if !is_jit_static_call_ty(&ret_ty) {
                     return ST_FAULT;
                 }
-            } else if !is_jit_static_call_ty(&param.ty) {
-                return ST_FAULT;
-            }
-            match arg.kind {
-                JIT_CALL_ARG_BYVAL_SCALAR
-                    if !param_info.by_ref
-                        && matches!(classify_jit_ty(&param.ty), JitTypeSupport::FastScalar) =>
-                {
-                    let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
-                        return ST_FAULT;
-                    };
-                    frame.locals[index] = value;
-                }
-                JIT_CALL_ARG_BYVAL_VARIANT
-                    if !param_info.by_ref && matches!(param.ty, OxTy::Long) =>
-                {
-                    let Some(value) = call_arg_long_i32_value(run, arg) else {
-                        return ST_FAULT;
-                    };
-                    frame.locals[index] = Variant::from_i32(value);
-                }
-                JIT_CALL_ARG_BYVAL_VARIANT
-                    if !param_info.by_ref
-                        && (is_jit_variant_carrier_ty(&param.ty) || param_info.variadic) =>
-                {
-                    let param_array_aliases = if param_info.variadic {
-                        param_array_aliases_for_call_arg(run, arg)
-                    } else {
-                        None
-                    };
-                    let Some(value) = call_arg_variant_value(run, arg) else {
-                        return ST_FAULT;
-                    };
-                    if param_info.variadic && value.safearray_bounds_len().is_none() {
+                Some((ret.0, ret_ty))
+            } else {
+                None
+            };
+            let mut pending_param_array_aliases = Vec::new();
+            for (index, arg) in args.iter().copied().enumerate() {
+                let Some(param) = func.locals.get(index) else {
+                    return ST_FAULT;
+                };
+                let Some(param_info) = param.param.as_ref() else {
+                    return ST_FAULT;
+                };
+                if param_info.variadic {
+                    if !is_m4_4_supported_paramarray_param(&param.ty, *param_info)
+                        || arg.kind != JIT_CALL_ARG_BYVAL_VARIANT
+                    {
                         return ST_FAULT;
                     }
-                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
-                    // typed references and owned values remain live and nonaliasing for this call.
-                    frame.locals[index] =
-                        match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
-                            Ok(value) => value,
-                            Err(status) => return status,
+                } else if !is_jit_static_call_ty(&param.ty) {
+                    return ST_FAULT;
+                }
+                match arg.kind {
+                    JIT_CALL_ARG_BYVAL_SCALAR
+                        if !param_info.by_ref
+                            && matches!(classify_jit_ty(&param.ty), JitTypeSupport::FastScalar) =>
+                    {
+                        let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                            return ST_FAULT;
                         };
-                    if let Some(aliases) = param_array_aliases {
-                        pending_param_array_aliases.push((index, aliases));
+                        frame.locals[index] = value;
                     }
-                }
-                JIT_CALL_ARG_OMITTED if !param_info.by_ref && matches!(param.ty, OxTy::Variant) => {
-                    let Some(value) = call_arg_variant_value(run, arg) else {
-                        return ST_FAULT;
-                    };
-                    frame.locals[index] = value;
-                }
-                JIT_CALL_ARG_BYREF_COPY if param_info.by_ref => {
-                    if is_jit_variant_carrier_ty(&param.ty) {
+                    JIT_CALL_ARG_BYVAL_VARIANT
+                        if !param_info.by_ref && matches!(param.ty, OxTy::Long) =>
+                    {
+                        let Some(value) = call_arg_long_i32_value(run, arg) else {
+                            return ST_FAULT;
+                        };
+                        frame.locals[index] = Variant::from_i32(value);
+                    }
+                    JIT_CALL_ARG_BYVAL_VARIANT
+                        if !param_info.by_ref
+                            && (is_jit_variant_carrier_ty(&param.ty) || param_info.variadic) =>
+                    {
+                        let param_array_aliases = if param_info.variadic {
+                            param_array_aliases_for_call_arg(run, arg)
+                        } else {
+                            None
+                        };
                         let Some(value) = call_arg_variant_value(run, arg) else {
                             return ST_FAULT;
                         };
+                        if param_info.variadic && value.safearray_bounds_len().is_none() {
+                            return ST_FAULT;
+                        }
+                        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                        // typed references and owned values remain live and nonaliasing for this call.
                         frame.locals[index] =
+                            match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
+                                Ok(value) => value,
+                                Err(status) => return status,
+                            };
+                        if let Some(aliases) = param_array_aliases {
+                            pending_param_array_aliases.push((index, aliases));
+                        }
+                    }
+                    JIT_CALL_ARG_OMITTED
+                        if !param_info.by_ref && matches!(param.ty, OxTy::Variant) =>
+                    {
+                        let Some(value) = call_arg_variant_value(run, arg) else {
+                            return ST_FAULT;
+                        };
+                        frame.locals[index] = value;
+                    }
+                    JIT_CALL_ARG_BYREF_COPY if param_info.by_ref => {
+                        if is_jit_variant_carrier_ty(&param.ty) {
+                            let Some(value) = call_arg_variant_value(run, arg) else {
+                                return ST_FAULT;
+                            };
+                            frame.locals[index] =
                             // SAFETY: the current compiled-run boundary owns the live unique state handle;
                             // typed references and owned values remain live and nonaliasing for this call.
                             match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
                                 Ok(value) => value,
                                 Err(status) => return status,
                             };
-                    } else {
-                        let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                        } else {
+                            let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                                return ST_FAULT;
+                            };
+                            frame.locals[index] = value;
+                        }
+                    }
+                    JIT_CALL_ARG_BYREF_ALIAS if param_info.by_ref => {
+                        if arg.area < 0 || arg.index < 0 {
                             return ST_FAULT;
+                        }
+                        let frame_index = match arg.area as u32 {
+                            AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
+                            _ => return ST_FAULT,
                         };
-                        frame.locals[index] = value;
+                        let alias = SlotAlias {
+                            frame: frame_index,
+                            area: arg.area as u32,
+                            index: arg.index as u32,
+                        };
+                        if slot_alias_ref(run, alias).is_none() {
+                            return ST_FAULT;
+                        }
+                        frame.aliases[index] = Some(alias);
                     }
+                    _ => return ST_FAULT,
                 }
-                JIT_CALL_ARG_BYREF_ALIAS if param_info.by_ref => {
-                    if arg.area < 0 || arg.index < 0 {
-                        return ST_FAULT;
-                    }
-                    let frame_index = match arg.area as u32 {
-                        AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
-                        _ => return ST_FAULT,
-                    };
-                    let alias = SlotAlias {
-                        frame: frame_index,
-                        area: arg.area as u32,
-                        index: arg.index as u32,
-                    };
-                    if slot_alias_ref(run, alias).is_none() {
-                        return ST_FAULT;
-                    }
-                    frame.aliases[index] = Some(alias);
-                }
-                _ => return ST_FAULT,
             }
-        }
 
+            (
+                image,
+                proc,
+                frame,
+                return_local,
+                pending_param_array_aliases,
+            )
+        };
         let mut saved_err = RtSavedErrState::default();
         // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
         let enter_status = unsafe { rt_err_enter_activation(state, &mut saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
-        run.frames.push(frame);
-        let callee_frame = run.frames.len() - 1;
-        for (index, aliases) in pending_param_array_aliases {
-            run.param_array_aliases.insert(
-                SlotAlias {
-                    frame: Some(callee_frame),
-                    area: AREA_LOCAL,
-                    index: index as u32,
-                },
-                aliases,
-            );
+        {
+            // SAFETY: error activation completed; this push borrow ends before entry.
+            let run_ref = unsafe { &mut *run };
+            run_ref.frames.push(frame);
+            let callee_frame = run_ref.frames.len() - 1;
+            for (index, aliases) in pending_param_array_aliases {
+                run_ref.param_array_aliases.insert(
+                    SlotAlias {
+                        frame: Some(callee_frame),
+                        area: AREA_LOCAL,
+                        index: index as u32,
+                    },
+                    aliases,
+                );
+            }
         }
         // SAFETY: bounds and null checks above prove the function pointer exists.
         let entry = unsafe { *image.functions.add(proc) };
-        refresh_proc_invoke_run(run);
-        // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state`
+        // SAFETY: the function pointer uses the JIT entry ABI and raw `run`/`state`
         // remain live for the nested call.
-        let status = unsafe { entry(run as *mut JitRun, state) };
-        let return_value = if status == ST_OK {
-            return_local.as_ref().and_then(|(local, ty)| {
-                run.frames
-                    .last()
-                    .and_then(|frame| frame.locals.get(*local))
-                    .and_then(|value| call_return_variant(ty, value))
-            })
-        } else {
-            None
+        let status = unsafe { entry(run, state) };
+        let (return_value, cleanup_status) = {
+            // SAFETY: entry returned; this post-entry borrow is bounded.
+            let run_ref = unsafe { &mut *run };
+            let return_value = if status == ST_OK {
+                return_local.as_ref().and_then(|(local, ty)| {
+                    run_ref
+                        .frames
+                        .last()
+                        .and_then(|frame| frame.locals.get(*local))
+                        .and_then(|value| call_return_variant(ty, value))
+                })
+            } else {
+                None
+            };
+            let Some(frame) = run_ref.frames.pop() else {
+                // SAFETY: the activation was entered successfully and state remains live.
+                let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
+                return if restore_status == ST_OK {
+                    ST_FAULT
+                } else {
+                    restore_status
+                };
+            };
+            // SAFETY: post-entry cleanup owns the bounded run borrow.
+            let cleanup_status = unsafe { after_jit_frame_pop(run_ref, state, &frame) };
+            (return_value, cleanup_status)
         };
-        let Some(frame) = run.frames.pop() else {
-            return ST_FAULT;
-        };
-        // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
-        let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
-        if cleanup_status != ST_OK {
-            return cleanup_status;
-        }
         // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
         let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
         if restore_status != ST_OK {
             return restore_status;
+        }
+        if cleanup_status != ST_OK {
+            return cleanup_status;
         }
         if status == ST_OK
             && let Some((area, index)) = dst
@@ -18882,7 +18971,8 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
             let Some(value) = return_value else {
                 return ST_FAULT;
             };
-            let Some(slot) = slot_mut(run, area, index) else {
+            // SAFETY: entry and activation restoration completed.
+            let Some(slot) = slot_mut(unsafe { &mut *run }, area, index) else {
                 return ST_FAULT;
             };
             *slot = value;
@@ -18915,213 +19005,238 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
             (area, index) if area >= 0 && index >= 0 => Some((area as u32, index as u32)),
             _ => return ST_FAULT,
         };
-        // SAFETY: null was rejected and the compiled call gives unique run ownership.
-        let run = unsafe { &mut *run };
-        let Some((program_index, image)) = current_program_image(run) else {
-            return ST_FAULT;
-        };
-        if image.program.is_null() || image.functions.is_null() {
-            return ST_FAULT;
-        }
-        // SAFETY: `program` is installed from the owning CompiledImage for this run.
-        let program = unsafe { &*image.program };
-        let proc = proc as usize;
-        let Some(func) = program.funcs.get(proc) else {
-            return ST_FAULT;
-        };
-        let argc = argc as usize;
-        if proc >= image.function_count || argc != func.param_count {
-            return ST_FAULT;
-        }
-        let args = if argc == 0 {
-            &[]
-        } else if args.is_null() {
-            return ST_FAULT;
-        } else {
-            // SAFETY: the compiled caller writes exactly `argc` descriptors to a stack slot
-            // that stays live for this helper call.
-            unsafe { std::slice::from_raw_parts(args, argc) }
-        };
-
-        let Some(caller_frame) = run.frames.len().checked_sub(1) else {
-            return ST_FAULT;
-        };
-        if run.frames.len() >= MAX_JIT_FRAMES {
-            // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
-            return unsafe { rt_raise_out_of_stack(state) };
-        }
-        let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
-            return ST_FAULT;
-        };
-        let return_local = if dst.is_some() {
-            let Some(ret) = func.return_local else {
+        let (image, proc, frame, return_local, pending_param_array_aliases) = {
+            // SAFETY: null was rejected; this preparation borrow ends before compiled entry.
+            let run = unsafe { &mut *run };
+            let Some((program_index, image)) = current_program_image(run) else {
                 return ST_FAULT;
             };
-            let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
-                return ST_FAULT;
-            };
-            if !is_jit_static_call_ty(&ret_ty) {
+            if image.program.is_null() || image.functions.is_null() {
                 return ST_FAULT;
             }
-            Some((ret.0, ret_ty))
-        } else {
-            None
-        };
-        let mut pending_param_array_aliases = Vec::new();
-        for (index, arg) in args.iter().copied().enumerate() {
-            let Some(param) = func.locals.get(index) else {
+            // SAFETY: `program` is installed from the owning CompiledImage for this run.
+            let program = unsafe { &*image.program };
+            let proc = proc as usize;
+            let Some(func) = program.funcs.get(proc) else {
                 return ST_FAULT;
             };
-            let Some(param_info) = param.param.as_ref() else {
+            let argc = argc as usize;
+            if proc >= image.function_count || argc != func.param_count {
+                return ST_FAULT;
+            }
+            let args = if argc == 0 {
+                &[]
+            } else if args.is_null() {
+                return ST_FAULT;
+            } else {
+                // SAFETY: the compiled caller writes exactly `argc` descriptors to a stack slot
+                // that stays live for this helper call.
+                unsafe { std::slice::from_raw_parts(args, argc) }
+            };
+
+            let Some(caller_frame) = run.frames.len().checked_sub(1) else {
                 return ST_FAULT;
             };
-            if param_info.variadic {
-                if !is_m4_4_supported_paramarray_param(&param.ty, *param_info)
-                    || arg.kind != JIT_CALL_ARG_BYVAL_VARIANT
-                {
+            if run.frames.len() >= MAX_JIT_FRAMES {
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                return unsafe { rt_raise_out_of_stack(state) };
+            }
+            let Ok(mut frame) = new_jit_frame(program, program_index, func) else {
+                return ST_FAULT;
+            };
+            let return_local = if dst.is_some() {
+                let Some(ret) = func.return_local else {
+                    return ST_FAULT;
+                };
+                let Some(ret_ty) = func.locals.get(ret.0).map(|local| local.ty.clone()) else {
+                    return ST_FAULT;
+                };
+                if !is_jit_static_call_ty(&ret_ty) {
                     return ST_FAULT;
                 }
-            } else if !is_jit_static_call_ty(&param.ty) {
-                return ST_FAULT;
-            }
-            match arg.kind {
-                JIT_CALL_ARG_BYVAL_SCALAR
-                    if !param_info.by_ref
-                        && matches!(classify_jit_ty(&param.ty), JitTypeSupport::FastScalar) =>
-                {
-                    let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
-                        return ST_FAULT;
-                    };
-                    frame.locals[index] = value;
-                }
-                JIT_CALL_ARG_BYVAL_VARIANT
-                    if !param_info.by_ref && matches!(param.ty, OxTy::Long) =>
-                {
-                    let Some(value) = call_arg_long_i32_value(run, arg) else {
-                        return ST_FAULT;
-                    };
-                    frame.locals[index] = Variant::from_i32(value);
-                }
-                JIT_CALL_ARG_BYVAL_VARIANT
-                    if !param_info.by_ref
-                        && (is_jit_variant_carrier_ty(&param.ty) || param_info.variadic) =>
-                {
-                    let param_array_aliases = if param_info.variadic {
-                        param_array_aliases_for_call_arg(run, arg)
-                    } else {
-                        None
-                    };
-                    let Some(value) = call_arg_variant_value(run, arg) else {
-                        return ST_FAULT;
-                    };
-                    if param_info.variadic && value.safearray_bounds_len().is_none() {
+                Some((ret.0, ret_ty))
+            } else {
+                None
+            };
+            let mut pending_param_array_aliases = Vec::new();
+            for (index, arg) in args.iter().copied().enumerate() {
+                let Some(param) = func.locals.get(index) else {
+                    return ST_FAULT;
+                };
+                let Some(param_info) = param.param.as_ref() else {
+                    return ST_FAULT;
+                };
+                if param_info.variadic {
+                    if !is_m4_4_supported_paramarray_param(&param.ty, *param_info)
+                        || arg.kind != JIT_CALL_ARG_BYVAL_VARIANT
+                    {
                         return ST_FAULT;
                     }
-                    // SAFETY: the current compiled-run boundary owns the live unique state handle;
-                    // typed references and owned values remain live and nonaliasing for this call.
-                    frame.locals[index] =
-                        match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
-                            Ok(value) => value,
-                            Err(status) => return status,
+                } else if !is_jit_static_call_ty(&param.ty) {
+                    return ST_FAULT;
+                }
+                match arg.kind {
+                    JIT_CALL_ARG_BYVAL_SCALAR
+                        if !param_info.by_ref
+                            && matches!(classify_jit_ty(&param.ty), JitTypeSupport::FastScalar) =>
+                    {
+                        let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                            return ST_FAULT;
                         };
-                    if let Some(aliases) = param_array_aliases {
-                        pending_param_array_aliases.push((index, aliases));
+                        frame.locals[index] = value;
                     }
-                }
-                JIT_CALL_ARG_OMITTED if !param_info.by_ref && matches!(param.ty, OxTy::Variant) => {
-                    let Some(value) = call_arg_variant_value(run, arg) else {
-                        return ST_FAULT;
-                    };
-                    frame.locals[index] = value;
-                }
-                JIT_CALL_ARG_BYREF_COPY if param_info.by_ref => {
-                    if is_jit_variant_carrier_ty(&param.ty) {
+                    JIT_CALL_ARG_BYVAL_VARIANT
+                        if !param_info.by_ref && matches!(param.ty, OxTy::Long) =>
+                    {
+                        let Some(value) = call_arg_long_i32_value(run, arg) else {
+                            return ST_FAULT;
+                        };
+                        frame.locals[index] = Variant::from_i32(value);
+                    }
+                    JIT_CALL_ARG_BYVAL_VARIANT
+                        if !param_info.by_ref
+                            && (is_jit_variant_carrier_ty(&param.ty) || param_info.variadic) =>
+                    {
+                        let param_array_aliases = if param_info.variadic {
+                            param_array_aliases_for_call_arg(run, arg)
+                        } else {
+                            None
+                        };
                         let Some(value) = call_arg_variant_value(run, arg) else {
                             return ST_FAULT;
                         };
+                        if param_info.variadic && value.safearray_bounds_len().is_none() {
+                            return ST_FAULT;
+                        }
+                        // SAFETY: the current compiled-run boundary owns the live unique state handle;
+                        // typed references and owned values remain live and nonaliasing for this call.
                         frame.locals[index] =
+                            match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
+                                Ok(value) => value,
+                                Err(status) => return status,
+                            };
+                        if let Some(aliases) = param_array_aliases {
+                            pending_param_array_aliases.push((index, aliases));
+                        }
+                    }
+                    JIT_CALL_ARG_OMITTED
+                        if !param_info.by_ref && matches!(param.ty, OxTy::Variant) =>
+                    {
+                        let Some(value) = call_arg_variant_value(run, arg) else {
+                            return ST_FAULT;
+                        };
+                        frame.locals[index] = value;
+                    }
+                    JIT_CALL_ARG_BYREF_COPY if param_info.by_ref => {
+                        if is_jit_variant_carrier_ty(&param.ty) {
+                            let Some(value) = call_arg_variant_value(run, arg) else {
+                                return ST_FAULT;
+                            };
+                            frame.locals[index] =
                             // SAFETY: the current compiled-run boundary owns the live unique state handle;
                             // typed references and owned values remain live and nonaliasing for this call.
                             match unsafe { coerce_call_arg_for_param(state, &param.ty, &value) } {
                                 Ok(value) => value,
                                 Err(status) => return status,
                             };
-                    } else {
-                        let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                        } else {
+                            let Some(value) = scalar_arg_variant(&param.ty, arg.value) else {
+                                return ST_FAULT;
+                            };
+                            frame.locals[index] = value;
+                        }
+                    }
+                    JIT_CALL_ARG_BYREF_ALIAS if param_info.by_ref => {
+                        if arg.area < 0 || arg.index < 0 {
                             return ST_FAULT;
+                        }
+                        let frame_index = match arg.area as u32 {
+                            AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
+                            _ => return ST_FAULT,
                         };
-                        frame.locals[index] = value;
+                        let alias = SlotAlias {
+                            frame: frame_index,
+                            area: arg.area as u32,
+                            index: arg.index as u32,
+                        };
+                        if slot_alias_ref(run, alias).is_none() {
+                            return ST_FAULT;
+                        }
+                        frame.aliases[index] = Some(alias);
                     }
+                    _ => return ST_FAULT,
                 }
-                JIT_CALL_ARG_BYREF_ALIAS if param_info.by_ref => {
-                    if arg.area < 0 || arg.index < 0 {
-                        return ST_FAULT;
-                    }
-                    let frame_index = match arg.area as u32 {
-                        AREA_GLOBAL | AREA_LOCAL | AREA_TEMP => Some(caller_frame),
-                        _ => return ST_FAULT,
-                    };
-                    let alias = SlotAlias {
-                        frame: frame_index,
-                        area: arg.area as u32,
-                        index: arg.index as u32,
-                    };
-                    if slot_alias_ref(run, alias).is_none() {
-                        return ST_FAULT;
-                    }
-                    frame.aliases[index] = Some(alias);
-                }
-                _ => return ST_FAULT,
             }
-        }
 
+            (
+                image,
+                proc,
+                frame,
+                return_local,
+                pending_param_array_aliases,
+            )
+        };
         let mut saved_err = RtSavedErrState::default();
         // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
         let enter_status = unsafe { rt_err_enter_activation(state, &mut saved_err) };
         if enter_status != ST_OK {
             return enter_status;
         }
-        run.frames.push(frame);
-        let callee_frame = run.frames.len() - 1;
-        for (index, aliases) in pending_param_array_aliases {
-            run.param_array_aliases.insert(
-                SlotAlias {
-                    frame: Some(callee_frame),
-                    area: AREA_LOCAL,
-                    index: index as u32,
-                },
-                aliases,
-            );
+        {
+            // SAFETY: error activation completed; this push borrow ends before entry.
+            let run_ref = unsafe { &mut *run };
+            run_ref.frames.push(frame);
+            let callee_frame = run_ref.frames.len() - 1;
+            for (index, aliases) in pending_param_array_aliases {
+                run_ref.param_array_aliases.insert(
+                    SlotAlias {
+                        frame: Some(callee_frame),
+                        area: AREA_LOCAL,
+                        index: index as u32,
+                    },
+                    aliases,
+                );
+            }
         }
         // SAFETY: bounds and null checks above prove the function pointer exists.
         let entry = unsafe { *image.functions.add(proc) };
-        refresh_proc_invoke_run(run);
-        // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state`
+        // SAFETY: the function pointer uses the JIT entry ABI and raw `run`/`state`
         // remain live for the nested call.
-        let status = unsafe { entry(run as *mut JitRun, state) };
-        let return_value = if status == ST_OK {
-            return_local.as_ref().and_then(|(local, ty)| {
-                run.frames
-                    .last()
-                    .and_then(|frame| frame.locals.get(*local))
-                    .and_then(|value| call_return_variant(ty, value))
-            })
-        } else {
-            None
+        let status = unsafe { entry(run, state) };
+        let (return_value, cleanup_status) = {
+            // SAFETY: entry returned; this post-entry borrow is bounded.
+            let run_ref = unsafe { &mut *run };
+            let return_value = if status == ST_OK {
+                return_local.as_ref().and_then(|(local, ty)| {
+                    run_ref
+                        .frames
+                        .last()
+                        .and_then(|frame| frame.locals.get(*local))
+                        .and_then(|value| call_return_variant(ty, value))
+                })
+            } else {
+                None
+            };
+            let Some(frame) = run_ref.frames.pop() else {
+                // SAFETY: the activation was entered successfully and state remains live.
+                let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
+                return if restore_status == ST_OK {
+                    ST_FAULT
+                } else {
+                    restore_status
+                };
+            };
+            // SAFETY: post-entry cleanup owns the bounded run borrow.
+            let cleanup_status = unsafe { after_jit_frame_pop(run_ref, state, &frame) };
+            (return_value, cleanup_status)
         };
-        let Some(frame) = run.frames.pop() else {
-            return ST_FAULT;
-        };
-        // SAFETY: the current compiled-run boundary owns the live unique state handle;
-        // typed references and owned values remain live and nonaliasing for this call.
-        let cleanup_status = unsafe { after_jit_frame_pop(run, state, &frame) };
-        if cleanup_status != ST_OK {
-            return cleanup_status;
-        }
         // SAFETY: the enclosing JIT boundary validated the live state; saved-error storage is initialized and live for this call.
         let restore_status = unsafe { rt_err_restore_activation(state, &saved_err) };
         if restore_status != ST_OK {
             return restore_status;
+        }
+        if cleanup_status != ST_OK {
+            return cleanup_status;
         }
         if status == ST_OK
             && let Some((area, index)) = dst
@@ -19129,7 +19244,8 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
             let Some(value) = return_value else {
                 return ST_FAULT;
             };
-            let Some(slot) = slot_mut(run, area, index) else {
+            // SAFETY: entry and activation restoration completed.
+            let Some(slot) = slot_mut(unsafe { &mut *run }, area, index) else {
                 return ST_FAULT;
             };
             *slot = value;
@@ -19351,15 +19467,19 @@ unsafe extern "C" fn rt_jit_lib_invoke_to_slot(
             // a stack slot that stays live for this helper call.
             unsafe { std::slice::from_raw_parts(operands, argc) }
         };
-        // SAFETY: null was rejected and operand values are cloned before destination write.
-        let run_ref = unsafe { &*run };
-        let mut argv = Vec::with_capacity(argc);
-        for operand in operands {
-            let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, *operand) else {
-                return ST_FAULT;
-            };
-            argv.push(value);
-        }
+        let argv = {
+            // SAFETY: this operand-read borrow is visibly bounded before library/host entry.
+            let run_ref = unsafe { &*run };
+            let mut argv = Vec::with_capacity(argc);
+            for operand in operands {
+                let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, *operand)
+                else {
+                    return ST_FAULT;
+                };
+                argv.push(value);
+            }
+            argv
+        };
         let mut out = Variant::empty();
         // SAFETY: null state was rejected; `argv` is one live allocation containing
         // exactly `argv.len()` initialized Variants, and `out` is unique initialized
@@ -21714,7 +21834,6 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -21759,7 +21878,6 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
         let state = exec_state_as_raw(&mut exec);
         let entry = compiled.functions[0][0];
@@ -34484,7 +34602,6 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34544,7 +34661,6 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34633,7 +34749,6 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34726,7 +34841,6 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34756,10 +34870,11 @@ mod tests {
         if run.is_null() || state.is_null() {
             return ST_FAULT;
         }
-        // SAFETY: the fake entry is invoked only through `jit_proc_invoke` with
-        // the live synthetic run used by the test below.
-        let run = unsafe { &mut *run };
-        let depth = run.frames.len();
+        let depth = {
+            // SAFETY: the fake entry is invoked only through `jit_proc_invoke` with
+            // the live synthetic run; this borrow ends before nested entry.
+            unsafe { &*run }.frames.len()
+        };
         if depth == 1 {
             // SAFETY: the test owns the live state/run pair; this shared As-New
             // path synchronously re-enters the same initializer at depth two.
@@ -34774,9 +34889,13 @@ mod tests {
                 Ok(value) => value,
                 Err(status) => return status,
             };
-            run.explicit_refs.push(nested);
+            // SAFETY: nested entry returned and no typed run borrow spans it.
+            unsafe { &mut *run }.explicit_refs.push(nested);
         }
-        run.explicit_refs.push(Variant::from_i32(depth as i32));
+        // SAFETY: all nested entry work returned.
+        unsafe { &mut *run }
+            .explicit_refs
+            .push(Variant::from_i32(depth as i32));
         ST_OK
     }
 
@@ -34841,7 +34960,6 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
-            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34851,7 +34969,6 @@ mod tests {
             run: &raw mut run,
             state,
         };
-        run.callback_ctx = &raw mut bridge_ctx;
         assert_eq!(
             // SAFETY: state, run, callback context, program, and fake entry table all
             // remain live until the registration guard is explicitly dropped.
@@ -34864,10 +34981,7 @@ mod tests {
             },
             ST_OK
         );
-        let registration = ProcInvokerRegistration {
-            state,
-            run: &raw mut run,
-        };
+        let registration = ProcInvokerRegistration { state };
         let mut object = Variant::empty();
 
         // SAFETY: the installed bridge and initialized output satisfy the object
@@ -34887,7 +35001,6 @@ mod tests {
         );
 
         drop(registration);
-        assert!(run.callback_ctx.is_null());
         exec.err_engine.clear_err();
         let mut after_clear = Variant::empty();
         // SAFETY: state/output remain live; this call must fail closed because
@@ -34896,6 +35009,107 @@ mod tests {
         assert_eq!(status_after_clear, ST_FAULT);
         assert_eq!(exec.err_engine.err.number, 5);
         assert!(run.frames.is_empty());
+    }
+
+    #[test]
+    fn failing_local_and_extern_calls_restore_err_frames_and_real_paramarray_aliases() {
+        unsafe extern "C" fn fail_after_observing_aliases(
+            run: *mut JitRun,
+            state: *mut RawExecState,
+        ) -> i32 {
+            if run.is_null() || state.is_null() {
+                return ST_FAULT;
+            }
+            let alias_present = {
+                // SAFETY: the fake entry receives the live stable run root and this
+                // read-only inspection ends before seating the failure.
+                let run = unsafe { &*run };
+                let callee = run.frames.len().checked_sub(1);
+                callee.is_some_and(|callee| {
+                    run.param_array_aliases.contains_key(&SlotAlias {
+                        frame: Some(callee),
+                        area: AREA_LOCAL,
+                        index: 0,
+                    })
+                })
+            };
+            if !alias_present {
+                return ST_FAULT;
+            }
+            // SAFETY: the test owns the live state root for this synchronous entry.
+            unsafe { rt_raise_runtime_error_number(state, 91) }
+        }
+
+        let program = paramarray_no_alias_call_program();
+        let functions: Vec<JitEntryFn> = vec![fail_after_observing_aliases; 2];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: functions.as_ptr(),
+            function_count: functions.len(),
+        }];
+        let mut globals = vec![Variant::from_i32(10)];
+        let mut globals_table = vec![&mut globals as *mut Vec<Variant>];
+        let caller_array =
+            Variant::from_safearray(SafeArray::from_variants(vec![Variant::from_i32(10)]));
+        let caller_alias = SlotAlias {
+            frame: Some(0),
+            area: AREA_TEMP,
+            index: 0,
+        };
+        let element_alias = SlotAlias {
+            frame: Some(0),
+            area: AREA_GLOBAL,
+            index: 0,
+        };
+        let mut caller_frame = new_jit_frame(&program, 0, &program.funcs[0]).expect("frame");
+        caller_frame.temps[0] = caller_array;
+        let mut run = JitRun {
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
+            frames: vec![caller_frame],
+            explicit_refs: Vec::new(),
+            for_each: HashMap::new(),
+            as_new_slots: HashMap::new(),
+            param_array_aliases: HashMap::from([(caller_alias, vec![Some(element_alias)])]),
+            next_collection_instance_id: i32::MIN + 1,
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
+        };
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut exec = ExecState::new(&host);
+        exec.programs = vec![build_loaded(&program).expect("loaded")];
+        let state = exec_state_as_raw(&mut exec);
+        let args = [JitCallArgDesc {
+            kind: JIT_CALL_ARG_BYVAL_VARIANT,
+            aux: JIT_VARIANT_OPERAND_PLACE,
+            value: 0,
+            area: AREA_TEMP as i32,
+            index: 0,
+        }];
+
+        for call_extern in [false, true] {
+            exec.err_engine
+                .raise(Fault::new(7, "saved caller Err"), "AliasTest");
+            exec.err_engine.error_mode = oxvba_rt_abi::ErrorMode::Goto(BlockId(7));
+            // SAFETY: run/state/descriptor storage remains live and uniquely owned.
+            let status = unsafe {
+                if call_extern {
+                    rt_jit_call_extern_proc_i32(&mut run, state, 0, 1, 1, args.as_ptr(), -1, -1)
+                } else {
+                    rt_jit_call_proc_i32(&mut run, state, 1, 1, args.as_ptr(), -1, -1)
+                }
+            };
+
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(exec.err_engine.err.number, 91);
+            assert_eq!(
+                exec.err_engine.error_mode,
+                oxvba_rt_abi::ErrorMode::Goto(BlockId(7))
+            );
+            assert_eq!(run.frames.len(), 1);
+            assert_eq!(run.param_array_aliases.len(), 1);
+            assert!(run.param_array_aliases.get(&caller_alias) == Some(&vec![Some(element_alias)]));
+        }
     }
 
     #[test]

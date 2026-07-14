@@ -720,32 +720,73 @@ fn withevents_owner_raw(key: i64) -> i32 {
     (key >> 32) as i32
 }
 
-fn unsubscribe_com_key(exec: &mut ExecState<'_>, key: i64) {
-    if let Some(tokens) = exec.events.com_subscriptions_by_key.remove(&key) {
-        for raw in tokens {
-            let _ = exec
-                .host
-                .com()
-                .unsubscribe_event_variant(ComSubscriptionToken::new(raw));
-            exec.events.com_subscriptions.remove(&raw);
-        }
+// SAFETY CONTRACT: `state` is the live same-thread execution-state root. This
+// function takes owned subscription state before entering the host and performs
+// no typed state borrow across `Unadvise`/unsubscribe re-entry.
+unsafe fn unsubscribe_com_key(state: *mut RawExecState, key: i64) -> Result<(), Fault> {
+    let (host, tokens, removed_sinks) = {
+        // SAFETY: upheld by the private raw-state contract.
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return Err(Fault::new(5, "runtime ABI state pointer is null"));
+        };
+        let host = exec.host;
+        let tokens = exec
+            .events
+            .com_subscriptions_by_key
+            .remove(&key)
+            .unwrap_or_default();
+        let removed_sinks = tokens
+            .iter()
+            .filter_map(|raw| exec.events.com_subscriptions.remove(raw))
+            .collect::<Vec<_>>();
+        (host, tokens, removed_sinks)
+    };
+    for raw in tokens {
+        let _ = host
+            .com()
+            .unsubscribe_event_variant(ComSubscriptionToken::new(raw));
     }
+    // Keep the extracted sink owners alive through every host call. A same-token
+    // registration created by synchronous re-entry is intentionally preserved.
+    drop(removed_sinks);
+    Ok(())
 }
 
-fn cleanup_terminated_owner(exec: &mut ExecState<'_>, owner_raw: i32) {
-    let keys: Vec<i64> = exec
-        .events
-        .com_subscriptions_by_key
-        .keys()
-        .copied()
-        .filter(|key| withevents_owner_raw(*key) == owner_raw)
-        .collect();
-    for key in keys {
-        unsubscribe_com_key(exec, key);
+// SAFETY CONTRACT: `state` is the live same-thread execution-state root. Owned
+// work is extracted before every host call and state is reborrowed afterwards.
+unsafe fn cleanup_terminated_owner(state: *mut RawExecState, owner_raw: i32) -> Result<(), Fault> {
+    loop {
+        let keys: Vec<i64> = {
+            // SAFETY: upheld by the private raw-state contract. The snapshot borrow
+            // ends before unsubscribe can synchronously re-enter the runtime.
+            let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                return Err(Fault::new(5, "runtime ABI state pointer is null"));
+            };
+            exec.events
+                .com_subscriptions_by_key
+                .keys()
+                .copied()
+                .filter(|key| withevents_owner_raw(*key) == owner_raw)
+                .collect()
+        };
+        if keys.is_empty() {
+            break;
+        }
+        for key in keys {
+            // SAFETY: no typed state borrow is live across the host call. Repeat the
+            // snapshot after the batch so subscriptions created by re-entry are also
+            // owned and unsubscribed before the terminating owner is forgotten.
+            unsafe { unsubscribe_com_key(state, key) }?;
+        }
     }
+    // SAFETY: host unsubscribe calls have returned and no typed borrow is live.
+    let Some(exec) = (unsafe { state_from_raw(state) }) else {
+        return Err(Fault::new(5, "runtime ABI state pointer is null"));
+    };
     exec.events
         .withevents
         .retain(|key, _| withevents_owner_raw(*key) != owner_raw);
+    Ok(())
 }
 
 struct DrainGuard {
@@ -814,11 +855,9 @@ unsafe fn maybe_drain_with_bridge(state: *mut RawExecState) -> Result<(), Fault>
                 exec.err_engine = saved_err_engine;
             }
             oxvba_runtime::finish_pending_termination(work.instance_id);
-            // SAFETY: the callback has returned and no other typed state borrow is live.
-            let Some(exec) = (unsafe { state_from_raw(state) }) else {
-                return Err(Fault::new(5, "runtime ABI state pointer is null"));
-            };
-            cleanup_terminated_owner(exec, work.instance_id);
+            // SAFETY: the callback has returned and the cleanup core owns only the
+            // raw state root across any host unsubscribe re-entry.
+            unsafe { cleanup_terminated_owner(state, work.instance_id) }?;
         }
     }
     Ok(())
@@ -2105,11 +2144,6 @@ pub unsafe extern "C" fn rt_lib_invoke_with_policy(
             // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
             return unsafe { seat_fault(state, Fault::new(5, "runtime ABI args pointer is null")) };
         }
-        // SAFETY: the exported helper contract guarantees that a non-null state came from
-        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
-        let Some(exec) = (unsafe { state_from_raw(state) }) else {
-            return ST_FAULT;
-        };
         let argv = if argc == 0 {
             &[]
         } else {
@@ -2121,7 +2155,27 @@ pub unsafe extern "C" fn rt_lib_invoke_with_policy(
             // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
             return unsafe { seat_fault(state, Fault::new(94, "invalid use of Null")) };
         }
-        let result = oxvba_lib::invoke(id, argv, exec.host, &mut exec.lib);
+        let host = {
+            // SAFETY: the exported contract supplies the live state. Copying the
+            // shared host handle ends this typed borrow before host-capable dispatch.
+            let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                return ST_FAULT;
+            };
+            exec.host
+        };
+        let result = match oxvba_lib::invoke_context_free(id, argv, host) {
+            Ok(value) => Ok(value),
+            Err(oxvba_lib::ContextFreeInvokeError::Library(err)) => Err(err),
+            Err(oxvba_lib::ContextFreeInvokeError::ContextRequired) => {
+                // SAFETY: contextual IDs are Rnd/Randomize only and the contextual
+                // dispatcher has no host/callback parameter. This short state borrow
+                // therefore cannot survive re-entry.
+                let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                    return ST_FAULT;
+                };
+                oxvba_lib::invoke_contextual(id, argv, &mut exec.lib)
+            }
+        };
         match result {
             // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
             Ok(value) => unsafe { write_out(state, out, value) },
@@ -3139,8 +3193,166 @@ pub fn default_error_help_context(code: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oxvba_hal::HostPolicy;
+    use oxvba_com::{ComCallbackPayload, ComCallbackToken, ComMemberToken, ComObjectDescriptor};
     use oxvba_hal::adapters::null::NullHostServices;
+    use oxvba_hal::{
+        ComHal, ConsoleHal, DiagnosticsHal, DynamicLinkHal, EventPumpHal, FileSystemHal,
+        HalDescriptor, HalProfileId, HalResult, HostPolicy, ProcessEnvHal, TimeLocaleHal,
+        TypeLibCacheScope, TypeLibMetadataBlob, TypeLibResolveRequest, TypeLibResolvedIdentity,
+        UiInteractionHal,
+    };
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicPtr, Ordering};
+
+    struct ReentrantUnsubscribeHost {
+        inner: NullHostServices,
+        state: AtomicPtr<RawExecState>,
+        calls: Mutex<Vec<i32>>,
+        owner_key: i64,
+    }
+
+    impl ReentrantUnsubscribeHost {
+        fn new(owner_key: i64) -> Self {
+            Self {
+                inner: NullHostServices::new(HostPolicy::default()),
+                state: AtomicPtr::new(std::ptr::null_mut()),
+                calls: Mutex::new(Vec::new()),
+                owner_key,
+            }
+        }
+    }
+
+    impl HostServices for ReentrantUnsubscribeHost {
+        fn profile(&self) -> HalProfileId {
+            self.inner.profile()
+        }
+
+        fn descriptor(&self) -> HalDescriptor {
+            self.inner.descriptor()
+        }
+
+        fn policy(&self) -> &HostPolicy {
+            self.inner.policy()
+        }
+
+        fn console(&self) -> &dyn ConsoleHal {
+            self.inner.console()
+        }
+
+        fn ui(&self) -> &dyn UiInteractionHal {
+            self.inner.ui()
+        }
+
+        fn events(&self) -> &dyn EventPumpHal {
+            self.inner.events()
+        }
+
+        fn fs(&self) -> &dyn FileSystemHal {
+            self.inner.fs()
+        }
+
+        fn process(&self) -> &dyn ProcessEnvHal {
+            self.inner.process()
+        }
+
+        fn com(&self) -> &dyn ComHal {
+            self
+        }
+
+        fn time_locale(&self) -> &dyn TimeLocaleHal {
+            self.inner.time_locale()
+        }
+
+        fn dynlink(&self) -> &dyn DynamicLinkHal {
+            self.inner.dynlink()
+        }
+
+        fn diag(&self) -> &dyn DiagnosticsHal {
+            self.inner.diag()
+        }
+    }
+
+    impl ComHal for ReentrantUnsubscribeHost {
+        fn describe_object(&self, object: ObjectRef) -> HalResult<Option<ComObjectDescriptor>> {
+            self.inner.com().describe_object(object)
+        }
+
+        fn subscribe_event(
+            &self,
+            object: ObjectRef,
+            event: ComMemberToken,
+        ) -> HalResult<ComSubscriptionToken> {
+            self.inner.com().subscribe_event(object, event)
+        }
+
+        fn unsubscribe_event_variant(
+            &self,
+            subscription: ComSubscriptionToken,
+        ) -> HalResult<Variant> {
+            self.calls
+                .lock()
+                .expect("unsubscribe calls lock")
+                .push(subscription.raw());
+            if subscription.raw() == 41 {
+                let state = self.state.load(Ordering::SeqCst);
+                // SAFETY: the test stores the live state root before cleanup and cleanup
+                // deliberately holds no typed state borrow across this host callback.
+                let exec = unsafe { state_from_raw(state) }.expect("live reentry state");
+                exec.events.com_subscriptions.insert(
+                    42,
+                    ComEventSink {
+                        owner: Variant::from_i32(withevents_owner_raw(self.owner_key)),
+                        handler: 0,
+                    },
+                );
+                exec.events
+                    .com_subscriptions_by_key
+                    .entry(self.owner_key)
+                    .or_default()
+                    .push(42);
+            }
+            Ok(Variant::empty())
+        }
+
+        fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
+            self.inner.com().poll_event_callback()
+        }
+
+        fn event_callback_subscription(
+            &self,
+            callback: ComCallbackToken,
+        ) -> HalResult<ComSubscriptionToken> {
+            self.inner.com().event_callback_subscription(callback)
+        }
+
+        fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
+            self.inner.com().event_callback_arity(callback)
+        }
+
+        fn resolve_typelib_reference(
+            &self,
+            request: &TypeLibResolveRequest,
+        ) -> HalResult<TypeLibResolvedIdentity> {
+            self.inner.com().resolve_typelib_reference(request)
+        }
+
+        fn load_typelib_metadata(
+            &self,
+            identity: &TypeLibResolvedIdentity,
+        ) -> HalResult<TypeLibMetadataBlob> {
+            self.inner.com().load_typelib_metadata(identity)
+        }
+
+        fn invalidate_typelib_cache(
+            &self,
+            scope: TypeLibCacheScope,
+            reference_name: Option<&str>,
+        ) -> HalResult<Variant> {
+            self.inner
+                .com()
+                .invalidate_typelib_cache(scope, reference_name)
+        }
+    }
 
     #[test]
     fn goto_dispatch_demotes_and_resume_rearms() {
@@ -3927,6 +4139,46 @@ mod tests {
         }
     }
 
+    #[test]
+    fn terminated_owner_cleanup_reconciles_subscription_created_by_unsubscribe_reentry() {
+        // SAFETY: the raw state root remains live for cleanup and the custom host
+        // re-enters only while cleanup has released every typed state borrow.
+        unsafe {
+            let owner_raw = 73i32;
+            let key = (i64::from(owner_raw) << 32) | 9;
+            let host = ReentrantUnsubscribeHost::new(key);
+            let mut state = ExecState::new(&host);
+            state.events.com_subscriptions.insert(
+                41,
+                ComEventSink {
+                    owner: Variant::from_i32(owner_raw),
+                    handler: 0,
+                },
+            );
+            state.events.com_subscriptions_by_key.insert(key, vec![41]);
+            state.events.withevents.insert(
+                key,
+                EventBinding {
+                    owner: Variant::from_i32(owner_raw),
+                    source: Variant::empty(),
+                    order: 0,
+                },
+            );
+            let raw_state = exec_state_as_raw(&mut state);
+            host.state.store(raw_state, Ordering::SeqCst);
+
+            cleanup_terminated_owner(raw_state, owner_raw).expect("termination cleanup");
+
+            assert_eq!(
+                *host.calls.lock().expect("unsubscribe calls lock"),
+                vec![41, 42]
+            );
+            assert!(state.events.com_subscriptions.is_empty());
+            assert!(state.events.com_subscriptions_by_key.is_empty());
+            assert!(state.events.withevents.is_empty());
+        }
+    }
+
     fn lifecycle_test_program(
         initialize: Option<FuncId>,
         terminate: Option<FuncId>,
@@ -4024,6 +4276,88 @@ mod tests {
             assert_eq!(callback.nested_status, ST_OK);
             assert_ne!(callback.nested_identity, 0);
             assert!(state.programs[0].predeclared_singletons.is_empty());
+        }
+    }
+
+    #[test]
+    fn missing_initializer_bridge_does_not_consume_instance_identity() {
+        // SAFETY: the raw state and initialized output remain live and uniquely
+        // owned for the complete helper calls.
+        unsafe {
+            let program = lifecycle_test_program(Some(FuncId(0)), None, false);
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state.programs.push(loaded_test_program(&program));
+            let initial_identity = state.next_instance_id;
+            let raw_state = exec_state_as_raw(&mut state);
+            let mut out = Variant::empty();
+
+            assert_eq!(rt_project_new_object(raw_state, 0, 0, &mut out), ST_FAULT);
+            assert_eq!(state.next_instance_id, initial_identity);
+            assert_eq!(object_identity(&out), 0);
+        }
+    }
+
+    struct PredeclaredReplacementCtx {
+        state: *mut RawExecState,
+        replacement_status: i32,
+    }
+
+    unsafe extern "C" fn replace_then_fail_predeclared_initializer(
+        ctx: *mut c_void,
+        target_prog: usize,
+        _proc: usize,
+        _me: *const Variant,
+        _suppress: i32,
+    ) -> i32 {
+        if ctx.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: the test installs this exact context through the synchronous call.
+        let ctx = unsafe { &mut *ctx.cast::<PredeclaredReplacementCtx>() };
+        let replacement = Variant::from_i32(123);
+        // SAFETY: callback owns the live raw state root and initialized replacement.
+        ctx.replacement_status =
+            unsafe { rt_project_set_predeclared_instance(ctx.state, target_prog, 0, &replacement) };
+        ST_FAULT
+    }
+
+    #[test]
+    fn failed_predeclared_initializer_preserves_reentrant_replacement() {
+        // SAFETY: all raw state, callback-context, and output pointers are derived
+        // from live uniquely owned locals and the bridge is cleared before expiry.
+        unsafe {
+            let program = lifecycle_test_program(Some(FuncId(0)), None, true);
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state.programs.push(loaded_test_program(&program));
+            let raw_state = exec_state_as_raw(&mut state);
+            let mut callback = PredeclaredReplacementCtx {
+                state: raw_state,
+                replacement_status: ST_FAULT,
+            };
+            assert_eq!(
+                rt_install_proc_invoker(
+                    raw_state,
+                    (&raw mut callback).cast::<c_void>(),
+                    Some(replace_then_fail_predeclared_initializer),
+                ),
+                ST_OK
+            );
+            let mut out = Variant::empty();
+
+            let status = rt_project_predeclared_instance(raw_state, 0, 0, &mut out);
+
+            assert_eq!(rt_clear_proc_invoker(raw_state), ST_OK);
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(callback.replacement_status, ST_OK);
+            assert_eq!(
+                state.programs[0]
+                    .predeclared_singletons
+                    .get(&0)
+                    .and_then(Variant::as_i32),
+                Some(123)
+            );
         }
     }
 
