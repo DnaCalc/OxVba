@@ -271,6 +271,14 @@ try {
                 }
                 Assert-WindowsFixtureActiveOwner -OwnerId ([string]$row.source_recipe_owner_bead) -IssueById $issueById -Owner "row '$key' source recipe"
             }
+            "not-applicable" {
+                if ($key -cne "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV" -or
+                    [string]$row.source_recipe_paths -cne "n/a" -or
+                    [string]$row.source_recipe_hash -cne "n/a" -or
+                    [string]$row.source_recipe_owner_bead -cne "n/a") {
+                    throw "validate-windows-fixture-manifest: only the environment-only target control may omit a source recipe"
+                }
+            }
             default {
                 throw "validate-windows-fixture-manifest: row '$key' has invalid source_recipe_state '$($row.source_recipe_state)'"
             }
@@ -324,6 +332,14 @@ try {
                     throw "validate-windows-fixture-manifest: row '$key' pending built artifact must use pending path and hash"
                 }
                 Assert-WindowsFixtureActiveOwner -OwnerId ([string]$row.built_artifact_owner_bead) -IssueById $issueById -Owner "row '$key' built artifact"
+            }
+            "not-applicable" {
+                if ($key -cne "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV" -or
+                    [string]$row.built_artifact_path -cne "n/a" -or
+                    [string]$row.built_artifact_hash -cne "n/a" -or
+                    [string]$row.built_artifact_owner_bead -cne "n/a") {
+                    throw "validate-windows-fixture-manifest: only the environment-only target control may omit a built artifact"
+                }
             }
             default {
                 throw "validate-windows-fixture-manifest: row '$key' has invalid built_artifact_state '$($row.built_artifact_state)'"
@@ -379,9 +395,11 @@ try {
 
     $sourceCurrent = @($rows | Where-Object source_recipe_state -eq "current").Count
     $sourcePending = @($rows | Where-Object source_recipe_state -eq "pending").Count
+    $sourceNotApplicable = @($rows | Where-Object source_recipe_state -eq "not-applicable").Count
     $builtPending = @($rows | Where-Object built_artifact_state -eq "pending").Count
+    $builtNotApplicable = @($rows | Where-Object built_artifact_state -eq "not-applicable").Count
     $environmentPending = @($rows | Where-Object environment_state -eq "pending").Count
-    Write-Host "validate-windows-fixture-manifest: ok (matrices=6 rows=57 target=x64 source_current=$sourceCurrent source_pending=$sourcePending built_pending=$builtPending environment_pending=$environmentPending capability_credit=none)"
+    Write-Host "validate-windows-fixture-manifest: ok (matrices=6 rows=57 target=x64 source_current=$sourceCurrent source_pending=$sourcePending source_n_a=$sourceNotApplicable built_pending=$builtPending built_n_a=$builtNotApplicable environment_pending=$environmentPending capability_credit=none)"
 }
 finally {
     Pop-Location

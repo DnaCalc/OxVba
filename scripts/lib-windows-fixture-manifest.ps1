@@ -2129,6 +2129,7 @@ function New-WindowsFixtureManifestRows {
         foreach ($matrixRow in $matrixRows) {
             $rowId = [string]$matrixRow.row_id
             $key = "$matrixId|$rowId"
+            $environmentOnlyControl = $key -ceq "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV"
             $fixtureId = [string]$matrixRow.fixture_id
             $residualOwner = [string]$matrixRow.residual_owner_bead
             if (-not $artifactContracts.ContainsKey($key)) {
@@ -2146,9 +2147,9 @@ function New-WindowsFixtureManifestRows {
             if ($sourcePathMap.ContainsKey($key)) {
                 $sourcePaths = @(ConvertTo-WindowsFixtureNormalizedRelativePaths -Paths @($sourcePathMap[$key]))
             }
-            $sourceState = if ($sourcePaths.Count -gt 0) { "current" } else { "pending" }
-            $sourcePathsText = if ($sourceState -eq "current") { $sourcePaths -join '|' } else { "pending" }
-            $sourceOwner = if ($sourceState -eq "current") {
+            $sourceState = if ($environmentOnlyControl) { "not-applicable" } elseif ($sourcePaths.Count -gt 0) { "current" } else { "pending" }
+            $sourcePathsText = if ($sourceState -eq "current") { $sourcePaths -join '|' } elseif ($sourceState -eq "not-applicable") { "n/a" } else { "pending" }
+            $sourceOwner = if ($sourceState -in @("current", "not-applicable")) {
                 "n/a"
             }
             else {
@@ -2159,9 +2160,9 @@ function New-WindowsFixtureManifestRows {
             }
 
             $fixtureHash = [string]$matrixRow.fixture_hash
-            $builtState = if (Test-WindowsFixtureSha256 -Value $fixtureHash) { "current" } elseif ($fixtureHash -eq "pending") { "pending" } else { throw "Windows fixture row '$key' has malformed matrix fixture_hash '$fixtureHash'" }
-            $builtPath = if ($builtState -eq "current") { "$($artifactContract.Root)/$($artifactContract.Name)" } else { "pending" }
-            $builtOwner = if ($builtState -eq "current") {
+            $builtState = if ($environmentOnlyControl -and $fixtureHash -ceq "n/a") { "not-applicable" } elseif (Test-WindowsFixtureSha256 -Value $fixtureHash) { "current" } elseif ($fixtureHash -eq "pending") { "pending" } else { throw "Windows fixture row '$key' has malformed matrix fixture_hash '$fixtureHash'" }
+            $builtPath = if ($builtState -eq "current") { "$($artifactContract.Root)/$($artifactContract.Name)" } elseif ($builtState -eq "not-applicable") { "n/a" } else { "pending" }
+            $builtOwner = if ($builtState -in @("current", "not-applicable")) {
                 "n/a"
             }
             else {
@@ -2235,6 +2236,9 @@ function New-WindowsFixtureManifestRows {
             }
             $manifestRow.source_recipe_hash = if ($sourceState -eq "current") {
                 Get-WindowsFixtureSourceRecipeHash -RepositoryRoot $RepositoryRoot -Row $manifestRow -SourcePaths $sourcePaths
+            }
+            elseif ($sourceState -eq "not-applicable") {
+                "n/a"
             }
             else {
                 "pending"

@@ -321,7 +321,7 @@ try {
     }
     $target = $targetConsumers[0].Row
     if ([string]$target.metadata_revision -cne "win-x64-dev-oracle-2026-07-capture-v1" -or
-        [string]$target.fixture_hash -cne "pending" -or
+        [string]$target.fixture_hash -cne "n/a" -or
         [string]$target.truth_state -cne "verified" -or
         [string]$target.evidence_state -cne "verified" -or
         [string]$target.evidence_owner_bead -cne "bd-59co.3.1.2" -or

@@ -942,6 +942,26 @@ try {
         param($fixture)
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.built_artifact_owner_bead = "n/a" }
     }
+    Invoke-ExpectedFailure -Name "source-not-applicable-on-capability" -MessagePattern "only the environment-only target control" -Mutation {
+        param($fixture)
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation {
+            param($row)
+            $row.source_recipe_state = "not-applicable"
+            $row.source_recipe_paths = "n/a"
+            $row.source_recipe_hash = "n/a"
+            $row.source_recipe_owner_bead = "n/a"
+        }
+    }
+    Invoke-ExpectedFailure -Name "target-built-artifact-residual" -MessagePattern "differs from the controlled generated recipe" -Mutation {
+        param($fixture)
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-TARGET-DEV-ENV" -Mutation {
+            param($row)
+            $row.built_artifact_state = "pending"
+            $row.built_artifact_path = "pending"
+            $row.built_artifact_hash = "pending"
+            $row.built_artifact_owner_bead = "bd-59co.3.1.7"
+        }
+    }
     Invoke-ExpectedFailure -Name "pending-environment-unowned" -MessagePattern "missing or unknown pending owner" -Mutation {
         param($fixture)
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.environment_owner_bead = "n/a" }
@@ -1094,7 +1114,7 @@ try {
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.cleanup_recipe = "" }
     }
 
-    $negativeCount = 54
+    $negativeCount = 56
     Write-Host "test-windows-fixture-manifest: ok (positive=8 negative=$negativeCount windows_loader_positive_minimum=$windowsLoaderPositiveCount rows=57 capability_credit=none)"
 }
 finally {
