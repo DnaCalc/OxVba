@@ -9,7 +9,7 @@ Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
 Queue certification: certified — two current leaves are active; the actual ready queue contains exactly the one current leaf listed below and no stale work.
 Claim queue: br ready -l ideal-2026-07 -t task
-Current tasks: `bd-59co.2.2.3` (strict workspace Clippy, ordinary tests, lifecycle and governance baseline) and `bd-59co.3.15.6` (owned Excel64 VBE oracle supervisor). `bd-59co.2.2.27` is closed. `bd-59co.2.2.23` is closed; actual Windows-development and pinned-Linux baseline transcripts remain `.10` and `.11`.
+Current tasks: `bd-59co.2.2.28` (exact final exposed VM3 strict-Clippy pair) and `bd-59co.3.15.6` (owned Excel64 VBE oracle supervisor). The aggregate support gate `bd-59co.2.2.3` is open and waiting on `.28` before strict workspace Clippy, ordinary tests, lifecycle and governance resume. `bd-59co.2.2.27` is closed. `bd-59co.2.2.23` is closed; actual Windows-development and pinned-Linux baseline transcripts remain `.10` and `.11`.
 Certified ready queue: `bd-59co.3.1.2`.
 Current capacity snapshot: `docs/evidence/programs/ideal-2026-07/capacity/POST_ROLLOUT_CAPACITY_2026-07-11.md` (three agents, source hash `19876d013a3d9d45`).
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
