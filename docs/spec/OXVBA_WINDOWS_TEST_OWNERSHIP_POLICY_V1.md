@@ -458,6 +458,9 @@ Conformance evidence MUST show:
 - at least 12 deterministic contending recorded writers with gap-free resource
   sequences, unique records/targets, no lost atomic-move temporary, and a
   writer-versus-cleanup race with no unjournaled mutation or residue;
+- pre-gate capture of each contending writer's exact durable PID/start identity,
+  liveness polling without journal path reads while writers may publish, and a
+  final journal read only after all exact writers exit;
 - exact-object/digest/immutable lease binding, mutation-ticket enforcement,
   stale reread, allowlist expansion, and concurrent signed-history rejection;
 - handle-bound journal temporary write/publication/cleanup, zero-progress
