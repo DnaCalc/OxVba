@@ -7,10 +7,10 @@ Active program manifest: docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json
 Program root: bd-59co
 Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
-Queue certification: certified — one current leaf is active; the actual ready queue contains exactly the two current leaves listed below and no stale work.
+Queue certification: certified — two current leaves are active; the actual ready queue contains exactly the one current leaf listed below and no stale work.
 Claim queue: br ready -l ideal-2026-07 -t task
-Current task: `bd-59co.3.15.6` (owned Excel64 VBE oracle supervisor). `bd-59co.2.2.26` is closed; the parent strict-baseline gate `bd-59co.2.2.3` remains open until the newly exposed 21-warning JIT tranche `.27` and the workspace rerun close. `bd-59co.2.2.23` is closed; actual Windows-development and pinned-Linux baseline transcripts remain `.10` and `.11`.
-Certified ready queue: `bd-59co.2.2.27` and `bd-59co.3.1.2`.
+Current tasks: `bd-59co.2.2.27` (exact 21-warning JIT strict-Clippy tranche) and `bd-59co.3.15.6` (owned Excel64 VBE oracle supervisor). `bd-59co.2.2.26` is closed; the parent strict-baseline gate `bd-59co.2.2.3` remains open until `.27` and the workspace rerun close. `bd-59co.2.2.23` is closed; actual Windows-development and pinned-Linux baseline transcripts remain `.10` and `.11`.
+Certified ready queue: `bd-59co.3.1.2`.
 Current capacity snapshot: `docs/evidence/programs/ideal-2026-07/capacity/POST_ROLLOUT_CAPACITY_2026-07-11.md` (three agents, source hash `19876d013a3d9d45`).
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
 Latest completed result: `bd-59co.2.2.26` closed after all 63 exported runtime helpers received explicit unsafe contracts without C ABI drift; null/zero and integer-carried descriptor rules were repaired; JIT moved to one stable raw run root with short entry/callback borrows; library dispatch separated host-capable context-free calls from RNG-only mutable context; COM termination, nested Err/frame/real-ParamArray cleanup, predeclared replacement, and current queue-only VM3 DoEvents lifecycle passed adversarial tests and repeated Sol review. The exact 21 inherited JIT warnings remain `.27`, and future synchronous same-VM VM3 rooting is exact CORE-5 bead `bd-59co.2.7.4`; no terminal row closes on this slice.
