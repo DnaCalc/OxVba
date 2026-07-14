@@ -124,6 +124,9 @@ function New-WindowsFixtureManifestTestRoot {
                 [void]$paths.Add($path.Replace('\', '/'))
             }
         }
+        if ([string]$row.environment_state -eq "current") {
+            [void]$paths.Add(([string]$row.environment_capture_path).Replace('\', '/'))
+        }
     }
     foreach ($path in $paths) {
         Copy-FixtureFile -FixtureRoot $fixtureRoot -RelativePath $path
