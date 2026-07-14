@@ -349,6 +349,10 @@ impl<'a> Parser<'a> {
                 // `Base` is special in `Option Base`; in declarations and
                 // expressions VBA still accepts it as an ordinary identifier.
                 | SyntaxKind::KwBase
+                // `Explicit` is special in `Option Explicit`, but it is not in
+                // VBA's reserved-identifier set and remains a legal name in
+                // declarations, statements, and expressions.
+                | SyntaxKind::KwExplicit
                 | SyntaxKind::KwBinary
                 | SyntaxKind::KwRandom
                 | SyntaxKind::KwAccess
@@ -3071,6 +3075,59 @@ mod tests {
         assert_eq!(source.module.as_deref(), Some("Main"));
         assert_eq!(source.line, Some(2));
         assert_eq!(source.column, Some(3));
+    }
+
+    #[test]
+    fn vmr05_array_shape_offsets() {
+        let fixture = include_str!(
+            "../../../conformance/vm_package/identity_seed/vmr05_array_shape_bounds.bas"
+        );
+
+        for eol in ["\n", "\r\n"] {
+            let source = fixture.replace('\n', eol);
+            let parsed = parse(&source);
+            assert_eq!(parsed.syntax().text(), source);
+            assert!(
+                parsed.errors().is_empty(),
+                "VMR05 must accept `explicit` as an ordinary identifier ({eol:?}): {:?}",
+                parsed.errors()
+            );
+
+            // Keep `Option Explicit` contextual while proving that the same token
+            // remains legal as a parameter and assignment target.
+            let contextual = [
+                "Option Explicit",
+                "Sub Contextual(ByRef explicit As Long)",
+                "    explicit = 1",
+                "End Sub",
+                "",
+            ]
+            .join(eol);
+            let parsed_contextual = parse(&contextual);
+            assert!(
+                parsed_contextual.errors().is_empty(),
+                "contextual `Explicit` parsing failed ({eol:?}): {:?}",
+                parsed_contextual.errors()
+            );
+
+            // A multi-byte prefix distinguishes UTF-8 byte offsets from scalar
+            // character counts. The retained diagnostic must point at the exact
+            // unexpected `)` in the supplied LF or CRLF module text.
+            let malformed = source.replacen("explicit(0) = 11", "explicit(0) = )", 1);
+            let malformed = format!("' café{eol}{malformed}");
+            let marker = "explicit(0) = )";
+            let expected_offset = malformed.find(marker).expect("malformed marker")
+                + marker.rfind(')').expect("unexpected token");
+            let error = parse(&malformed)
+                .errors()
+                .iter()
+                .find(|error| error.message == "expected expression after `=`")
+                .cloned()
+                .expect("expected expression diagnostic");
+
+            assert_eq!(error.offset as usize, expected_offset, "EOL={eol:?}");
+            assert_eq!(malformed.as_bytes()[error.offset as usize], b')');
+        }
     }
 
     #[test]
