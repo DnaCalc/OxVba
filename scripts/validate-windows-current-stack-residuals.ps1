@@ -453,7 +453,7 @@ try {
         }
     }
 
-    Write-Host "validate-windows-current-stack-residuals: ok (57 planned rows characterized; no capability-state advancement)"
+    Write-Host "validate-windows-current-stack-residuals: ok (56 planned capability/control rows plus 1 verified noncertifying environment control; no capability credit)"
 }
 finally {
     Pop-Location

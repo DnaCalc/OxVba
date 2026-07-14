@@ -339,15 +339,20 @@ try {
         throw "validate-environment-manifest: WAC-TARGET-DEV-ENV test anchors drifted"
     }
     $targetEvidence = @(([string]$target.evidence_refs -split '[;|]') | ForEach-Object { $_.Trim().Replace('\', '/') } | Where-Object { $_ })
-    foreach ($requiredEvidence in @(
+    $expectedTargetEvidence = @(
         "environment:$([string]$dev.environment_id)",
         $devControlledRelative,
         $devCaptureRelative,
         "docs/evidence/programs/$($manifest.program_id)/windows-x64/WIN-0/environment-and-owner-handoff.md"
-    )) {
-        if ($targetEvidence -notcontains $requiredEvidence) {
-            throw "validate-environment-manifest: WAC-TARGET-DEV-ENV lacks evidence '$requiredEvidence'"
-        }
+    )
+    $actualTargetEvidenceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($entry in $targetEvidence) { [void]$actualTargetEvidenceSet.Add($entry) }
+    $expectedTargetEvidenceSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($entry in $expectedTargetEvidence) { [void]$expectedTargetEvidenceSet.Add($entry) }
+    if ($targetEvidence.Count -ne $expectedTargetEvidence.Count -or
+        $actualTargetEvidenceSet.Count -ne $targetEvidence.Count -or
+        -not $actualTargetEvidenceSet.SetEquals($expectedTargetEvidenceSet)) {
+        throw "validate-environment-manifest: WAC-TARGET-DEV-ENV evidence set must be exact and case-sensitive"
     }
 
     Write-Host "validate-environment-manifest: ok (program=$($manifest.program_id) roles=3 dev_consumers=12 dev_hash=$devControlledHash cert=$certId linux=$($linux.environment_id))"

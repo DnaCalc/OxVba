@@ -2230,6 +2230,9 @@ function New-WindowsFixtureManifestRows {
                 notes = if ($sourceState -eq "current") {
                     "Current controlled source/recipe bytes only; built artifact and environment hashes remain independent; no capability or certification credit"
                 }
+                elseif ($environmentOnlyControl) {
+                    "Environment-only target control; source recipe and built artifact are not applicable; controlled noncertifying environment evidence grants no capability or certification credit"
+                }
                 else {
                     "Explicit recipe retained while dedicated source and built artifact remain pending under exact owners; no capability or certification credit"
                 }
