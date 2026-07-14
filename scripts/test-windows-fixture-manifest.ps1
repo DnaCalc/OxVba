@@ -1052,7 +1052,10 @@ try {
         $row = Get-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT"
         $path = "$([string]$row.environment_capture_root)/$([string]$row.environment_capture_name)"
         $environmentPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path $environmentRelativePath
-        $environment = @(Import-Csv -LiteralPath $environmentPath | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $environmentRows = @(Import-Csv -LiteralPath $environmentPath)
+        $environment = @($environmentRows | Where-Object environment_id -eq "win-x64-dev-oracle-2026-07")[0]
+        $environment.snapshot_or_image = "current-host"
+        $environmentRows | Export-Csv -LiteralPath $environmentPath -NoTypeInformation -Encoding UTF8 -UseQuotes Always
         $capture = New-TestEnvironmentCapture -Environment $environment
         [void](Write-TestJson -FixtureRoot $fixture -RelativePath $path -Value $capture)
         Set-ManifestEnvironmentCurrent -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $path
