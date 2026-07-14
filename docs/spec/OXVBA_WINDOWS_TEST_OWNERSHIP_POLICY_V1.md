@@ -43,7 +43,7 @@ Ownership is not inferred from a friendly name. The minimum ownership tuple is:
 | resource | exact ownership tuple |
 |---|---|
 | run | run ID, owner PID, owner process start UTC, journal path |
-| file | canonical absolute path, before snapshot, expected length and SHA-256 |
+| file | canonical absolute path, before snapshot, expected length/SHA-256, creation disposition, and creation-handle volume/file ID |
 | registry value | normalized HKCU Registry64 key path, exact value name, kind/bytes, deepest existing ancestor, and per-key Win32 disposition/marker-token records |
 | process | resource ID, PID, process start UTC and executable path |
 | dialog/UIA | process resource ID, PID/start, UIA runtime ID and native handle |
@@ -254,9 +254,21 @@ and clean-environment evidence. It may not borrow this bead's acceptance.
 
 Files use one canonical absolute path and an absent-to-exact create-only
 transition. The journal records expected length and content SHA-256 before
-`FileMode.CreateNew`. Cleanup deletes the file only if its current snapshot
-equals the expected snapshot. If it is already absent, cleanup is idempotent.
-If it changed, cleanup records a conflict and leaves the bytes untouched.
+`FileMode.CreateNew`. Its prepared descriptor starts with
+`creation_disposition=pending` and empty identity fields. After the new file is
+written and flushed, the helper captures the local Windows volume serial and
+file ID from that still-open creation handle and durably records those values
+with `creation_disposition=created-owned` before activation.
+
+Cleanup opens the exact path with read and delete rights but without sharing
+write or delete, rejects directories and reparse points, and keeps that handle
+open while it verifies the recorded volume/file ID, length, and SHA-256 and
+marks that exact handle for deletion. A path-only or content-only match is not
+ownership: a different file instance containing the same bytes is preserved as
+a conflict. If the path is already absent, cleanup is idempotent. A pending
+record with an existing file is also a conflict because a crash between
+`CreateNew` and the durable created-owned identity cannot prove who won the
+path.
 
 Recursive deletion, directory-root deletion, wildcard paths, traversal,
 reparse traversal, and overwrite are forbidden.
@@ -282,8 +294,11 @@ handle it just created. If the parent crashes before PID assignment, the inert
 unknown child self-expires; recovery MUST NOT discover or kill it by name.
 
 Cleanup may stop a process only when the recorded PID is live with the recorded
-start time and the executable path also matches. A missing or PID-reused
-process is treated as the original child already gone. Process-name, command
+start time and the executable path also matches. Creation time is queried
+first. A missing PID or different creation time is treated as the original
+child already gone and does not permit an executable-path query. Only a live
+exact PID/start match proceeds to executable verification and termination; an
+inaccessible creation time or executable is a conflict. Process-name, command
 line search, service-name, executable-name, job-wide, and all-process cleanup
 are forbidden.
 
@@ -356,6 +371,13 @@ the exact expected state.
 
 Calling cleanup again on `completed` MUST return without rewriting the journal.
 This byte-idempotence applies to normal and stale cleanup.
+
+An outer test teardown MUST surface cleanup/validation failures. It may remove
+only journals and run roots that have reached validated `completed` state and
+whose run roots are empty. Any `cleanup-conflict`, corrupt journal, or residual
+entry preserves its journal and recovery root; teardown must not erase the
+prerequisites needed for an exact retry merely to make the test directory look
+clean.
 
 An abandoned but valid journal is the sole stale-recovery authority. An
 abandoned named mutex is not authority by itself; the journal must be strictly
