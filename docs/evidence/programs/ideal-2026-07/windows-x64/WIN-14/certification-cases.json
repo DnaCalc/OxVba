@@ -28,19 +28,19 @@
     },
     {
       "path": "docs/validation/WINDOWS_ABI_CARRIER_MATRIX_V1.csv",
-      "sha256": "sha256:b83b312f3211c4494a54c4e9d1027593da58fc16a29bbc33dffd8547af1df07a"
+      "sha256": "sha256:9b1817e47607d2d55e5d4f96c65c8388b9282ea0bf07ee50257d8057228e93c4"
     },
     {
       "path": "docs/validation/IDEAL_WINDOWS_X64_FIXTURE_MANIFEST_V1.csv",
-      "sha256": "sha256:05200ff3219cff631039d3ad30fb4f9278979bb1fa5497408de98e50a8576f02"
+      "sha256": "sha256:a106f46c345603b0b13a5078ccd846ad42d1f99817a6bdb64590b8806454d104"
     },
     {
       "path": "docs/validation/IDEAL_WINDOWS_CURRENT_STACK_RESIDUAL_V1.csv",
-      "sha256": "sha256:76bfdd2d9a8a839f464cb0ef46156736273c71bac3f36ed97b824f7da8ee798b"
+      "sha256": "sha256:d054f0f83376cd4cfb06d3c130f65902560d925d102bcaa1392d4b5c7bf370a7"
     },
     {
       "path": "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv",
-      "sha256": "sha256:3ed6e5b5c893569a4ab75e4832cf10d13491bc2b34701fefbefd8718c5064c01"
+      "sha256": "sha256:b2baf4d5c6bd0403ee3fe6813669b83434bf32aedbc1db94f2730d332a1a1d06"
     }
   ],
   "certification_environment": {
@@ -4886,7 +4886,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-bstr-layout-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -4953,7 +4953,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5005,7 +5005,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-variant-layout-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -5072,7 +5072,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5121,7 +5121,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-safearray-layout-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -5188,7 +5188,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5237,7 +5237,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-iunknown-identity-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -5304,7 +5304,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5356,7 +5356,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-numeric-longptr-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -5423,7 +5423,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5473,7 +5473,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-interface-array-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -5540,7 +5540,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5591,7 +5591,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-vt-record-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -5658,7 +5658,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5826,7 +5826,7 @@
         ],
         "source_recipe_owner_bead": "bd-59co.3.14.2",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-carrier-safety-mutation-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -5893,7 +5893,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -5920,11 +5920,11 @@
       "claim_key": "win.control.target-dev-environment",
       "mapping": "exactly-one-canonical-row",
       "producer_gate": {
-        "owner_bead": "bd-59co.3.1.2",
+        "owner_bead": "n/a",
         "dependency_beads": [],
         "required_truth_state": "verified",
-        "current_truth_state": "planned",
-        "state": "pending"
+        "current_truth_state": "verified",
+        "state": "satisfied"
       },
       "roles": {
         "excel": "development-only",
@@ -5933,17 +5933,17 @@
       "fixture": {
         "fixture_id": "environment-dev-oracle-v1",
         "recipe_id": "x64-environment-dev-oracle-v1-recipe-v1",
-        "source_recipe_state": "pending",
+        "source_recipe_state": "not-applicable",
         "source_recipe_paths": [
-          "pending"
+          "n/a"
         ],
-        "source_recipe_owner_bead": "bd-59co.3.1.2",
+        "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-environment-dev-oracle-v1-artifact-v1",
         "built_artifact_class": "fixture-bundle-json-v1",
-        "built_artifact_state": "pending",
-        "built_artifact_owner_bead": "bd-59co.3.1.2"
+        "built_artifact_state": "not-applicable",
+        "built_artifact_owner_bead": "n/a"
       },
       "observable_axes": {
         "result": {
@@ -5994,19 +5994,19 @@
           "kind": "case-evidence",
           "path": "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-14/cases/win14-wac-target-dev-env.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "n/a"
         },
         {
           "kind": "controlled-fixture",
           "path": "artifacts/windows-x64/controlled-fixtures/v1/win-abi-carrier/wac-target-dev-env/fixture-bundle.json",
-          "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "state": "not-applicable",
+          "owner_bead": "n/a"
         },
         {
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -6018,8 +6018,6 @@
       },
       "certification_state": "blocked",
       "blocking_reasons": [
-        "producer-matrix-row-planned",
-        "controlled-fixture-built-artifact-pending",
         "certification-environment-planned-blocking",
         "certification-runner-pending"
       ],
@@ -6061,7 +6059,7 @@
         ],
         "source_recipe_owner_bead": "n/a",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-typelib-metadata-identity-v1-artifact-v1",
         "built_artifact_class": "fixture-bundle-json-v1",
         "built_artifact_state": "pending",
@@ -6133,7 +6131,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -6185,7 +6183,7 @@
         ],
         "source_recipe_owner_bead": "bd-59co.3.3.1",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-interop-plan-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -6252,7 +6250,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {
@@ -6301,7 +6299,7 @@
         ],
         "source_recipe_owner_bead": "bd-59co.3.3.1",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
-        "source_environment_state": "pending",
+        "source_environment_state": "current",
         "built_artifact_id": "x64-windows-descriptor-boundary-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
@@ -6368,7 +6366,7 @@
           "kind": "environment-capture",
           "path": "artifacts/windows-x64/controlled-environments/v1/win-x64-cert-vm-pending-v1/environment-capture.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.1.2"
+          "owner_bead": "bd-59co.3.15.3"
         }
       ],
       "environment_gate": {

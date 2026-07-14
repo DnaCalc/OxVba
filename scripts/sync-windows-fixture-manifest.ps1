@@ -58,10 +58,12 @@ try {
 
     $sourceCurrent = @($rows | Where-Object source_recipe_state -eq "current").Count
     $sourcePending = @($rows | Where-Object source_recipe_state -eq "pending").Count
+    $sourceNotApplicable = @($rows | Where-Object source_recipe_state -eq "not-applicable").Count
     $builtCurrent = @($rows | Where-Object built_artifact_state -eq "current").Count
     $builtPending = @($rows | Where-Object built_artifact_state -eq "pending").Count
+    $builtNotApplicable = @($rows | Where-Object built_artifact_state -eq "not-applicable").Count
     $mode = if ($Check) { "check" } else { "write" }
-    Write-Host "sync-windows-fixture-manifest: ok (mode=$mode rows=57 source_current=$sourceCurrent source_pending=$sourcePending built_current=$builtCurrent built_pending=$builtPending capability_credit=none)"
+    Write-Host "sync-windows-fixture-manifest: ok (mode=$mode rows=57 source_current=$sourceCurrent source_pending=$sourcePending source_n_a=$sourceNotApplicable built_current=$builtCurrent built_pending=$builtPending built_n_a=$builtNotApplicable capability_credit=none)"
 }
 finally {
     Pop-Location

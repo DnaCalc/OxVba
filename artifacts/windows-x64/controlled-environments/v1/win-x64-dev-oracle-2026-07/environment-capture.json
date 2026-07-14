@@ -1,0 +1,22 @@
+{
+  "schema_id": "oxvba-windows-x64-environment-capture-v1",
+  "schema_version": 1,
+  "capture_id": "win-x64-dev-oracle-2026-07-capture-v1",
+  "environment_id": "win-x64-dev-oracle-2026-07",
+  "role": "dev-oracle",
+  "profile": "windows-x64",
+  "target_arch": "x64",
+  "os_build": "10.0.26200.8655",
+  "office_product": "Microsoft Excel",
+  "office_version": "16.0",
+  "office_build": "16.0.20131.20112",
+  "office_channel": "Current Channel",
+  "office_bitness": "64",
+  "locale": "en-ZA",
+  "snapshot_or_image": "dev-host-fingerprint-v1@sha256:47f9cfdb1e43709bbdebd461a02021a029c23369a1361706e9d372d6fa081bfa",
+  "reset_policy": "noncertifying-host;record-owned-processes;manual-recovery",
+  "reset_policy_hash": "sha256:c42620a4f99b2c900ec8a152bfa3ff7a5c7f3b44982826f2da83835fe65d4bb6",
+  "evidence_state": "characterized-noncertifying",
+  "certification_authority": false,
+  "noncertifying": true
+}

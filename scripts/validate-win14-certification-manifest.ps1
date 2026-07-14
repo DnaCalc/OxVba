@@ -104,7 +104,7 @@ $matrixPaths = [ordered]@{
     "WIN-ABI-CARRIER" = "docs/validation/WINDOWS_ABI_CARRIER_MATRIX_V1.csv"
 }
 $expectedSourcePaths = @($matrixPaths.Values) + @($FixtureManifestPath, $ResidualLedgerPath, $EnvironmentManifestPath)
-$expectedBlockers = @(
+$defaultExpectedBlockers = @(
     "producer-matrix-row-planned",
     "controlled-fixture-built-artifact-pending",
     "certification-environment-planned-blocking",
@@ -231,19 +231,29 @@ try {
         $canonical = $canonicalByKey[$key]
         $fixture = $fixtureByKey[$key]
         $residual = $residualByKey[$key]
+        $producerSatisfied = $key -ceq "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV"
+        $expectedCanonicalTruth = if ($producerSatisfied) { "verified" } else { "planned" }
+        $expectedProducerState = if ($producerSatisfied) { "satisfied" } else { "pending" }
         $expectedCaseId = "WIN14-$([string]$canonical.row_id)"
         if ([string]$case.case_id -ne $expectedCaseId -or [string]$case.claim_key -ne [string]$canonical.claim_key -or
             [string]$case.mapping -ne "exactly-one-canonical-row") {
             throw "validate-win14-certification-manifest: '$key' case identity drifted"
         }
-        if ([string]$canonical.truth_state -ne "planned" -or [string]$case.producer_gate.current_truth_state -ne "planned" -or
-            [string]$case.producer_gate.required_truth_state -ne "verified" -or [string]$case.producer_gate.state -ne "pending") {
-            throw "validate-win14-certification-manifest: '$key' producer gate is not explicitly pending"
+        if ([string]$canonical.truth_state -ne $expectedCanonicalTruth -or
+            [string]$case.producer_gate.current_truth_state -ne $expectedCanonicalTruth -or
+            [string]$case.producer_gate.required_truth_state -ne "verified" -or
+            [string]$case.producer_gate.state -ne $expectedProducerState) {
+            throw "validate-win14-certification-manifest: '$key' producer gate disagrees with canonical truth"
         }
         $ownerId = [string]$case.producer_gate.owner_bead
-        if ($ownerId -ne [string]$residual.live_residual_owner_bead -or -not $issueById.ContainsKey($ownerId) -or
-            [string]$issueById[$ownerId].status -notin $activeStatuses -or
-            "profile-win-x64" -notin @(Get-IdealIssueLabels -Issue $issueById[$ownerId])) {
+        if ($producerSatisfied) {
+            if ($ownerId -ne "n/a" -or [string]$residual.live_residual_owner_bead -ne "n/a") {
+                throw "validate-win14-certification-manifest: '$key' retains a live owner after producer satisfaction"
+            }
+        }
+        elseif ($ownerId -ne [string]$residual.live_residual_owner_bead -or -not $issueById.ContainsKey($ownerId) -or
+                [string]$issueById[$ownerId].status -notin $activeStatuses -or
+                "profile-win-x64" -notin @(Get-IdealIssueLabels -Issue $issueById[$ownerId])) {
             throw "validate-win14-certification-manifest: '$key' has an unowned or inactive producer gate '$ownerId'"
         }
         $expectedDependencies = @(([string]$canonical.producer_dependencies -split ';') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -267,7 +277,8 @@ try {
         }
         $expectedSourcePathsForCase = @(([string]$fixture.source_recipe_paths -split '\|') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         Assert-ExactStringSet -Actual @($case.fixture.source_recipe_paths) -Expected $expectedSourcePathsForCase -Owner "$key source recipe paths"
-        if ([string]$case.fixture.built_artifact_state -ne "pending") {
+        $expectedBuiltState = if ($producerSatisfied) { "not-applicable" } else { "pending" }
+        if ([string]$case.fixture.built_artifact_state -ne $expectedBuiltState) {
             throw "validate-win14-certification-manifest: '$key' grants built fixture credit before promotion"
         }
 
@@ -317,11 +328,11 @@ try {
             [string]$artifactByKind["case-evidence"].state -ne "pending" -or
             [string]$artifactByKind["case-evidence"].owner_bead -ne $ownerId -or
             [string]$artifactByKind["controlled-fixture"].path -ne $fixtureArtifactPath -or
-            [string]$artifactByKind["controlled-fixture"].state -ne "pending" -or
+            [string]$artifactByKind["controlled-fixture"].state -ne $expectedBuiltState -or
             [string]$artifactByKind["controlled-fixture"].owner_bead -ne [string]$fixture.built_artifact_owner_bead -or
             [string]$artifactByKind["environment-capture"].path -ne $environmentCapturePath -or
             [string]$artifactByKind["environment-capture"].state -ne "pending" -or
-            [string]$artifactByKind["environment-capture"].owner_bead -ne [string]$fixture.environment_owner_bead) {
+            [string]$artifactByKind["environment-capture"].owner_bead -ne "bd-59co.3.15.3") {
             throw "validate-win14-certification-manifest: '$key' artifact contract drifted or was promoted"
         }
 
@@ -331,6 +342,12 @@ try {
             [string]$case.environment_gate.owner_bead -ne "bd-59co.3.15.3" -or
             [string]$case.environment_gate.state -ne "pending") {
             throw "validate-win14-certification-manifest: '$key' certification environment was bypassed"
+        }
+        $expectedBlockers = if ($producerSatisfied) {
+            @("certification-environment-planned-blocking", "certification-runner-pending")
+        }
+        else {
+            $defaultExpectedBlockers
         }
         Assert-ExactStringSet -Actual @($case.blocking_reasons) -Expected $expectedBlockers -Owner "$key blocking reasons"
         if ([string]$case.certification_state -ne "blocked" -or [string]$case.capability_credit -ne "none" -or

@@ -137,6 +137,9 @@ foreach ($matrixEntry in $matrixPaths.GetEnumerator()) {
         $fixture = $fixtureByKey[$key]
         $residual = $residualByKey[$key]
         $caseId = "WIN14-$([string]$row.row_id)"
+        $producerSatisfied = [string]$row.truth_state -eq "verified"
+        $producerOwner = if ($producerSatisfied) { "n/a" } else { [string]$residual.live_residual_owner_bead }
+        $producerGateState = if ($producerSatisfied) { "satisfied" } else { "pending" }
         $roles = Get-CertificationRoles -MatrixId $matrixId -Row $row
         $commands = @(
             if ([string]$row.row_id -eq "WAC-CLEAN-CERT-ENV") {
@@ -170,11 +173,11 @@ foreach ($matrixEntry in $matrixPaths.GetEnumerator()) {
             claim_key = [string]$row.claim_key
             mapping = "exactly-one-canonical-row"
             producer_gate = [ordered]@{
-                owner_bead = [string]$residual.live_residual_owner_bead
+                owner_bead = $producerOwner
                 dependency_beads = @(Split-List -Text ([string]$row.producer_dependencies) -Delimiter ';')
                 required_truth_state = "verified"
                 current_truth_state = [string]$row.truth_state
-                state = "pending"
+                state = $producerGateState
             }
             roles = $roles
             fixture = [ordered]@{
@@ -215,7 +218,7 @@ foreach ($matrixEntry in $matrixPaths.GetEnumerator()) {
                     kind = "case-evidence"
                     path = Get-EvidencePath -CaseId $caseId -RowId ([string]$row.row_id)
                     state = "pending"
-                    owner_bead = [string]$residual.live_residual_owner_bead
+                    owner_bead = $producerOwner
                 },
                 [ordered]@{
                     kind = "controlled-fixture"
@@ -226,8 +229,8 @@ foreach ($matrixEntry in $matrixPaths.GetEnumerator()) {
                 [ordered]@{
                     kind = "environment-capture"
                     path = $environmentCapturePath
-                    state = [string]$fixture.environment_state
-                    owner_bead = [string]$fixture.environment_owner_bead
+                    state = "pending"
+                    owner_bead = [string]$certificationEnvironment.owner_bead
                 }
             )
             environment_gate = [ordered]@{
@@ -239,8 +242,8 @@ foreach ($matrixEntry in $matrixPaths.GetEnumerator()) {
             }
             certification_state = "blocked"
             blocking_reasons = @(
-                "producer-matrix-row-planned",
-                "controlled-fixture-built-artifact-pending",
+                if (-not $producerSatisfied) { "producer-matrix-row-planned" }
+                if ([string]$fixture.built_artifact_state -eq "pending") { "controlled-fixture-built-artifact-pending" }
                 "certification-environment-planned-blocking",
                 "certification-runner-pending"
             )

@@ -124,6 +124,9 @@ function New-WindowsFixtureManifestTestRoot {
                 [void]$paths.Add($path.Replace('\', '/'))
             }
         }
+        if ([string]$row.environment_state -eq "current") {
+            [void]$paths.Add(([string]$row.environment_capture_path).Replace('\', '/'))
+        }
     }
     foreach ($path in $paths) {
         Copy-FixtureFile -FixtureRoot $fixtureRoot -RelativePath $path
@@ -592,15 +595,8 @@ try {
     if ($devEnvironments.Count -ne 1) {
         throw "Windows fixture manifest test expected one development oracle environment"
     }
-    $devEnvironments[0].snapshot_or_image = "dev-oracle-2026-07@sha256:" + ("a" * 64)
-    $environmentRows | Export-Csv -LiteralPath $environmentPath -NoTypeInformation -Encoding UTF8 -UseQuotes Always
-    $environmentRow = Get-ManifestRow -FixtureRoot $environmentFixture -RowId "WAC-BSTR-LAYOUT"
-    $capturePath = "$([string]$environmentRow.environment_capture_root)/$([string]$environmentRow.environment_capture_name)"
-    $capture = New-TestEnvironmentCapture -Environment $devEnvironments[0]
-    [void](Write-TestJson -FixtureRoot $environmentFixture -RelativePath $capturePath -Value $capture)
-    Set-ManifestEnvironmentCurrent -FixtureRoot $environmentFixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $capturePath
     & $validator -RepositoryRoot $environmentFixture
-    Write-Host "windows-fixture-manifest-positive: ok (current-versioned-environment-capture-bound-to-canonical-row)"
+    Write-Host "windows-fixture-manifest-positive: ok (shared-current-versioned-environment-capture-bound-to-12-canonical-rows)"
 
     Invoke-ExpectedFailure -Name "missing-row" -MessagePattern "expected exactly 57 rows, found 56" -Mutation {
         param($fixture)
@@ -942,9 +938,29 @@ try {
         param($fixture)
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.built_artifact_owner_bead = "n/a" }
     }
+    Invoke-ExpectedFailure -Name "source-not-applicable-on-capability" -MessagePattern "only the environment-only target control" -Mutation {
+        param($fixture)
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation {
+            param($row)
+            $row.source_recipe_state = "not-applicable"
+            $row.source_recipe_paths = "n/a"
+            $row.source_recipe_hash = "n/a"
+            $row.source_recipe_owner_bead = "n/a"
+        }
+    }
+    Invoke-ExpectedFailure -Name "target-built-artifact-residual" -MessagePattern "differs from the controlled generated recipe" -Mutation {
+        param($fixture)
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-TARGET-DEV-ENV" -Mutation {
+            param($row)
+            $row.built_artifact_state = "pending"
+            $row.built_artifact_path = "pending"
+            $row.built_artifact_hash = "pending"
+            $row.built_artifact_owner_bead = "bd-59co.3.1.7"
+        }
+    }
     Invoke-ExpectedFailure -Name "pending-environment-unowned" -MessagePattern "missing or unknown pending owner" -Mutation {
         param($fixture)
-        Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.environment_owner_bead = "n/a" }
+        Update-ManifestRow -FixtureRoot $fixture -RowId "WCC-EXCEL-AUTHORITY" -Mutation { param($row) $row.environment_owner_bead = "n/a" }
     }
     Invoke-ExpectedFailure -Name "environment-arbitrary-text" -MessagePattern "not valid environment-capture JSON" -Mutation {
         param($fixture)
@@ -1094,7 +1110,7 @@ try {
         Update-ManifestRow -FixtureRoot $fixture -RowId "WAC-BSTR-LAYOUT" -Mutation { param($row) $row.cleanup_recipe = "" }
     }
 
-    $negativeCount = 54
+    $negativeCount = 56
     Write-Host "test-windows-fixture-manifest: ok (positive=8 negative=$negativeCount windows_loader_positive_minimum=$windowsLoaderPositiveCount rows=57 capability_credit=none)"
 }
 finally {

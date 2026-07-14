@@ -61,7 +61,11 @@ try {
     & "$PSScriptRoot/validate-contract-clause-disposition.ps1"
 
     Write-Host "[governance] environment-manifest"
+    & "$PSScriptRoot/sync-windows-dev-environment.ps1" -Check
     & "$PSScriptRoot/validate-environment-manifest.ps1"
+
+    Write-Host "[governance] development-environment-mutations"
+    & "$PSScriptRoot/test-windows-dev-environment.ps1"
 
     Write-Host "[governance] win14-certification-manifest-sync"
     & "$PSScriptRoot/sync-win14-certification-manifest.ps1" -Check

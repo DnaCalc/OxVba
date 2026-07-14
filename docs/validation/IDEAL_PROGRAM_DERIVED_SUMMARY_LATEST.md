@@ -11,7 +11,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | Profile | Matrices | Rows | Planned | In progress | Implemented subset | Implemented full | Verified | Archived |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | core | 5 | 59 | 58 | 0 | 0 | 0 | 1 | 0 |
-| windows-x64 | 6 | 57 | 57 | 0 | 0 | 0 | 0 | 0 |
+| windows-x64 | 6 | 57 | 56 | 0 | 0 | 0 | 1 | 0 |
 | ide | 4 | 77 | 77 | 0 | 0 | 0 | 0 | 0 |
 
 ## Matrix totals
@@ -28,7 +28,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | WIN-COM-SERVER | windows-x64 | primary | bd-59co.3.7 | 7 | 0 | 7 | 20 |
 | WIN-NATIVE-IMPORT | windows-x64 | primary | bd-59co.3.10 | 8 | 0 | 8 | 27 |
 | WIN-NATIVE-EXPORT | windows-x64 | primary | bd-59co.3.13 | 8 | 0 | 8 | 21 |
-| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 0 | 18 | 75 |
+| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 1 | 17 | 75 |
 | LS-BASELINE | ide | primary | bd-59co.4.1 | 29 | 0 | 29 | 31 |
 | LS-REFERENCES | ide | primary | bd-59co.4.7 | 10 | 0 | 10 | 12 |
 | LSP-METHODS | ide | projection | bd-59co.4.11 | 30 | 0 | 30 | 33 |
@@ -144,7 +144,6 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | WAC-VT-RECORD | WIN-ABI-CARRIER | exact x64 carriers | nominal VT_RECORD descriptors scalar arrays copy and clear | planned | remaining-accepted-scope | bd-59co.3.2 |
 | WAC-CARRIER-EXCEL-ROUNDTRIP | WIN-ABI-CARRIER | exact x64 carriers | 64-bit Excel cross-boundary carrier roundtrip and writeback | planned | remaining-accepted-scope | bd-59co.3.2 |
 | WAC-SAFETY-MUTATION | WIN-ABI-CARRIER | native-boundary carrier safety | malformed descriptors fault injection repeated lifecycle and balance | planned | remaining-accepted-scope | bd-59co.3.14.2 |
-| WAC-TARGET-DEV-ENV | WIN-ABI-CARRIER | x64 target and development oracle environment | explicit x64-only scope plus current development-oracle host role | planned | remaining-accepted-scope | bd-59co.3.1.7 |
 | WAC-TYPELIB-METADATA | WIN-ABI-CARRIER | raw typelib resolution and stable metadata identities | registered/file typelib selection; GUID version LCID platform and reference order; stable library type member event inheritance default source coclass and broken-reference facts; resolver digest and compiler package language-service handoff | planned | remaining-accepted-scope | bd-59co.3.2 |
 | WAC-VERIFIED-INTEROP-PLAN | WIN-ABI-CARRIER | shared verified x64 interop plan | one plan identity unchanged VM3/JIT adapters common Core session/cache and no private Windows helper catalog mutable state or cache | planned | remaining-accepted-scope | bd-59co.3.3.1 |
 | WAC-WINDOWS-DESCRIPTORS | WIN-ABI-CARRIER | Windows x64 interop descriptor vocabulary | verified OxImage Windows descriptors only; raw metadata or unverified decoded artifacts cannot elaborate a plan | planned | remaining-accepted-scope | bd-59co.3.3.1 |

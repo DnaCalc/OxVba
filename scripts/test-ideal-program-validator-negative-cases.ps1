@@ -43,6 +43,8 @@ function New-IdealValidatorFixture {
         "docs/validation/IDEAL_WINDOWS_X64_FIXTURE_MANIFEST_V1.csv",
         "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-0/dev-oracle-environment.json",
         "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-0/dev-oracle-environment.md",
+        "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-0/environment-and-owner-handoff.md",
+        "artifacts/windows-x64/controlled-environments/v1/win-x64-dev-oracle-2026-07/environment-capture.json",
         "docs/validation/IDEAL_CONTRACT_CLAUSE_DISPOSITION_V1.csv"
     )) {
         Copy-FixtureFile -FixtureRoot $fixtureRoot -RelativePath $path
@@ -307,6 +309,30 @@ try {
     Invoke-ExpectedFailure -Name "noncertifying-windows-evidence" -MessagePattern "must reference environment:$([regex]::Escape($certEnvironmentId))" -Action {
         & (Join-Path $PSScriptRoot "validate-environment-manifest.ps1") `
             -RepositoryRoot $fixture
+    }
+
+    foreach ($evidenceMutation in @(
+        [pscustomobject]@{
+            Name = "miscased-dev-control-evidence"
+            Pattern = "evidence set must be exact and case-sensitive"
+            Mutate = { param($text, $devId, $certId) $text.Replace("environment:$devId", "environment:$($devId.ToUpperInvariant())") }
+        },
+        [pscustomobject]@{
+            Name = "extra-certification-dev-control-evidence"
+            Pattern = "evidence set must be exact and case-sensitive"
+            Mutate = { param($text, $devId, $certId) "$text|environment:$certId" }
+        }
+    )) {
+        $fixture = New-IdealValidatorFixture
+        $abiOwner = @(Import-Csv -LiteralPath (Join-Path $fixture "docs/validation/IDEAL_MATRIX_OWNERSHIP_V1.csv") | Where-Object matrix_id -eq "WIN-ABI-CARRIER")[0]
+        $abiPath = Resolve-IdealRepoPath -RepoRoot $fixture -Path ([string]$abiOwner.path)
+        $abiRows = @(Import-Csv -LiteralPath $abiPath)
+        $targetRow = @($abiRows | Where-Object row_id -eq "WAC-TARGET-DEV-ENV")[0]
+        $targetRow.evidence_refs = & $evidenceMutation.Mutate ([string]$targetRow.evidence_refs) $devEnvironmentId $certEnvironmentId
+        $abiRows | Export-Csv -LiteralPath $abiPath -NoTypeInformation
+        Invoke-ExpectedFailure -Name ([string]$evidenceMutation.Name) -MessagePattern ([string]$evidenceMutation.Pattern) -Action {
+            & (Join-Path $PSScriptRoot "validate-environment-manifest.ps1") -RepositoryRoot $fixture
+        }
     }
 
     $fixture = New-IdealValidatorFixture
@@ -619,7 +645,7 @@ try {
             -SkipCycleCheck
     }
 
-    Write-Host "test-ideal-program-validator-negative-cases: ok (cases=24)"
+    Write-Host "test-ideal-program-validator-negative-cases: ok (cases=26)"
 }
 finally {
     if (Test-Path -LiteralPath $tempBase -PathType Container) {

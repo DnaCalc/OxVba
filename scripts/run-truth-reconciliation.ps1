@@ -18,6 +18,7 @@ try {
     & "$PSScriptRoot/sync-windows-fixture-manifest.ps1" -Check
     & "$PSScriptRoot/validate-windows-fixture-manifest.ps1"
     & "$PSScriptRoot/validate-contract-clause-disposition.ps1"
+    & "$PSScriptRoot/sync-windows-dev-environment.ps1" -Check
     & "$PSScriptRoot/validate-environment-manifest.ps1"
     & "$PSScriptRoot/sync-win14-certification-manifest.ps1" -Check
     & "$PSScriptRoot/validate-win14-certification-manifest.ps1"
