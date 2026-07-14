@@ -1276,6 +1276,58 @@ $wrongPathRecord = $selfRecord | Select-Object *
 $wrongPathRecord.executable_path = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetFileName($selfProcess.Path))
 Assert-True (-not (Test-ExcelOracleProcessIdentity -Record $wrongPathRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self")) "mutation: matching PID/start with different executable must fail closed"
 Assert-Equal "same-instance-conflict" (Get-ExcelOracleProcessIdentityState -Record $wrongPathRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self") "same PID/start with conflicting path must not be treated as gone/reused"
+
+$preservedLiveIdentityJson = @'
+{
+  "schema": "oxvba.excel-vba-oracle-owned-process.v1",
+  "run_id": "excel_vba_oracle_be0f2c078a3942b7b67fddb8db7c18e0",
+  "case_id": "success",
+  "pid": 31160,
+  "process_name": "EXCEL",
+  "process_start_utc": "2026-07-14T13:47:15.2253534Z",
+  "executable_path": "C:\\Program Files\\Microsoft Office\\Root\\Office16\\EXCEL.EXE",
+  "before_excel_pids": [],
+  "ownership": "owned-new-instance",
+  "acquired_utc": "2026-07-14T13:47:24.1632866Z"
+}
+'@
+$preservedLiveIdentity = ConvertFrom-ExcelOracleProcessIdentityJson `
+    -Json $preservedLiveIdentityJson `
+    -ExpectedSchema "oxvba.excel-vba-oracle-owned-process.v1"
+$preservedLiveDefaultDecode = $preservedLiveIdentityJson | ConvertFrom-Json
+Assert-True ($preservedLiveDefaultDecode.process_start_utc -is [DateTime]) "preserved live regression: default PowerShell decoding must reproduce the DateTime coercion that reached the guardian"
+Assert-True ([string]$preservedLiveDefaultDecode.process_start_utc -cne "2026-07-14T13:47:15.2253534Z") "preserved live regression: the guardian's former string cast must reproduce loss of the exact recorded timestamp text"
+Assert-True ($preservedLiveIdentity.process_start_utc -is [string]) "preserved live identity decode must retain process_start_utc as a JSON string"
+Assert-Equal "2026-07-14T13:47:15.2253534Z" $preservedLiveIdentity.process_start_utc "preserved live identity decode must retain all recorded start-time ticks"
+$preservedLiveStart = [DateTime]::Parse(
+    $preservedLiveIdentity.process_start_utc,
+    [Globalization.CultureInfo]::InvariantCulture,
+    [Globalization.DateTimeStyles]::RoundtripKind
+)
+$preservedLiveStateArguments = @{
+    ObservedPid = 31160
+    ObservedProcessName = "EXCEL"
+    ObservedProcessStartUtc = $preservedLiveStart
+    ObservedExecutablePath = "C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE"
+    ExpectedProcessName = "EXCEL"
+    RunId = "excel_vba_oracle_be0f2c078a3942b7b67fddb8db7c18e0"
+}
+Assert-Equal "exact" (Get-ExcelOracleProcessIdentitySnapshotState -Record $preservedLiveIdentity @preservedLiveStateArguments) "preserved live PID/start/name/path identity must replay exactly without a live process"
+$preservedLiveWrongPid = $preservedLiveIdentity | Select-Object *
+$preservedLiveWrongPid.pid = 31161
+Assert-Equal "same-instance-conflict" (Get-ExcelOracleProcessIdentitySnapshotState -Record $preservedLiveWrongPid @preservedLiveStateArguments) "preserved live mutation: PID disagreement must fail closed"
+$preservedLiveWrongStart = $preservedLiveIdentity | Select-Object *
+$preservedLiveWrongStart.process_start_utc = $preservedLiveStart.AddTicks(1).ToString("o")
+Assert-Equal "pid-reused" (Get-ExcelOracleProcessIdentitySnapshotState -Record $preservedLiveWrongStart @preservedLiveStateArguments) "preserved live mutation: one-tick start disagreement must fail closed as PID reuse"
+$preservedLiveWrongName = $preservedLiveIdentity | Select-Object *
+$preservedLiveWrongName.process_name = "NOTEXCEL"
+Assert-Equal "same-instance-conflict" (Get-ExcelOracleProcessIdentitySnapshotState -Record $preservedLiveWrongName @preservedLiveStateArguments) "preserved live mutation: process-name disagreement must fail closed"
+$preservedLiveWrongPath = $preservedLiveIdentity | Select-Object *
+$preservedLiveWrongPath.executable_path = "C:\Program Files\Microsoft Office\root\Office16\NOTEXCEL.EXE"
+Assert-Equal "same-instance-conflict" (Get-ExcelOracleProcessIdentitySnapshotState -Record $preservedLiveWrongPath @preservedLiveStateArguments) "preserved live mutation: executable-path disagreement must fail closed"
+$preservedLiveDateCoerced = $preservedLiveIdentity | Select-Object *
+$preservedLiveDateCoerced.process_start_utc = $preservedLiveStart
+Assert-Equal "same-instance-conflict" (Get-ExcelOracleProcessIdentitySnapshotState -Record $preservedLiveDateCoerced @preservedLiveStateArguments) "mutation: a decoder-coerced DateTime must not enter the exact identity comparator"
 $helperRecord = [pscustomobject]@{
     schema = "oxvba.excel-vba-oracle-owned-helper.v1"
     run_id = "run-self"
@@ -1423,6 +1475,9 @@ $dismissBeforeCaptureMutation = $guardianSource.Replace(
 )
 Assert-True (-not (Test-GuardianCaptureBeforeDismissShape -Source $dismissBeforeCaptureMutation)) "mutation: dismiss-before-capture ordering must be rejected"
 Assert-True ($guardianSource -match 'process_start_utc' -and $guardianSource -match 'executable_path') "guardian ready identity must include start time and executable"
+Assert-True ($guardianSource -match 'ConvertFrom-ExcelOracleProcessIdentityJson' -and
+    $guardianSource -match 'ExpectedSchema "oxvba\.excel-vba-oracle-owned-process\.v1"' -and
+    $guardianSource -notmatch '\$ExcelIdentityFile\s*\|\s*ConvertFrom-Json') "guardian must decode the Excel ownership identity with the string-preserving production contract"
 Assert-True ($guardianSource -match 'Stale top-level UIA children are expected and nonfatal per element') "stale UIA children must be nonfatal per element"
 Assert-True ($guardianSource -match 'Microsoft Visual Basic for Applications\*') "selected-token UIA capture must be scoped to the VBE window"
 Assert-True ($guardianSource -match 'ConvertFrom-ExcelOracleGuardianControl' -and $guardianSource -match 'invalid-control' -and $guardianSource -match 'never arms an operation') "invalid controls must be durably reported and never authorize dismissal"
@@ -1467,6 +1522,9 @@ Assert-True ($workerSource -notmatch '\$event\.(selected_token|expanded_line)\s*
 Assert-True ($workerSource -match "CodePane.Show\(\)" -and $workerSource -match "compile command ID 578 is disabled") "worker must activate the code pane and reject a disabled compile command"
 Assert-True ($workerSource -match 'no-dialog-unverified') "absence of a captured dialog must remain fail-closed"
 Assert-True ($workerSource -match 'owned-helper-process' -and $workerSource -match 'process_start_utc' -and $workerSource -match 'executable_path') "worker must record complete Excel and guardian identities"
+Assert-True ($workerSource -match 'ConvertFrom-ExcelOracleProcessIdentityJson' -and
+    $workerSource -match 'ExpectedSchema "oxvba\.excel-vba-oracle-guardian-ready\.v1"' -and
+    $workerSource -match '\$ContainmentReadyFile\s*\|\s*ConvertFrom-Json -DateKind String') "worker must preserve timestamp strings when decoding guardian and containment identity envelopes"
 Assert-True ($workerSource -notmatch 'Stop-Process') "worker cleanup must retain exact Process objects instead of PID-only termination"
 Assert-True ($workerSource -match 'Invoke-ExcelOracleRetainedProcessTermination.+guardianOwnershipRecord' -and $workerSource -match 'Invoke-ExcelOracleRetainedProcessTermination.+excelOwnershipRecord' -and $workerSource -match 'cleanup-authority-error') "worker guardian/Excel fallback cleanup must use exact written records and fail closed on identity conflict"
 Assert-True (Test-WorkerEvidenceGatedAcceptanceShape -WorkerSource $workerSource -ContractSource $contractSource) "case acceptance must be gated by healthy guardian and authoritative modal evidence"

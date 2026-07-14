@@ -1,0 +1,61 @@
+{
+  "schema": "oxvba.excel-vba-oracle-guardian-negative-evidence.v1",
+  "run_id": "excel_vba_oracle_be0f2c078a3942b7b67fddb8db7c18e0",
+  "environment_id": "win-x64-dev-oracle-2026-07",
+  "case_id": "success",
+  "certifying": false,
+  "matrix_update": false,
+  "capability_credit": false,
+  "review_before_run": {
+    "ordinal": 7,
+    "commit": "98666062dd2f9392b16f2975788141482940651c",
+    "result": "PASS"
+  },
+  "repair_review": {
+    "ordinal": 8,
+    "result": "PASS",
+    "material_findings": 0,
+    "scope": "Shared string-preserving identity decode, exact snapshot comparison, preserved-live replay, PID/start/name/path mutations, raw-evidence hashes, credit, and retry disposition"
+  },
+  "attachment": {
+    "outcome": "attached",
+    "process_id": 31160,
+    "process_name": "EXCEL",
+    "process_start_utc": "2026-07-14T13:47:15.2253534Z",
+    "executable_path": "C:\\Program Files\\Microsoft Office\\Root\\Office16\\EXCEL.EXE",
+    "attempt_count": 7,
+    "window_handle": "70218",
+    "class_name": "EXCEL7",
+    "title": "oracle-bootstrap.xlsx",
+    "result": "attached-exact-process-excel7"
+  },
+  "ownership": {
+    "excel_record_count": 1,
+    "helper_record_count": 1,
+    "excel_ownership": "owned-new-instance",
+    "helper_role": "guardian",
+    "helper_process_id": 41748
+  },
+  "failure": {
+    "phase": "guardian-readiness",
+    "guardian_exit_code": 1,
+    "transport": "guardian exited before becoming ready (exit 1)",
+    "guardian_error": "excel-vba-oracle-guardian: Excel PID/start/name/executable identity did not validate",
+    "diagnosis": "The guardian decoded the exact JSON process_start_utc with default ConvertFrom-Json, which materialized a DateTime. Its subsequent string cast produced culture-formatted whole-second text and discarded the recorded .2253534 fractional ticks before exact identity comparison. The same default decode was present in the guardian-ready consumer. PID, process name, and executable path agreed."
+  },
+  "cleanup": {
+    "result_status": "owned-process-zero",
+    "remaining_excel_process_count": 0,
+    "remaining_owned_helper_count": 0,
+    "remaining_oracle_temp_directory_count": 0
+  },
+  "raw_evidence": [
+    { "file": "results.json", "length": 3368, "sha256": "264aca0b71a0a7015c842413174b3b144cc445ffb3ccfba588570ab31c9c9026" },
+    { "file": "owned-processes.jsonl", "length": 406, "sha256": "5e92023b4722ee35d876df29a64d2a7349a147391a883645ac2bfea9fb414bf9" },
+    { "file": "owned-helper-processes.jsonl", "length": 381, "sha256": "848a012172c999c559e8f0cbdd0afa5a093cc7c48c3d35f1f8b1258ce4d69a1f" },
+    { "file": "success/excel-process-identity.json", "length": 458, "sha256": "6cb66d75265bd3cc05176a45ebad31844cee54f0035130fb7d963911f3313bcc" },
+    { "file": "success/excel-attachment-diagnostic.json", "length": 38509, "sha256": "59e997fa4db2ecd602eddb34a2a75e56a517597bc36a5f75afbdfb31b91fb299" },
+    { "file": "success/guardian.stderr.txt", "length": 554, "sha256": "12243a81ace5c180b44c965c43ddbcff2f432e3f271ff0f4b108b45a9c602737" }
+  ],
+  "disposition": "No compile, VBE, runtime, oracle, capability, matrix, release, or certification credit. No retry was authorized or performed. Repair the shared identity decoder and prove the preserved live record plus PID/start/name/path mutations offline before requesting another bounded run."
+}

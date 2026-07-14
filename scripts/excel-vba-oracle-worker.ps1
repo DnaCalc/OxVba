@@ -143,7 +143,7 @@ function Wait-ContainmentAuthority {
     while ([DateTime]::UtcNow -lt $deadline) {
         if (Test-Path -LiteralPath $ContainmentReadyFile) {
             try {
-                $ready = Get-Content -Raw -LiteralPath $ContainmentReadyFile | ConvertFrom-Json
+                $ready = Get-Content -Raw -LiteralPath $ContainmentReadyFile | ConvertFrom-Json -DateKind String
                 if ([string]$ready.schema -ne "oxvba.excel-vba-oracle-containment-ready.v1" -or
                     [string]$ready.run_id -ne $RunId -or
                     [string]$ready.containment_token -ne $ContainmentToken -or
@@ -403,7 +403,9 @@ function Wait-GuardianReady {
     while ([DateTime]::UtcNow -lt $deadline) {
         if (Test-Path -LiteralPath $ReadyFile) {
             try {
-                $ready = Get-Content -Raw -LiteralPath $ReadyFile | ConvertFrom-Json
+                $ready = ConvertFrom-ExcelOracleProcessIdentityJson `
+                    -Json (Get-Content -Raw -LiteralPath $ReadyFile) `
+                    -ExpectedSchema "oxvba.excel-vba-oracle-guardian-ready.v1"
                 if ([string]$ready.schema -ne "oxvba.excel-vba-oracle-guardian-ready.v1" -or [int]$ready.guardian_pid -ne $Process.Id) {
                     throw "guardian ready schema/PID mismatch"
                 }

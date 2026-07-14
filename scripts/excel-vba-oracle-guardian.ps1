@@ -63,7 +63,13 @@ Add-Type -AssemblyName UIAutomationTypes
 if (-not (Test-Path -LiteralPath $ExcelIdentityFile)) {
     throw "excel-vba-oracle-guardian: Excel identity file does not exist"
 }
-$excelIdentity = Get-Content -Raw -LiteralPath $ExcelIdentityFile | ConvertFrom-Json
+$excelIdentity = ConvertFrom-ExcelOracleProcessIdentityJson `
+    -Json (Get-Content -Raw -LiteralPath $ExcelIdentityFile) `
+    -ExpectedSchema "oxvba.excel-vba-oracle-owned-process.v1"
+if ([string]$excelIdentity.case_id -cne $CaseId -or
+    -not (Test-ExcelOracleOwnedProcessRecord -Record $excelIdentity -BaselineExcelPids ([int[]]::new(0)) -RunId $RunId)) {
+    throw "excel-vba-oracle-guardian: Excel ownership identity record did not validate"
+}
 $initialExcelProcess = Get-Process -Id $ExcelPid -ErrorAction Stop
 if (-not (Test-ExcelOracleProcessIdentity -Record $excelIdentity -Process $initialExcelProcess -ExpectedProcessName "EXCEL" -RunId $RunId)) {
     throw "excel-vba-oracle-guardian: Excel PID/start/name/executable identity did not validate"
