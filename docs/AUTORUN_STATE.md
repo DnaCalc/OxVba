@@ -7,10 +7,10 @@ Active program manifest: docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json
 Program root: bd-59co
 Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
-Queue certification: certified — one current leaf is active; the actual ready queue contains exactly the two current leaves listed below and no stale work.
+Queue certification: certified — two current leaves are active; the actual ready queue contains exactly the one current leaf listed below and no stale work.
 Claim queue: br ready -l ideal-2026-07 -t task
-Current task: `bd-59co.3.15.6` (owned Excel64 VBE oracle supervisor). `bd-59co.2.2.28` is closed; the aggregate support gate `bd-59co.2.2.3` is ready to resume strict workspace Clippy, ordinary tests, lifecycle and governance. `bd-59co.2.2.27` is closed. `bd-59co.2.2.23` is closed; actual Windows-development and pinned-Linux baseline transcripts remain `.10` and `.11`.
-Certified ready queue: `bd-59co.2.2.3` and `bd-59co.3.1.2`.
+Current tasks: `bd-59co.2.2.3` (strict workspace Clippy, ordinary tests, lifecycle and governance baseline) and `bd-59co.3.15.6` (owned Excel64 VBE oracle supervisor). `bd-59co.2.2.28` and `.27` are closed. `bd-59co.2.2.23` is closed; actual Windows-development and pinned-Linux baseline transcripts remain `.10` and `.11`.
+Certified ready queue: `bd-59co.3.1.2`.
 Current capacity snapshot: `docs/evidence/programs/ideal-2026-07/capacity/POST_ROLLOUT_CAPACITY_2026-07-11.md` (three agents, source hash `19876d013a3d9d45`).
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
 Latest completed result: `bd-59co.2.2.28` closed after the final two exposed VM3 strict-Clippy findings were repaired with one private descriptor-input record and a behavior-equivalent initializer-failure let-chain. There are no suppressions or public-interface changes; controller strict Clippy, 35 VM3 unit plus eight cross-program tests, six class-lifecycle tests, eight predeclared-singleton tests, and independent review passed. The workspace-wide support baseline remains `bd-59co.2.2.3`; no capability row closes on this slice. Future synchronous same-VM VM3 rooting remains exact CORE-5 bead `bd-59co.2.7.4`.
