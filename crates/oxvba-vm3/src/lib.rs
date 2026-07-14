@@ -6453,6 +6453,7 @@ mod tests {
     struct QueuedDoEventsHost {
         inner: NullHostServices,
         in_do_events: AtomicBool,
+        callback_ready: AtomicBool,
         order: Mutex<Vec<&'static str>>,
     }
 
@@ -6461,6 +6462,7 @@ mod tests {
             Self {
                 inner: NullHostServices::new(HostPolicy::deterministic_runtime()),
                 in_do_events: AtomicBool::new(false),
+                callback_ready: AtomicBool::new(false),
                 order: Mutex::new(Vec::new()),
             }
         }
@@ -6518,6 +6520,7 @@ mod tests {
             self.push("do-events-enter");
             // StandardHostServices performs a bounded OS pump and marks a queued
             // COM callback here. It has no safe VM3 callback authority.
+            self.callback_ready.store(true, Ordering::Release);
             self.push("do-events-exit");
             self.in_do_events.store(false, Ordering::Release);
             Ok(Variant::from_i32(0))
@@ -6546,6 +6549,15 @@ mod tests {
                 "VM3 must not poll or dispatch a callback inside the host DoEvents call"
             );
             self.push("stmt-boundary-poll");
+            if self.callback_ready.swap(false, Ordering::AcqRel) {
+                return Ok(Some(ComCallbackPayload {
+                    callback: ComCallbackToken::new(60_001),
+                    subscription: ComSubscriptionToken::new(40_001),
+                    object: ObjectRef::from_compat_identity(20_001),
+                    event: ComMemberToken::new(1),
+                    args: Vec::new(),
+                }));
+            }
             Ok(None)
         }
 
@@ -6558,6 +6570,12 @@ mod tests {
 
         fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
             self.inner.com().event_callback_arity(callback)
+        }
+
+        fn release_event_callback_variant(&self, callback: ComCallbackToken) -> HalResult<Variant> {
+            assert_eq!(callback, ComCallbackToken::new(60_001));
+            self.push("callback-release");
+            Ok(Variant::from_i32(1))
         }
 
         fn resolve_typelib_reference(
@@ -6634,6 +6652,10 @@ mod tests {
         assert!(
             order[enter + 2..].contains(&"stmt-boundary-poll"),
             "VM3 must poll queued callbacks only after host DoEvents returns: {order:?}"
+        );
+        assert!(
+            order[enter + 2..].contains(&"callback-release"),
+            "VM3 must own and release the queued payload after host return: {order:?}"
         );
     }
 
