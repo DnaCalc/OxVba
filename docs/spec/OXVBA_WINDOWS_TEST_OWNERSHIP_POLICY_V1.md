@@ -162,6 +162,8 @@ expansion, or concurrently replaced signed history is stale and grants no
 mutation authority. Each durable transition MUST begin with an explicit
 single-use mutation ticket tied to that bound object, prior history digest,
 immutable digest, and lease. Publication without that exact ticket is rejected.
+Revalidation MUST NOT discard a pending ticket; only successful publication of
+that exact ticket may clear it and bind the resulting history.
 
 An abandoned mutex is acquired as an explicit recovery condition. For an
 existing journal, the full strict schema, identity, digest, dependency, and
