@@ -210,30 +210,13 @@ function Write-ExcelAttachmentDiagnostic {
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
-function Test-ExcelStartupBlockingWindow {
-    param([Parameter(Mandatory = $true)]$Window)
-    if (-not [bool]$Window.IsTopLevel -or -not [bool]$Window.Visible) { return $false }
-    # XLMAIN is the workbook frame. The Office splash is noninteractive. Any
-    # other visible top-level window owned by this exact new Excel PID may be a
-    # first-run, activation, trust, or recovery surface and must not be driven.
-    return [string]$Window.ClassName -notin @("XLMAIN", "MSOSPLASH", "MsoSplash")
-}
-
 function Start-OwnedExcelApplication {
     param(
         [Parameter(Mandatory = $true)][string]$ExcelExecutable,
         [Parameter(Mandatory = $true)]$BootstrapWorkbook,
         [Parameter(Mandatory = $true)][string]$DiagnosticPath
     )
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $ExcelExecutable
-    $startInfo.UseShellExecute = $false
-    $startInfo.ArgumentList.Add("/x")
-    $startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)
-    if ($startInfo.ArgumentList.Count -ne 2 -or $startInfo.ArgumentList[0] -cne "/x" -or
-        $startInfo.ArgumentList[1] -cne [string]$BootstrapWorkbook.path -or $startInfo.ArgumentList -contains "/n") {
-        throw "excel-vba-oracle-worker: invalid direct Excel launch argv"
-    }
+    $startInfo = New-ExcelOracleProcessStartInfo -ExcelExecutable $ExcelExecutable -BootstrapWorkbook $BootstrapWorkbook
     $process = [Diagnostics.Process]::Start($startInfo)
     if ($null -eq $process) { throw "excel-vba-oracle-worker: direct Excel bootstrap launch returned no process" }
     $processIdentity = [ordered]@{
@@ -272,16 +255,16 @@ function Start-OwnedExcelApplication {
         foreach ($window in $ownedWindows) {
             $nativeWindow = $null
             $application = $null
+            $applicationPid = $null
+            $adjudication = $null
             $hr = [ExcelOracleNativeMethods]::TryGetNativeObjectFromWindow([IntPtr][int64]$window.Hwnd, [ref]$nativeWindow)
-            $result = if ($hr -lt 0) { "hresult-failure" } elseif ($null -eq $nativeWindow) { "null-native-object" } else { "native-object" }
+            $result = "attachment-candidate-unadjudicated"
             try {
                 if ($null -ne $nativeWindow) { $application = $nativeWindow.Application }
-                if ($null -ne $application) {
-                    $applicationPid = Get-ExcelPidFromApplication -Application $application
-                    if ($applicationPid -eq $process.Id -and [string]$window.ClassName -eq "EXCEL7") { $result = "attached-exact-process-excel7" }
-                    elseif ($applicationPid -eq $process.Id) { $result = "exact-process-native-object-from-non-excel7" }
-                    else { $result = "application-pid-mismatch:$applicationPid" }
-                }
+                if ($null -ne $application) { $applicationPid = Get-ExcelPidFromApplication -Application $application }
+                $adjudication = Resolve-ExcelOracleAttachmentCandidate -Enumeration $enumeration -ExpectedProcessId $process.Id -Candidate $window `
+                    -HResult $hr -NativeObjectPresent ($null -ne $nativeWindow) -ApplicationPresent ($null -ne $application) -ApplicationPid $applicationPid
+                $result = [string]$adjudication.disposition
             }
             catch { $result = "application-error:$($_.Exception.GetType().FullName):$($_.Exception.Message)" }
             $observation = [pscustomobject]@{
@@ -298,7 +281,7 @@ function Start-OwnedExcelApplication {
                 result = $result
             }
             if ($observations.Count -lt 256) { $observations.Add($observation) } else { $truncatedObservationCount++ }
-            if ($result -eq "attached-exact-process-excel7" -and $blockingWindows.Count -eq 0) {
+            if ($null -ne $adjudication -and [bool]$adjudication.attached) {
                 Write-ExcelAttachmentDiagnostic -Path $DiagnosticPath -ProcessIdentity $processIdentity -AttemptCount $attemptCount -TruncatedObservationCount $truncatedObservationCount -Observations @($observations) -LastWindows @($lastWindows) -WindowEnumerationTruncated $false -WindowEnumerationSucceeded $true -WindowEnumerationErrorCode 0 -Outcome attached
                 return [pscustomobject]@{ process = $process; application = $application; native_window = $nativeWindow }
             }
@@ -408,84 +391,6 @@ function Get-GuardianEvents {
     return @($ledger.records | Where-Object {
         [string]::IsNullOrWhiteSpace($OperationId) -or [string]$_.operation_id -eq $OperationId
     })
-}
-
-function Test-GuardianOperationHealthy {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events)
-    $armed = @($Events | Where-Object { [string]$_.event_type -eq "operation-armed" })
-    $heartbeats = @($Events | Where-Object { [string]$_.event_type -eq "guardian-heartbeat" })
-    if ($armed.Count -ne 1 -or @($heartbeats | Where-Object { [long]$_.event_sequence -gt [long]$armed[0].event_sequence }).Count -eq 0) { return $false }
-    $observations = @($Events | Where-Object { [string]$_.event_type -in @("dialog-observation", "ignored-top-level-window") })
-    if ($observations.Count -eq 0) { return $false }
-    $unsafe = @($observations | Where-Object {
-        [string]$_.event_type -eq "dialog-observation" -and [string]$_.classification -in @("security-or-trust", "unrecognized-modal")
-    })
-    return $unsafe.Count -eq 0
-}
-
-function Test-LinkedSuccessfulDismissal {
-    param(
-        [Parameter(Mandatory = $true)]$Observation,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events
-    )
-    return @($Events | Where-Object {
-        [string]$_.event_type -eq "dismissal-result" -and
-        [string]$_.observation_id -eq [string]$Observation.observation_id -and
-        [string]$_.operation_id -eq [string]$Observation.operation_id -and
-        [bool]$_.succeeded -and
-        -not [string]::IsNullOrWhiteSpace([string]$_.dismissed_button)
-    }).Count -eq 1
-}
-
-function Test-CompileErrorEvidence {
-    param(
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events,
-        [Parameter(Mandatory = $true)][string]$InjectedSource,
-        [Parameter(Mandatory = $true)][string]$ExpectedToken,
-        [Parameter(Mandatory = $true)][string]$ExpectedLine
-    )
-    $sourceLines = @($InjectedSource -split "`r?`n" | ForEach-Object { $_.Trim() })
-    $dialogs = @($Events | Where-Object { [string]$_.event_type -eq "dialog-observation" })
-    if ($dialogs.Count -eq 0 -or @($dialogs | Where-Object { [string]$_.classification -ne "compile-error" }).Count -gt 0) { return $false }
-    $candidates = @($dialogs)
-    foreach ($observation in $candidates) {
-        $text = @($observation.dialog_text) -join " / "
-        if (-not [string]::IsNullOrWhiteSpace($text) -and
-            [string]$observation.selected_token -ceq $ExpectedToken -and
-            [string]$observation.expanded_line.Trim() -ceq $ExpectedLine -and
-            [string]$observation.expanded_line.Trim() -in $sourceLines -and
-            (Test-LinkedSuccessfulDismissal -Observation $observation -Events $Events)) {
-            return $true
-        }
-    }
-    return $false
-}
-
-function Test-RuntimeErrorEvidence {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events)
-    $dialogs = @($Events | Where-Object { [string]$_.event_type -eq "dialog-observation" })
-    return $dialogs.Count -eq 1 -and [string]$dialogs[0].classification -eq "runtime-error" -and
-        -not [string]::IsNullOrWhiteSpace((@($dialogs[0].dialog_text) -join " / ")) -and
-        (Test-LinkedSuccessfulDismissal -Observation $dialogs[0] -Events $Events)
-}
-
-function Test-AmbiguousMacroEvidence {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events)
-    $dialogs = @($Events | Where-Object { [string]$_.event_type -eq "dialog-observation" })
-    if ($dialogs.Count -eq 0 -or @($dialogs | Where-Object { [string]$_.classification -ne "ambiguous-macro-failure" }).Count -gt 0) { return $false }
-    $candidates = @($dialogs)
-    foreach ($observation in $candidates) {
-        $text = @($observation.dialog_text) -join " / "
-        if (-not [string]::IsNullOrWhiteSpace($text) -and (Test-LinkedSuccessfulDismissal -Observation $observation -Events $Events)) {
-            return $true
-        }
-    }
-    return $false
-}
-
-function Test-NoDialogObservations {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events)
-    return @($Events | Where-Object { [string]$_.event_type -eq "dialog-observation" }).Count -eq 0
 }
 
 function Wait-GuardianReady {
@@ -707,6 +612,7 @@ function Get-VbomRuntimeMeasurement {
     catch { $accessVbom = $false }
     $automationSecurity = [int]$Excel.AutomationSecurity
     return [pscustomobject]@{
+        schema = "oxvba.excel-vba-oracle-runtime-measurement.v1"
         measured_utc = [DateTime]::UtcNow.ToString("o")
         access_vbom = $accessVbom
         invocation_entry = $InvocationEntry
@@ -731,6 +637,12 @@ function Release-ComObject {
 
 function Invoke-HarnessCase {
     param([Parameter(Mandatory = $true)]$Case)
+
+    $matchingDescriptors = @($script:SelectedCaseDescriptors | Where-Object { [string]$_.id -ceq [string]$Case.id })
+    if ($matchingDescriptors.Count -ne 1 -or -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $matchingDescriptors[0])) {
+        throw "excel-vba-oracle-worker: case is not bound to exactly one sealed selected descriptor"
+    }
+    $caseDescriptor = $matchingDescriptors[0]
 
     $caseDirectory = Join-Path $OutputDirectory $Case.id
     New-Item -ItemType Directory -Force -Path $caseDirectory | Out-Null
@@ -842,6 +754,7 @@ function Invoke-HarnessCase {
             throw "excel-vba-oracle-worker: injected module source does not match the selected case before compile authority"
         }
         $compileContext = [pscustomobject]@{
+            schema = "oxvba.excel-vba-oracle-compile-context.v1"
             injected_project_name = [string]$project.Name
             injected_project_file_name = Get-ProjectFileName -Project $project
             injected_module_name = [string]$component.Name
@@ -856,6 +769,7 @@ function Invoke-HarnessCase {
         $compileControl = Get-VbeCompileControl -Vbe $excel.VBE
         if ($null -eq $compileControl) { throw "excel-vba-oracle-worker: VBE compile command ID 578 was not found" }
         $compileCommand = [ordered]@{
+            schema = "oxvba.excel-vba-oracle-compile-command.v1"
             id = [int]$compileControl.Id
             caption = [string]$compileControl.Caption
             enabled_before = [bool]$compileControl.Enabled
@@ -872,6 +786,7 @@ function Invoke-HarnessCase {
         try { $executeReturn = $compileControl.Execute() }
         catch {
             $executeException = [pscustomobject]@{
+                schema = "oxvba.excel-vba-oracle-compile-exception.v1"
                 message = $_.Exception.Message
                 hresult = "0x$($_.Exception.HResult.ToString('x8'))"
                 type = $_.Exception.GetType().FullName
@@ -887,6 +802,7 @@ function Invoke-HarnessCase {
         $compileContext | Add-Member -NotePropertyName selection_after_execute_diagnostic_only -NotePropertyValue $postDismissSelectionDiagnostic
         $compileCommand.enabled_after = [bool]$compileControl.Enabled
         $compileExecution = [pscustomobject]@{
+            schema = "oxvba.excel-vba-oracle-compile-execution.v1"
             return_value = if ($null -eq $executeReturn) { $null } else { [string]$executeReturn }
             exception = $executeException
         }
@@ -987,6 +903,7 @@ function Invoke-HarnessCase {
         }
         $passed = $behaviorPassed -and $guardianHealthy -and $authoritativeEvidencePassed
         $evidenceStatus = [pscustomobject]@{
+            schema = "oxvba.excel-vba-oracle-evidence-status.v1"
             guardian_healthy_before_cleanup = $guardianHealthy
             compile_operation_healthy = $compileOperationHealthy
             run_operation_healthy = $runOperationHealthy
@@ -1065,8 +982,12 @@ function Invoke-HarnessCase {
         owned_excel_pid = if ($excelOwnershipRecord) { [int]$excelOwnershipRecord.pid } else { $null }
         observed_excel_pid = $excelPid
         excel_ownership_recorded = $null -ne $excelOwnershipRecord
+        selected_case_descriptor_sha256 = [string]$caseDescriptor.descriptor_sha256
+        module_name = [string]$caseDescriptor.module_name
         module_path = $modulePath
-        module_sha256 = Get-ExcelOracleSha256 -Text $Case.module_source
+        module_sha256 = [string]$caseDescriptor.module_sha256
+        case_diagnostic_only = [bool]$caseDescriptor.diagnostic_only
+        evidence_contract = [string]$caseDescriptor.evidence_contract
         compile_status = $compileStatus
         expected_compile_status = $Case.expected_compile_status
         compile_command = $compileCommand
@@ -1119,6 +1040,11 @@ if (@($selectedCases.id | Select-Object -Unique).Count -ne $selectedCases.Count 
     throw "excel-vba-oracle-worker: selected case identities must be nonempty and unique"
 }
 $script:SelectedCaseIds = @($selectedCases | ForEach-Object { [string]$_.id })
+$script:SelectedCaseDescriptors = @(New-ExcelOracleSelectedCaseDescriptors -Cases $selectedCases)
+if ($script:SelectedCaseDescriptors.Count -ne $selectedCases.Count -or
+    @($script:SelectedCaseDescriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
+    throw "excel-vba-oracle-worker: selected case descriptor sealing failed"
+}
 $script:GuardianControlSequence = 0L
 $results = [Collections.Generic.List[object]]::new()
 foreach ($case in $selectedCases) {

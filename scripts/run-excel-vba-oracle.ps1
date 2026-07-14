@@ -41,6 +41,11 @@ if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
 if (@($cases.id | Select-Object -Unique).Count -ne $cases.Count -or @($cases | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.id) }).Count -gt 0) {
     throw "run-excel-vba-oracle: selected case identities must be nonempty and unique"
 }
+$selectedCaseDescriptors = @(New-ExcelOracleSelectedCaseDescriptors -Cases $cases)
+if ($selectedCaseDescriptors.Count -ne $cases.Count -or
+    @($selectedCaseDescriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
+    throw "run-excel-vba-oracle: selected case descriptor sealing failed"
+}
 $plan = [ordered]@{
     schema = "oxvba.excel-vba-oracle-plan.v1"
     suite = $Suite
@@ -56,12 +61,13 @@ $plan = [ordered]@{
     ownership_policy = "assign the waiting worker to a kill-on-close job before publishing mutation authority; launch Excel directly inside that containment; record PID+process-start+name+executable for Excel and guardian processes; validate classified identity before fallback cleanup"
     modal_policy = "start PID-scoped UIA guardian before command-ID-578 compile and runtime invocation; capture first; never auto-enable security/trust prompts"
     compile_policy = "VBE Debug -> Compile VBAProject command ID 578; Application.Run is never a compile check"
-    cases = @($cases | ForEach-Object {
+    cases = @($selectedCaseDescriptors | ForEach-Object {
         [ordered]@{
             id = $_.id
             expected_compile_status = $_.expected_compile_status
             expected_run_status = $_.expected_run_status
-            module_sha256 = Get-ExcelOracleSha256 -Text $_.module_source
+            module_sha256 = $_.module_sha256
+            descriptor_sha256 = $_.descriptor_sha256
         }
     })
     selected_case_count = $cases.Count
@@ -146,13 +152,12 @@ if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
     $workerArguments += @("-DiagnosticCaseId", $DiagnosticCaseId)
 }
 $startedUtc = [DateTime]::UtcNow
-$job = [ExcelOracleJob]::new("OxVbaExcelOracle-$PID-$containmentToken")
-$worker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
+$containedWorker = Start-ExcelOracleContainedProcess -JobName "OxVbaExcelOracle-$PID-$containmentToken" -RunId $RunId -StartProcess {
+    Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
+}
+$job = $containedWorker.job
+$worker = $containedWorker.process
 try {
-    $job.AssignProcess($worker.Handle)
-    if (-not $job.ContainsProcess($worker.Handle)) {
-        throw "worker is not a member of the kill-on-close Job after assignment"
-    }
     [ordered]@{
         schema = "oxvba.excel-vba-oracle-containment-ready.v1"
         run_id = $RunId
@@ -252,7 +257,7 @@ $postCleanup = Resolve-ExcelOraclePostCleanupResult `
     -Results $results `
     -ExcelLedger $excelLedger `
     -HelperLedger $helperLedger `
-    -ExpectedCaseIds @($cases.id) `
+    -SelectedCaseDescriptors $selectedCaseDescriptors `
     -RunId $RunId `
     -ExpectedWorkerPid $worker.Id `
     -ExpectedContainmentToken $containmentToken `

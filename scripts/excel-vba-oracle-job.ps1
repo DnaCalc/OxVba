@@ -273,3 +273,46 @@ function Invoke-ExcelOracleRetainedProcessTermination {
         if ($null -ne $retained) { $retained.Dispose() }
     }
 }
+
+function Start-ExcelOracleContainedProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$JobName,
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][scriptblock]$StartProcess
+    )
+    $job = $null
+    $process = $null
+    try {
+        $job = [ExcelOracleJob]::new($JobName)
+        $process = & $StartProcess
+        if ($process -isnot [Diagnostics.Process]) {
+            throw "process start callback did not return a Diagnostics.Process"
+        }
+        $job.AssignProcess($process.Handle)
+        if (-not $job.ContainsProcess($process.Handle)) {
+            throw "started process is not a member of the kill-on-close Job after assignment"
+        }
+        return [pscustomobject]@{ job = $job; process = $process }
+    }
+    catch {
+        $failure = $_.Exception.Message
+        if ($null -ne $job) {
+            try { $job.Terminate() } catch { $failure = "$failure; Job termination failed: $($_.Exception.Message)" }
+            finally { $job.Dispose() }
+        }
+        if ($process -is [Diagnostics.Process] -and -not $process.HasExited) {
+            try {
+                $record = [pscustomobject]@{
+                    run_id = $RunId
+                    pid = $process.Id
+                    process_name = [string]$process.ProcessName
+                    process_start_utc = $process.StartTime.ToUniversalTime().ToString("o")
+                    executable_path = [string]$process.Path
+                }
+                [void](Invoke-ExcelOracleRetainedProcessTermination -Record $record -ExpectedProcessName ([string]$process.ProcessName) -RunId $RunId -TimeoutMilliseconds 10000)
+            }
+            catch { $failure = "$failure; retained process cleanup failed: $($_.Exception.Message)" }
+        }
+        throw "excel-vba-oracle-job: contained process start failed deterministically: $failure"
+    }
+}

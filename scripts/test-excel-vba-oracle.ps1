@@ -21,6 +21,66 @@ function Copy-TestJsonObject {
     return ($Value | ConvertTo-Json -Depth 20 | ConvertFrom-Json -DateKind String)
 }
 
+function Get-TestSelectedCaseDescriptors {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$CaseIds)
+    $catalog = @(New-ExcelOracleSelectedCaseDescriptors -Cases @(Get-ExcelOracleHarnessCases))
+    $selected = [Collections.Generic.List[object]]::new()
+    foreach ($id in $CaseIds) {
+        $matches = @($catalog | Where-Object { [string]$_.id -ceq $id })
+        if ($matches.Count -ne 1) { throw "test-excel-vba-oracle: unknown case descriptor '$id'" }
+        $selected.Add($matches[0])
+    }
+    return @($selected)
+}
+
+function New-TestGuardianOperationEvents {
+    param(
+        [Parameter(Mandatory = $true)][string]$CaseId,
+        [Parameter(Mandatory = $true)][ValidateSet("compile", "run")][string]$Phase,
+        [Parameter(Mandatory = $true)][int]$ExcelPid,
+        [Parameter(Mandatory = $true)][ValidateSet("none", "compile-error", "ambiguous-macro-failure", "runtime-error")][string]$DialogKind,
+        [AllowNull()][string]$SelectedToken = $null,
+        [AllowNull()][string]$ExpandedLine = $null
+    )
+    $base = if ($Phase -eq "compile") { 10 } else { 20 }
+    $operationId = "$CaseId-$Phase"
+    $events = [Collections.Generic.List[object]]::new()
+    $events.Add([pscustomobject][ordered]@{
+        schema = "oxvba.excel-vba-oracle-operation-state.v1"; event_type = "operation-armed"; run_id = "run-post"
+        case_id = $CaseId; operation_id = $operationId; phase = $Phase; control_sequence = 1; event_sequence = $base + 1; observed_utc = "2026-07-14T00:00:01Z"
+    })
+    $events.Add([pscustomobject][ordered]@{
+        schema = "oxvba.excel-vba-oracle-operation-state.v1"; event_type = "guardian-heartbeat"; run_id = "run-post"
+        case_id = $CaseId; operation_id = $operationId; phase = $Phase; control_sequence = 1; event_sequence = $base + 2; observed_utc = "2026-07-14T00:00:02Z"
+    })
+    $observationId = "$operationId-observation"
+    if ($DialogKind -eq "none") {
+        $events.Add([pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-window-observation.v1"; event_type = "ignored-top-level-window"; run_id = "run-post"
+            observation_id = $observationId; case_id = $CaseId; operation_id = $operationId; control_sequence = 1; event_sequence = $base + 3
+            phase = $Phase; excel_pid = $ExcelPid; observed_process_id = $ExcelPid; observed_utc = "2026-07-14T00:00:03Z"; capture_completed_utc = "2026-07-14T00:00:04Z"
+            window_handle = "0x100"; classification = "unrecognized-modal"; disposition = "block-no-dismiss"; considered_dialog = $false; is_modal = $false
+        })
+    }
+    else {
+        $observation = [pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-window-observation.v1"; event_type = "dialog-observation"; run_id = "run-post"
+            observation_id = $observationId; case_id = $CaseId; operation_id = $operationId; control_sequence = 1; event_sequence = $base + 3
+            phase = $Phase; excel_pid = $ExcelPid; observed_process_id = $ExcelPid; observed_utc = "2026-07-14T00:00:03Z"; capture_completed_utc = "2026-07-14T00:00:04Z"
+            window_handle = "0x100"; classification = $DialogKind; disposition = "capture-then-dismiss"; considered_dialog = $true; is_modal = $true
+            dialog_text = @("owned $DialogKind dialog"); selected_token = $SelectedToken; expanded_line = $ExpandedLine
+        }
+        $events.Add($observation)
+        $events.Add([pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-dismissal-result.v1"; event_type = "dismissal-result"; run_id = "run-post"
+            observation_id = $observationId; case_id = $CaseId; operation_id = $operationId; control_sequence = 1; event_sequence = $base + 4
+            phase = $Phase; excel_pid = $ExcelPid; window_handle = "0x100"; attempted_utc = "2026-07-14T00:00:05Z"
+            requested_buttons = @("OK"); succeeded = $true; dismissed_button = "OK"
+        })
+    }
+    return @($events)
+}
+
 function New-TestPostCleanupCase {
     param(
         [Parameter(Mandatory = $true)][string]$Id,
@@ -28,10 +88,33 @@ function New-TestPostCleanupCase {
         [bool]$OwnershipRecorded = $true,
         [AllowNull()]$OwnedPid = 7001,
         [AllowNull()]$ObservedPid = 7001,
-        [string]$CompileStatus = "ok",
-        [string]$RunStatus = "ok",
+        [AllowNull()][string]$CompileStatus = $null,
+        [AllowNull()][string]$RunStatus = $null,
         [AllowNull()]$TransportError = $null
     )
+    $descriptor = @(Get-TestSelectedCaseDescriptors -CaseIds @($Id))[0]
+    if ([string]::IsNullOrEmpty($CompileStatus)) { $CompileStatus = if (-not $Passed -and $OwnershipRecorded) { "behavior-mismatch" } else { [string]$descriptor.expected_compile_status } }
+    if ([string]::IsNullOrEmpty($RunStatus)) { $RunStatus = [string]$descriptor.expected_run_status }
+    $hasExecutionEvidence = $OwnershipRecorded -and $CompileStatus -ne "harness-error"
+    $compileDialogKind = if ([string]$descriptor.evidence_contract -eq "compile-error-token-line-dismissal-v1") { "compile-error" } else { "none" }
+    $compileEvents = if ($hasExecutionEvidence) { @(New-TestGuardianOperationEvents -CaseId $Id -Phase compile -ExcelPid ([int]$OwnedPid) -DialogKind $compileDialogKind -SelectedToken $descriptor.expected_selected_token -ExpandedLine $descriptor.expected_expanded_line) } else { @() }
+    $runDialogKind = switch ([string]$descriptor.evidence_contract) {
+        "clean-compile-ambiguous-macro-dismissal-v1" { "ambiguous-macro-failure"; break }
+        "clean-compile-runtime-error-dismissal-v1" { "runtime-error"; break }
+        default { "none"; break }
+    }
+    $runEvents = if ($hasExecutionEvidence -and $RunStatus -ne "not-run") { @(New-TestGuardianOperationEvents -CaseId $Id -Phase run -ExcelPid ([int]$OwnedPid) -DialogKind $runDialogKind) } else { @() }
+    $compileHealthy = $hasExecutionEvidence
+    $runHealthy = $hasExecutionEvidence -and $RunStatus -ne "not-run"
+    $compileErrorComplete = $hasExecutionEvidence -and $compileDialogKind -eq "compile-error"
+    $ambiguousComplete = $hasExecutionEvidence -and $runDialogKind -eq "ambiguous-macro-failure"
+    $runtimeErrorComplete = $hasExecutionEvidence -and $runDialogKind -eq "runtime-error"
+    $authoritativeEvidencePassed = switch ([string]$descriptor.evidence_contract) {
+        "compile-error-token-line-dismissal-v1" { $compileHealthy -and $compileErrorComplete; break }
+        "clean-compile-ambiguous-macro-dismissal-v1" { $compileHealthy -and $runHealthy -and $ambiguousComplete; break }
+        "clean-compile-runtime-error-dismissal-v1" { $compileHealthy -and $runHealthy -and $runtimeErrorComplete; break }
+        default { $compileHealthy -and $runHealthy; break }
+    }
     $bootstrap = if ($OwnershipRecorded) {
         [ordered]@{
             schema = "oxvba.excel-vba-oracle-bootstrap-workbook.v1"
@@ -50,26 +133,40 @@ function New-TestPostCleanupCase {
         owned_excel_pid = if ($OwnershipRecorded) { $OwnedPid } else { $null }
         observed_excel_pid = $ObservedPid
         excel_ownership_recorded = $OwnershipRecorded
+        selected_case_descriptor_sha256 = $descriptor.descriptor_sha256
+        module_name = $descriptor.module_name
         module_path = "C:\fixture\OracleSelfTest.bas"
-        module_sha256 = "sha256:$('b' * 64)"
+        module_sha256 = $descriptor.module_sha256
+        case_diagnostic_only = [bool]$descriptor.diagnostic_only
+        evidence_contract = $descriptor.evidence_contract
         compile_status = $CompileStatus
-        expected_compile_status = "ok"
-        compile_command = $null
-        compile_execution = $null
-        compile_context = $null
+        expected_compile_status = $descriptor.expected_compile_status
+        compile_command = if ($hasExecutionEvidence) { [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-command.v1"; id = 578; caption = "Compile VBAProject"; enabled_before = $true; enabled_after = $false } } else { $null }
+        compile_execution = if ($hasExecutionEvidence) { [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-execution.v1"; return_value = $null; exception = $null } } else { $null }
+        compile_context = if ($hasExecutionEvidence) { [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-context.v1"; injected_module_name = $descriptor.module_name; injected_source = $descriptor.module_source; injected_source_sha256 = $descriptor.module_sha256; selected_source_sha256 = $descriptor.module_sha256 } } else { $null }
         post_dismiss_selection_diagnostic_only = $null
-        compile_dialogs = @()
-        compile_window_observations = @()
-        run_procedure = "OracleSelfTest.RunProbe"
+        compile_dialogs = @($compileEvents | Where-Object { [string]$_.event_type -eq "dialog-observation" })
+        compile_window_observations = @($compileEvents)
+        run_procedure = $descriptor.run_procedure
         run_status = $RunStatus
-        expected_run_status = "ok"
-        run_value = $null
+        expected_run_status = $descriptor.expected_run_status
+        run_value = $descriptor.expected_value
         runtime_err = $null
         macro_failure_disposition = $null
-        runtime_measurement = $null
+        runtime_measurement = if ($hasExecutionEvidence) { [ordered]@{
+            schema = "oxvba.excel-vba-oracle-runtime-measurement.v1"; measured_utc = "2026-07-14T00:00:05Z"; access_vbom = $true
+            invocation_entry = $descriptor.run_procedure; invocation_entry_exists = $null -ne $descriptor.run_procedure
+            macro_probe_target = $descriptor.macro_probe_target; macro_probe_target_exists = $false; automation_security = 1
+            macros_configured_for_automation = $true; invocation_entry_observed = $runHealthy; invocation_observation = if ($runHealthy) { "fixture" } else { $null }; macros_runnable_entry = $runHealthy
+        } } else { $null }
         transport_error = $TransportError
-        run_dialogs = @()
-        evidence_status = $null
+        run_dialogs = @($runEvents)
+        evidence_status = if ($hasExecutionEvidence) { [ordered]@{
+            schema = "oxvba.excel-vba-oracle-evidence-status.v1"; guardian_healthy_before_cleanup = $true
+            compile_operation_healthy = $compileHealthy; run_operation_healthy = $runHealthy; compile_error_modal_complete = $compileErrorComplete
+            ambiguous_macro_modal_and_dismissal_complete = $ambiguousComplete; runtime_error_modal_and_dismissal_complete = $runtimeErrorComplete
+            authoritative_evidence_passed = $authoritativeEvidencePassed
+        } } else { $null }
         cleanup_status = if ($OwnershipRecorded) { "owned-process-zero" } else { "not-run" }
         cleanup_authority_errors = @()
         bootstrap_workbook = $bootstrap
@@ -135,10 +232,12 @@ function Invoke-TestPostCleanupResolution {
         [int]$WorkerPid = 43210,
         [string]$ContainmentToken = "11111111-2222-3333-4444-555555555555",
         [bool]$WorkerQuiesced = $true,
-        [bool]$WorkerTimedOut = $false
+        [bool]$WorkerTimedOut = $false,
+        [AllowNull()][object[]]$SelectedCaseDescriptors = $null
     )
+    if ($null -eq $SelectedCaseDescriptors) { $SelectedCaseDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds $ExpectedCaseIds) }
     return Resolve-ExcelOraclePostCleanupResult -Results $Results -ExcelLedger $ExcelLedger -HelperLedger $HelperLedger `
-        -ExpectedCaseIds $ExpectedCaseIds -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedContainmentToken $ContainmentToken `
+        -SelectedCaseDescriptors $SelectedCaseDescriptors -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedContainmentToken $ContainmentToken `
         -ExpectedDiagnosticOnly $DiagnosticOnly -WorkerExitCode $WorkerExitCode -WorkerQuiesced $WorkerQuiesced -WorkerTimedOut $WorkerTimedOut
 }
 
@@ -177,11 +276,12 @@ function Test-RunnerIdentityCheckedCleanupShape {
 }
 
 function Test-WorkerEvidenceGatedAcceptanceShape {
-    param([Parameter(Mandatory = $true)][string]$Source)
-    return $Source -match '\$passed\s*=\s*\$behaviorPassed\s+-and\s+\$guardianHealthy\s+-and\s+\$authoritativeEvidencePassed' -and
-        $Source -match 'Test-CompileErrorEvidence' -and
-        $Source -match 'Test-AmbiguousMacroEvidence' -and
-        $Source -match 'Test-LinkedSuccessfulDismissal'
+    param([Parameter(Mandatory = $true)][string]$WorkerSource, [Parameter(Mandatory = $true)][string]$ContractSource)
+    return $WorkerSource -match '\$passed\s*=\s*\$behaviorPassed\s+-and\s+\$guardianHealthy\s+-and\s+\$authoritativeEvidencePassed' -and
+        $ContractSource -match 'function Test-CompileErrorEvidence' -and
+        $ContractSource -match 'function Test-AmbiguousMacroEvidence' -and
+        $ContractSource -match 'function Test-LinkedSuccessfulDismissal' -and
+        $ContractSource -match 'passed value disagrees with derived behavior/evidence'
 }
 
 function Test-WorkerExactPidAttachmentShape {
@@ -198,7 +298,9 @@ function Test-WorkerExactPidAttachmentShape {
         $Source -match 'Select-Object -First 128' -and
         $Source -match 'foreach \(\$window in \$ownedWindows\)' -and
         $Source -match 'TryGetNativeObjectFromWindow\(\[IntPtr\]\[int64\]\$window\.Hwnd' -and
-        $Source -match '\$applicationPid -eq \$process\.Id -and \[string\]\$window\.ClassName -eq "EXCEL7"' -and
+        $Source -match 'Resolve-ExcelOracleAttachmentCandidate' -and
+        $Source -match '\[int\]\$ApplicationPid -ne \$ExpectedProcessId' -and
+        $Source -match '\[string\]\$Candidate\.ClassName -cne "EXCEL7"' -and
         $Source -match 'Write-ExcelAttachmentDiagnostic' -and
         $Source -match 'observation_limit = 256' -and
         $Source -match 'blocked-owned-window' -and
@@ -424,6 +526,13 @@ $jobSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-o
 Assert-True (Test-RetainedHandleAuthorityShape -Source $jobSource) "fallback identity query, termination, and wait must share one retained SafeProcessHandle"
 $reopenedPidMutation = $jobSource.Replace('$retained.TerminateAndWait($TimeoutMilliseconds)', '[Diagnostics.Process]::GetProcessById([int]$Record.pid).Kill()')
 Assert-True (-not (Test-RetainedHandleAuthorityShape -Source $reopenedPidMutation)) "mutation: reopening a PID between identity query and termination must be rejected"
+$injectedStartFailure = $false
+try {
+    [void](Start-ExcelOracleContainedProcess -JobName "OxVbaOracleInjectedStartFailure-$([Guid]::NewGuid().ToString('N'))" -RunId "run-injected-start-failure" -StartProcess { throw "injected start failure" })
+}
+catch { $injectedStartFailure = $_.Exception.Message -match "contained process start failed deterministically: injected start failure" }
+Assert-True $injectedStartFailure "Job creation and process start must share one deterministic cleanup scope under injected start failure"
+Assert-True ($jobSource -match '(?s)function Start-ExcelOracleContainedProcess.+?\$job = \[ExcelOracleJob\]::new.+?\$process = & \$StartProcess.+?catch.+?\$job\.Terminate\(\).+?finally \{ \$job\.Dispose\(\) \}') "contained start failure scope must terminate/dispose its Job before surfacing failure"
 
 $completeIds = @("success", "compile-failure")
 $completeCases = @(
@@ -434,7 +543,7 @@ $completeResults = New-TestPostCleanupResults -Cases $completeCases
 $completeExcelLedger = New-TestPostCleanupLedger -CaseIds $completeIds -FirstPid 7001
 $completeHelperLedger = New-TestPostCleanupLedger -CaseIds $completeIds -Guardian
 $completeResolution = Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds
-Assert-True ([bool]$completeResolution.valid -and [string]$completeResolution.disposition -eq "complete-success") "post-cleanup validator complete success envelope"
+Assert-True ([bool]$completeResolution.valid -and [string]$completeResolution.disposition -eq "complete-success") "post-cleanup validator complete success envelope: $(@($completeResolution.errors) -join '; ')"
 $failedCompleteCases = @(
     (New-TestPostCleanupCase -Id $completeIds[0] -Passed $false -OwnedPid 7001 -ObservedPid 7001 -TransportError "behavior mismatch"),
     (New-TestPostCleanupCase -Id $completeIds[1] -OwnedPid 7002 -ObservedPid 7002)
@@ -502,6 +611,33 @@ Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $missingBoots
 $modifiedBootstrapResults = Copy-TestJsonObject -Value $completeResults
 $modifiedBootstrapResults.cases[0].bootstrap_workbook.sha256_after = "sha256:$('c' * 64)"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $modifiedBootstrapResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "complete result with modified bootstrap bytes must fail"
+$observedPidMismatchResults = Copy-TestJsonObject -Value $completeResults
+$observedPidMismatchResults.cases[0].observed_excel_pid = 7999
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $observedPidMismatchResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "observed Excel PID must equal both the durable owned PID and exact ledger PID"
+$passedStatusMismatchResults = Copy-TestJsonObject -Value $completeResults
+$passedStatusMismatchResults.cases[0].compile_status = "compile-error"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $passedStatusMismatchResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "worker passed=true cannot override a compile-status mismatch"
+$malformedCompileCommandResults = Copy-TestJsonObject -Value $completeResults
+$malformedCompileCommandResults.cases[0].compile_command.enabled_before = "true"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $malformedCompileCommandResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "malformed compile_command Boolean must fail closed"
+$malformedEvidenceStatusResults = Copy-TestJsonObject -Value $completeResults
+$malformedEvidenceStatusResults.cases[0].evidence_status.schema = "attacker.evidence.v1"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $malformedEvidenceStatusResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "malformed evidence_status schema must fail closed"
+$wrongDescriptorHashResults = Copy-TestJsonObject -Value $completeResults
+$wrongDescriptorHashResults.cases[0].selected_case_descriptor_sha256 = "sha256:$('d' * 64)"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongDescriptorHashResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "wrong selected descriptor hash echo must fail"
+$wrongProcedureResults = Copy-TestJsonObject -Value $completeResults
+$wrongProcedureResults.cases[0].run_procedure = "OracleSelfTest.Attacker"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongProcedureResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "wrong descriptor-bound run procedure must fail"
+$wrongExpectedStatusResults = Copy-TestJsonObject -Value $completeResults
+$wrongExpectedStatusResults.cases[0].expected_compile_status = "compile-error"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongExpectedStatusResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "wrong descriptor-bound expected status must fail"
+$wrongModuleIdentityResults = Copy-TestJsonObject -Value $completeResults
+$wrongModuleIdentityResults.cases[0].module_sha256 = "sha256:$('e' * 64)"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongModuleIdentityResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "wrong descriptor-bound module identity must fail"
+$tamperedSelectedDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds $completeIds | ForEach-Object { Copy-TestJsonObject -Value $_ })
+$tamperedSelectedDescriptors[0].run_procedure = "OracleSelfTest.Attacker"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -SelectedCaseDescriptors $tamperedSelectedDescriptors).valid) "tampered immutable descriptor payload must fail its seal before result adjudication"
 
 $completeWindowEnumeration = [pscustomobject]@{ Windows = @([pscustomobject]@{ ProcessId = $PID }); Truncated = $false; Limit = 512; Succeeded = $true; ErrorCode = 0 }
 Assert-True (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $completeWindowEnumeration -ExpectedProcessId $PID) "complete exact-PID window enumeration authority"
@@ -512,6 +648,34 @@ Assert-True (-not (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $trun
 $foreignWindowEnumeration = Copy-TestJsonObject -Value $completeWindowEnumeration
 $foreignWindowEnumeration.Windows[0].ProcessId = $PID + 1
 Assert-True (-not (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $foreignWindowEnumeration -ExpectedProcessId $PID)) "foreign-PID candidate in an enumeration must fail closed"
+
+$excel7Candidate = [pscustomobject]@{ Hwnd = "0x101"; ProcessId = $PID; ClassName = "EXCEL7"; IsTopLevel = $false; Visible = $true }
+$attachmentEnumeration = [pscustomobject]@{ Windows = @($excel7Candidate); Truncated = $false; Limit = 512; Succeeded = $true; ErrorCode = 0 }
+$exactAttachment = Resolve-ExcelOracleAttachmentCandidate -Enumeration $attachmentEnumeration -ExpectedProcessId $PID -Candidate $excel7Candidate -HResult 0 -NativeObjectPresent $true -ApplicationPresent $true -ApplicationPid $PID
+Assert-True ([bool]$exactAttachment.attached -and [string]$exactAttachment.disposition -eq "attached-exact-process-excel7") "pure attachment adjudicator must accept only exact EXCEL7 + Application.Hwnd PID authority"
+$truncatedAttachment = Resolve-ExcelOracleAttachmentCandidate -Enumeration $truncatedWindowEnumeration -ExpectedProcessId $PID -Candidate $excel7Candidate -HResult 0 -NativeObjectPresent $true -ApplicationPresent $true -ApplicationPid $PID
+Assert-True (-not [bool]$truncatedAttachment.attached -and [string]$truncatedAttachment.disposition -eq "window-enumeration-invalid") "pure attachment adjudicator must reject truncated enumeration"
+$foreignCandidate = Copy-TestJsonObject -Value $excel7Candidate
+$foreignCandidate.ProcessId = $PID + 1
+$foreignCandidateAttachment = Resolve-ExcelOracleAttachmentCandidate -Enumeration $attachmentEnumeration -ExpectedProcessId $PID -Candidate $foreignCandidate -HResult 0 -NativeObjectPresent $true -ApplicationPresent $true -ApplicationPid $PID
+Assert-True (-not [bool]$foreignCandidateAttachment.attached) "pure attachment adjudicator must reject a foreign-PID candidate"
+$nonExcel7Candidate = Copy-TestJsonObject -Value $excel7Candidate
+$nonExcel7Candidate.ClassName = "XLMAIN"
+$nonExcel7Enumeration = [pscustomobject]@{ Windows = @($nonExcel7Candidate); Truncated = $false; Limit = 512; Succeeded = $true; ErrorCode = 0 }
+$nonExcel7Attachment = Resolve-ExcelOracleAttachmentCandidate -Enumeration $nonExcel7Enumeration -ExpectedProcessId $PID -Candidate $nonExcel7Candidate -HResult 0 -NativeObjectPresent $true -ApplicationPresent $true -ApplicationPid $PID
+Assert-True (-not [bool]$nonExcel7Attachment.attached -and [string]$nonExcel7Attachment.disposition -eq "non-excel7-candidate") "pure attachment adjudicator must reject a non-EXCEL7 native object"
+$blockingWindow = [pscustomobject]@{ Hwnd = "0x202"; ProcessId = $PID; ClassName = "NUIDialog"; IsTopLevel = $true; Visible = $true }
+$blockingEnumeration = [pscustomobject]@{ Windows = @($excel7Candidate, $blockingWindow); Truncated = $false; Limit = 512; Succeeded = $true; ErrorCode = 0 }
+$blockedAttachment = Resolve-ExcelOracleAttachmentCandidate -Enumeration $blockingEnumeration -ExpectedProcessId $PID -Candidate $excel7Candidate -HResult 0 -NativeObjectPresent $true -ApplicationPresent $true -ApplicationPid $PID
+Assert-True (-not [bool]$blockedAttachment.attached -and [string]$blockedAttachment.disposition -eq "blocked-owned-window") "pure attachment adjudicator must reject a visible owned startup/modal blocker"
+$wrongApplicationAttachment = Resolve-ExcelOracleAttachmentCandidate -Enumeration $attachmentEnumeration -ExpectedProcessId $PID -Candidate $excel7Candidate -HResult 0 -NativeObjectPresent $true -ApplicationPresent $true -ApplicationPid ($PID + 1)
+Assert-True (-not [bool]$wrongApplicationAttachment.attached -and [string]$wrongApplicationAttachment.disposition -eq "application-pid-mismatch") "pure attachment adjudicator must reject returned Application.Hwnd PID mismatch"
+
+$startInfo = New-ExcelOracleProcessStartInfo -ExcelExecutable "C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE" -BootstrapWorkbook ([pscustomobject]@{ path = "C:\fixture with spaces\oracle-bootstrap.xlsx" })
+Assert-True ([string]$startInfo.FileName -ceq "C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE" -and
+    -not [bool]$startInfo.UseShellExecute -and $startInfo.ArgumentList.Count -eq 2 -and
+    [string]$startInfo.ArgumentList[0] -ceq "/x" -and [string]$startInfo.ArgumentList[1] -ceq "C:\fixture with spaces\oracle-bootstrap.xlsx" -and
+    $startInfo.ArgumentList -notcontains "/n") "pure ProcessStartInfo construction must preserve exact ['/x', bootstrap-path] argv with no /n"
 
 $cases = @(Get-ExcelOracleHarnessCases)
 Assert-Equal 6 $cases.Count "declared harness and bounded diagnostic case count"
@@ -806,6 +970,9 @@ Assert-True ($guardianSource -match 'ConvertFrom-ExcelOracleGuardianControl' -an
 Assert-True ($guardianSource -match 'operation-armed' -and $guardianSource -match 'guardian-heartbeat') "guardian must acknowledge and heartbeat each operation"
 
 $workerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-worker.ps1")
+$contractSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-contract.ps1")
+$bootstrapSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-bootstrap.ps1")
+$attachmentSource = "$workerSource`n$contractSource`n$bootstrapSource"
 $nativeSourceMatch = [regex]::Match($workerSource, "(?s)Add-Type @'\r?\n(?<code>.*?)\r?\n'@")
 Assert-True $nativeSourceMatch.Success "worker native attachment source must be extractable"
 if (-not ([Management.Automation.PSTypeName]'ExcelOracleNativeMethods').Type) {
@@ -813,16 +980,16 @@ if (-not ([Management.Automation.PSTypeName]'ExcelOracleNativeMethods').Type) {
 }
 $ownedTestEnumeration = [ExcelOracleNativeMethods]::EnumerateOwnedWindows([uint32]$PID)
 Assert-True (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $ownedTestEnumeration -ExpectedProcessId $PID) "native enumeration must complete without truncation and return only exact-PID windows"
-Assert-True (Test-WorkerExactPidAttachmentShape -Source $workerSource) "worker attachment must enumerate bounded exact-PID top-level/descendant windows, verify returned Application.Hwnd PID, and write bounded diagnostics"
-$pidFilterMutation = $workerSource.Replace('topLevelProcessId != expectedProcessId', 'topLevelProcessId == expectedProcessId')
+Assert-True (Test-WorkerExactPidAttachmentShape -Source $attachmentSource) "worker attachment must enumerate bounded exact-PID top-level/descendant windows, verify returned Application.Hwnd PID, and write bounded diagnostics"
+$pidFilterMutation = $attachmentSource.Replace('topLevelProcessId != expectedProcessId', 'topLevelProcessId == expectedProcessId')
 Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $pidFilterMutation)) "mutation: inverted top-level PID ownership filter must be rejected"
-$unboundedWindowMutation = $workerSource.Replace('Select-Object -First 128', 'Select-Object')
+$unboundedWindowMutation = $attachmentSource.Replace('Select-Object -First 128', 'Select-Object')
 Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $unboundedWindowMutation)) "mutation: unbounded attachment candidate enumeration must be rejected"
-$unverifiedApplicationMutation = $workerSource.Replace('$applicationPid -eq $process.Id', '$true')
+$unverifiedApplicationMutation = $attachmentSource.Replace('[int]$ApplicationPid -ne $ExpectedProcessId', '$false')
 Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $unverifiedApplicationMutation)) "mutation: accepting an OBJID_NATIVEOM result without exact Application.Hwnd PID verification must be rejected"
-$ambiguousLaunchMutation = $workerSource.Replace('$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)', '$startInfo.Arguments = "/x $($BootstrapWorkbook.path)"')
+$ambiguousLaunchMutation = $attachmentSource.Replace('$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)', '$startInfo.Arguments = "/x $($BootstrapWorkbook.path)"')
 Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $ambiguousLaunchMutation)) "mutation: string-concatenated bootstrap launch arguments must be rejected"
-$threeArgumentMutation = $workerSource.Replace('$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)', '$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path); $startInfo.ArgumentList.Add("/n")').Replace('$startInfo.ArgumentList.Count -ne 2', '$startInfo.ArgumentList.Count -ne 3')
+$threeArgumentMutation = $attachmentSource.Replace('$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)', '$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path); $startInfo.ArgumentList.Add("/n")').Replace('$startInfo.ArgumentList.Count -ne 2', '$startInfo.ArgumentList.Count -ne 3')
 Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $threeArgumentMutation)) "mutation: undocumented /n or any third Excel argv must be rejected"
 $compileIndex = $workerSource.IndexOf('$compileControl.Execute()')
 $runIndex = $workerSource.IndexOf('$runValue = $excel.Run($qualifiedName)')
@@ -836,9 +1003,9 @@ Assert-True ($workerSource -match 'no-dialog-unverified') "absence of a captured
 Assert-True ($workerSource -match 'owned-helper-process' -and $workerSource -match 'process_start_utc' -and $workerSource -match 'executable_path') "worker must record complete Excel and guardian identities"
 Assert-True ($workerSource -notmatch 'Stop-Process') "worker cleanup must retain exact Process objects instead of PID-only termination"
 Assert-True ($workerSource -match 'Invoke-ExcelOracleRetainedProcessTermination.+guardianOwnershipRecord' -and $workerSource -match 'Invoke-ExcelOracleRetainedProcessTermination.+excelOwnershipRecord' -and $workerSource -match 'cleanup-authority-error') "worker guardian/Excel fallback cleanup must use exact written records and fail closed on identity conflict"
-Assert-True (Test-WorkerEvidenceGatedAcceptanceShape -Source $workerSource) "case acceptance must be gated by healthy guardian and authoritative modal evidence"
+Assert-True (Test-WorkerEvidenceGatedAcceptanceShape -WorkerSource $workerSource -ContractSource $contractSource) "case acceptance must be gated by healthy guardian and authoritative modal evidence"
 $statusOnlyAcceptanceMutation = $workerSource.Replace('$passed = $behaviorPassed -and $guardianHealthy -and $authoritativeEvidencePassed', '$passed = $behaviorPassed')
-Assert-True (-not (Test-WorkerEvidenceGatedAcceptanceShape -Source $statusOnlyAcceptanceMutation)) "mutation: status-only case acceptance must be rejected"
+Assert-True (-not (Test-WorkerEvidenceGatedAcceptanceShape -WorkerSource $statusOnlyAcceptanceMutation -ContractSource $contractSource)) "mutation: status-only case acceptance must be rejected"
 Assert-True ($workerSource -match 'invalid guardian event ledger' -and $workerSource -notmatch 'catch \{ \}\s*\r?\n\s*return @\(\$events\)') "guardian event parsing must fail closed"
 Assert-True ($workerSource -match 'Assert-GuardianLive.+forced VBE compile' -and $workerSource -match 'Assert-GuardianLive.+runtime invocation') "guardian exact liveness must be checked immediately before compile and runtime"
 Assert-True ($workerSource.IndexOf('immediately-before-execute') -lt $compileIndex -and $workerSource.IndexOf('immediately-after-execute') -gt $compileIndex) "compile Execute must be enclosed by exact active project/module/source/code-pane authority snapshots"
