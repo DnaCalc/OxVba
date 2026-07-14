@@ -1,6 +1,6 @@
 # WIN-0 Owned Windows Test Resource Policy Evidence
 
-Date: 2026-07-11
+Date: 2026-07-14
 Bead: `bd-59co.3.1.5`
 Status: support-safety policy and safe synthetic proof complete
 Owned/advanced clause: `CONF-MATRIX-001`
@@ -19,10 +19,11 @@ its acceptance suite are:
 
 The final repair serializes every journal transaction with a path-stable named
 mutex, makes every real Registry64 key creation depend on the Win32 disposition
-and a prejournaled marker token, rejects reparse roots/infrastructure at use
-boundaries, and validates raw JSON kinds and lifecycle/dependency order before
-PowerShell coercion. Cleanup remains exact-resource, reverse-order, and
-fail-closed.
+and a prejournaled marker token, binds created files to the volume/file ID read
+from their still-open creation handle, queries process creation time before any
+executable decision, rejects reparse roots/infrastructure at use boundaries,
+and validates raw JSON kinds and lifecycle/dependency order before PowerShell
+coercion. Cleanup remains exact-resource, reverse-order, and fail-closed.
 
 This bead owns and advances only `CONF-MATRIX-001`. `PROFILE-WIN-001` is parent
 profile context; `SEC-BOUNDARY-001` and `CONF-QUALITY-001` are downstream
@@ -50,7 +51,9 @@ Implementation/test history:
 - `f82b5c46adad122aa48b72c6d63af538e0f5b48c`
   (`fix(win0): journal registry ancestor ownership`); and
 - `0c021cfa567295c51f17dffa125183301ebe0872`
-  (`fix(win0): serialize and prove Windows resource ownership`).
+  (`fix(win0): serialize and prove Windows resource ownership`); and
+- `9bdebb8f6f0ad19e5b8c10e55bf2c0efbb98a370`
+  (`fix(win0): bind cleanup to exact resource identity`).
 
 Prior normative/evidence repairs are
 `1dbb7a7699dd2280eebcb2fb9db6912df36f5bc9` and
@@ -59,14 +62,16 @@ is intentionally a separate successor to the implementation commit above.
 
 | artifact | SHA-256 |
 |---|---|
-| `scripts/lib-windows-owned-resource-policy.ps1` | `c28d59e5544a08cc2be5b780ba6b9c199a4cf21c098f7b28824cc9aeee1d7671` |
-| `scripts/test-windows-owned-resource-policy.ps1` | `f2ebea2ba3686d5b224d7ab0b57adfc70937d3f074751474901d3b377717d691` |
-| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence update | `359fe1d6224d14aeb7b211fb18785fab6cb187700fadffe134042016c2d77526` |
+| `scripts/lib-windows-owned-resource-policy.ps1` | `aa46bea52fcd9235705664fd98e56fa5b388b13b56e7f19de01ab01404be0b1b` |
+| `scripts/test-windows-owned-resource-policy.ps1` | `dc95865b6271ce88c8a9d6b854ed3843eb61258a703d7aa0406dd83790e0b340` |
+| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence update | `01f33b17232316c2fde75a18df8d62a66b06b710070b0cdc2614d69d8e0d4035` |
 
 The journal schema remains
 `oxvba-windows-owned-resource-journal-v1`, version `1`. The root now explicitly
 binds `registry_view` to exact `Registry64`; registry descriptors carry their
-own matching view and per-key ownership records.
+own matching view and per-key ownership records. File descriptors carry a
+pending/created-owned disposition plus the creation-handle volume serial and
+file ID once ownership is proven.
 
 ## Final validation record
 
@@ -79,22 +84,24 @@ pwsh -NoProfile -File ./scripts/test-windows-owned-resource-policy.ps1
 Final result after the fresh-eyes hardening pass:
 
 ```text
-PASS: Windows owned-resource policy (57 assertions; 47 fail-closed mutations; real HKCU/file/child; logical COM/UIA only)
+PASS: Windows owned-resource policy (69 assertions; 53 fail-closed mutations; real HKCU/file/child; logical COM/UIA only; exact teardown verified)
 ```
 
-The run completed in 141.2 seconds on the Windows x64 development host. An
-immediately preceding run of the lease/resource-binding repair also passed 57
-assertions and 46 fail-closed mutations in 146.3 seconds; the final extra probe
-is a recomputed-digest root/lifecycle inconsistency rejection.
+The final run completed in 180.7 seconds on the Windows x64 development host.
+The first file-ID hardening run exposed a native handle-lifetime
+defect. Its outer teardown returned failure while preserving the conflict
+journals and run roots. Recovery through those exact journals then completed,
+after which the corrected native reader passed the full suite with no owned
+residue.
 
 | check | result |
 |---|---|
 | PowerShell AST parse of both scripts | pass |
 | `git diff --check` | pass |
-| full owned-resource acceptance suite | pass, 57 assertions / 47 rejections |
-| post-run `oxvba-owned-policy-test-*` temporary roots | zero |
-| post-run `HKCU\Software\OxVbaOwnedResourcePolicy` in Registry64 | absent |
-| post-run recorded writer/abandon/loop child processes | zero |
+| full owned-resource acceptance suite | pass, 69 assertions / 53 rejections |
+| completed run's exact temporary root | absent after validated teardown |
+| completed run's exact Registry64 namespace/values | absent after validated teardown |
+| completed run's recorded writer/abandon/loop child processes | zero |
 
 ## Whole-transaction lease and race proof
 
@@ -211,11 +218,21 @@ and it cannot make the external proof-to-delete interval transactional.
 ## Exact rollback, stale recovery, and unrelated drift
 
 Files use exact absent-to-create-only snapshots and `FileMode.CreateNew`.
-Cleanup deletes only the expected length/SHA-256 bytes; changed bytes become a
-conflict and remain untouched. Child cleanup requires exact PID, process start
-UTC, and executable. The inert activation protocol makes PID/start durable
-before the separately journaled activation file exists. No process-name or
-command-line discovery is used for cleanup.
+The creation handle supplies a stable local volume/file ID before the durable
+created-owned descriptor update. Cleanup opens without write/delete sharing,
+holds that handle across ID and content verification, and uses handle-based
+disposition for deletion. Changed bytes and same-content replacement files
+with a different identity become conflicts and remain untouched. The
+replacement regression holds the deleted original open while recreating the
+same path/bytes, making the identity difference deterministic.
+
+Child cleanup requires exact PID, process start UTC, and executable. Creation
+time is resolved before executable lookup: missing/PID-reused outcomes are
+already gone and never query a path; inaccessible identity fails closed; only
+a live start-time match may reach exact executable validation. The inert
+activation protocol makes PID/start durable before the separately journaled
+activation file exists. No process-name or command-line discovery is used for
+cleanup.
 
 Logical acquisition is apartment, callback, connection, and process-scoped
 dialog; validated dependencies require earlier exact resources. Reverse
@@ -234,9 +251,14 @@ unowned PowerShell PID/start, and logical-object digest—remain exact after mai
 conflict, stale, race, registry-crash, and final phases. No recursive registry
 or file cleanup and no global process/window cleanup is present.
 
+The outer teardown retries exact cleanup but never swallows its result. It
+collects only validated completed journals with empty run roots for deletion.
+Any validation error, cleanup conflict, residual entry, or non-completed state
+is returned as a failing diagnostic while the journal and recovery root remain.
+
 ## Fail-closed coverage
 
-The 47 negative probes cover:
+The 53 negative probes cover:
 
 - caller-root/infrastructure/run/confined reparse paths, path escape, wildcard,
   and controlled roots;
@@ -245,12 +267,15 @@ The 47 negative probes cover:
 - HKLM, broad category, non-allowlisted Registry64 key, wildcard value,
   external empty key, create-before-marker ambiguity, and populated ancestor;
 - blanket process, dialog-class, registry-subtree, and recursive-file cleanup;
-- unrecorded or mismatched process identity, apartment mismatch, missing or
-  wildcard callback/connection/dialog identity, and invalid cookie;
+- unrecorded, PID-reused, inaccessible, or executable-mismatched process
+  identity, apartment mismatch, missing or wildcard callback/connection/dialog
+  identity, and invalid cookie;
+- pre-existing files, prepared records followed by an external winner, both
+  sides of the create/disposition crash interval, same-content different-file
+  replacement, and changed owned-file content;
 - string boolean/number coercion, scalar array, property/view case drift,
   unknown/duplicate property, digest/root identity tamper, later dependency,
-  missing event, forward cleanup, and root/lifecycle inconsistency; and
-- changed owned-file conflict.
+  missing event, forward cleanup, and root/lifecycle inconsistency.
 
 Every rejection is asserted before the forbidden mutation or preserves the
 ambiguous/drifted resource as an explicit cleanup conflict.
@@ -281,8 +306,10 @@ reparse swaps, raw coercion, dependency order, cleanup conflict order, handle
 lifetime, child/file operation boundaries, exact residue, and destructive
 primitive call sites. The final hardening added absent-new-run abandoned
 revalidation, conflict-aware lifecycle state validation, operation-boundary
-reparse checks, and exception-safe Registry64 handle disposal before the final
-passing run.
+reparse checks, exception-safe Registry64 handle disposal, process
+creation-before-path adjudication, stable file-instance identity, handle-bound
+deletion, same-content replacement proof, and conflict-root preservation before
+the final passing run.
 
 Residual work is downstream. Real Excel/VBA, COM, UIA, native, VM3/JIT,
 registration, and clean-VM drivers must adopt this policy (or prove an
