@@ -8,7 +8,7 @@ use oxvba_runtime::Variant;
 use oxvba_symbol::manifest::ModuleKind::{Class, Procedural};
 
 fn s(text: &str) -> Canon {
-    canon(&Variant::from_string(text.to_string()))
+    Canon::Str(text.to_owned())
 }
 
 fn assert_result(modules: &[(&str, oxvba_symbol::manifest::ModuleKind, &str)], expected: &str) {
