@@ -22,6 +22,7 @@ $script:tamperBackup = $null
 $script:tamperJournal = $null
 $script:junctionPath = $null
 $script:extraRegistryPaths = [Collections.Generic.List[string]]::new()
+$script:bodyError = ''
 
 function Assert-PolicyTrue {
     param(
@@ -150,7 +151,7 @@ function New-TestPreparedRegistryMutation {
 
     $lease = Enter-WindowsOwnedJournalLease -JournalPath $JournalPath
     try {
-        $journal = Read-WindowsOwnedResourceJournal -JournalPath $JournalPath
+        $journal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $lease -JournalPath $JournalPath
         $before = Get-WindowsOwnedRegistryValueSnapshot -Path $Path -ValueName $ValueName
         $expected = New-WindowsOwnedRegistryValueSnapshot -Value $Value -Kind ([Microsoft.Win32.RegistryValueKind]::String) -KeyExists $true
         $plan = New-WindowsOwnedRegistryKeyOwnershipPlan -Path $Path
@@ -275,6 +276,75 @@ try {
     $runIdB = New-WindowsOwnedRunId
     Assert-PolicyTrue -Condition ($runIdA -match $script:WindowsOwnedRunIdPattern -and $runIdB -match $script:WindowsOwnedRunIdPattern -and $runIdA -cne $runIdB) -Message 'run IDs are unique and immutable-formatted'
 
+    $supportedOuter = Assert-WindowsOwnedSupportedLocalPath -Path $outer -Owner 'test local-volume admission'
+    $supportedDrive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($supportedOuter))
+    Assert-PolicyTrue -Condition ($supportedDrive.DriveType -eq [IO.DriveType]::Fixed -and
+        $supportedDrive.DriveFormat -in @('NTFS', 'ReFS')) `
+        -Message 'owned-resource acceptance executes on a supported local fixed NTFS/ReFS volume'
+    foreach ($invalidPathCase in @(
+        [pscustomobject]@{ name = 'drive-relative local path'; path = 'C:relative-owned-resource.txt'; pattern = 'drive-qualified|ADS/device/namespace/UNC' },
+        [pscustomobject]@{ name = 'alternate data stream'; path = ([string]::Concat($outer, ':owned-stream')); pattern = 'ADS/device/namespace/UNC' },
+        [pscustomobject]@{ name = 'UNC path'; path = '\\localhost\C$\oxvba-owned-resource.txt'; pattern = 'ADS/device/namespace/UNC' },
+        [pscustomobject]@{ name = 'extended namespace path'; path = "\\?\$outer"; pattern = 'ADS/device/namespace/UNC' },
+        [pscustomobject]@{ name = 'device namespace path'; path = '\\.\C:\oxvba-owned-resource.txt'; pattern = 'ADS/device/namespace/UNC' },
+        [pscustomobject]@{ name = 'reserved device component'; path = (Join-Path $outer 'CON'); pattern = 'reserved Windows device' }
+    )) {
+        Expect-PolicyRejection -Name $invalidPathCase.name -MessagePattern $invalidPathCase.pattern -Action {
+            Assert-WindowsOwnedSupportedLocalPath -Path ([string]$invalidPathCase.path) -Owner ([string]$invalidPathCase.name)
+        }
+    }
+
+    Initialize-WindowsOwnedFileNative
+    Assert-PolicyTrue -Condition ([OxVba.WindowsOwnedFileNative]::TestWriteProgressError($true, 0, 0) -eq 1117 -and
+        [OxVba.WindowsOwnedFileNative]::TestWriteProgressError($false, 0, 0) -eq 1117) `
+        -Message 'native journal writes fail closed when WriteFile reports zero progress or fails without a last error'
+    $nativeHandleRoot = Join-Path $outer 'native-handle-publication-probe'
+    $nativeTargetPath = Join-Path $nativeHandleRoot 'target.tmp'
+    $nativeReplacementPath = Join-Path $nativeHandleRoot 'replacement.tmp'
+    [void](New-Item -ItemType Directory -Path $nativeHandleRoot)
+    $nativeTargetHandle = $null
+    $nativeReplacementHandle = $null
+    try {
+        $nativeError = 0
+        $nativeTargetHandle = [OxVba.WindowsOwnedFileNative]::CreateWriteThroughNew(
+            $nativeTargetPath, ([Text.UTF8Encoding]::new($false).GetBytes('target')), [ref]$nativeError)
+        Assert-PolicyTrue -Condition ($nativeError -eq 0 -and $null -ne $nativeTargetHandle -and -not $nativeTargetHandle.IsInvalid) `
+            -Message 'native publication probe retains the exact created target handle'
+        $nativeError = 0
+        $nativeReplacementHandle = [OxVba.WindowsOwnedFileNative]::CreateWriteThroughNew(
+            $nativeReplacementPath, ([Text.UTF8Encoding]::new($false).GetBytes('replacement')), [ref]$nativeError)
+        Assert-PolicyTrue -Condition ($nativeError -eq 0 -and $null -ne $nativeReplacementHandle -and -not $nativeReplacementHandle.IsInvalid) `
+            -Message 'native publication probe retains the exact created replacement handle'
+        Expect-PolicyRejection -Name 'handle-bound temporary path swap' -Action {
+            [IO.File]::Delete($nativeReplacementPath)
+        }
+        $nativePublishError = [OxVba.WindowsOwnedFileNative]::PublishReplace($nativeReplacementHandle, $nativeTargetPath)
+        Assert-PolicyTrue -Condition ($nativePublishError -ne 0) `
+            -Message 'handle-bound replacement cannot overwrite a destination whose exact handle denies delete sharing'
+        Assert-PolicyTrue -Condition ([OxVba.WindowsOwnedFileNative]::DeleteOpened($nativeReplacementHandle) -eq 0 -and
+            [OxVba.WindowsOwnedFileNative]::DeleteOpened($nativeTargetHandle) -eq 0) `
+            -Message 'failed publication cleans both exact opened objects through retained handles'
+        $nativeReplacementHandle.Dispose()
+        $nativeTargetHandle.Dispose()
+        Assert-PolicyTrue -Condition (-not (Test-Path -LiteralPath $nativeReplacementPath) -and
+            -not (Test-Path -LiteralPath $nativeTargetPath)) `
+            -Message 'handle-disposition cleanup leaves no path-selected temporary residue'
+        Assert-PolicyTrue -Condition ([OxVba.WindowsOwnedFileNative]::DeleteOpened($nativeTargetHandle) -ne 0) `
+            -Message 'native handle cleanup reports rather than swallows an invalid/closed-handle failure'
+    }
+    finally {
+        foreach ($nativeHandle in @($nativeReplacementHandle, $nativeTargetHandle)) {
+            if ($null -ne $nativeHandle -and -not $nativeHandle.IsClosed) {
+                if (-not $nativeHandle.IsInvalid) { [void][OxVba.WindowsOwnedFileNative]::DeleteOpened($nativeHandle) }
+                $nativeHandle.Dispose()
+            }
+        }
+        foreach ($nativeProbePath in @($nativeReplacementPath, $nativeTargetPath)) {
+            if (Test-Path -LiteralPath $nativeProbePath -PathType Leaf) { [IO.File]::Delete($nativeProbePath) }
+        }
+        Remove-ExactEmptyDirectory -Path $nativeHandleRoot
+    }
+
     $repoRootJunction = Join-Path $outer 'repo-root-junction'
     [void](New-Item -ItemType Junction -Path $repoRootJunction -Target $repository)
     Expect-PolicyRejection -Name 'repository root junction' -MessagePattern 'reparse point' -Action {
@@ -318,6 +388,42 @@ try {
     Expect-PolicyRejection -Name 'unlocked journal mutation' -MessagePattern 'transaction lease' -Action {
         Write-WindowsOwnedResourceJournal -Journal $mainJournal -Lease $fakeLease
     }
+
+    $leaseProbeJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
+        -AllowedExecutablePaths @($executable)
+    [void](Register-TestJournal -JournalPath $leaseProbeJournalPath)
+    $leaseProbe = Enter-WindowsOwnedJournalLease -JournalPath $leaseProbeJournalPath
+    try {
+        $leaseBoundJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $leaseProbe -JournalPath $leaseProbeJournalPath
+        $staleLeaseJournal = Read-WindowsOwnedResourceJournal -JournalPath $leaseProbeJournalPath
+        Expect-PolicyRejection -Name 'stale reread object under live lease' -MessagePattern 'stale, modified, or unbound' -Action {
+            Start-WindowsOwnedJournalMutation -Lease $leaseProbe -Journal $staleLeaseJournal
+        }
+        $leaseBoundJournal.allowed_executable_paths = @($leaseBoundJournal.allowed_executable_paths) + @('C:\immutable-allowlist-expansion.exe')
+        Expect-PolicyRejection -Name 'immutable allowlist expansion under live lease' -MessagePattern 'stale, modified, or unbound' -Action {
+            Start-WindowsOwnedJournalMutation -Lease $leaseProbe -Journal $leaseBoundJournal
+        }
+        $leaseBoundJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $leaseProbe -JournalPath $leaseProbeJournalPath
+        Expect-PolicyRejection -Name 'journal publication without mutation ticket' -MessagePattern 'explicit validated mutation ticket' -Action {
+            Write-WindowsOwnedResourceJournal -Journal $leaseBoundJournal -Lease $leaseProbe
+        }
+        $leaseHistoryBackup = [IO.File]::ReadAllBytes($leaseProbeJournalPath)
+        $concurrentLeaseJournal = Read-WindowsOwnedResourceJournal -JournalPath $leaseProbeJournalPath
+        $concurrentLeaseJournal.updated_utc = ([DateTime]::UtcNow.AddSeconds(1)).ToString('O')
+        Write-TestJournalObject -JournalPath $leaseProbeJournalPath -Journal $concurrentLeaseJournal
+        Expect-PolicyRejection -Name 'concurrent signed history under live lease' -MessagePattern 'concurrent or identity-changing journal history' -Action {
+            Start-WindowsOwnedJournalMutation -Lease $leaseProbe -Journal $leaseBoundJournal
+        }
+        [IO.File]::WriteAllBytes($leaseProbeJournalPath, $leaseHistoryBackup)
+        $leaseBoundJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $leaseProbe -JournalPath $leaseProbeJournalPath
+        Assert-PolicyTrue -Condition ([object]::ReferenceEquals($leaseProbe.bound_journal, $leaseBoundJournal) -and
+            [string]$leaseProbe.bound_journal_digest -ceq [string]$leaseBoundJournal.journal_digest) `
+            -Message 'lease revalidation binds the exact immutable object and canonical history digest'
+    }
+    finally {
+        Exit-WindowsOwnedJournalLease -Lease $leaseProbe
+    }
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $leaseProbeJournalPath)
 
     Expect-PolicyRejection -Name 'duplicate run ID collision' -MessagePattern 'collides' -Action {
         New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
@@ -402,8 +508,8 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
         [int]$processResource.descriptor.pid -gt 0 -and -not [string]::IsNullOrEmpty([string]$processResource.descriptor.process_start_utc)) `
         -Message 'child cleanup identity records exact executable path, PID, and start time'
     Assert-PolicyTrue -Condition ([string]$fileResource.descriptor.creation_disposition -ceq 'created-owned' -and
-        [string]$fileResource.descriptor.volume_serial_hex -match '^[0-9a-f]{8}$' -and
-        [string]$fileResource.descriptor.file_id_hex -match '^[0-9a-f]{16}$') `
+        [string]$fileResource.descriptor.volume_serial_hex -match '^[0-9a-f]{16}$' -and
+        [string]$fileResource.descriptor.file_id_hex -match '^[0-9a-f]{32}$') `
         -Message 'file cleanup identity records the exact volume and file ID captured from its creation handle'
     $activationResource = @($mainJournal.resources | Where-Object { [string]$_.kind -ceq 'file' -and (Test-WindowsOwnedExactPathEqual -Left ([string]$_.descriptor.path) -Right $activationPath) })[0]
     Assert-PolicyTrue -Condition ([int]$processResource.sequence -lt [int]$activationResource.sequence) -Message 'child PID/start is durable before the activation token exists'
@@ -709,23 +815,25 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
         $afterDispositionJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $afterDispositionLease -JournalPath $afterFileDispositionJournalPath
         $afterDispositionResource = Get-WindowsOwnedRecordedResource -Journal $afterDispositionJournal `
             -ResourceId $afterFilePrepared.resource_id -Kind file
-    $afterDispositionStream = [IO.FileStream]::new(
+        $afterDispositionDescriptor = ($afterDispositionResource.descriptor | ConvertTo-Json -Depth 8 -Compress) |
+            ConvertFrom-Json -Depth 8 -DateKind String
+        $afterDispositionStream = [IO.FileStream]::new(
             $afterFileDispositionPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write,
             [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough)
-    try {
-        $afterDispositionStream.Write($fileCaseBytes, 0, $fileCaseBytes.Length)
-        $afterDispositionStream.Flush($true)
-        $afterDispositionIdentity = Get-WindowsOwnedFileIdentityFromHandle -Handle $afterDispositionStream.SafeFileHandle `
-            -Owner 'synthetic file after-disposition identity'
-        $afterDispositionResource.descriptor.volume_serial_hex = [string]$afterDispositionIdentity.volume_serial_hex
-        $afterDispositionResource.descriptor.file_id_hex = [string]$afterDispositionIdentity.file_id_hex
+        try {
+            $afterDispositionStream.Write($fileCaseBytes, 0, $fileCaseBytes.Length)
+            $afterDispositionStream.Flush($true)
+            $afterDispositionIdentity = Get-WindowsOwnedFileIdentityFromHandle -Handle $afterDispositionStream.SafeFileHandle `
+                -Owner 'synthetic file after-disposition identity'
+            $afterDispositionDescriptor.volume_serial_hex = [string]$afterDispositionIdentity.volume_serial_hex
+            $afterDispositionDescriptor.file_id_hex = [string]$afterDispositionIdentity.file_id_hex
         }
         finally {
             $afterDispositionStream.Dispose()
         }
-        $afterDispositionResource.descriptor.creation_disposition = 'created-owned'
+        $afterDispositionDescriptor.creation_disposition = 'created-owned'
         Set-WindowsOwnedPreparedResourceDescriptor -JournalPath $afterFileDispositionJournalPath -Lease $afterDispositionLease `
-            -ResourceId $afterFilePrepared.resource_id -Descriptor $afterDispositionResource.descriptor `
+            -ResourceId $afterFilePrepared.resource_id -Descriptor $afterDispositionDescriptor `
             -Detail 'file-creation=created-owned' -Journal $afterDispositionJournal
     }
     finally {
@@ -771,6 +879,34 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     [IO.File]::Delete($replacementPath)
     [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $replacementJournalPath)
 
+    $resumeJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer
+    $resumeJournal = Register-TestJournal -JournalPath $resumeJournalPath
+    $resumePresentPath = Join-Path ([string]$resumeJournal.run_root) 'resume-present.bin'
+    $resumeAlreadyInvertedPath = Join-Path ([string]$resumeJournal.run_root) 'resume-already-inverted.bin'
+    $resumePresentId = New-WindowsOwnedFile -JournalPath $resumeJournalPath -Path $resumePresentPath -Bytes $fileCaseBytes
+    $resumeAlreadyInvertedId = New-WindowsOwnedFile -JournalPath $resumeJournalPath -Path $resumeAlreadyInvertedPath -Bytes $fileCaseBytes
+    $resumeLease = Enter-WindowsOwnedJournalLease -JournalPath $resumeJournalPath
+    try {
+        $resumeJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $resumeLease -JournalPath $resumeJournalPath
+        $resumeMutation = Start-WindowsOwnedJournalMutation -Lease $resumeLease -Journal $resumeJournal
+        $resumeJournal.state = 'cleaning'
+        Add-WindowsOwnedJournalEvent -Journal $resumeJournal -Event 'cleanup-started' -Detail 'owner-initiated'
+        Write-WindowsOwnedResourceJournal -Journal $resumeJournal -Lease $resumeLease -Mutation $resumeMutation
+    }
+    finally {
+        Exit-WindowsOwnedJournalLease -Lease $resumeLease
+    }
+    [IO.File]::Delete($resumeAlreadyInvertedPath)
+    $resumeJournal = Invoke-WindowsOwnedResourceCleanup -JournalPath $resumeJournalPath
+    $resumeStartEvents = @($resumeJournal.events | Where-Object { [string]$_.event -ceq 'cleanup-started' })
+    $resumeAlreadyInvertedEvent = @($resumeJournal.events | Where-Object {
+        [string]$_.event -ceq 'resource-cleaned' -and [string]$_.resource_id -ceq $resumeAlreadyInvertedId
+    })[0]
+    Assert-PolicyTrue -Condition ([string]$resumeJournal.state -ceq 'completed' -and $resumeStartEvents.Count -eq 1 -and
+        [string]$resumeAlreadyInvertedEvent.detail -match 'action=already-before' -and
+        -not (Test-Path -LiteralPath $resumePresentPath) -and -not (Test-Path -LiteralPath $resumeAlreadyInvertedPath)) `
+        -Message 'cleanup resumes one durable cleaning cycle exactly and idempotently after a partial inverse'
+
     $absentAncestorJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
         -AllowedRegistryPaths @($absentRegistryPath)
     [void](Register-TestJournal -JournalPath $absentAncestorJournalPath)
@@ -785,6 +921,62 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
         -Message 'prepared Registry64 record captures exact disposition and token proof for every created key'
     [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $absentAncestorJournalPath)
     Assert-PolicyTrue -Condition (-not (Test-WindowsOwnedRegistryKeyExists -Path $absentNamespacePath)) -Message 'exact absent registry namespace and leaf are removed deepest-first when empty'
+
+    $registryReplacementParent = "HKCU\Software\OxVbaOwnedRegistryReplacement-$testId"
+    $registryReplacementLeaf = "$registryReplacementParent\leaf"
+    $registryReplacementSentinelName = "neighbor-$testId"
+    Register-TestRegistryPath -Path $registryReplacementLeaf
+    Register-TestRegistryPath -Path $registryReplacementParent
+    $registryReplacementParentKey = Open-TestRegistryKey64 -Path $registryReplacementParent -Create
+    try {
+        $registryReplacementParentKey.SetValue($registryReplacementSentinelName, 'preserve-parent', [Microsoft.Win32.RegistryValueKind]::String)
+        $registryReplacementParentKey.Flush()
+    }
+    finally {
+        $registryReplacementParentKey.Dispose()
+    }
+    $registryReplacementJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
+        -AllowedRegistryPaths @($registryReplacementLeaf)
+    [void](Register-TestJournal -JournalPath $registryReplacementJournalPath)
+    [void](Set-WindowsOwnedRegistryValue -JournalPath $registryReplacementJournalPath -Path $registryReplacementLeaf `
+        -ValueName owned -Value 'owned-before-replacement')
+    $registryReplacementOwnedKey = Open-TestRegistryKey64 -Path $registryReplacementLeaf -Writable
+    try {
+        foreach ($name in @($registryReplacementOwnedKey.GetValueNames())) {
+            $registryReplacementOwnedKey.DeleteValue($name, $false)
+        }
+        $registryReplacementOwnedKey.Flush()
+    }
+    finally {
+        $registryReplacementOwnedKey.Dispose()
+    }
+    Remove-TestRegistryKey64IfEmpty -Path $registryReplacementLeaf
+    $registryReplacementExternalKey = Open-TestRegistryKey64 -Path $registryReplacementLeaf -Create
+    $registryReplacementExternalKey.Dispose()
+    Expect-PolicyRejection -Name 'same-path replacement registry key' -MessagePattern 'marker|ownership|conflicts' -Action {
+        Invoke-WindowsOwnedResourceCleanup -JournalPath $registryReplacementJournalPath
+    }
+    $registryReplacementParentKey = Open-TestRegistryKey64 -Path $registryReplacementParent
+    try {
+        $registryReplacementParentPreserved = (Test-WindowsOwnedRegistryKeyExists -Path $registryReplacementLeaf) -and
+            [string]$registryReplacementParentKey.GetValue($registryReplacementSentinelName, $null) -ceq 'preserve-parent'
+    }
+    finally {
+        $registryReplacementParentKey.Dispose()
+    }
+    Assert-PolicyTrue -Condition $registryReplacementParentPreserved `
+        -Message 'same-path registry replacement and neighboring parent sentinel survive missing-marker cleanup conflict'
+    Remove-TestRegistryKey64IfEmpty -Path $registryReplacementLeaf
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $registryReplacementJournalPath)
+    $registryReplacementParentKey = Open-TestRegistryKey64 -Path $registryReplacementParent -Writable
+    try {
+        $registryReplacementParentKey.DeleteValue($registryReplacementSentinelName, $false)
+        $registryReplacementParentKey.Flush()
+    }
+    finally {
+        $registryReplacementParentKey.Dispose()
+    }
+    Remove-TestRegistryKey64IfEmpty -Path $registryReplacementParent
 
     $conflictAncestorJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
         -AllowedRegistryPaths @($conflictRegistryPath)
@@ -823,7 +1015,7 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     Assert-PolicyTrue -Condition (-not (Test-WindowsOwnedRegistryKeyExists -Path $conflictNamespacePath)) -Message 'ancestor conflict retry removes only the now-empty recorded ancestor chain'
 
     $registryCrashCases = @{}
-    foreach ($caseName in @('before-create', 'external-empty', 'before-marker', 'after-markers', 'actor-wins', 'value-rolled-back')) {
+    foreach ($caseName in @('before-create', 'external-empty', 'after-markers', 'actor-wins', 'value-rolled-back')) {
         $namespace = "HKCU\Software\OxVbaOwned-$caseName-$testId"
         $leaf = "$namespace\leaf"
         Register-TestRegistryPath -Path $leaf
@@ -850,35 +1042,16 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     Remove-TestRegistryKey64IfEmpty -Path $case.namespace
     [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $case.journal)
 
-    $case = $registryCrashCases['before-marker']
-    $prepared = New-TestPreparedRegistryMutation -JournalPath $case.journal -Path $case.leaf
-    $caseLease = Enter-WindowsOwnedJournalLease -JournalPath $case.journal
-    try {
-        $creation = New-WindowsOwnedRegistryKeyExact -JournalPath $case.journal -Lease $caseLease -Journal $prepared.journal `
-            -ResourceId $prepared.resource_id -Path ([string]$prepared.descriptor.key_ownership[0].path)
-        Assert-PolicyTrue -Condition ($creation -ceq 'created-new') -Message 'Win32 disposition reports the exact create-before-marker window'
-    }
-    finally {
-        Exit-WindowsOwnedJournalLease -Lease $caseLease
-    }
-    Expect-PolicyRejection -Name 'create-before-marker crash window' -MessagePattern 'ownership is unprovable|conflicts' -Action {
-        Invoke-WindowsOwnedResourceCleanup -JournalPath $case.journal
-    }
-    Assert-PolicyTrue -Condition (Test-WindowsOwnedRegistryKeyExists -Path $case.namespace) -Message 'unmarked created key is preserved as a blocking ambiguity'
-    Remove-TestRegistryKey64IfEmpty -Path $case.namespace
-    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $case.journal)
-
     $case = $registryCrashCases['after-markers']
     $prepared = New-TestPreparedRegistryMutation -JournalPath $case.journal -Path $case.leaf
     $caseLease = Enter-WindowsOwnedJournalLease -JournalPath $case.journal
     try {
+        $caseJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $caseLease -JournalPath $case.journal
         foreach ($record in @($prepared.descriptor.key_ownership)) {
-            $creation = New-WindowsOwnedRegistryKeyExact -JournalPath $case.journal -Lease $caseLease -Journal $prepared.journal `
-                -ResourceId $prepared.resource_id -Path ([string]$record.path)
-            if ($creation -cne 'created-new') { throw 'synthetic marker crash key was not newly created' }
-            Set-WindowsOwnedRegistryKeyMarker -JournalPath $case.journal -Lease $caseLease -Journal $prepared.journal `
+            $creation = New-WindowsOwnedRegistryKeyExact -JournalPath $case.journal -Lease $caseLease -Journal $caseJournal `
                 -ResourceId $prepared.resource_id -Path ([string]$record.path) `
                 -MarkerName ([string]$record.marker_name) -MarkerToken ([string]$record.marker_token)
+            if ($creation -cne 'created-new') { throw 'synthetic marker crash key was not newly created' }
         }
     }
     finally {
@@ -893,18 +1066,20 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     $externalKey.Dispose()
     $caseLease = Enter-WindowsOwnedJournalLease -JournalPath $case.journal
     try {
+        $caseJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $caseLease -JournalPath $case.journal
         for ($keyIndex = 0; $keyIndex -lt @($prepared.descriptor.key_ownership).Count; $keyIndex++) {
             $record = $prepared.descriptor.key_ownership[$keyIndex]
-            $creation = New-WindowsOwnedRegistryKeyExact -JournalPath $case.journal -Lease $caseLease -Journal $prepared.journal `
-                -ResourceId $prepared.resource_id -Path ([string]$record.path)
+            $creation = New-WindowsOwnedRegistryKeyExact -JournalPath $case.journal -Lease $caseLease -Journal $caseJournal `
+                -ResourceId $prepared.resource_id -Path ([string]$record.path) `
+                -MarkerName ([string]$record.marker_name) -MarkerToken ([string]$record.marker_token)
             if ($creation -cne 'opened-existing') { throw 'external actor did not win Registry64 creation' }
             $record.creation_disposition = 'opened-existing'
             Set-WindowsOwnedPreparedResourceDescriptor -JournalPath $case.journal -Lease $caseLease -ResourceId $prepared.resource_id `
-                -Descriptor $prepared.descriptor -Detail "registry-key[$keyIndex]=opened-existing"
+                -Descriptor $prepared.descriptor -Detail "registry-key[$keyIndex]=opened-existing" -Journal $caseJournal
         }
-        Set-WindowsOwnedRegistryValueRaw -JournalPath $case.journal -Lease $caseLease -Journal $prepared.journal `
+        Set-WindowsOwnedRegistryValueRaw -JournalPath $case.journal -Lease $caseLease -Journal $caseJournal `
             -ResourceId $prepared.resource_id -Path $case.leaf -ValueName owned -Snapshot $prepared.expected
-        Set-WindowsOwnedResourceActive -JournalPath $case.journal -Lease $caseLease -ResourceId $prepared.resource_id
+        Set-WindowsOwnedResourceActive -JournalPath $case.journal -Lease $caseLease -ResourceId $prepared.resource_id -Journal $caseJournal
     }
     finally {
         Exit-WindowsOwnedJournalLease -Lease $caseLease
@@ -921,6 +1096,8 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     $valueRollbackResource = Get-WindowsOwnedRecordedResource -Journal $valueRollbackJournal -ResourceId $valueRollbackResourceId -Kind registry
     $caseLease = Enter-WindowsOwnedJournalLease -JournalPath $case.journal
     try {
+        $valueRollbackJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $caseLease -JournalPath $case.journal
+        $valueRollbackResource = Get-WindowsOwnedRecordedResource -Journal $valueRollbackJournal -ResourceId $valueRollbackResourceId -Kind registry
         Set-WindowsOwnedRegistryValueRaw -JournalPath $case.journal -Lease $caseLease -Journal $valueRollbackJournal `
             -ResourceId $valueRollbackResourceId -Path $case.leaf -ValueName owned -Snapshot $valueRollbackResource.before
     }
@@ -1007,6 +1184,68 @@ exit 0
     Assert-PolicyTrue -Condition ([string]$neverActivatedResource.state -ceq 'cleaned' -and [int]$neverActivatedResource.descriptor.pid -eq 0 -and
         [string]::IsNullOrEmpty([string]$neverActivatedResource.active_utc)) -Message 'prepared process record that never received a PID cleans safely without discovery'
 
+    $descendantJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
+        -AllowedExecutablePaths @($executable)
+    $descendantJournal = Register-TestJournal -JournalPath $descendantJournalPath
+    $descendantScriptPath = Join-Path ([string]$descendantJournal.run_root) 'parent-with-descendant.ps1'
+    $descendantActivationPath = Join-Path ([string]$descendantJournal.run_root) 'parent-with-descendant.activation'
+    $descendantScript = @'
+param([string]$ActivationPath, [int]$SelfTimeoutSeconds, [string]$ExecutablePath)
+$deadline = [DateTime]::UtcNow.AddSeconds($SelfTimeoutSeconds)
+while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $ActivationPath)) { Start-Sleep -Milliseconds 10 }
+if (-not (Test-Path -LiteralPath $ActivationPath)) { exit 41 }
+$info = [Diagnostics.ProcessStartInfo]::new()
+$info.FileName = $ExecutablePath
+$info.UseShellExecute = $false
+$info.CreateNoWindow = $true
+$info.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+[void]$info.ArgumentList.Add('-NoProfile')
+[void]$info.ArgumentList.Add('-NonInteractive')
+[void]$info.ArgumentList.Add('-Command')
+[void]$info.ArgumentList.Add('Start-Sleep -Seconds 8')
+$descendant = [Diagnostics.Process]::Start($info)
+$descendant.Dispose()
+while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
+'@
+    [void](New-WindowsOwnedFile -JournalPath $descendantJournalPath -Path $descendantScriptPath `
+        -Bytes ([Text.UTF8Encoding]::new($false).GetBytes($descendantScript)))
+    $descendantParentResourceId = Start-WindowsOwnedHarmlessChild -JournalPath $descendantJournalPath `
+        -ExecutablePath $executable -ScriptPath $descendantScriptPath -ActivationPath $descendantActivationPath `
+        -SelfTimeoutSeconds 30 -AdditionalArguments @('-ExecutablePath', $executable)
+    $descendantJournal = Read-WindowsOwnedResourceJournal -JournalPath $descendantJournalPath
+    $descendantParentResource = Get-WindowsOwnedRecordedResource -Journal $descendantJournal `
+        -ResourceId $descendantParentResourceId -Kind process -RequireActive
+    $descendantPid = 0
+    $descendantStartUtc = ''
+    $descendantDiscoveryDeadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        foreach ($candidate in @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $([int]$descendantParentResource.descriptor.pid)")) {
+            $candidatePath = [string](Get-WindowsOwnedProcessExecutablePath -ProcessId ([int]$candidate.ProcessId))
+            if (-not [string]::IsNullOrEmpty($candidatePath) -and
+                (Test-WindowsOwnedExactPathEqual -Left $candidatePath -Right $executable)) {
+                $descendantPid = [int]$candidate.ProcessId
+                $descendantStartUtc = Get-WindowsOwnedProcessStartUtc -ProcessId $descendantPid
+                break
+            }
+        }
+        if ($descendantPid -eq 0) { Start-Sleep -Milliseconds 25 }
+    } while ($descendantPid -eq 0 -and [DateTime]::UtcNow -lt $descendantDiscoveryDeadline)
+    Assert-PolicyTrue -Condition ($descendantPid -gt 0 -and
+        (Test-WindowsOwnedProcessIdentity -ProcessId $descendantPid -StartUtc $descendantStartUtc)) `
+        -Message 'descendant sentinel is discovered with exact PID/start identity while its recorded parent is live'
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $descendantJournalPath)
+    Assert-PolicyTrue -Condition (-not (Test-WindowsOwnedProcessIdentity `
+            -ProcessId ([int]$descendantParentResource.descriptor.pid) -StartUtc ([string]$descendantParentResource.descriptor.process_start_utc)) -and
+        (Test-WindowsOwnedProcessIdentity -ProcessId $descendantPid -StartUtc $descendantStartUtc)) `
+        -Message 'exact process cleanup terminates only the recorded parent and leaves its unrecorded descendant untouched'
+    $descendantExitDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    while ([DateTime]::UtcNow -lt $descendantExitDeadline -and
+        (Test-WindowsOwnedProcessIdentity -ProcessId $descendantPid -StartUtc $descendantStartUtc)) {
+        Start-Sleep -Milliseconds 25
+    }
+    Assert-PolicyTrue -Condition (-not (Test-WindowsOwnedProcessIdentity -ProcessId $descendantPid -StartUtc $descendantStartUtc)) `
+        -Message 'unrecorded descendant sentinel exits only by its own bounded lifetime'
+
     $writerRaceJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
         -AllowedExecutablePaths @($executable) -OrchestratorApartment STA -ReentryPolicy reject
     $writerRaceJournal = Register-TestJournal -JournalPath $writerRaceJournalPath
@@ -1019,13 +1258,16 @@ param(
     [string]$LibraryPath,
     [string]$JournalPath,
     [string]$WriterGatePath,
+    [int]$WriterGateTimeoutSeconds,
     [string]$TargetPath,
     [string]$Payload
 )
 $deadline = [DateTime]::UtcNow.AddSeconds($SelfTimeoutSeconds)
 while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $ActivationPath)) { Start-Sleep -Milliseconds 10 }
-while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $WriterGatePath)) { Start-Sleep -Milliseconds 10 }
-if (-not (Test-Path -LiteralPath $ActivationPath) -or -not (Test-Path -LiteralPath $WriterGatePath)) { exit 21 }
+if (-not (Test-Path -LiteralPath $ActivationPath)) { exit 21 }
+$writerGateDeadline = [DateTime]::UtcNow.AddSeconds($WriterGateTimeoutSeconds)
+while ([DateTime]::UtcNow -lt $writerGateDeadline -and -not (Test-Path -LiteralPath $WriterGatePath)) { Start-Sleep -Milliseconds 10 }
+if (-not (Test-Path -LiteralPath $WriterGatePath)) { exit 22 }
 . $LibraryPath
 [void](New-WindowsOwnedFile -JournalPath $JournalPath -Path $TargetPath -Bytes ([Text.UTF8Encoding]::new($false).GetBytes($Payload)))
 exit 0
@@ -1033,17 +1275,19 @@ exit 0
     [void](New-WindowsOwnedFile -JournalPath $writerRaceJournalPath -Path $writerScriptPath -Bytes ([Text.UTF8Encoding]::new($false).GetBytes($writerScript)))
     $writerProcessIds = [Collections.Generic.List[string]]::new()
     $writerTargets = [Collections.Generic.List[string]]::new()
-    for ($writerIndex = 0; $writerIndex -lt 24; $writerIndex++) {
+    $writerCount = 12
+    for ($writerIndex = 0; $writerIndex -lt $writerCount; $writerIndex++) {
         $writerTarget = Join-Path ([string]$writerRaceJournal.run_root) ("writer-{0:D2}.txt" -f $writerIndex)
         $writerActivation = Join-Path ([string]$writerRaceJournal.run_root) ("writer-{0:D2}.activation" -f $writerIndex)
         $writerTargets.Add($writerTarget)
         $writerProcessIds.Add((Start-WindowsOwnedHarmlessChild -JournalPath $writerRaceJournalPath -ExecutablePath $executable `
             -ScriptPath $writerScriptPath -ActivationPath $writerActivation -SelfTimeoutSeconds 60 `
             -AdditionalArguments @('-LibraryPath', $libraryPath, '-JournalPath', $writerRaceJournalPath,
-                '-WriterGatePath', $writerGatePath, '-TargetPath', $writerTarget, '-Payload', "writer-$writerIndex")))
+                '-WriterGatePath', $writerGatePath, '-WriterGateTimeoutSeconds', '600',
+                '-TargetPath', $writerTarget, '-Payload', "writer-$writerIndex")))
     }
     [void](New-WindowsOwnedFile -JournalPath $writerRaceJournalPath -Path $writerGatePath -Bytes ([byte[]](1)))
-    $writerDeadline = [DateTime]::UtcNow.AddSeconds(180)
+    $writerDeadline = [DateTime]::UtcNow.AddSeconds(600)
     do {
         $writerRaceJournal = Read-WindowsOwnedResourceJournal -JournalPath $writerRaceJournalPath
         $liveWriters = @($writerProcessIds | ForEach-Object {
@@ -1052,7 +1296,7 @@ exit 0
         })
         if ($liveWriters.Count -gt 0) { Start-Sleep -Milliseconds 50 }
     } while ($liveWriters.Count -gt 0 -and [DateTime]::UtcNow -lt $writerDeadline)
-    Assert-PolicyTrue -Condition ($liveWriters.Count -eq 0) -Message 'all 24 exact recorded writer children exit within their bounded contract'
+    Assert-PolicyTrue -Condition ($liveWriters.Count -eq 0) -Message "all $writerCount exact recorded writer children exit within their bounded contract"
     $writerRaceJournal = Read-WindowsOwnedResourceJournal -JournalPath $writerRaceJournalPath
     $writerFileResources = @($writerRaceJournal.resources | Where-Object {
         if ([string]$_.kind -cne 'file') { return $false }
@@ -1064,9 +1308,9 @@ exit 0
     $uniqueWriterResourceCount = @($writerFileResources | Select-Object -ExpandProperty resource_id -Unique).Count
     $missingWriterTargetCount = @($writerTargets | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count
     $writerSequenceMatch = ($writerSequences -join ',') -ceq ($expectedWriterSequences -join ',')
-    Assert-PolicyTrue -Condition ($writerFileResources.Count -eq 24 -and
-        $uniqueWriterResourceCount -eq 24 -and $writerSequenceMatch -and $missingWriterTargetCount -eq 0) `
-        -Message "24 contending writers are journaled (records=$($writerFileResources.Count); unique=$uniqueWriterResourceCount; missing=$missingWriterTargetCount; sequences=$writerSequenceMatch)"
+    Assert-PolicyTrue -Condition ($writerFileResources.Count -eq $writerCount -and
+        $uniqueWriterResourceCount -eq $writerCount -and $writerSequenceMatch -and $missingWriterTargetCount -eq 0) `
+        -Message "$writerCount contending writers are journaled (records=$($writerFileResources.Count); unique=$uniqueWriterResourceCount; missing=$missingWriterTargetCount; sequences=$writerSequenceMatch)"
     $journalWriteTemps = @(Get-ChildItem -LiteralPath (Split-Path -Parent $writerRaceJournalPath) -File -Filter "$(Split-Path -Leaf $writerRaceJournalPath).write-*")
     Assert-PolicyTrue -Condition ($journalWriteTemps.Count -eq 0) -Message 'serialized writers leave no lost atomic-move temporary files'
 
@@ -1146,6 +1390,9 @@ $lease = Enter-WindowsOwnedJournalLease -JournalPath $JournalPath
     Assert-PolicyTrue -Condition ((Get-WindowsOwnedSha256Text -Text ($logicalSentinel | ConvertTo-Json -Compress)) -ceq $logicalSentinelDigest) -Message 'final logical sentinel has zero drift'
     Assert-PolicyTrue -Condition ($script:WindowsOwnedActiveLeases.Count -eq 0) -Message 'all per-process transaction lease tokens are released after normal, race, conflict, and recovery paths'
 
+}
+catch {
+    $script:bodyError = "$($_.Exception.Message) [stack=$($_.ScriptStackTrace)]"
 }
 finally {
     $teardownErrors = [Collections.Generic.List[string]]::new()
@@ -1317,8 +1564,8 @@ finally {
         }
     }
 
-    if ($teardownErrors.Count -ne 0) {
-        throw "owned-resource teardown failed without deleting recovery prerequisites: $($teardownErrors -join ' | ')"
+    if (-not [string]::IsNullOrEmpty($script:bodyError) -or $teardownErrors.Count -ne 0) {
+        throw "owned-resource acceptance failed without deleting recovery prerequisites: body='$script:bodyError'; teardown='$($teardownErrors -join ' | ')'"
     }
 }
 

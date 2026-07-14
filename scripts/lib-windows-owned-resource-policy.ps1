@@ -31,12 +31,36 @@ namespace OxVba {
         [DllImport("advapi32.dll")]
         private static extern int RegCloseKey(IntPtr hKey);
 
-        public static int CreateCurrentUserKey64(string subKey, out int disposition) {
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, EntryPoint = "RegSetValueExW")]
+        private static extern int RegSetValueEx(
+            IntPtr hKey, string valueName, int reserved, int type,
+            byte[] data, int dataLength);
+
+        [DllImport("advapi32.dll")]
+        private static extern int RegFlushKey(IntPtr hKey);
+
+        public static int CreateCurrentUserKey64WithMarker(
+            string subKey, string markerName, string markerToken, out int disposition) {
             IntPtr result;
             int error = RegCreateKeyEx(HKEY_CURRENT_USER, subKey, 0, null, 0,
                 KEY_ALL_ACCESS | KEY_WOW64_64KEY, IntPtr.Zero, out result, out disposition);
-            if (result != IntPtr.Zero) RegCloseKey(result);
-            return error;
+            if (error != 0 || result == IntPtr.Zero) {
+                if (result != IntPtr.Zero) RegCloseKey(result);
+                return error != 0 ? error : 6;
+            }
+            try {
+                if (disposition == 1) {
+                    byte[] data = System.Text.Encoding.Unicode.GetBytes(markerToken + "\0");
+                    error = RegSetValueEx(result, markerName, 0, 1, data, data.Length);
+                    if (error != 0) return error;
+                    error = RegFlushKey(result);
+                    if (error != 0) return error;
+                }
+                return 0;
+            }
+            finally {
+                RegCloseKey(result);
+            }
         }
 
         public static int DeleteCurrentUserKey64(string subKey) {
@@ -53,12 +77,18 @@ function Initialize-WindowsOwnedProcessNative {
     if (-not ('OxVba.WindowsProcessNative' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
+using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace OxVba {
     public static class WindowsProcessNative {
         private const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+        private const int PROCESS_TERMINATE = 0x0001;
+        private const int SYNCHRONIZE = 0x00100000;
+        private const uint WAIT_OBJECT_0 = 0;
+        private const uint WAIT_TIMEOUT = 258;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct FILETIME {
@@ -89,6 +119,13 @@ namespace OxVba {
         [DllImport("kernel32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
 
         public static int QueryCreationFileTimeUtc(int processId, out long fileTimeUtc) {
             fileTimeUtc = 0;
@@ -127,6 +164,83 @@ namespace OxVba {
                 CloseHandle(process);
             }
         }
+
+        public static string CleanupExact(
+            int processId, string recordedStartUtc, string recordedExecutablePath,
+            out string detail) {
+            detail = null;
+            IntPtr process = OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
+                false, processId);
+            if (process == IntPtr.Zero) {
+                int openError = Marshal.GetLastWin32Error();
+                detail = "open-error=" + openError.ToString(CultureInfo.InvariantCulture);
+                return openError == 6 || openError == 87 || openError == 1168
+                    ? "already-exited" : "unverifiable";
+            }
+            try {
+                FILETIME creation;
+                FILETIME exit;
+                FILETIME kernel;
+                FILETIME user;
+                if (!GetProcessTimes(process, out creation, out exit, out kernel, out user)) {
+                    int creationError = Marshal.GetLastWin32Error();
+                    if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return "already-exited";
+                    detail = "creation-error=" + creationError.ToString(CultureInfo.InvariantCulture);
+                    return "unverifiable";
+                }
+                long creationFileTime = unchecked(
+                    (long)(((ulong)creation.HighDateTime << 32) | creation.LowDateTime));
+                string actualStart = DateTime.FromFileTimeUtc(creationFileTime).ToString(
+                    "yyyy-MM-ddTHH:mm:ss.fffffffZ", CultureInfo.InvariantCulture);
+                if (!String.Equals(actualStart, recordedStartUtc, StringComparison.Ordinal)) {
+                    detail = "creation-time-mismatch";
+                    return "pid-reused";
+                }
+
+                int capacity = 32768;
+                StringBuilder value = new StringBuilder(capacity);
+                if (!QueryFullProcessImageName(process, 0, value, ref capacity)) {
+                    int pathError = Marshal.GetLastWin32Error();
+                    if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return "already-exited";
+                    detail = "path-error=" + pathError.ToString(CultureInfo.InvariantCulture);
+                    return "unverifiable";
+                }
+                string actualPath;
+                try {
+                    actualPath = Path.GetFullPath(value.ToString());
+                }
+                catch (Exception error) {
+                    detail = "path-invalid=" + error.GetType().Name;
+                    return "unverifiable";
+                }
+                if (!String.Equals(
+                        actualPath, Path.GetFullPath(recordedExecutablePath),
+                        StringComparison.OrdinalIgnoreCase)) {
+                    detail = "executable-mismatch";
+                    return "unexpected-executable";
+                }
+
+                if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return "already-exited";
+                if (!TerminateProcess(process, 0x4f585642)) {
+                    int terminateError = Marshal.GetLastWin32Error();
+                    if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return "already-exited";
+                    detail = "terminate-error=" + terminateError.ToString(CultureInfo.InvariantCulture);
+                    return "unverifiable";
+                }
+                uint wait = WaitForSingleObject(process, 10000);
+                if (wait != WAIT_OBJECT_0) {
+                    detail = wait == WAIT_TIMEOUT ? "terminate-timeout" :
+                        "wait-error=" + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture);
+                    return "unverifiable";
+                }
+                detail = "one-retained-handle;single-process";
+                return "terminated-exact";
+            }
+            finally {
+                CloseHandle(process);
+            }
+        }
     }
 }
 '@
@@ -146,15 +260,20 @@ using Microsoft.Win32.SafeHandles;
 namespace OxVba {
     public static class WindowsOwnedFileNative {
         private const uint GENERIC_READ = 0x80000000;
+        private const uint GENERIC_WRITE = 0x40000000;
         private const uint DELETE = 0x00010000;
         private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint CREATE_NEW = 1;
         private const uint OPEN_EXISTING = 3;
         private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+        private const uint FILE_FLAG_WRITE_THROUGH = 0x80000000;
         private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
         private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
         private const int ERROR_FILE_NOT_FOUND = 2;
         private const int ERROR_PATH_NOT_FOUND = 3;
+        private const int FileRenameInfo = 3;
         private const int FileDispositionInfo = 4;
+        private const int FileIdInfo = 18;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct BY_HANDLE_FILE_INFORMATION {
@@ -176,6 +295,20 @@ namespace OxVba {
             public bool DeleteFile;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_ID_128 {
+            public byte B00; public byte B01; public byte B02; public byte B03;
+            public byte B04; public byte B05; public byte B06; public byte B07;
+            public byte B08; public byte B09; public byte B10; public byte B11;
+            public byte B12; public byte B13; public byte B14; public byte B15;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_ID_INFO {
+            public ulong VolumeSerialNumber;
+            public FILE_ID_128 FileId;
+        }
+
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern SafeFileHandle CreateFile(
             string fileName, uint desiredAccess, uint shareMode, IntPtr securityAttributes,
@@ -188,9 +321,25 @@ namespace OxVba {
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandleEx(
+            SafeFileHandle file, int informationClass, out FILE_ID_INFO information,
+            uint bufferSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool ReadFile(
             SafeFileHandle file, byte[] buffer, uint bytesToRead, out uint bytesRead,
             IntPtr overlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool WriteFile(
+            SafeFileHandle file, byte[] buffer, uint bytesToWrite, out uint bytesWritten,
+            IntPtr overlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FlushFileBuffers(SafeFileHandle file);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -198,13 +347,28 @@ namespace OxVba {
             SafeFileHandle file, int informationClass, ref FILE_DISPOSITION_INFO information,
             uint bufferSize);
 
-        private static string VolumeIdentity(BY_HANDLE_FILE_INFORMATION information) {
-            return information.VolumeSerialNumber.ToString("x8", CultureInfo.InvariantCulture);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetFileInformationByHandle(
+            SafeFileHandle file, int informationClass, IntPtr information,
+            uint bufferSize);
+
+        private static string VolumeIdentity(FILE_ID_INFO information) {
+            return information.VolumeSerialNumber.ToString("x16", CultureInfo.InvariantCulture);
         }
 
-        private static string FileIdentity(BY_HANDLE_FILE_INFORMATION information) {
-            ulong value = ((ulong)information.FileIndexHigh << 32) | information.FileIndexLow;
-            return value.ToString("x16", CultureInfo.InvariantCulture);
+        private static string FileIdentity(FILE_ID_INFO information) {
+            byte[] bytes = new byte[] {
+                information.FileId.B00, information.FileId.B01,
+                information.FileId.B02, information.FileId.B03,
+                information.FileId.B04, information.FileId.B05,
+                information.FileId.B06, information.FileId.B07,
+                information.FileId.B08, information.FileId.B09,
+                information.FileId.B10, information.FileId.B11,
+                information.FileId.B12, information.FileId.B13,
+                information.FileId.B14, information.FileId.B15
+            };
+            return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
         }
 
         public static int QueryIdentity(
@@ -212,17 +376,100 @@ namespace OxVba {
             volumeSerialHex = null;
             fileIdHex = null;
             if (file == null || file.IsInvalid || file.IsClosed) return 6;
-            BY_HANDLE_FILE_INFORMATION information;
-            if (!GetFileInformationByHandle(file, out information)) {
+            BY_HANDLE_FILE_INFORMATION attributes;
+            if (!GetFileInformationByHandle(file, out attributes)) {
                 return Marshal.GetLastWin32Error();
             }
-            if ((information.FileAttributes &
+            if ((attributes.FileAttributes &
                     (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
                 return 4390;
+            }
+            FILE_ID_INFO information;
+            if (!GetFileInformationByHandleEx(
+                    file, FileIdInfo, out information,
+                    (uint)Marshal.SizeOf(typeof(FILE_ID_INFO)))) {
+                return Marshal.GetLastWin32Error();
             }
             volumeSerialHex = VolumeIdentity(information);
             fileIdHex = FileIdentity(information);
             return 0;
+        }
+
+        public static SafeFileHandle CreateWriteThroughNew(
+            string path, byte[] bytes, out int errorCode) {
+            errorCode = 0;
+            SafeFileHandle file = CreateFile(
+                path, GENERIC_WRITE | DELETE, FILE_SHARE_READ, IntPtr.Zero,
+                CREATE_NEW, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH,
+                IntPtr.Zero);
+            if (file.IsInvalid) {
+                errorCode = Marshal.GetLastWin32Error();
+                return file;
+            }
+            uint offset = 0;
+            while (offset < bytes.Length) {
+                int remaining = bytes.Length - (int)offset;
+                byte[] chunk;
+                if (offset == 0 && remaining == bytes.Length) {
+                    chunk = bytes;
+                }
+                else {
+                    chunk = new byte[remaining];
+                    Buffer.BlockCopy(bytes, (int)offset, chunk, 0, remaining);
+                }
+                uint written;
+                bool succeeded = WriteFile(file, chunk, (uint)chunk.Length, out written, IntPtr.Zero);
+                errorCode = WriteProgressError(succeeded, written, Marshal.GetLastWin32Error());
+                if (errorCode != 0) {
+                    return file;
+                }
+                offset += written;
+            }
+            if (!FlushFileBuffers(file)) errorCode = Marshal.GetLastWin32Error();
+            return file;
+        }
+
+        private static int WriteProgressError(bool succeeded, uint written, int lastError) {
+            if (!succeeded) return lastError != 0 ? lastError : 1117;
+            return written == 0 ? 1117 : 0;
+        }
+
+        public static int TestWriteProgressError(bool succeeded, uint written, int lastError) {
+            return WriteProgressError(succeeded, written, lastError);
+        }
+
+        public static int PublishReplace(SafeFileHandle file, string destination) {
+            if (file == null || file.IsInvalid || file.IsClosed) return 6;
+            string nativeDestination = destination.StartsWith("\\??\\", StringComparison.Ordinal)
+                ? destination : "\\??\\" + destination;
+            byte[] name = System.Text.Encoding.Unicode.GetBytes(nativeDestination);
+            const int nameOffset = 20;
+            const int structureSize = 24;
+            IntPtr buffer = Marshal.AllocHGlobal(structureSize + name.Length);
+            try {
+                for (int index = 0; index < structureSize + name.Length; index++) Marshal.WriteByte(buffer, index, 0);
+                Marshal.WriteByte(buffer, 0, 1);
+                Marshal.WriteIntPtr(buffer, 8, IntPtr.Zero);
+                Marshal.WriteInt32(buffer, 16, name.Length);
+                Marshal.Copy(name, 0, IntPtr.Add(buffer, nameOffset), name.Length);
+                if (!SetFileInformationByHandle(
+                        file, FileRenameInfo, buffer, (uint)(structureSize + name.Length))) {
+                    return Marshal.GetLastWin32Error();
+                }
+                return 0;
+            }
+            finally {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        public static int DeleteOpened(SafeFileHandle file) {
+            if (file == null || file.IsInvalid || file.IsClosed) return 6;
+            FILE_DISPOSITION_INFO disposition = new FILE_DISPOSITION_INFO { DeleteFile = true };
+            return SetFileInformationByHandle(
+                file, FileDispositionInfo, ref disposition,
+                (uint)Marshal.SizeOf(typeof(FILE_DISPOSITION_INFO)))
+                ? 0 : Marshal.GetLastWin32Error();
         }
 
         public static string DeleteExact(
@@ -250,8 +497,15 @@ namespace OxVba {
                     return "unverifiable";
                 }
 
-                string actualVolume = VolumeIdentity(information);
-                string actualFile = FileIdentity(information);
+                FILE_ID_INFO identity;
+                if (!GetFileInformationByHandleEx(
+                        file, FileIdInfo, out identity,
+                        (uint)Marshal.SizeOf(typeof(FILE_ID_INFO)))) {
+                    detail = "modern-identity-error=" + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture);
+                    return "unverifiable";
+                }
+                string actualVolume = VolumeIdentity(identity);
+                string actualFile = FileIdentity(identity);
                 if (!String.Equals(actualVolume, expectedVolumeSerialHex, StringComparison.Ordinal) ||
                     !String.Equals(actualFile, expectedFileIdHex, StringComparison.Ordinal)) {
                     detail = "expected=" + expectedVolumeSerialHex + ":" + expectedFileIdHex +
@@ -307,6 +561,38 @@ function Assert-WindowsOwnedX64Windows {
         -not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess) {
         throw 'owned Windows resource policy requires a 64-bit process on 64-bit Windows'
     }
+}
+
+function Assert-WindowsOwnedSupportedLocalPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    Assert-WindowsOwnedX64Windows
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path.StartsWith('\\') -or
+        $Path.StartsWith('//') -or $Path -match '^(?i)\\\\[.?]\\|^(?i)GLOBALROOT\\' -or
+        $Path.Length -lt 3 -or $Path[1] -cne ':' -or $Path[2] -notin @('\', '/') -or
+        $Path.IndexOf(':', 2) -ge 0) {
+        throw "$Owner must use one drive-qualified local path without ADS/device/namespace/UNC syntax"
+    }
+    foreach ($part in @($Path.Substring(2) -split '[\\/]')) {
+        if ([string]::IsNullOrEmpty($part)) { continue }
+        if ($part -in @('.', '..') -or $part -cne $part.TrimEnd(' ', '.') -or
+            ($part.Split('.')[0] -match '^(?i:CON|PRN|AUX|NUL|CLOCK\$|COM[1-9]|LPT[1-9])$')) {
+            throw "$Owner contains a traversal, trailing-dot/space, or reserved Windows device component '$part'"
+        }
+    }
+    $full = [IO.Path]::GetFullPath($Path)
+    if ($full -notmatch '^[A-Za-z]:\\') {
+        throw "$Owner must resolve to one drive-qualified local path"
+    }
+    $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($full))
+    if (-not $drive.IsReady -or $drive.DriveType -ne [IO.DriveType]::Fixed -or
+        $drive.DriveFormat -notin @('NTFS', 'ReFS')) {
+        throw "$Owner requires a ready local fixed NTFS/ReFS volume (actual=$($drive.DriveType)/$($drive.DriveFormat))"
+    }
+    return $full
 }
 
 function Open-WindowsOwnedRegistry64Base {
@@ -375,9 +661,13 @@ function Enter-WindowsOwnedJournalLease {
             mutex = $mutex
             acquired = $true
             abandoned = $abandoned
-            revalidated = -not $abandoned
+            revalidated = $false
             owner_pid = $PID
             owner_thread_id = [Threading.Thread]::CurrentThread.ManagedThreadId
+            bound_journal = $null
+            bound_journal_digest = ''
+            bound_immutable_digest = ''
+            pending_mutation = $null
         }
         if (-not $script:WindowsOwnedActiveLeases.TryAdd([string]$lease.token_id, $lease)) {
             throw 'failed to register owned-resource journal transaction lease token'
@@ -419,7 +709,7 @@ function Confirm-WindowsOwnedJournalLeaseRevalidated {
 
     Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath -AllowPendingRevalidation
     $journal = Read-WindowsOwnedResourceJournal -JournalPath $JournalPath
-    $Lease.revalidated = $true
+    Set-WindowsOwnedJournalLeaseBinding -Lease $Lease -Journal $journal
     return $journal
 }
 
@@ -450,6 +740,10 @@ function Confirm-WindowsOwnedNewJournalLeaseRevalidated {
     # path. Exact absence of both immutable run identities, after validating all
     # existing parents, is its fail-closed revalidation condition.
     $Lease.revalidated = $true
+    $Lease.bound_journal = $null
+    $Lease.bound_journal_digest = ''
+    $Lease.bound_immutable_digest = ''
+    $Lease.pending_mutation = $null
     Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
 }
 
@@ -499,7 +793,7 @@ function Assert-WindowsOwnedPathComponentsNoReparse {
         [switch]$RequireContainer
     )
 
-    $full = [IO.Path]::GetFullPath($Path)
+    $full = Assert-WindowsOwnedSupportedLocalPath -Path $Path -Owner $Owner
     if ($RequireContainer -and -not [IO.Directory]::Exists($full)) {
         throw "$Owner '$full' must be an existing directory"
     }
@@ -558,7 +852,7 @@ function Assert-WindowsOwnedConfinedPath {
     if ([string]::IsNullOrWhiteSpace($Path) -or $Path.IndexOfAny([char[]]'*?[]') -ge 0) {
         throw "$Owner must be one exact non-wildcard path"
     }
-    $candidate = [IO.Path]::GetFullPath($Path)
+    $candidate = Assert-WindowsOwnedSupportedLocalPath -Path $Path -Owner $Owner
     $roots = @([string]$Journal.repository_root, [string]$Journal.temp_root)
     $matchedRoot = $null
     foreach ($root in $roots) {
@@ -957,13 +1251,145 @@ function Get-WindowsOwnedJournalDigest {
     return Get-WindowsOwnedSha256Text -Text $canonical
 }
 
-function Write-WindowsOwnedResourceJournal {
+function Get-WindowsOwnedJournalImmutableDigest {
+    param([Parameter(Mandatory = $true)]$Journal)
+
+    $identity = [pscustomobject][ordered]@{
+        schema_id = [string]$Journal.schema_id
+        schema_version = [int]$Journal.schema_version
+        run_id = [string]$Journal.run_id
+        created_utc = [string]$Journal.created_utc
+        owner_pid = [int]$Journal.owner_pid
+        owner_process_start_utc = [string]$Journal.owner_process_start_utc
+        repository_root = [string]$Journal.repository_root
+        temp_root = [string]$Journal.temp_root
+        run_root = [string]$Journal.run_root
+        journal_path = [string]$Journal.journal_path
+        registry_view = [string]$Journal.registry_view
+        allowed_registry_paths = @($Journal.allowed_registry_paths)
+        allowed_executable_paths = @($Journal.allowed_executable_paths)
+        orchestrator_apartment = $Journal.orchestrator_apartment
+        reentry_policy = [string]$Journal.reentry_policy
+    }
+    return Get-WindowsOwnedSha256Text -Text ($identity | ConvertTo-Json -Depth 16 -Compress)
+}
+
+function Set-WindowsOwnedJournalLeaseBinding {
     param(
-        [Parameter(Mandatory = $true)]$Journal,
-        [Parameter(Mandatory = $true)]$Lease
+        [Parameter(Mandatory = $true)]$Lease,
+        [Parameter(Mandatory = $true)]$Journal
+    )
+
+    Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath ([string]$Journal.journal_path) -AllowPendingRevalidation
+    $computed = Get-WindowsOwnedJournalDigest -Journal $Journal
+    if ([string]$Journal.journal_digest -cne $computed) {
+        throw 'owned-resource journal cannot bind a lease to non-canonical history'
+    }
+    $Lease.bound_journal = $Journal
+    $Lease.bound_journal_digest = $computed
+    $Lease.bound_immutable_digest = Get-WindowsOwnedJournalImmutableDigest -Journal $Journal
+    $Lease.pending_mutation = $null
+    $Lease.revalidated = $true
+}
+
+function Assert-WindowsOwnedJournalObjectCurrent {
+    param(
+        [Parameter(Mandatory = $true)]$Lease,
+        [Parameter(Mandatory = $true)]$Journal
     )
 
     Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath ([string]$Journal.journal_path)
+    if (-not [object]::ReferenceEquals($Lease.bound_journal, $Journal) -or
+        [string]$Journal.journal_digest -cne [string]$Lease.bound_journal_digest -or
+        (Get-WindowsOwnedJournalDigest -Journal $Journal) -cne [string]$Lease.bound_journal_digest -or
+        (Get-WindowsOwnedJournalImmutableDigest -Journal $Journal) -cne [string]$Lease.bound_immutable_digest -or
+        $null -ne $Lease.pending_mutation) {
+        throw 'owned-resource mutation rejects a stale, modified, or unbound supplied journal object'
+    }
+    $persisted = Read-WindowsOwnedResourceJournal -JournalPath ([string]$Journal.journal_path)
+    if ([string]$persisted.journal_digest -cne [string]$Lease.bound_journal_digest -or
+        (Get-WindowsOwnedJournalImmutableDigest -Journal $persisted) -cne [string]$Lease.bound_immutable_digest) {
+        throw 'owned-resource mutation rejects concurrent or identity-changing journal history'
+    }
+}
+
+function Start-WindowsOwnedJournalMutation {
+    param(
+        [Parameter(Mandatory = $true)]$Lease,
+        [Parameter(Mandatory = $true)]$Journal
+    )
+
+    Assert-WindowsOwnedJournalObjectCurrent -Lease $Lease -Journal $Journal
+    $mutation = [pscustomobject]@{
+        token_id = [Guid]::NewGuid().ToString('N')
+        lease = $Lease
+        journal = $Journal
+        before_digest = [string]$Lease.bound_journal_digest
+        immutable_digest = [string]$Lease.bound_immutable_digest
+    }
+    $Lease.pending_mutation = $mutation
+    return $mutation
+}
+
+function Assert-WindowsOwnedJournalMutation {
+    param(
+        [Parameter(Mandatory = $true)]$Lease,
+        [Parameter(Mandatory = $true)]$Journal,
+        [Parameter(Mandatory = $true)]$Mutation
+    )
+
+    Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath ([string]$Journal.journal_path)
+    if (-not [object]::ReferenceEquals($Lease.pending_mutation, $Mutation) -or
+        -not [object]::ReferenceEquals($Mutation.lease, $Lease) -or
+        -not [object]::ReferenceEquals($Mutation.journal, $Journal) -or
+        -not [object]::ReferenceEquals($Lease.bound_journal, $Journal) -or
+        [string]$Mutation.before_digest -cne [string]$Lease.bound_journal_digest -or
+        [string]$Journal.journal_digest -cne [string]$Lease.bound_journal_digest -or
+        (Get-WindowsOwnedJournalImmutableDigest -Journal $Journal) -cne [string]$Mutation.immutable_digest) {
+        throw 'owned-resource journal write requires its exact validated mutation ticket and immutable identity'
+    }
+    $persisted = Read-WindowsOwnedResourceJournal -JournalPath ([string]$Journal.journal_path)
+    if ([string]$persisted.journal_digest -cne [string]$Mutation.before_digest -or
+        (Get-WindowsOwnedJournalImmutableDigest -Journal $persisted) -cne [string]$Mutation.immutable_digest) {
+        throw 'owned-resource journal write refuses to overwrite concurrent history'
+    }
+}
+
+function Assert-WindowsOwnedJournalAuthorizedMutationState {
+    param(
+        [Parameter(Mandatory = $true)]$Lease,
+        [Parameter(Mandatory = $true)]$Journal
+    )
+
+    if ($null -eq $Lease.pending_mutation) {
+        Assert-WindowsOwnedJournalObjectCurrent -Lease $Lease -Journal $Journal
+    }
+    else {
+        Assert-WindowsOwnedJournalMutation -Lease $Lease -Journal $Journal -Mutation $Lease.pending_mutation
+    }
+}
+
+function Write-WindowsOwnedResourceJournal {
+    param(
+        [Parameter(Mandatory = $true)]$Journal,
+        [Parameter(Mandatory = $true)]$Lease,
+        $Mutation = $null,
+        [switch]$Initialize
+    )
+
+    if ($Initialize) {
+        Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath ([string]$Journal.journal_path)
+        if ($null -ne $Lease.bound_journal -or (Test-Path -LiteralPath ([string]$Journal.journal_path))) {
+            throw 'owned-resource initial journal publication requires exact absence and an unbound lease'
+        }
+    }
+    else {
+        Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath ([string]$Journal.journal_path)
+        if ($null -eq $Mutation) {
+            throw 'owned-resource journal write requires an explicit validated mutation ticket'
+        }
+        Assert-WindowsOwnedJournalMutation -Lease $Lease -Journal $Journal -Mutation $Mutation
+    }
     $Journal.updated_utc = Get-WindowsOwnedUtcText
     # Persist and hash the same JSON-normalized object shape. PowerShell can
     # otherwise serialize a live generic list differently from its reloaded
@@ -986,21 +1412,16 @@ function Write-WindowsOwnedResourceJournal {
     $text = ($normalized | ConvertTo-Json -Depth 32) + "`n"
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes($text)
     $temporary = "$path.write-$PID-$([Guid]::NewGuid().ToString('N'))"
-    $stream = [IO.FileStream]::new(
-        $temporary,
-        [IO.FileMode]::CreateNew,
-        [IO.FileAccess]::Write,
-        [IO.FileShare]::None,
-        4096,
-        [IO.FileOptions]::WriteThrough)
+    Initialize-WindowsOwnedFileNative
+    $errorCode = 0
+    $temporaryHandle = [OxVba.WindowsOwnedFileNative]::CreateWriteThroughNew($temporary, $bytes, [ref]$errorCode)
+    $published = $false
+    $operationError = ''
+    $temporaryCleanupError = 0
     try {
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Flush($true)
-    }
-    finally {
-        $stream.Dispose()
-    }
-    try {
+        if ($null -eq $temporaryHandle -or $temporaryHandle.IsInvalid -or $errorCode -ne 0) {
+            throw "owned-resource journal temporary creation/write failed (error=$errorCode)"
+        }
         [void](Assert-WindowsOwnedPathComponentsNoReparse -Path ([string]$Journal.repository_root) -Owner 'owned-resource journal repository root' -RequireContainer)
         [void](Assert-WindowsOwnedPathComponentsNoReparse -Path ([string]$Journal.temp_root) -Owner 'owned-resource journal temp root' -RequireContainer)
         [void](Assert-WindowsOwnedPathComponentsNoReparse -Path ([string]$Journal.run_root) -Owner 'owned-resource journal run root' -RequireContainer)
@@ -1009,13 +1430,27 @@ function Write-WindowsOwnedResourceJournal {
         if (Test-Path -LiteralPath $path) {
             [void](Assert-WindowsOwnedPathComponentsNoReparse -Path $path -Owner 'owned-resource journal destination file')
         }
-        [IO.File]::Move($temporary, $path, $true)
+        $errorCode = [OxVba.WindowsOwnedFileNative]::PublishReplace($temporaryHandle, $path)
+        if ($errorCode -ne 0) {
+            throw "owned-resource journal handle-bound atomic publication failed (error=$errorCode)"
+        }
+        $published = $true
+    }
+    catch {
+        $operationError = $_.Exception.Message
     }
     finally {
-        if (Test-Path -LiteralPath $temporary) {
-            Remove-Item -LiteralPath $temporary -Force
+        if ($null -ne $temporaryHandle) {
+            if (-not $published -and -not $temporaryHandle.IsInvalid -and -not $temporaryHandle.IsClosed) {
+                $temporaryCleanupError = [OxVba.WindowsOwnedFileNative]::DeleteOpened($temporaryHandle)
+            }
+            $temporaryHandle.Dispose()
         }
     }
+    if (-not [string]::IsNullOrEmpty($operationError) -or $temporaryCleanupError -ne 0) {
+        throw "owned-resource journal publication failed without path-based temp cleanup: operation='$operationError'; handle_cleanup_error=$temporaryCleanupError; recovery prerequisites preserved"
+    }
+    Set-WindowsOwnedJournalLeaseBinding -Lease $Lease -Journal $Journal
 }
 
 function Read-WindowsOwnedResourceJournal {
@@ -1442,7 +1877,7 @@ function New-WindowsOwnedResourceJournal {
             journal_digest = 'sha256:' + ('0' * 64)
         }
         Add-WindowsOwnedJournalEvent -Journal $journal -Event 'journal-created' -Detail "support-only; capability-credit=none"
-        Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease
+        Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease -Initialize
         return [IO.Path]::GetFullPath($journalPath)
     }
     finally {
@@ -1461,8 +1896,8 @@ function Add-WindowsOwnedPreparedResource {
         $Journal = $null
     )
 
+    $journal = if ($null -eq $Journal) { Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $Lease -JournalPath $JournalPath } else { $Journal }
     Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
-    $journal = if ($null -eq $Journal) { Read-WindowsOwnedResourceJournal -JournalPath $JournalPath } else { $Journal }
     if (-not (Test-WindowsOwnedExactPathEqual -Left ([string]$journal.journal_path) -Right $JournalPath)) {
         throw 'prepared resource journal object does not match the transaction lease path'
     }
@@ -1471,6 +1906,9 @@ function Add-WindowsOwnedPreparedResource {
         throw "owned-resource journal '$JournalPath' cannot acquire resources in state '$($journal.state)'"
     }
     $resourceId = "$Kind-$([Guid]::NewGuid().ToString('N'))"
+    $descriptorCopy = ($Descriptor | ConvertTo-Json -Depth 32 -Compress) | ConvertFrom-Json -Depth 32 -DateKind String
+    $beforeCopy = ($Before | ConvertTo-Json -Depth 32 -Compress) | ConvertFrom-Json -Depth 32 -DateKind String
+    $expectedCopy = ($Expected | ConvertTo-Json -Depth 32 -Compress) | ConvertFrom-Json -Depth 32 -DateKind String
     $resource = [pscustomobject][ordered]@{
         sequence = [int]$journal.next_resource_sequence
         resource_id = $resourceId
@@ -1479,15 +1917,16 @@ function Add-WindowsOwnedPreparedResource {
         prepared_utc = Get-WindowsOwnedUtcText
         active_utc = ''
         cleaned_utc = ''
-        descriptor = $Descriptor
-        before = $Before
-        expected = $Expected
+        descriptor = $descriptorCopy
+        before = $beforeCopy
+        expected = $expectedCopy
     }
     Assert-WindowsOwnedResourceDescriptor -Journal $journal -Resource $resource
+    $mutation = Start-WindowsOwnedJournalMutation -Lease $Lease -Journal $journal
     $journal.resources = @($journal.resources) + @($resource)
     $journal.next_resource_sequence = [int]$journal.next_resource_sequence + 1
     Add-WindowsOwnedJournalEvent -Journal $journal -Event 'resource-prepared' -ResourceId $resourceId -Detail $Kind
-    Write-WindowsOwnedResourceJournal -Journal $journal -Lease $Lease
+    Write-WindowsOwnedResourceJournal -Journal $journal -Lease $Lease -Mutation $mutation
     return $resourceId
 }
 
@@ -1500,8 +1939,8 @@ function Set-WindowsOwnedResourceActive {
         $Journal = $null
     )
 
+    $journal = if ($null -eq $Journal) { Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $Lease -JournalPath $JournalPath } else { $Journal }
     Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
-    $journal = if ($null -eq $Journal) { Read-WindowsOwnedResourceJournal -JournalPath $JournalPath } else { $Journal }
     if (-not (Test-WindowsOwnedExactPathEqual -Left ([string]$journal.journal_path) -Right $JournalPath)) {
         throw 'active resource journal object does not match the transaction lease path'
     }
@@ -1511,13 +1950,17 @@ function Set-WindowsOwnedResourceActive {
         throw "owned-resource '$ResourceId' is not one prepared journal resource"
     }
     if ($null -ne $Descriptor) {
-        $matches[0].descriptor = $Descriptor
+        $mutation = Start-WindowsOwnedJournalMutation -Lease $Lease -Journal $journal
+        $matches[0].descriptor = ($Descriptor | ConvertTo-Json -Depth 32 -Compress) | ConvertFrom-Json -Depth 32 -DateKind String
+    }
+    else {
+        $mutation = Start-WindowsOwnedJournalMutation -Lease $Lease -Journal $journal
     }
     $matches[0].state = 'active'
     $matches[0].active_utc = Get-WindowsOwnedUtcText
     Assert-WindowsOwnedResourceDescriptor -Journal $journal -Resource $matches[0]
     Add-WindowsOwnedJournalEvent -Journal $journal -Event 'resource-active' -ResourceId $ResourceId -Detail ([string]$matches[0].kind)
-    Write-WindowsOwnedResourceJournal -Journal $journal -Lease $Lease
+    Write-WindowsOwnedResourceJournal -Journal $journal -Lease $Lease -Mutation $mutation
 }
 
 function Set-WindowsOwnedPreparedResourceDescriptor {
@@ -1530,8 +1973,8 @@ function Set-WindowsOwnedPreparedResourceDescriptor {
         $Journal = $null
     )
 
+    $journal = if ($null -eq $Journal) { Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $Lease -JournalPath $JournalPath } else { $Journal }
     Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
-    $journal = if ($null -eq $Journal) { Read-WindowsOwnedResourceJournal -JournalPath $JournalPath } else { $Journal }
     if (-not (Test-WindowsOwnedExactPathEqual -Left ([string]$journal.journal_path) -Right $JournalPath)) {
         throw 'prepared-update journal object does not match the transaction lease path'
     }
@@ -1540,10 +1983,11 @@ function Set-WindowsOwnedPreparedResourceDescriptor {
     if ($matches.Count -ne 1 -or [string]$matches[0].state -ne 'prepared') {
         throw "owned-resource '$ResourceId' is not one prepared journal resource"
     }
-    $matches[0].descriptor = $Descriptor
+    $mutation = Start-WindowsOwnedJournalMutation -Lease $Lease -Journal $journal
+    $matches[0].descriptor = ($Descriptor | ConvertTo-Json -Depth 32 -Compress) | ConvertFrom-Json -Depth 32 -DateKind String
     Assert-WindowsOwnedResourceDescriptor -Journal $journal -Resource $matches[0]
     Add-WindowsOwnedJournalEvent -Journal $journal -Event 'resource-prepared-updated' -ResourceId $ResourceId -Detail $Detail
-    Write-WindowsOwnedResourceJournal -Journal $journal -Lease $Lease
+    Write-WindowsOwnedResourceJournal -Journal $journal -Lease $Lease -Mutation $mutation
 }
 
 function Test-WindowsOwnedExactPathEqual {
@@ -1632,8 +2076,8 @@ function Assert-WindowsOwnedResourceDescriptor {
                 [string]$Resource.descriptor.creation_disposition -cne 'created-owned') {
                 throw "$owner active file requires a durable created-owned disposition"
             }
-            $hasIdentity = [string]$Resource.descriptor.volume_serial_hex -match '^[0-9a-f]{8}$' -and
-                [string]$Resource.descriptor.file_id_hex -match '^[0-9a-f]{16}$'
+            $hasIdentity = [string]$Resource.descriptor.volume_serial_hex -match '^[0-9a-f]{16}$' -and
+                [string]$Resource.descriptor.file_id_hex -match '^[0-9a-f]{32}$'
             if (([string]$Resource.descriptor.creation_disposition -ceq 'created-owned') -ne $hasIdentity) {
                 throw "$owner file identity must be absent while pending and exact after created-owned"
             }
@@ -2071,8 +2515,8 @@ function Get-WindowsOwnedFileIdentityFromHandle {
     $fileIdHex = ''
     $errorCode = [OxVba.WindowsOwnedFileNative]::QueryIdentity(
         $Handle, [ref]$volumeSerialHex, [ref]$fileIdHex)
-    if ($errorCode -ne 0 -or $volumeSerialHex -notmatch '^[0-9a-f]{8}$' -or
-        $fileIdHex -notmatch '^[0-9a-f]{16}$') {
+    if ($errorCode -ne 0 -or $volumeSerialHex -notmatch '^[0-9a-f]{16}$' -or
+        $fileIdHex -notmatch '^[0-9a-f]{32}$') {
         throw "$Owner could not capture an exact regular-file volume/file identity (error=$errorCode)"
     }
     return [pscustomobject][ordered]@{
@@ -2132,8 +2576,8 @@ function New-WindowsOwnedFile {
         $Lease = Enter-WindowsOwnedJournalLease -JournalPath $JournalPath
     }
     try {
-        Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
         $journal = if ($null -eq $Journal) { Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $Lease -JournalPath $JournalPath } else { $Journal }
+        Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
         if (-not (Test-WindowsOwnedExactPathEqual -Left ([string]$journal.journal_path) -Right $JournalPath)) {
             throw 'owned file journal object does not match the transaction lease path'
         }
@@ -2160,6 +2604,7 @@ function New-WindowsOwnedFile {
             file_id_hex = ''
         }
         $resourceId = Add-WindowsOwnedPreparedResource -JournalPath $JournalPath -Lease $Lease -Kind file -Descriptor $descriptor -Before $before -Expected $expected -Journal $journal
+        Assert-WindowsOwnedJournalAuthorizedMutationState -Lease $Lease -Journal $journal
         $confirmedPath = Assert-WindowsOwnedConfinedPath -Journal $journal -Path $full -Owner 'owned file operation boundary'
         if (-not (Test-WindowsOwnedExactPathEqual -Left $confirmedPath -Right $full)) {
             throw 'owned file path changed across its prepared mutation boundary'
@@ -2358,59 +2803,27 @@ function New-WindowsOwnedRegistryKeyExact {
         [Parameter(Mandatory = $true)]$Lease,
         [Parameter(Mandatory = $true)]$Journal,
         [Parameter(Mandatory = $true)][string]$ResourceId,
-        [Parameter(Mandatory = $true)][string]$Path
-    )
-
-    Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
-    [void](Assert-WindowsOwnedRegistryMutationBinding -Journal $Journal -ResourceId $ResourceId -Path $Path)
-    Assert-WindowsOwnedX64Windows
-    Initialize-WindowsOwnedRegistryNative
-    $normalized = ConvertTo-WindowsOwnedRegistryAncestorPath -Path $Path -Owner 'owned Registry64 key creation'
-    $subKey = Get-WindowsOwnedRegistrySubKey -Path $normalized -AllowAncestor
-    $disposition = 0
-    $errorCode = [OxVba.WindowsRegistryNative]::CreateCurrentUserKey64($subKey, [ref]$disposition)
-    if ($errorCode -ne 0 -or $disposition -notin @(1, 2)) {
-        throw "RegCreateKeyExW Registry64 failed for '$normalized' (error=$errorCode disposition=$disposition)"
-    }
-    return $(if ($disposition -eq 1) { 'created-new' } else { 'opened-existing' })
-}
-
-function Set-WindowsOwnedRegistryKeyMarker {
-    param(
-        [Parameter(Mandatory = $true)][string]$JournalPath,
-        [Parameter(Mandatory = $true)]$Lease,
-        [Parameter(Mandatory = $true)]$Journal,
-        [Parameter(Mandatory = $true)][string]$ResourceId,
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$MarkerName,
         [Parameter(Mandatory = $true)][string]$MarkerToken
     )
 
-    Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
-    [void](Assert-WindowsOwnedRegistryMutationBinding -Journal $Journal -ResourceId $ResourceId -Path $Path -MarkerName $MarkerName -MarkerToken $MarkerToken)
+    Assert-WindowsOwnedJournalAuthorizedMutationState -Lease $Lease -Journal $Journal
+    [void](Assert-WindowsOwnedRegistryMutationBinding -Journal $Journal -ResourceId $ResourceId -Path $Path `
+        -MarkerName $MarkerName -MarkerToken $MarkerToken)
     Assert-WindowsOwnedExactIdentityText -Value $MarkerName -Owner 'owned registry marker name'
     Assert-WindowsOwnedExactIdentityText -Value $MarkerToken -Owner 'owned registry marker token'
-    $subKey = Get-WindowsOwnedRegistrySubKey -Path $Path -AllowAncestor
-    $base = Open-WindowsOwnedRegistry64Base
-    try {
-        $key = $base.OpenSubKey($subKey, $true)
-        if ($null -eq $key) {
-            throw "new Registry64 key '$Path' disappeared before its ownership marker"
-        }
-        try {
-            if (@($key.GetValueNames() | Where-Object { $_ -ieq $MarkerName }).Count -ne 0) {
-                throw "new Registry64 key '$Path' already contains ownership marker '$MarkerName'"
-            }
-            $key.SetValue($MarkerName, $MarkerToken, [Microsoft.Win32.RegistryValueKind]::String)
-            $key.Flush()
-        }
-        finally {
-            $key.Dispose()
-        }
+    Assert-WindowsOwnedX64Windows
+    Initialize-WindowsOwnedRegistryNative
+    $normalized = ConvertTo-WindowsOwnedRegistryAncestorPath -Path $Path -Owner 'owned Registry64 key creation'
+    $subKey = Get-WindowsOwnedRegistrySubKey -Path $normalized -AllowAncestor
+    $disposition = 0
+    $errorCode = [OxVba.WindowsRegistryNative]::CreateCurrentUserKey64WithMarker(
+        $subKey, $MarkerName, $MarkerToken, [ref]$disposition)
+    if ($errorCode -ne 0 -or $disposition -notin @(1, 2)) {
+        throw "RegCreateKeyExW Registry64 failed for '$normalized' (error=$errorCode disposition=$disposition)"
     }
-    finally {
-        $base.Dispose()
-    }
+    return $(if ($disposition -eq 1) { 'created-new' } else { 'opened-existing' })
 }
 
 function Get-WindowsOwnedRegistryKeyProof {
@@ -2516,7 +2929,7 @@ function Set-WindowsOwnedRegistryValueRaw {
         [Parameter(Mandatory = $true)]$Snapshot
     )
 
-    Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
+    Assert-WindowsOwnedJournalAuthorizedMutationState -Lease $Lease -Journal $Journal
     [void](Assert-WindowsOwnedRegistryMutationBinding -Journal $Journal -ResourceId $ResourceId -Path $Path -ValueName $ValueName -Snapshot $Snapshot)
     Assert-WindowsOwnedX64Windows
     $subKey = Get-WindowsOwnedRegistrySubKey -Path $Path
@@ -2563,7 +2976,7 @@ function Remove-WindowsOwnedProvenRegistryKeys {
         [object[]]$KeyOwnership = @()
     )
 
-    Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath $JournalPath
+    Assert-WindowsOwnedJournalAuthorizedMutationState -Lease $Lease -Journal $Journal
     Initialize-WindowsOwnedRegistryNative
     $ordered = @($KeyOwnership)
     [Array]::Reverse($ordered)
@@ -2634,10 +3047,10 @@ function Set-WindowsOwnedRegistryValue {
         $resourceId = Add-WindowsOwnedPreparedResource -JournalPath $JournalPath -Lease $lease -Kind registry -Descriptor $descriptor -Before $before -Expected $expected -Journal $journal
         for ($index = 0; $index -lt @($descriptor.key_ownership).Count; $index++) {
             $record = $descriptor.key_ownership[$index]
-            $disposition = New-WindowsOwnedRegistryKeyExact -JournalPath $JournalPath -Lease $lease -Journal $journal -ResourceId $resourceId -Path ([string]$record.path)
+            $disposition = New-WindowsOwnedRegistryKeyExact -JournalPath $JournalPath -Lease $lease -Journal $journal `
+                -ResourceId $resourceId -Path ([string]$record.path) -MarkerName ([string]$record.marker_name) `
+                -MarkerToken ([string]$record.marker_token)
             if ($disposition -ceq 'created-new') {
-                Set-WindowsOwnedRegistryKeyMarker -JournalPath $JournalPath -Lease $lease -Journal $journal -ResourceId $resourceId `
-                    -Path ([string]$record.path) -MarkerName ([string]$record.marker_name) -MarkerToken ([string]$record.marker_token)
                 $record.creation_disposition = 'created-owned'
             }
             else {
@@ -2720,6 +3133,7 @@ function Start-WindowsOwnedHarmlessChild {
         $before = [pscustomobject][ordered]@{ exists = $false }
         $expected = [pscustomobject][ordered]@{ recorded = $true }
         $resourceId = Add-WindowsOwnedPreparedResource -JournalPath $JournalPath -Lease $lease -Kind process -Descriptor $descriptor -Before $before -Expected $expected -Journal $journal
+        Assert-WindowsOwnedJournalAuthorizedMutationState -Lease $lease -Journal $journal
 
         $confirmedScript = Assert-WindowsOwnedConfinedPath -Journal $journal -Path $script -Owner 'owned child script operation boundary'
         $confirmedActivation = Assert-WindowsOwnedConfinedPath -Journal $journal -Path $activation -Owner 'owned child activation operation boundary'
@@ -2751,7 +3165,7 @@ function Start-WindowsOwnedHarmlessChild {
         }
         catch {
             if ($null -ne $process -and -not $process.HasExited) {
-                try { $process.Kill($true); $process.WaitForExit(5000) } catch { }
+                try { $process.Kill($false); $process.WaitForExit(5000) } catch { }
             }
             throw
         }
@@ -2922,7 +3336,7 @@ function Invoke-WindowsOwnedSingleResourceCleanup {
         [Parameter(Mandatory = $true)]$Lease
     )
 
-    Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath ([string]$Journal.journal_path)
+    Assert-WindowsOwnedJournalAuthorizedMutationState -Lease $Lease -Journal $Journal
     switch ([string]$Resource.kind) {
         'file' {
             $path = Assert-WindowsOwnedConfinedPath -Journal $Journal -Path ([string]$Resource.descriptor.path) -Owner 'owned file cleanup'
@@ -2980,37 +3394,24 @@ function Invoke-WindowsOwnedSingleResourceCleanup {
             if ($pidValue -eq 0) {
                 return 'prepared-child-never-activated'
             }
-            $start = [string]$Resource.descriptor.process_start_utc
-            $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-            if ($null -eq $process) {
-                return 'recorded-child-already-exited'
-            }
-            try {
-                $creationQuery = {
-                    param([int]$IgnoredProcessId)
-                    Get-WindowsOwnedProcessCreationProbe -ProcessId $pidValue -Process $process
-                }.GetNewClosure()
-                $executableQuery = {
-                    param([int]$IgnoredProcessId)
-                    Get-WindowsOwnedProcessExecutableProbe -ProcessId $pidValue -Process $process
-                }.GetNewClosure()
-                $identity = Resolve-WindowsOwnedProcessCleanupIdentity -ProcessId $pidValue -RecordedStartUtc $start `
-                    -RecordedExecutablePath ([string]$Resource.descriptor.executable_path) `
-                    -CreationQuery $creationQuery -ExecutableQuery $executableQuery
-                if ($identity -cne 'exact-live-child') {
-                    return $identity
+            Initialize-WindowsOwnedProcessNative
+            $detail = ''
+            $result = [OxVba.WindowsProcessNative]::CleanupExact(
+                $pidValue,
+                [string]$Resource.descriptor.process_start_utc,
+                [string]$Resource.descriptor.executable_path,
+                [ref]$detail)
+            switch ($result) {
+                'terminated-exact' { return 'stop-exact-single-process-retained-handle' }
+                'already-exited' { return 'recorded-child-already-exited' }
+                'pid-reused' { return 'recorded-child-already-exited-or-pid-reused' }
+                'unexpected-executable' {
+                    throw "owned child PID '$pidValue' has an unexpected executable identity ($detail)"
                 }
-                if (-not $process.HasExited) {
-                    $process.Kill($true)
-                    if (-not $process.WaitForExit(10000)) {
-                        throw "owned child PID '$pidValue' did not exit after exact-PID cleanup"
-                    }
+                default {
+                    throw "owned child PID '$pidValue' could not be safely verified/terminated on one handle ($detail)"
                 }
             }
-            finally {
-                $process.Dispose()
-            }
-            return 'stop-exact-pid-start-executable'
         }
         'dialog' { return 'retire-exact-process-uia-representation' }
         'connection' { return 'unadvise-exact-cookie-before-callback-retire' }
@@ -3042,9 +3443,12 @@ function Invoke-WindowsOwnedResourceCleanup {
             Assert-WindowsOwnedJournalWriter -Journal $journal
         }
 
-        $journal.state = 'cleaning'
-        Add-WindowsOwnedJournalEvent -Journal $journal -Event 'cleanup-started' -Detail $(if ($RecoveryMode) { 'stale-owner-exact-mismatch' } else { 'owner-initiated' })
-        Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease
+        if ([string]$journal.state -cne 'cleaning') {
+            $mutation = Start-WindowsOwnedJournalMutation -Lease $lease -Journal $journal
+            $journal.state = 'cleaning'
+            Add-WindowsOwnedJournalEvent -Journal $journal -Event 'cleanup-started' -Detail $(if ($RecoveryMode) { 'stale-owner-exact-mismatch' } else { 'owner-initiated' })
+            Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease -Mutation $mutation
+        }
 
         $conflicts = [Collections.Generic.List[string]]::new()
         $ordered = @($journal.resources | Sort-Object -Property @{ Expression = { [int]$_.sequence }; Descending = $true })
@@ -3052,6 +3456,7 @@ function Invoke-WindowsOwnedResourceCleanup {
             if ([string]$resource.state -ceq 'cleaned') {
                 continue
             }
+            $mutation = Start-WindowsOwnedJournalMutation -Lease $lease -Journal $journal
             try {
                 $action = Invoke-WindowsOwnedSingleResourceCleanup -Journal $journal -Resource $resource -Lease $lease
                 $resource.state = 'cleaned'
@@ -3064,18 +3469,20 @@ function Invoke-WindowsOwnedResourceCleanup {
                 $conflicts.Add("$($resource.resource_id): $message")
                 Add-WindowsOwnedJournalEvent -Journal $journal -Event 'cleanup-conflict' -ResourceId ([string]$resource.resource_id) -Detail $message
             }
-            Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease
+            Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease -Mutation $mutation
         }
 
         if ($conflicts.Count -gt 0) {
+            $mutation = Start-WindowsOwnedJournalMutation -Lease $lease -Journal $journal
             $journal.state = 'cleanup-conflict'
             Add-WindowsOwnedJournalEvent -Journal $journal -Event 'cleanup-incomplete' -Detail ($conflicts -join ' | ')
-            Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease
+            Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease -Mutation $mutation
             throw "owned-resource cleanup stopped at exact-resource conflicts: $($conflicts -join ' | ')"
         }
+        $mutation = Start-WindowsOwnedJournalMutation -Lease $lease -Journal $journal
         $journal.state = 'completed'
         Add-WindowsOwnedJournalEvent -Journal $journal -Event 'cleanup-completed' -Detail 'reverse-order; idempotent; zero-unrelated-mutation'
-        Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease
+        Write-WindowsOwnedResourceJournal -Journal $journal -Lease $lease -Mutation $mutation
         return $journal
     }
     finally {
