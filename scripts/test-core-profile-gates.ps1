@@ -19,11 +19,12 @@ $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop | Select-
 $platform = if ($IsWindows) { "windows-x64" } elseif ($IsLinux) { "linux-x64" } else { throw "unsupported test platform" }
 $oppositePlatform = if ($IsWindows) { "linux-x64" } else { "windows-x64" }
 $expectedTransport = if ($IsWindows) {
-    "job-object-v1:suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
+    "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
 }
 else {
-    "setsid-process-group-v1:term-kill;owned-file-stdout-stderr"
+    "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
 }
+$expectedContainment = if ($IsWindows) { "windows-job-object-v2" } else { "linux-pidfd-subreaper-v1" }
 
 function Assert-True {
     param([Parameter(Mandatory = $true)][bool]$Condition, [Parameter(Mandatory = $true)][string]$Message)
@@ -65,6 +66,24 @@ function Get-FileSha256 {
     $sha = [Security.Cryptography.SHA256]::Create()
     try { return [Convert]::ToHexString($sha.ComputeHash([IO.File]::ReadAllBytes($Path))).ToLowerInvariant() }
     finally { $sha.Dispose() }
+}
+
+function Get-TestCargoMutexName {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $identityRoot = [IO.Path]::GetFullPath($Root).Replace('\', '/')
+    if ($IsWindows) { $identityRoot = $identityRoot.ToLowerInvariant() }
+    $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+            $utf8.GetBytes("oxvba-core-profile-cargo-v1|$identityRoot"))).ToLowerInvariant()
+    return "oxvba-core-profile-cargo-v1-$($digest.Substring(0, 32))"
+}
+
+function Assert-ProcessGone {
+    param([Parameter(Mandatory = $true)][int]$ProcessId, [Parameter(Mandatory = $true)][string]$Owner)
+    for ($attempt = 0; $attempt -lt 80; $attempt++) {
+        try { [void][Diagnostics.Process]::GetProcessById($ProcessId); Start-Sleep -Milliseconds 50 }
+        catch [ArgumentException] { return }
+    }
+    throw "core profile gate test: $Owner process $ProcessId remained after cleanup"
 }
 
 function Invoke-FixtureGit {
@@ -127,10 +146,11 @@ function New-TestManifest {
         supervision = [pscustomobject][ordered]@{
             cleanup_reserve_ms = 500
             native_source_path = "scripts/core-gate-process-supervisor.cs"
-            windows_transport = "job-object-v1:suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
+            windows_transport = "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
             linux_launcher_path = "/usr/bin/setsid"
+            linux_bash_path = "/usr/bin/bash"
             linux_supervisor_path = "scripts/core-gate-linux-supervisor.sh"
-            linux_transport = "setsid-process-group-v1:term-kill;owned-file-stdout-stderr"
+            linux_transport = "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
         }
         gates = @($Gates)
     }
@@ -193,7 +213,7 @@ function New-RunnerProcess {
 }
 
 function Complete-RunnerProcess {
-    param([Parameter(Mandatory = $true)]$Handle, [int]$TimeoutSeconds = 40)
+    param([Parameter(Mandatory = $true)]$Handle, [int]$TimeoutSeconds = 120)
     if (-not $Handle.process.WaitForExit($TimeoutSeconds * 1000)) {
         try { $Handle.process.Kill($true) } catch {}; try { $Handle.process.WaitForExit() } catch {}
         throw "core profile gate test: runner process exceeded the test bound of $TimeoutSeconds seconds"
@@ -211,7 +231,7 @@ function Invoke-Runner {
         [Parameter(Mandatory = $true)][string]$Root,
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [hashtable]$Environment = @{},
-        [int]$TimeoutSeconds = 40
+        [int]$TimeoutSeconds = 120
     )
     return Complete-RunnerProcess -Handle (New-RunnerProcess -Root $Root -Arguments $Arguments -Environment $Environment) -TimeoutSeconds $TimeoutSeconds
 }
@@ -289,6 +309,78 @@ try {
     $wrongArchitecture = Invoke-Runner -Root $repoRoot -Arguments @("-RepositoryRoot", $repoRoot, "-Mode", "ValidateManifest") -Environment @{ OXVBA_CORE_GATE_TEST_FORCE_PROCESS_ARCH = "x86" }
     Assert-NoSuccessOutput -Result $wrongArchitecture -Owner "injected x86 process"
     Assert-Matches "$($wrongArchitecture.stdout)`n$($wrongArchitecture.stderr)" 'OSArchitecture=x64, ProcessArchitecture=x64 and Is64BitProcess=true' "x86 injection failed for the wrong reason"
+    $runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot "scripts/run-core-profile-gates.ps1"), $utf8)
+    Assert-True ($runnerSource -notmatch 'SignalGroup|GroupExists|\.Kill\(') "gate runner retains a numeric PID/PGID or Process.Kill authority path"
+    $boundedCaptureMatch = [regex]::Match($runnerSource, '(?s)function Invoke-BoundedCapture \{.*?\n\}\n\nfunction Resolve-ExactApplicationIdentity \{')
+    Assert-True $boundedCaptureMatch.Success "owned tool-probe implementation could not be isolated for authority audit"
+    Assert-Matches $boundedCaptureMatch.Value 'Invoke-WindowsOwnedProcess' "tool probes do not use Windows Job containment"
+    Assert-Matches $boundedCaptureMatch.Value 'Invoke-LinuxOwnedProcess' "tool probes do not use Linux pidfd containment"
+    foreach ($sealedUtility in @('setsid', 'bash')) {
+        Assert-Matches $boundedCaptureMatch.Value "Get-ToolIdentityById -Tools \`$ProbeContext\.tools -Id `"$sealedUtility`"" "tool probes do not revalidate exact Linux $sealedUtility identity"
+    }
+    $candidateIndex = $runnerSource.IndexOf('$toolCandidates = Get-ToolCandidates', [StringComparison]::Ordinal)
+    $addTypeIndex = $runnerSource.IndexOf('Add-Type -Path', [StringComparison]::Ordinal)
+    $versionIndex = $runnerSource.IndexOf('$tools = Get-ToolIdentities', [StringComparison]::Ordinal)
+    Assert-True ($candidateIndex -ge 0 -and $candidateIndex -lt $addTypeIndex -and $addTypeIndex -lt $versionIndex) "tool path/hash resolution, supervisor load, and contained probing are not ordered fail-closed"
+    $nativeSource = [IO.File]::ReadAllText((Join-Path $repoRoot "scripts/core-gate-process-supervisor.cs"), $utf8)
+    Assert-Matches $nativeSource 'pidfd_open' "Linux containment does not retain pidfd authority"
+    Assert-Matches $nativeSource 'pidfd_send_signal' "Linux containment does not signal through pidfd authority"
+    Assert-True ($nativeSource -notmatch 'extern int kill\(|SignalGroup|GroupExists') "native Linux containment retains numeric PID/PGID signaling"
+    Assert-Matches $nativeSource 'ArmRootWithForcedConfirmationFailureForTest' "Linux containment lacks a post-pidfd confirmation-failure proof hook"
+    $armRootStart = $nativeSource.IndexOf('private ulong ArmRootCore', [StringComparison]::Ordinal)
+    $armRootEnd = $nativeSource.IndexOf('public bool TerminateAll', $armRootStart, [StringComparison]::Ordinal)
+    Assert-True ($armRootStart -ge 0 -and $armRootEnd -gt $armRootStart) "Linux root-confirmation implementation could not be isolated"
+    $armRootSource = $nativeSource.Substring($armRootStart, $armRootEnd - $armRootStart)
+    $rootProcRead = $armRootSource.IndexOf('ProcRecord root = ReadProcRecord', [StringComparison]::Ordinal)
+    $rootPidFdLiveness = $armRootSource.IndexOf('SignalPidFd(retained.PidFd, OxVbaCoreGatePosix.SignalZero)', [StringComparison]::Ordinal)
+    $rootConfirmation = $armRootSource.IndexOf('_rootConfirmed = true', [StringComparison]::Ordinal)
+    Assert-True ($rootProcRead -ge 0 -and $rootPidFdLiveness -gt $rootProcRead -and $rootConfirmation -gt $rootPidFdLiveness) "Linux root confirmation does not revalidate the retained pidfd after /proc inspection"
+    $linuxSupervisorSource = [IO.File]::ReadAllText((Join-Path $repoRoot "scripts/core-gate-linux-supervisor.sh"), $utf8)
+    Assert-True ($linuxSupervisorSource -notmatch '/usr/bin/(?:mv|sleep)') "Linux supervisor can create an external pre-ack helper child"
+    Assert-Matches $linuxSupervisorSource 'EPOCHREALTIME' "Linux supervisor does not use the child-free bounded acknowledgement poll"
+    if ($IsLinux) {
+        Add-Type -Path (Join-Path $repoRoot "scripts/core-gate-process-supervisor.cs")
+        $sentinelStart = [Diagnostics.ProcessStartInfo]::new("/usr/bin/sleep")
+        $sentinelStart.UseShellExecute = $false
+        [void]$sentinelStart.ArgumentList.Add("30")
+        $confirmationSentinel = [Diagnostics.Process]::Start($sentinelStart)
+        $pendingTree = [OxVbaCoreGatePosixOwnedTree]::new()
+        $pendingRoot = $null
+        $markerPath = Join-Path $tempBase "forced-confirmation-gate-ran"
+        try {
+            $pendingStart = [Diagnostics.ProcessStartInfo]::new("/usr/bin/setsid")
+            $pendingStart.UseShellExecute = $false
+            foreach ($argument in @("/usr/bin/bash", (Join-Path $repoRoot "scripts/core-gate-linux-supervisor.sh"),
+                    (Join-Path $tempBase "forced-confirmation.ready"), (Join-Path $tempBase "forced-confirmation.ack"),
+                    "forced-confirmation", (Join-Path $tempBase "forced-confirmation.stdout"),
+                    (Join-Path $tempBase "forced-confirmation.stderr"), "/usr/bin/touch", $markerPath)) {
+                [void]$pendingStart.ArgumentList.Add($argument)
+            }
+            $pendingRoot = [Diagnostics.Process]::Start($pendingStart)
+            $confirmationFailure = $null
+            try { [void]$pendingTree.ArmRootWithForcedConfirmationFailureForTest($pendingRoot.Id) }
+            catch { $confirmationFailure = $_.Exception }
+            Assert-True ($null -ne $confirmationFailure) "forced root confirmation failure did not fail"
+            Assert-Matches $confirmationFailure.Message 'after pidfd retention' "forced root confirmation failure occurred before exact retention"
+            Assert-Equal $pendingTree.RetainedPidFdCount 1 "unconfirmed root pidfd was not retained for abort"
+            Assert-True $pendingTree.TerminateAll(5000) "unconfirmed exact root could not be aborted"
+            Assert-True $pendingRoot.WaitForExit(5000) "unconfirmed exact root was not reaped"
+            [void]$pendingTree.LiveProcessCount
+            Assert-Equal $pendingTree.RetainedPidFdCount 0 "unconfirmed root pidfd remained after reap"
+            Assert-True (-not (Test-Path -LiteralPath $markerPath)) "gate executable ran before root confirmation acknowledgement"
+            Assert-True (-not $confirmationSentinel.HasExited) "unconfirmed-root abort terminated an unrelated sentinel"
+        }
+        finally {
+            if ($null -ne $pendingRoot) {
+                if (-not $pendingRoot.HasExited) { [void]$pendingTree.TerminateAll(5000); [void]$pendingRoot.WaitForExit(5000) }
+                $pendingRoot.Dispose()
+            }
+            $pendingTree.Dispose()
+            if (-not $confirmationSentinel.HasExited) { $confirmationSentinel.Kill($true); [void]$confirmationSentinel.WaitForExit(5000) }
+            $confirmationSentinel.Dispose()
+        }
+        Write-Host "core-profile-gates unconfirmed-root pidfd abort: ok"
+    }
     Write-Host "core-profile-gates deterministic plan and x64 architecture gate: ok"
 
     $positiveRoot = New-FixtureRoot -Name "positive"
@@ -323,6 +415,12 @@ try {
     Assert-Matches $positiveRun.source.head '^[0-9a-f]{40,64}$' "source HEAD is not recorded"
     Assert-Matches $positiveRun.source.tree '^[0-9a-f]{40,64}$' "source tree is not recorded"
     Assert-True (@($positiveRun.tools).Count -ge 3) "tool identities are incomplete"
+    if ($IsLinux) {
+        $bashTools = @($positiveRun.tools | Where-Object { $_.id -ceq "bash" })
+        Assert-Equal $bashTools.Count 1 "exact Bash identity is not recorded"
+        Assert-Equal $bashTools[0].path "/usr/bin/bash" "recorded Bash path drifted"
+        Assert-Matches $bashTools[0].sha256 '^[0-9a-f]{64}$' "recorded Bash digest is absent"
+    }
     Assert-True (@($positiveRun.commands).Count -ge 5) "command/source identities are incomplete"
     Assert-Equal $positiveRun.supervision.transport $expectedTransport "run supervision transport drifted"
     foreach ($command in @($positivePlan.commands)) { Assert-Matches $command.command_digest '^[0-9a-f]{64}$' "command digest is absent" }
@@ -330,6 +428,10 @@ try {
         Assert-Equal $resultRow.exit_code 0 "selected result exit code drifted"
         Assert-Equal $resultRow.tree_cleanup "complete" "selected result tree was not empty"
         Assert-Equal $resultRow.transport $expectedTransport "selected result transport drifted"
+        Assert-Equal $resultRow.containment $expectedContainment "selected result containment drifted"
+        Assert-Equal $resultRow.supervisor_ready $true "selected result lacks ownership readiness"
+        Assert-True ($null -ne $resultRow.ownership_root_pid) "selected result lacks an ownership root pid"
+        if ($IsLinux) { Assert-True ($null -ne $resultRow.ownership_root_start_ticks) "Linux result lacks a /proc start-time identity" }
         foreach ($pair in @(@($resultRow.stdout_path, $resultRow.stdout_sha256), @($resultRow.stderr_path, $resultRow.stderr_sha256), @($resultRow.result_path, $resultRow.result_sha256))) {
             Assert-Equal (Get-FileSha256 -Path (Join-Path $positiveRunRoot ([string]$pair[0]))) ([string]$pair[1]) "result content hash drifted"
         }
@@ -345,6 +447,21 @@ try {
     Assert-NoSuccessOutput -Result $stale -Owner "stale evidence reuse"
     Assert-Matches "$($stale.stdout)`n$($stale.stderr)" 'refusing stale evidence' "stale evidence failed for the wrong reason"
     Write-Host "core-profile-gates exact success evidence: ok"
+
+    $fastExitRoot = New-FixtureRoot -Name "fast-exit"
+    Write-Utf8Text -Path (Join-Path $fastExitRoot "scripts/fast-exit.ps1") -Text "exit 0`n"
+    Write-TestManifest -Root $fastExitRoot -Manifest (New-TestManifest -Gates @(
+            (New-TestGate -Order 1 -Id "fast-exit" -Command "scripts/fast-exit.ps1" -TimeoutSeconds 3)))
+    Initialize-FixtureGit -Root $fastExitRoot
+    $fastExit = Invoke-Runner -Root $fastExitRoot -Arguments @("-RepositoryRoot", $fastExitRoot,
+        "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "fast-exit")
+    Assert-Equal $fastExit.exit_code 0 "fast-exit ownership handshake failed: $($fastExit.stderr)"
+    $fastExitRun = Get-RunManifest -Root $fastExitRoot -RunId "fast-exit"
+    Assert-Equal $fastExitRun.results[0].status "passed" "fast-exit gate did not pass"
+    Assert-Equal $fastExitRun.results[0].supervisor_ready $true "fast-exit gate ran before ownership readiness"
+    Assert-Equal $fastExitRun.results[0].tree_cleanup "complete" "fast-exit gate left process residue"
+    Assert-Equal $fastExitRun.results[0].containment $expectedContainment "fast-exit containment drifted"
+    Write-Host "core-profile-gates fast-exit ownership handshake: ok"
 
     $failureRoot = New-FixtureRoot -Name "failure"
     Write-Utf8Text -Path (Join-Path $failureRoot "scripts/fail.ps1") -Text "Write-Error 'controlled failure'`nexit 7`n"
@@ -365,7 +482,7 @@ try {
     Write-Utf8Text -Path (Join-Path $timeoutRoot "scripts/sleep.ps1") -Text "Start-Sleep -Seconds 30`nWrite-Output 'late'`n"
     Write-TestManifest -Root $timeoutRoot -Manifest (New-TestManifest -Gates @((New-TestGate -Order 1 -Id "controlled-timeout" -Command "scripts/sleep.ps1" -TimeoutSeconds 1)))
     Initialize-FixtureGit -Root $timeoutRoot
-    $timeout = Invoke-Runner -Root $timeoutRoot -Arguments @("-RepositoryRoot", $timeoutRoot, "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "timeout") -TimeoutSeconds 15
+    $timeout = Invoke-Runner -Root $timeoutRoot -Arguments @("-RepositoryRoot", $timeoutRoot, "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "timeout") -TimeoutSeconds 45
     Assert-NoSuccessOutput -Result $timeout -Owner "timed-out command"
     $timeoutRun = Get-RunManifest -Root $timeoutRoot -RunId "timeout"
     Assert-Equal $timeoutRun.results[0].status "timeout" "timeout status was not preserved"
@@ -414,6 +531,41 @@ Write-Output "direct-parent-exiting child=$($child.Id)"
     }
     Assert-True $grandchildGone "owned grandchild process remained after runner completion"
     Write-Host "core-profile-gates complete process-tree ownership: ok"
+
+    if ($IsLinux) {
+        $escapedRoot = New-FixtureRoot -Name "escaped-session"
+        $escapedPidPath = Join-Path $escapedRoot "test-output/escaped.pid"
+        Write-Utf8Text -Path (Join-Path $escapedRoot "scripts/spawn-escaped-session.ps1") -Text @'
+$startInfo = [Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = "/usr/bin/setsid"
+$startInfo.UseShellExecute = $false
+foreach ($argument in @(
+    "/usr/bin/bash", "-c",
+    'printf "%s" "$$" >"$OXVBA_CORE_GATE_TEST_PID_PATH"; exec /usr/bin/sleep 30'
+)) { [void]$startInfo.ArgumentList.Add($argument) }
+$escaped = [Diagnostics.Process]::Start($startInfo)
+$deadline = [DateTime]::UtcNow.AddSeconds(2)
+while (-not (Test-Path -LiteralPath $env:OXVBA_CORE_GATE_TEST_PID_PATH) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 10 }
+if (-not (Test-Path -LiteralPath $env:OXVBA_CORE_GATE_TEST_PID_PATH)) { throw "escaped session did not publish its pid" }
+Start-Sleep -Milliseconds 1200
+Write-Output "direct-parent-exiting escaped=$($escaped.Id)"
+'@
+        $escapedEnvironment = @([pscustomobject]@{ name = "OXVBA_CORE_GATE_TEST_PID_PATH"; action = "set"; value = $escapedPidPath })
+        Write-TestManifest -Root $escapedRoot -Manifest (New-TestManifest -Gates @(
+                (New-TestGate -Order 1 -Id "escaped-session" -Command "scripts/spawn-escaped-session.ps1" `
+                    -Environment $escapedEnvironment -TimeoutSeconds 5)))
+        Initialize-FixtureGit -Root $escapedRoot
+        $escapedResult = Invoke-Runner -Root $escapedRoot -Arguments @("-RepositoryRoot", $escapedRoot,
+            "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "escaped-session")
+        Assert-NoSuccessOutput -Result $escapedResult -Owner "escaped Linux session descendant"
+        $escapedRun = Get-RunManifest -Root $escapedRoot -RunId "escaped-session"
+        Assert-Equal $escapedRun.results[0].reason "descendant-processes-remained-after-direct-exit" "escaped session failure reason drifted"
+        Assert-Equal $escapedRun.results[0].tree_cleanup "complete" "escaped session cleanup was incomplete"
+        Assert-Equal $escapedRun.results[0].escaped_descendants_observed $true "escaped session was not identified outside the root process group"
+        $escapedPid = [int][IO.File]::ReadAllText($escapedPidPath, $utf8)
+        Assert-ProcessGone -ProcessId $escapedPid -Owner "escaped-session descendant"
+        Write-Host "core-profile-gates escaped-session subreaper containment: ok"
+    }
 
     Invoke-TamperCase -Name "plan" -Script '[IO.File]::WriteAllText($env:OXVBA_CORE_GATE_PLAN_PATH, "{", [Text.UTF8Encoding]::new($false))'
     Invoke-TamperCase -Name "run-status" -Script @'
@@ -475,6 +627,64 @@ $run.status = "failed"; $run.results = @($result)
     }
     if ($Phase -in @("All", "Extended")) {
 
+    if ($IsWindows) {
+        $handleRoot = New-FixtureRoot -Name "handle-allowlist"
+        Write-Utf8Text -Path (Join-Path $handleRoot "scripts/check-handle-allowlist.ps1") -Text @'
+$source = @"
+using System;
+using System.Runtime.InteropServices;
+public static class CoreGateHandleProbe {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetEvent(IntPtr handle);
+}
+"@
+Add-Type -TypeDefinition $source
+$handle = [IntPtr][int64]$env:OXVBA_CORE_GATE_TEST_SENTINEL_HANDLE
+$set = [CoreGateHandleProbe]::SetEvent($handle)
+$error = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+Write-Output "sentinel-set-attempted result=$set error=$error handle=$handle"
+'@
+        Write-TestManifest -Root $handleRoot -Manifest (New-TestManifest -Gates @(
+                (New-TestGate -Order 1 -Id "handle-allowlist" -Command "scripts/check-handle-allowlist.ps1")))
+        Initialize-FixtureGit -Root $handleRoot
+        $handleResult = Invoke-Runner -Root $handleRoot -Arguments @("-RepositoryRoot", $handleRoot,
+            "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "handle-allowlist") `
+            -Environment @{ OXVBA_CORE_GATE_TEST_SENTINEL = "1" }
+        Assert-Equal $handleResult.exit_code 0 "STARTUPINFOEX handle allowlist failed: $($handleResult.stderr)"
+        $handleRun = Get-RunManifest -Root $handleRoot -RunId "handle-allowlist"
+        Assert-Equal $handleRun.results[0].containment "windows-job-object-v2" "Windows handle-list containment was not recorded"
+        Assert-Matches (Get-Content -LiteralPath (Join-Path (Get-RunRoot -Root $handleRoot -RunId "handle-allowlist") "commands/001-handle-allowlist/stdout.log") -Raw) `
+            'sentinel-set-attempted' "sentinel probe did not execute"
+        Write-Host "core-profile-gates STARTUPINFOEX handle allowlist: ok"
+    }
+
+    if ($IsLinux) {
+        $bashRoot = New-FixtureRoot -Name "exact-bash"
+        $fakeBashDirectory = Join-Path $tempBase "hostile-bash-bin"
+        [void](New-Item -ItemType Directory -Path $fakeBashDirectory)
+        $fakeBashMarker = Join-Path $bashRoot "test-output/fake-bash-ran.txt"
+        foreach ($name in @("bash")) {
+            Write-Utf8Text -Path (Join-Path $fakeBashDirectory $name) -Text "#!/usr/bin/bash`nprintf '%s' '$name' >>'$fakeBashMarker'`nexit 97`n"
+            & /usr/bin/chmod +x (Join-Path $fakeBashDirectory $name)
+        }
+        if ($LASTEXITCODE -ne 0) { throw "could not make hostile fake Bash executable" }
+        Write-TestManifest -Root $bashRoot -Manifest (New-TestManifest -Gates @(
+                (New-TestGate -Order 1 -Id "exact-bash")))
+        Initialize-FixtureGit -Root $bashRoot
+        $bashResult = Invoke-Runner -Root $bashRoot -Arguments @("-RepositoryRoot", $bashRoot,
+            "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "exact-bash") `
+            -Environment @{ PATH = "$fakeBashDirectory$([IO.Path]::PathSeparator)$env:PATH" }
+        Assert-Equal $bashResult.exit_code 0 "hostile PATH Bash displaced exact /usr/bin/bash: $($bashResult.stderr)"
+        Assert-True (-not (Test-Path -LiteralPath $fakeBashMarker)) "hostile PATH Bash was executed"
+        $bashRun = Get-RunManifest -Root $bashRoot -RunId "exact-bash"
+        $bashIdentity = @($bashRun.tools | Where-Object { $_.id -ceq "bash" })
+        Assert-Equal $bashIdentity.Count 1 "exact Bash identity was not recorded once"
+        Assert-Equal $bashIdentity[0].path "/usr/bin/bash" "exact Bash identity path drifted"
+        Assert-Matches $bashIdentity[0].sha256 '^[0-9a-f]{64}$' "exact Bash identity digest is absent"
+        Write-Host "core-profile-gates exact Bash seal and hostile PATH rejection: ok"
+    }
+
     $mutableToolRoot = New-FixtureRoot -Name "mutable-tool"
     Write-Utf8Text -Path (Join-Path $mutableToolRoot "scripts/mutate-tool.ps1") -Text '[IO.File]::WriteAllBytes($env:OXVBA_CORE_GATE_TEST_TOOL_PATH, ([IO.File]::ReadAllBytes($env:OXVBA_CORE_GATE_TEST_TOOL_PATH) + [byte[]]@(0)))'
     $fakeToolDirectory = Join-Path $tempBase "mutable-tool-bin"
@@ -500,6 +710,66 @@ $run.status = "failed"; $run.results = @($result)
     Assert-NoSuccessOutput -Result $missingTool -Owner "missing Cargo tool"
     Assert-Matches "$($missingTool.stdout)`n$($missingTool.stderr)" "required tool 'cargo' is unavailable" "missing Cargo failed for the wrong reason"
 
+    $pipeRoot = New-FixtureRoot -Name "probe-pipe-drain"
+    Write-TestManifest -Root $pipeRoot -Manifest (New-TestManifest -Gates @((New-TestGate -Order 1 -Id "pass")))
+    Initialize-FixtureGit -Root $pipeRoot
+    $pipeToolDirectory = Join-Path $tempBase "probe-pipe-bin"
+    [void](New-Item -ItemType Directory -Path $pipeToolDirectory)
+    $pipeSource = Join-Path $pipeToolDirectory "pipe_holder.rs"
+    $pipeCargo = Join-Path $pipeToolDirectory $(if ($IsWindows) { "cargo.exe" } else { "cargo" })
+    $pipePidPath = Join-Path $tempBase "probe-pipe-holder.pid"
+    Write-Utf8Text -Path $pipeSource -Text @'
+use std::{env, fs, process::{self, Command, Stdio}, thread, time::Duration};
+fn main() {
+    if env::var("OXVBA_CORE_GATE_TEST_PIPE_CHILD").ok().as_deref() == Some("1") {
+        fs::write(env::var("OXVBA_CORE_GATE_TEST_PIPE_PID_PATH").unwrap(), process::id().to_string()).unwrap();
+        thread::sleep(Duration::from_secs(30));
+        return;
+    }
+    let executable = env::current_exe().unwrap();
+    Command::new(executable)
+        .arg("--pipe-holder")
+        .env("OXVBA_CORE_GATE_TEST_PIPE_CHILD", "1")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    println!("cargo 1.94.1 (controlled probe)");
+}
+'@
+    $rustc = (Get-Command rustc -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $rustcOutput = @(& $rustc --edition=2021 $pipeSource -o $pipeCargo 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "could not compile retained-pipe probe helper:`n$($rustcOutput -join "`n")" }
+    if ($IsLinux) { & /usr/bin/chmod +x $pipeCargo; if ($LASTEXITCODE -ne 0) { throw "could not make retained-pipe probe executable" } }
+    $sentinelStart = [Diagnostics.ProcessStartInfo]::new()
+    $sentinelStart.FileName = $pwsh
+    $sentinelStart.WorkingDirectory = $pipeRoot
+    $sentinelStart.UseShellExecute = $false
+    foreach ($argument in @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30")) {
+        [void]$sentinelStart.ArgumentList.Add($argument)
+    }
+    $sentinel = [Diagnostics.Process]::Start($sentinelStart)
+    try {
+        $pipeResult = Invoke-Runner -Root $pipeRoot -Arguments @("-RepositoryRoot", $pipeRoot,
+            "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "pipe-drain") `
+            -Environment @{
+                PATH = "$pipeToolDirectory$([IO.Path]::PathSeparator)$env:PATH"
+                OXVBA_CORE_GATE_TEST_PIPE_PID_PATH = $pipePidPath
+            } -TimeoutSeconds 30
+        Assert-NoSuccessOutput -Result $pipeResult -Owner "tool probe retained output pipe"
+        Assert-Matches "$($pipeResult.stdout)`n$($pipeResult.stderr)" 'descendant-processes-remained-after-direct-exit' "retained probe pipe failed for the wrong reason"
+        Assert-True ($pipeResult.duration_ms -le 8000) "retained probe pipe exceeded its bounded containment deadline"
+        Assert-True (Test-Path -LiteralPath $pipePidPath -PathType Leaf) "retained-pipe descendant did not publish its pid"
+        $pipePid = [int][IO.File]::ReadAllText($pipePidPath, $utf8)
+        Assert-ProcessGone -ProcessId $pipePid -Owner "retained-pipe descendant"
+        Assert-True (-not $sentinel.HasExited) "tool-probe containment terminated an unrelated sentinel"
+    }
+    finally {
+        if (-not $sentinel.HasExited) { $sentinel.Kill($true); [void]$sentinel.WaitForExit(5000) }
+        $sentinel.Dispose()
+    }
+    Write-Host "core-profile-gates owned tool-probe descendant cleanup: ok"
+
     $reparseRoot = New-FixtureRoot -Name "reparse-command"
     $reparseTarget = Join-Path $tempBase "reparse-target"
     [void](New-Item -ItemType Directory -Path $reparseTarget)
@@ -512,6 +782,35 @@ $run.status = "failed"; $run.results = @($result)
     Assert-NoSuccessOutput -Result $reparse -Owner "reparse command path"
     Assert-Matches "$($reparse.stdout)`n$($reparse.stderr)" 'reparse/symlink' "reparse command failed for the wrong reason"
     Write-Host "core-profile-gates reparse/symlink rejection: ok"
+
+    $rootSwapRoot = New-FixtureRoot -Name "evidence-root-swap"
+    $externalEvidence = Join-Path $tempBase "external-evidence-target"
+    [void](New-Item -ItemType Directory -Path $externalEvidence)
+    Write-Utf8Text -Path (Join-Path $rootSwapRoot "scripts/swap-evidence-root.ps1") -Text @'
+$root = $env:OXVBA_CORE_GATE_EVIDENCE_ROOT
+$moved = "$root.owned"
+Move-Item -LiteralPath $root -Destination $moved
+if ($IsWindows) { [void](New-Item -ItemType Junction -Path $root -Target $env:OXVBA_CORE_GATE_TEST_EXTERNAL_EVIDENCE) }
+else { [void](New-Item -ItemType SymbolicLink -Path $root -Target $env:OXVBA_CORE_GATE_TEST_EXTERNAL_EVIDENCE) }
+Write-Output "evidence-root-replaced"
+'@
+    $externalEnvironment = @([pscustomobject]@{
+            name = "OXVBA_CORE_GATE_TEST_EXTERNAL_EVIDENCE"; action = "set"; value = $externalEvidence
+        })
+    Write-TestManifest -Root $rootSwapRoot -Manifest (New-TestManifest -Gates @(
+            (New-TestGate -Order 1 -Id "root-swap" -Command "scripts/swap-evidence-root.ps1" `
+                -Environment $externalEnvironment)))
+    Initialize-FixtureGit -Root $rootSwapRoot
+    $rootSwap = Invoke-Runner -Root $rootSwapRoot -Arguments @("-RepositoryRoot", $rootSwapRoot,
+        "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "root-swap")
+    Assert-NoSuccessOutput -Result $rootSwap -Owner "evidence-root reparse swap"
+    Assert-Matches "$($rootSwap.stdout)`n$($rootSwap.stderr)" 'reparse/symlink' "evidence-root swap was not rejected at an evidence boundary"
+    Assert-Equal @(Get-ChildItem -LiteralPath $externalEvidence -Force).Count 0 "external reparse target received terminal evidence"
+    $linkedRunRoot = Get-RunRoot -Root $rootSwapRoot -RunId "root-swap"
+    $movedRunRoot = "$linkedRunRoot.owned"
+    if (Test-Path -LiteralPath $linkedRunRoot) { Remove-Item -LiteralPath $linkedRunRoot -Force }
+    if (Test-Path -LiteralPath $movedRunRoot) { Move-Item -LiteralPath $movedRunRoot -Destination $linkedRunRoot }
+    Write-Host "core-profile-gates evidence-root swap confinement: ok"
 
     Assert-ManifestFailure -Name "unknown-root-key" -Pattern 'properties must be exactly|unexpected or mis-cased' -Mutate { param($m, $r) $m | Add-Member extra "forbidden" }
     Assert-ManifestFailure -Name "string-version" -Pattern 'version must be integer 1' -Mutate { param($m, $r) $m.version = "1" }
@@ -536,6 +835,8 @@ $run.status = "failed"; $run.results = @($result)
     Assert-ManifestFailure -Name "missing-digest-path" -Pattern 'properties must be exactly|unexpected or mis-cased' -Mutate { param($m, $r) $m.evidence.PSObject.Properties.Remove("run_manifest_digest_path") }
     Assert-ManifestFailure -Name "bad-cleanup-reserve" -Pattern 'cleanup_reserve_ms must be an integer' -Mutate { param($m, $r) $m.supervision.cleanup_reserve_ms = 1 }
     Assert-ManifestFailure -Name "bad-windows-transport" -Pattern 'windows_transport must be' -Mutate { param($m, $r) $m.supervision.windows_transport = "unowned" }
+    Assert-ManifestFailure -Name "bad-linux-transport" -Pattern 'linux_transport must be' -Mutate { param($m, $r) $m.supervision.linux_transport = "unowned" }
+    Assert-ManifestFailure -Name "bad-linux-bash" -Pattern 'linux_bash_path must be' -Mutate { param($m, $r) $m.supervision.linux_bash_path = "/tmp/bash" }
     Assert-ManifestFailure -Name "duplicate-json-key" -Pattern "duplicate JSON property 'plan_id'" -Mutate {
         param($m, $r); Write-TestManifest -Root $r -Manifest $m; $path = Join-Path $r "ci/core-profile/gates-v1.json"
         $text = [IO.File]::ReadAllText($path, $utf8).Replace('  "plan_id":', "  `"plan_id`": `"duplicate`",`n  `"plan_id`":", [StringComparison]::Ordinal)
@@ -549,6 +850,75 @@ $run.status = "failed"; $run.results = @($result)
 
     }
     if ($Phase -in @("All", "Extended", "Concurrency")) {
+
+    $abandonedRoot = New-FixtureRoot -Name "abandoned-cargo-lock"
+    $abandonedReady = Join-Path $abandonedRoot "test-output/mutex-holder.ready"
+    Write-Utf8Text -Path (Join-Path $abandonedRoot "scripts/hold-mutex.ps1") -Text @'
+param([string]$Name, [string]$ReadyPath)
+$mutex = [Threading.Mutex]::new($false, $Name)
+if (-not $mutex.WaitOne(5000)) { throw "could not acquire controlled mutex" }
+[void](New-Item -ItemType Directory -Path (Split-Path -Parent $ReadyPath) -Force)
+[IO.File]::WriteAllText($ReadyPath, "owned", [Text.UTF8Encoding]::new($false))
+Start-Sleep -Seconds 30
+'@
+    Write-TestManifest -Root $abandonedRoot -Manifest (New-TestManifest -Gates @(
+            (New-TestGate -Order 1 -Id "abandoned-lock" -CargoWorkspace $true)))
+    Initialize-FixtureGit -Root $abandonedRoot
+    $mutexName = Get-TestCargoMutexName -Root $abandonedRoot
+    $holderStart = [Diagnostics.ProcessStartInfo]::new()
+    $holderStart.FileName = $pwsh
+    $holderStart.WorkingDirectory = $abandonedRoot
+    $holderStart.UseShellExecute = $false
+    foreach ($argument in @("-NoLogo", "-NoProfile", "-NonInteractive", "-File",
+            (Join-Path $abandonedRoot "scripts/hold-mutex.ps1"), "-Name", $mutexName,
+            "-ReadyPath", $abandonedReady)) { [void]$holderStart.ArgumentList.Add([string]$argument) }
+    $holder = $null
+    $abandonedHandle = $null
+    try {
+        $holder = [Diagnostics.Process]::Start($holderStart)
+        $holderReadyDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while (-not (Test-Path -LiteralPath $abandonedReady) -and [DateTime]::UtcNow -lt $holderReadyDeadline) { Start-Sleep -Milliseconds 10 }
+        Assert-True (Test-Path -LiteralPath $abandonedReady) "controlled mutex holder did not acquire the lock"
+        $abandonedHandle = New-RunnerProcess -Root $abandonedRoot -Arguments @("-RepositoryRoot", $abandonedRoot,
+            "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "abandoned")
+        $abandonedGateRoot = Join-Path (Get-RunRoot -Root $abandonedRoot -RunId "abandoned") "commands/001-abandoned-lock"
+        # Admission now runs exact tool/source probes under owned containment.
+        # Keep this test-only watchdog outside the product timeout large enough
+        # for those fail-closed checks on a loaded host.
+        $waiterDeadline = [DateTime]::UtcNow.AddSeconds(45)
+        while (-not (Test-Path -LiteralPath $abandonedGateRoot) -and -not $abandonedHandle.process.HasExited -and
+            [DateTime]::UtcNow -lt $waiterDeadline) { Start-Sleep -Milliseconds 10 }
+        Assert-True (Test-Path -LiteralPath $abandonedGateRoot) "runner did not reach the controlled Cargo mutex wait"
+        # The command evidence directory is created immediately before the mutex
+        # wait, but a heavily loaded Windows host can still deschedule the runner
+        # between those operations. Keep the holder alive long enough to prove a
+        # real blocked waiter without changing any product gate deadline.
+        Start-Sleep -Milliseconds 1500
+        $holder.Kill($true)
+        [void]$holder.WaitForExit(5000)
+        $holder.Dispose()
+        $holder = $null
+        $abandonedResult = Complete-RunnerProcess -Handle $abandonedHandle
+        $abandonedHandle = $null
+        Assert-Equal $abandonedResult.exit_code 0 "abandoned Cargo mutex recovery failed: $($abandonedResult.stderr)"
+        $abandonedRun = Get-RunManifest -Root $abandonedRoot -RunId "abandoned"
+        Assert-Equal $abandonedRun.results[0].cargo_lock_abandoned_recovered $true "abandoned Cargo mutex was not explicitly recovered"
+        Assert-True ([int64]$abandonedRun.results[0].cargo_lock_wait_ms -ge 1000) "abandoned mutex recovery did not observe the waiting owner"
+    }
+    finally {
+        if ($null -ne $holder) {
+            if (-not $holder.HasExited) { $holder.Kill($true); [void]$holder.WaitForExit(5000) }
+            $holder.Dispose()
+        }
+        if ($null -ne $abandonedHandle) {
+            if (-not $abandonedHandle.process.HasExited) {
+                $abandonedHandle.process.Kill($true)
+                [void]$abandonedHandle.process.WaitForExit(5000)
+            }
+            $abandonedHandle.process.Dispose()
+        }
+    }
+    Write-Host "core-profile-gates abandoned Cargo mutex recovery: ok"
 
     $concurrentRoot = New-FixtureRoot -Name "cargo-concurrency"
     $timeline = Join-Path $concurrentRoot "test-output/timeline.txt"
@@ -587,7 +957,9 @@ Add-Content -LiteralPath $env:OXVBA_CORE_GATE_TEST_TIMELINE -Value "end|$env:OXV
     }
 
     if ($Phase -eq "All") {
-        Write-Host "test-core-profile-gates: ok (phase=All x64=1 exact-success=1 failures=1 timeouts=1 descendants=1 evidence-tamper=6 source-tool-seals=5 reparse=1 manifest-mutations=25 cargo-concurrency=2)"
+        $descendantCases = if ($IsLinux) { 2 } else { 1 }
+        $sourceToolSealCases = if ($IsLinux) { 6 } else { 5 }
+        Write-Host "test-core-profile-gates: ok (phase=All x64=1 exact-success=1 failures=1 timeouts=1 descendants=$descendantCases evidence-tamper=6 source-tool-seals=$sourceToolSealCases path-confinement=2 manifest-mutations=27 cargo-concurrency=2)"
     }
     else { Write-Host "test-core-profile-gates: ok (phase=$Phase)" }
 }
