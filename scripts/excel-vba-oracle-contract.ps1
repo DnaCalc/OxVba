@@ -523,6 +523,11 @@ function Test-ExcelOracleSelectedCaseDescriptor {
     }
     try { $expectedEvidenceContract = Get-ExcelOracleCaseEvidenceContract -CaseId ([string]$Descriptor.id) }
     catch { return $false }
+    $canonicalCase = @(Get-ExcelOracleHarnessCases | Where-Object { [string]$_.id -ceq [string]$Descriptor.id })
+    if ($canonicalCase.Count -ne 1 -or $Descriptor.diagnostic_only -isnot [bool] -or
+        [bool]$Descriptor.diagnostic_only -ne [bool]$canonicalCase[0].diagnostic_only) {
+        return $false
+    }
     if (
         $Descriptor.schema -isnot [string] -or [string]$Descriptor.schema -cne "oxvba.excel-vba-oracle-selected-case.v1" -or
         $Descriptor.id -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Descriptor.id) -or
@@ -555,27 +560,66 @@ function Test-ExcelOracleSelectedCaseDescriptor {
         [string]$Descriptor.descriptor_sha256 -ceq (Get-ExcelOracleSha256 -Text $payloadJson)
 }
 
-function Get-ExcelOracleSelectedCaseDescriptorSequenceDigest {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Descriptors)
+function Test-ExcelOracleSelectedCaseSelection {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Descriptors,
+        [Parameter(Mandatory = $true)][bool]$TargetedProbe,
+        [Parameter(Mandatory = $true)][bool]$ContainsDiagnosticCase
+    )
+
     if ($Descriptors.Count -eq 0 -or
         @($Descriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
-        throw "excel-vba-oracle-contract: cannot digest an invalid selected descriptor sequence"
+        return $false
+    }
+    $diagnosticCount = @($Descriptors | Where-Object { [bool]$_.diagnostic_only }).Count
+    if (($diagnosticCount -gt 0) -ne $ContainsDiagnosticCase -or
+        ($diagnosticCount -gt 0 -and $diagnosticCount -ne $Descriptors.Count)) {
+        return $false
+    }
+    if ($TargetedProbe) { return $Descriptors.Count -eq 1 }
+    if ($ContainsDiagnosticCase) { return $false }
+    $defaultIds = @(Get-ExcelOracleHarnessCases | Where-Object { -not [bool]$_.diagnostic_only } | ForEach-Object { [string]$_.id })
+    $selectedIds = @($Descriptors | ForEach-Object { [string]$_.id })
+    return $selectedIds.Count -eq $defaultIds.Count -and ($selectedIds -join "`n") -ceq ($defaultIds -join "`n")
+}
+
+function Get-ExcelOracleSelectedCaseSelectionDigest {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Descriptors,
+        [Parameter(Mandatory = $true)][bool]$TargetedProbe,
+        [Parameter(Mandatory = $true)][bool]$ContainsDiagnosticCase
+    )
+    if (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $Descriptors -TargetedProbe $TargetedProbe -ContainsDiagnosticCase $ContainsDiagnosticCase)) {
+        throw "excel-vba-oracle-contract: cannot digest an invalid selected case selection"
     }
     $canonical = @($Descriptors | ForEach-Object {
         $payload = Get-ExcelOracleSelectedCaseDescriptorPayload -Descriptor $_
         $payload["descriptor_sha256"] = [string]$_.descriptor_sha256
         [pscustomobject]$payload
     })
-    return Get-ExcelOracleSha256 -Text ($canonical | ConvertTo-Json -Compress -Depth 12)
+    $selection = [ordered]@{
+        schema = "oxvba.excel-vba-oracle-selected-case-sequence.v2"
+        targeted_probe = $TargetedProbe
+        contains_diagnostic_case = $ContainsDiagnosticCase
+        descriptor_count = $Descriptors.Count
+        descriptors = $canonical
+    }
+    return Get-ExcelOracleSha256 -Text ($selection | ConvertTo-Json -Compress -Depth 12)
 }
 
 function New-ExcelOracleSelectedCaseDescriptorEnvelope {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Descriptors)
-    $digest = Get-ExcelOracleSelectedCaseDescriptorSequenceDigest -Descriptors $Descriptors
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Descriptors,
+        [Parameter(Mandatory = $true)][bool]$TargetedProbe
+    )
+    $containsDiagnosticCase = @($Descriptors | Where-Object { [bool]$_.diagnostic_only }).Count -gt 0
+    $digest = Get-ExcelOracleSelectedCaseSelectionDigest -Descriptors $Descriptors -TargetedProbe $TargetedProbe -ContainsDiagnosticCase $containsDiagnosticCase
     return [pscustomobject][ordered]@{
-        schema = "oxvba.excel-vba-oracle-selected-case-sequence.v1"
+        schema = "oxvba.excel-vba-oracle-selected-case-sequence.v2"
+        targeted_probe = $TargetedProbe
+        contains_diagnostic_case = $containsDiagnosticCase
         descriptor_count = $Descriptors.Count
-        aggregate_sha256 = $digest
+        selection_sha256 = $digest
         descriptors = @($Descriptors)
     }
 }
@@ -583,25 +627,67 @@ function New-ExcelOracleSelectedCaseDescriptorEnvelope {
 function Read-ExcelOracleSelectedCaseDescriptorEnvelope {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$ExpectedAggregateSha256
+        [Parameter(Mandatory = $true)][string]$ExpectedSelectionSha256
     )
     try { $envelope = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -DateKind String }
     catch { throw "excel-vba-oracle-contract: selected descriptor envelope cannot be read: $($_.Exception.Message)" }
-    $fields = @("schema", "descriptor_count", "aggregate_sha256", "descriptors")
+    $fields = @("schema", "targeted_probe", "contains_diagnostic_case", "descriptor_count", "selection_sha256", "descriptors")
     if ($null -eq $envelope -or
         (@($envelope.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($fields | Sort-Object) -join "`n") -or
-        $envelope.schema -isnot [string] -or [string]$envelope.schema -cne "oxvba.excel-vba-oracle-selected-case-sequence.v1" -or
+        $envelope.schema -isnot [string] -or [string]$envelope.schema -cne "oxvba.excel-vba-oracle-selected-case-sequence.v2" -or
+        $envelope.targeted_probe -isnot [bool] -or $envelope.contains_diagnostic_case -isnot [bool] -or
         ($envelope.descriptor_count -isnot [int] -and $envelope.descriptor_count -isnot [long]) -or
         $envelope.descriptors -isnot [array] -or [int]$envelope.descriptor_count -ne @($envelope.descriptors).Count -or
-        $envelope.aggregate_sha256 -isnot [string] -or [string]$envelope.aggregate_sha256 -cne $ExpectedAggregateSha256) {
+        $envelope.selection_sha256 -isnot [string] -or [string]$envelope.selection_sha256 -cne $ExpectedSelectionSha256) {
         throw "excel-vba-oracle-contract: selected descriptor envelope shape/digest declaration is invalid"
     }
     $descriptors = @($envelope.descriptors)
-    $actualDigest = Get-ExcelOracleSelectedCaseDescriptorSequenceDigest -Descriptors $descriptors
-    if ($actualDigest -cne $ExpectedAggregateSha256) {
-        throw "excel-vba-oracle-contract: selected descriptor sequence changed after supervisor sealing"
+    if (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $descriptors -TargetedProbe ([bool]$envelope.targeted_probe) -ContainsDiagnosticCase ([bool]$envelope.contains_diagnostic_case))) {
+        throw "excel-vba-oracle-contract: selected descriptor envelope has contradictory selection facts"
     }
-    return [pscustomobject]@{ descriptors = $descriptors; aggregate_sha256 = $actualDigest }
+    $actualDigest = Get-ExcelOracleSelectedCaseSelectionDigest -Descriptors $descriptors -TargetedProbe ([bool]$envelope.targeted_probe) -ContainsDiagnosticCase ([bool]$envelope.contains_diagnostic_case)
+    if ($actualDigest -cne $ExpectedSelectionSha256) {
+        throw "excel-vba-oracle-contract: selected descriptor selection changed after supervisor sealing"
+    }
+    return [pscustomobject]@{
+        descriptors = $descriptors
+        targeted_probe = [bool]$envelope.targeted_probe
+        contains_diagnostic_case = [bool]$envelope.contains_diagnostic_case
+        selection_sha256 = $actualDigest
+    }
+}
+
+function Test-ExcelOracleTranscriptSelection {
+    param(
+        [Parameter(Mandatory = $true)]$Transcript,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$SelectedCaseDescriptors,
+        [Parameter(Mandatory = $true)][bool]$ExpectedTargetedProbe,
+        [Parameter(Mandatory = $true)][bool]$ExpectedContainsDiagnosticCase,
+        [Parameter(Mandatory = $true)][string]$ExpectedSelectionSha256
+    )
+
+    foreach ($field in @("schema", "targeted_probe", "contains_diagnostic_case", "selected_case_selection_digest", "selected_case_ids", "case_count")) {
+        if ($null -eq $Transcript -or $Transcript.PSObject.Properties.Name -notcontains $field) { return $false }
+    }
+    if ($Transcript.schema -isnot [string] -or [string]$Transcript.schema -cne "oxvba.excel-vba-oracle-transcript.v2" -or
+        $Transcript.targeted_probe -isnot [bool] -or [bool]$Transcript.targeted_probe -ne $ExpectedTargetedProbe -or
+        $Transcript.contains_diagnostic_case -isnot [bool] -or [bool]$Transcript.contains_diagnostic_case -ne $ExpectedContainsDiagnosticCase -or
+        $Transcript.selected_case_selection_digest -isnot [string] -or [string]$Transcript.selected_case_selection_digest -cne $ExpectedSelectionSha256 -or
+        $Transcript.selected_case_ids -isnot [array] -or
+        ($Transcript.case_count -isnot [int] -and $Transcript.case_count -isnot [long]) -or [int]$Transcript.case_count -ne $SelectedCaseDescriptors.Count) {
+        return $false
+    }
+    if (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $SelectedCaseDescriptors -TargetedProbe $ExpectedTargetedProbe -ContainsDiagnosticCase $ExpectedContainsDiagnosticCase)) {
+        return $false
+    }
+    $expectedIds = @($SelectedCaseDescriptors | ForEach-Object { [string]$_.id })
+    if (@($Transcript.selected_case_ids | Where-Object { $_ -isnot [string] }).Count -gt 0) { return $false }
+    $actualIds = @($Transcript.selected_case_ids | ForEach-Object { [string]$_ })
+    if ($actualIds.Count -ne $expectedIds.Count -or ($actualIds -join "`n") -cne ($expectedIds -join "`n")) { return $false }
+    try {
+        return (Get-ExcelOracleSelectedCaseSelectionDigest -Descriptors $SelectedCaseDescriptors -TargetedProbe $ExpectedTargetedProbe -ContainsDiagnosticCase $ExpectedContainsDiagnosticCase) -ceq $ExpectedSelectionSha256
+    }
+    catch { return $false }
 }
 
 function Enter-ExcelOracleRunClaim {
@@ -1159,7 +1245,8 @@ function Resolve-ExcelOraclePostCleanupResult {
         [Parameter(Mandatory = $true)][string]$ExpectedWorkerStartUtc,
         [Parameter(Mandatory = $true)][string]$ExpectedWorkerExecutablePath,
         [Parameter(Mandatory = $true)][string]$ExpectedContainmentToken,
-        [Parameter(Mandatory = $true)][bool]$ExpectedDiagnosticOnly,
+        [Parameter(Mandatory = $true)][bool]$ExpectedTargetedProbe,
+        [Parameter(Mandatory = $true)][bool]$ExpectedContainsDiagnosticCase,
         [Parameter(Mandatory = $true)][int]$WorkerExitCode,
         [Parameter(Mandatory = $true)][bool]$WorkerQuiesced,
         [Parameter(Mandatory = $true)][bool]$WorkerTimedOut
@@ -1171,6 +1258,10 @@ function Resolve-ExcelOraclePostCleanupResult {
     if ($SelectedCaseDescriptors.Count -eq 0 -or
         @($SelectedCaseDescriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
         $errors.Add("selected case descriptor sequence is invalid")
+        return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
+    }
+    if (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $SelectedCaseDescriptors -TargetedProbe $ExpectedTargetedProbe -ContainsDiagnosticCase $ExpectedContainsDiagnosticCase)) {
+        $errors.Add("selected case selection intent and intrinsic membership are contradictory")
         return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
     }
     $expectedOutputFullPath = $null
@@ -1246,14 +1337,14 @@ function Resolve-ExcelOraclePostCleanupResult {
         return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
     }
 
-    $requiredDocumentFields = @("schema", "run_id", "generated_utc", "worker_pid", "containment_token", "containment_authority", "selected_case_descriptor_digest", "diagnostic_only", "cases", "passed")
+    $requiredDocumentFields = @("schema", "run_id", "generated_utc", "worker_pid", "containment_token", "containment_authority", "selected_case_selection_digest", "targeted_probe", "contains_diagnostic_case", "cases", "passed")
     $actualDocumentFields = @($Results.PSObject.Properties.Name)
     if ((@($actualDocumentFields | Sort-Object) -join "`n") -cne (@($requiredDocumentFields | Sort-Object) -join "`n")) {
         $errors.Add("results document field set is invalid")
         return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
     }
     if ($Results.schema -isnot [string] -or $Results.run_id -isnot [string] -or
-        [string]$Results.schema -cne "oxvba.excel-vba-oracle-results.v1" -or [string]$Results.run_id -cne $RunId) {
+        [string]$Results.schema -cne "oxvba.excel-vba-oracle-results.v2" -or [string]$Results.run_id -cne $RunId) {
         $errors.Add("results schema or run identity is invalid")
     }
     $generatedUtc = $null
@@ -1267,12 +1358,15 @@ function Resolve-ExcelOraclePostCleanupResult {
         $errors.Add("results worker_pid is not the exact worker")
     }
     if ($Results.containment_token -isnot [string] -or [string]$Results.containment_token -cne $ExpectedContainmentToken) { $errors.Add("results containment token is invalid") }
-    $expectedDescriptorDigest = Get-ExcelOracleSelectedCaseDescriptorSequenceDigest -Descriptors $SelectedCaseDescriptors
-    if ($Results.selected_case_descriptor_digest -isnot [string] -or [string]$Results.selected_case_descriptor_digest -cne $expectedDescriptorDigest) {
-        $errors.Add("results selected descriptor aggregate digest is invalid")
+    $expectedSelectionDigest = Get-ExcelOracleSelectedCaseSelectionDigest -Descriptors $SelectedCaseDescriptors -TargetedProbe $ExpectedTargetedProbe -ContainsDiagnosticCase $ExpectedContainsDiagnosticCase
+    if ($Results.selected_case_selection_digest -isnot [string] -or [string]$Results.selected_case_selection_digest -cne $expectedSelectionDigest) {
+        $errors.Add("results selected case selection digest is invalid")
     }
-    if ($Results.diagnostic_only -isnot [bool] -or [bool]$Results.diagnostic_only -ne $ExpectedDiagnosticOnly) {
-        $errors.Add("results diagnostic_only is not the expected JSON Boolean")
+    if ($Results.targeted_probe -isnot [bool] -or [bool]$Results.targeted_probe -ne $ExpectedTargetedProbe) {
+        $errors.Add("results targeted_probe is not the expected JSON Boolean")
+    }
+    if ($Results.contains_diagnostic_case -isnot [bool] -or [bool]$Results.contains_diagnostic_case -ne $ExpectedContainsDiagnosticCase) {
+        $errors.Add("results contains_diagnostic_case is not the expected JSON Boolean")
     }
     if ($Results.passed -isnot [bool]) { $errors.Add("results passed is not a JSON Boolean") }
     if ($Results.cases -isnot [array]) { $errors.Add("results cases is not a JSON array") }
