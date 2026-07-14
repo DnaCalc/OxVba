@@ -763,6 +763,45 @@ function Test-ExcelOracleOwnedProcessRecord {
     return $pidValue -gt 0 -and $pidValue -notin $BaselineExcelPids
 }
 
+function ConvertFrom-ExcelOracleProcessIdentityJson {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Json,
+        [Parameter(Mandatory = $true)][ValidateSet(
+            "oxvba.excel-vba-oracle-owned-process.v1",
+            "oxvba.excel-vba-oracle-guardian-ready.v1"
+        )][string]$ExpectedSchema
+    )
+
+    try { $record = $Json | ConvertFrom-Json -DateKind String }
+    catch { throw "excel-vba-oracle-contract: malformed process identity JSON" }
+    if ($null -eq $record -or $record -isnot [psobject]) {
+        throw "excel-vba-oracle-contract: process identity JSON must contain one object"
+    }
+    if ($record.PSObject.Properties.Name -notcontains "schema" -or [string]$record.schema -cne $ExpectedSchema) {
+        throw "excel-vba-oracle-contract: process identity schema mismatch"
+    }
+    foreach ($field in @("run_id", "pid", "process_name", "process_start_utc", "executable_path")) {
+        if ($record.PSObject.Properties.Name -notcontains $field -or [string]::IsNullOrWhiteSpace([string]$record.$field)) {
+            throw "excel-vba-oracle-contract: process identity field '$field' is missing or blank"
+        }
+    }
+    if (($record.pid -isnot [long] -and $record.pid -isnot [int]) -or [long]$record.pid -le 0) {
+        throw "excel-vba-oracle-contract: process identity PID must be a positive JSON integer"
+    }
+    if ($record.process_name -isnot [string] -or $record.process_start_utc -isnot [string] -or $record.executable_path -isnot [string]) {
+        throw "excel-vba-oracle-contract: process identity name, start time, and executable path must be JSON strings"
+    }
+    try {
+        [void][DateTime]::Parse(
+            [string]$record.process_start_utc,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind
+        )
+    }
+    catch { throw "excel-vba-oracle-contract: process identity start time is invalid" }
+    return $record
+}
+
 function Test-ExcelOracleProcessIdentity {
     param(
         [Parameter(Mandatory = $true)]$Record,
@@ -783,26 +822,54 @@ function Get-ExcelOracleProcessIdentityState {
     )
 
     if ($null -eq $Process) { return "missing" }
+    try {
+        return Get-ExcelOracleProcessIdentitySnapshotState `
+            -Record $Record `
+            -ObservedPid $Process.Id `
+            -ObservedProcessName ([string]$Process.ProcessName) `
+            -ObservedProcessStartUtc $Process.StartTime.ToUniversalTime() `
+            -ObservedExecutablePath ([string]$Process.Path) `
+            -ExpectedProcessName $ExpectedProcessName `
+            -RunId $RunId
+    }
+    catch { return "same-instance-conflict" }
+}
+
+function Get-ExcelOracleProcessIdentitySnapshotState {
+    param(
+        [Parameter(Mandatory = $true)]$Record,
+        [Parameter(Mandatory = $true)][int]$ObservedPid,
+        [Parameter(Mandatory = $true)][string]$ObservedProcessName,
+        [Parameter(Mandatory = $true)][DateTime]$ObservedProcessStartUtc,
+        [Parameter(Mandatory = $true)][string]$ObservedExecutablePath,
+        [Parameter(Mandatory = $true)][string]$ExpectedProcessName,
+        [Parameter(Mandatory = $true)][string]$RunId
+    )
+
     foreach ($field in @("run_id", "pid", "process_name", "process_start_utc", "executable_path")) {
         if ($Record.PSObject.Properties.Name -notcontains $field -or [string]::IsNullOrWhiteSpace([string]$Record.$field)) {
             return "same-instance-conflict"
         }
     }
+    if (($Record.pid -isnot [long] -and $Record.pid -isnot [int]) -or
+        $Record.process_name -isnot [string] -or $Record.process_start_utc -isnot [string] -or $Record.executable_path -isnot [string]) {
+        return "same-instance-conflict"
+    }
     try { $recordedPid = [int]$Record.pid }
     catch { return "same-instance-conflict" }
-    if ([string]$Record.run_id -ne $RunId -or $recordedPid -ne $Process.Id) { return "same-instance-conflict" }
+    if ([string]$Record.run_id -ne $RunId -or $recordedPid -ne $ObservedPid) { return "same-instance-conflict" }
     try {
         $recordedStart = [DateTime]::Parse(
             [string]$Record.process_start_utc,
             [Globalization.CultureInfo]::InvariantCulture,
             [Globalization.DateTimeStyles]::RoundtripKind
         ).ToUniversalTime()
-        $actualStart = $Process.StartTime.ToUniversalTime()
-        $actualPath = [IO.Path]::GetFullPath([string]$Process.Path)
+        $actualStart = $ObservedProcessStartUtc.ToUniversalTime()
+        $actualPath = [IO.Path]::GetFullPath($ObservedExecutablePath)
         $recordedPath = [IO.Path]::GetFullPath([string]$Record.executable_path)
         if ($recordedStart.Ticks -ne $actualStart.Ticks) { return "pid-reused" }
         if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.process_name, $ExpectedProcessName) -or
-            -not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Process.ProcessName, $ExpectedProcessName) -or
+            -not [StringComparer]::OrdinalIgnoreCase.Equals($ObservedProcessName, $ExpectedProcessName) -or
             -not [StringComparer]::OrdinalIgnoreCase.Equals($recordedPath, $actualPath)) {
             return "same-instance-conflict"
         }

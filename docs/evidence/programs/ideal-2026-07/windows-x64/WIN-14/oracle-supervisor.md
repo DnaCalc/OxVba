@@ -10,7 +10,7 @@ Status: current harness implementation evidence; noncertifying
 
 ## Scope and credit
 
-This evidence covers the authority, containment, protocol, fixture, and attachment repair checks for the Excel/VBA oracle supervisor. One bounded, targeted `success` probe launched Excel after containment was established. It failed before VBE access or workbook mutation and therefore claims no live case success, Excel/VBA behavioral result, canonical matrix row, release, certification, or capability credit.
+This evidence covers the authority, containment, protocol, fixture, and attachment repair checks for the Excel/VBA oracle supervisor. Two separately authorized, bounded `success` probes launched Excel after containment was established. Both failed before VBE access or workbook mutation and therefore claim no live case success, Excel/VBA behavioral result, canonical matrix row, release, certification, or capability credit.
 
 The later live run must still use the characterized Windows x64 / 64-bit Excel development-oracle environment with `-NoMatrixUpdate`, capture the selected default five cases, and run the bounded `runtime-unhandled-modal` diagnostic when that transcript is needed. Release certification remains assigned to the clean pinned certification VM.
 
@@ -48,7 +48,7 @@ Result on 2026-07-14:
 test-excel-vba-oracle: PASS
 ```
 
-The focused suite completed in under one minute. It parsed every supervisor script and exercised:
+The final focused suite completed in 44.2 seconds. It parsed every supervisor script and exercised:
 
 - exact retained-handle termination plus adversarial same-PID/path rejection, production worker cleanup coverage, and a mutation that reopens the PID;
 - atomic equal-run rejection, distinct-run isolation, forced post-claim failure, and both entry/exit cleanup under injected marker-deletion failure and no-op stale-marker deletion, with primary context preserved;
@@ -65,10 +65,13 @@ The focused suite completed in under one minute. It parsed every supervisor scri
 - case-sensitive full-`Err` mutations independently separating returned JSON from persisted `runtime_err` and persisted `runtime_err` from the sealed descriptor, plus non-null success transport, a valid evidence-only wrong-token case failure with synthesized transport, null preservation through the shared production runtime-measurement constructor, phase-correct null/bootstrap pre-ownership failures, forged pre-ownership compile/runtime payloads, case/guardian timestamps outside both causal bounds, 2030 and pre-containment Excel/helper ownership records with local ordering preserved, and unrelated bootstrap/module paths;
 - a post-seal descriptor-order mutation executed through the real worker, proving the aggregate sequence digest fails before containment wait or any Excel launch;
 - pure attachment cases for exact admission, truncated/foreign enumeration, non-`EXCEL7`, visible blocker, and returned Application PID mismatch.
+- exact offline replay of the preserved live Excel identity with all start-time ticks intact, plus fail-closed PID, one-tick start, process-name, executable-path, and decoder-coerced-timestamp mutations.
 
 Post-test inspection found no `oxvba-oracle-*` temporary directories and no surviving test worker/child process. The repository diff passed `git diff --check`.
 
-Independent review has proceeded in several repair rounds. The fourth fresh-context review found the missing supervisor guardian-ledger authority boundary, case-insensitive full-`Err` text comparisons, worker-authored artifact paths, unconstrained success transport, incomplete pre-ownership exclusion, silent failed-entry claim cleanup, and noncausal fixture timestamps. The fifth review then found missing event-to-owned-Excel PID binding, one-sided causal bounds and nonterminal final-state admission, a fixture that incorrectly removed the production bootstrap from attachment failures, and a missing evidence-only failure transport. The sixth review found nullable runtime identifiers still coerced by the producer, an unphased null-bootstrap escape, and ownership-ledger timestamps not bound to containment/result generation. The current revision contains the coherent offline authority changes and exact adversarial regressions described above. It awaits a seventh independent fresh-context review, and no further Excel run is authorized before that review.
+Independent review has proceeded in several repair rounds. The fourth fresh-context review found the missing supervisor guardian-ledger authority boundary, case-insensitive full-`Err` text comparisons, worker-authored artifact paths, unconstrained success transport, incomplete pre-ownership exclusion, silent failed-entry claim cleanup, and noncausal fixture timestamps. The fifth review then found missing event-to-owned-Excel PID binding, one-sided causal bounds and nonterminal final-state admission, a fixture that incorrectly removed the production bootstrap from attachment failures, and a missing evidence-only failure transport. The sixth review found nullable runtime identifiers still coerced by the producer, an unphased null-bootstrap escape, and ownership-ledger timestamps not bound to containment/result generation. The seventh independent fresh-context review returned `PASS` for commit `98666062dd2f9392b16f2975788141482940651c`, after which the one authorized targeted probe below was run. No further Excel retry is authorized by this evidence.
+
+An eighth fresh-context review of the identity-decoder repair returned `PASS` with no material findings. It independently confirmed the complete identity-consumer audit, exact tick/name/path/PID behavior, preserved-live fixture, all six raw-file lengths and SHA-256 hashes in the bounded summary, noncertifying credit language, and no-retry disposition.
 
 ## Bounded negative attachment probe
 
@@ -82,12 +85,20 @@ Run `excel_vba_oracle_d50ce53d005c42ceb89decb099a521a3` failed safely after 35.8
 
 The full local failed-run directory remains under `artifacts/windows-x64/excel-vba-oracle/`; it is intentionally excluded from the commit. The bounded exact summary is retained in `attachment-negative-2026-07-14.json`. That summary also records two defects found by the probe: the early `Process.Path` sample was empty, and the supervisor replaced the valid case transport with an empty-ledger case-binding error. The repair now records the exact launch executable input, supplies the deterministic workbook bootstrap, and preserves case failure through cleanup. Per the one-probe limit, Excel was not launched again after this failure.
 
+## Bounded exact-attachment / guardian-readiness probe
+
+After the seventh independent review returned `PASS`, one targeted `success` probe was authorized. Run `excel_vba_oracle_be0f2c078a3942b7b67fddb8db7c18e0` proved that the repaired bootstrap path reached exact process attachment: attempt 7 attached through owned `EXCEL7` window 70218 titled `oracle-bootstrap.xlsx` to Excel PID 31160. Exact Excel and guardian ownership records were durable before the failure.
+
+The guardian then exited with code 1 before publishing ready evidence. Its recorded error was `Excel PID/start/name/executable identity did not validate`. Offline replay identifies the exact disagreement: `excel-process-identity.json` records `process_start_utc` as `2026-07-14T13:47:15.2253534Z`, but guardian line-of-production used default `ConvertFrom-Json`. PowerShell 7 materialized that JSON string as `DateTime`; the existing validator's `[string]` cast then produced culture-formatted whole-second text and discarded `.2253534` before comparing ticks. PID 31160, process name `EXCEL`, and the full executable path agreed. The guardian-ready consumer had the same timestamp-coercing decode and has been routed through the same string-preserving identity contract.
+
+Cleanup reported `owned-process-zero`; post-run inspection found zero Excel processes, zero owned helpers, and zero `oxvba-oracle-*` temporary directories. The run stopped before compile/VBE/runtime work, so it provides no behavioral oracle, capability, matrix, release, or certification credit. No retry was authorized or performed. The bounded summary and hashes of the preserved raw files are in `attachment-guardian-negative-2026-07-14.json`; the full local raw directory remains intentionally uncommitted.
+
 ## Residual live work
 
 This evidence does not establish that a particular Office build exposes the exact expected UIA token/line or runtime dialog shapes. Before closing the supervisor bead:
 
-1. independently review the offline bootstrap/attachment repair, then run one targeted `success` probe against the characterized development/oracle host;
-2. only if that targeted probe passes with an exact `EXCEL7`/`OBJID_NATIVEOM` attachment and zero residuals, run the default five-case harness with Excel/VBE modal interception active;
+1. obtain explicit authorization before any further targeted `success` retry against the characterized development/oracle host;
+2. only if that targeted retry passes guardian readiness, exact `EXCEL7`/`OBJID_NATIVEOM` attachment, and zero residuals, run the default five-case harness with Excel/VBE modal interception active;
 3. inspect the compile-failure and intrinsic-shadow token/line captures, ambiguous macro transcript, full `Err` state, lifecycle ordering, and zero owned residuals;
 4. run the `runtime-unhandled-modal` diagnostic and retain its owned runtime-error modal transcript;
-5. record the live run separately without advancing certification or canonical capability rows.
+5. record live runs separately without advancing certification or canonical capability rows.
