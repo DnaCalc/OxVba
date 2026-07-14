@@ -13,6 +13,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "excel-vba-oracle-contract.ps1")
 . (Join-Path $PSScriptRoot "excel-vba-oracle-job.ps1")
+. (Join-Path $PSScriptRoot "excel-vba-oracle-bootstrap.ps1")
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $environmentPath = Join-Path $repoRoot "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv"
@@ -40,6 +41,12 @@ if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
 if (@($cases.id | Select-Object -Unique).Count -ne $cases.Count -or @($cases | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.id) }).Count -gt 0) {
     throw "run-excel-vba-oracle: selected case identities must be nonempty and unique"
 }
+$selectedCaseDescriptors = @(New-ExcelOracleSelectedCaseDescriptors -Cases $cases)
+if ($selectedCaseDescriptors.Count -ne $cases.Count -or
+    @($selectedCaseDescriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
+    throw "run-excel-vba-oracle: selected case descriptor sealing failed"
+}
+$selectedCaseDescriptorEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $selectedCaseDescriptors
 $plan = [ordered]@{
     schema = "oxvba.excel-vba-oracle-plan.v1"
     suite = $Suite
@@ -55,16 +62,18 @@ $plan = [ordered]@{
     ownership_policy = "assign the waiting worker to a kill-on-close job before publishing mutation authority; launch Excel directly inside that containment; record PID+process-start+name+executable for Excel and guardian processes; validate classified identity before fallback cleanup"
     modal_policy = "start PID-scoped UIA guardian before command-ID-578 compile and runtime invocation; capture first; never auto-enable security/trust prompts"
     compile_policy = "VBE Debug -> Compile VBAProject command ID 578; Application.Run is never a compile check"
-    cases = @($cases | ForEach-Object {
+    cases = @($selectedCaseDescriptors | ForEach-Object {
         [ordered]@{
             id = $_.id
             expected_compile_status = $_.expected_compile_status
             expected_run_status = $_.expected_run_status
-            module_sha256 = Get-ExcelOracleSha256 -Text $_.module_source
+            module_sha256 = $_.module_sha256
+            descriptor_sha256 = $_.descriptor_sha256
         }
     })
     selected_case_count = $cases.Count
     selected_case_ids = @($cases | ForEach-Object { [string]$_.id })
+    selected_case_descriptor_digest = [string]$selectedCaseDescriptorEnvelope.aggregate_sha256
 }
 if ($PlanOnly) {
     Write-Output ($plan | ConvertTo-Json -Depth 8)
@@ -86,8 +95,37 @@ function Read-OwnershipLedger {
         [Parameter(Mandatory = $true)][ValidateSet("excel", "guardian")][string]$Kind,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$BaselineExcelPids
     )
-    $lines = if (Test-Path -LiteralPath $Path) { @(Get-Content -LiteralPath $Path) } else { @() }
-    return ConvertFrom-ExcelOracleOwnershipLedger -Lines $lines -Kind $Kind -RunId $RunId -BaselineExcelPids $BaselineExcelPids -ExpectedCaseIds @($cases.id)
+    [string[]]$lines = [string[]]::new(0)
+    if (Test-Path -LiteralPath $Path) { $lines = [string[]]@(Get-Content -LiteralPath $Path) }
+    return ConvertFrom-ExcelOracleOwnershipLedger -Lines ([string[]]$lines) -Kind $Kind -RunId $RunId -BaselineExcelPids $BaselineExcelPids -ExpectedCaseIds @($cases.id)
+}
+
+function Read-SupervisorGuardianEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$OutputDirectory,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$CaseIds
+    )
+
+    $evidence = [Collections.Generic.List[object]]::new()
+    foreach ($caseId in $CaseIds) {
+        $ledgerPath = Join-Path (Join-Path $OutputDirectory $caseId) "guardian-events.jsonl"
+        if (-not (Test-Path -LiteralPath $ledgerPath -PathType Leaf)) { continue }
+        $stream = [IO.File]::Open($ledgerPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            $memory = [IO.MemoryStream]::new()
+            try { $stream.CopyTo($memory); $bytes = $memory.ToArray() }
+            finally { $memory.Dispose() }
+        }
+        finally { $stream.Dispose() }
+        $evidence.Add([pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-supervisor-guardian-ledger.v1"
+            case_id = $caseId
+            ledger_path = $ledgerPath
+            ledger_sha256 = Get-ExcelOracleBytesSha256 -Bytes $bytes
+            raw_base64 = [Convert]::ToBase64String($bytes)
+        })
+    }
+    return @($evidence)
 }
 
 function Stop-RecordedOwnedResources {
@@ -120,11 +158,14 @@ function Stop-RecordedOwnedResources {
 $outputBase = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $repoRoot $OutputRoot }
 $runClaim = Enter-ExcelOracleRunClaim -OutputBase $outputBase -RunId $RunId
 $outputDirectory = [string]$runClaim.output_directory
+$primaryRunFailure = $null
 try {
 $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDirectory "plan.json") -Encoding utf8NoBOM
 
 $ownershipFile = Join-Path $outputDirectory "owned-processes.jsonl"
 $helperOwnershipFile = Join-Path $outputDirectory "owned-helper-processes.jsonl"
+$selectedCaseDescriptorFile = Join-Path $outputDirectory "selected-case-descriptors.json"
+$selectedCaseDescriptorEnvelope | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $selectedCaseDescriptorFile -Encoding utf8NoBOM
 $containmentReadyFile = Join-Path $outputDirectory "containment-ready.json"
 $containmentToken = [Guid]::NewGuid().ToString("D")
 $workerStdout = Join-Path $outputDirectory "worker.stdout.txt"
@@ -138,26 +179,26 @@ $workerArguments = @(
     "-HelperOwnershipFile", $helperOwnershipFile,
     "-ContainmentReadyFile", $containmentReadyFile,
     "-ContainmentToken", $containmentToken,
+    "-SelectedCaseDescriptorFile", $selectedCaseDescriptorFile,
+    "-SelectedCaseDescriptorDigest", [string]$selectedCaseDescriptorEnvelope.aggregate_sha256,
     "-CaseTimeoutSeconds", [string][Math]::Min(120, $TimeoutSeconds)
 )
-if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
-    $workerArguments += @("-DiagnosticCaseId", $DiagnosticCaseId)
-}
 $startedUtc = [DateTime]::UtcNow
-$job = [ExcelOracleJob]::new("OxVbaExcelOracle-$PID-$containmentToken")
-$worker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
+$containedWorker = Start-ExcelOracleContainedProcess -JobName "OxVbaExcelOracle-$PID-$containmentToken" -RunId $RunId -StartProcess {
+    Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
+}
+$job = $containedWorker.job
+$worker = $containedWorker.process
+$workerStartUtc = $worker.StartTime.ToUniversalTime().ToString("o")
+$workerExecutablePath = [string]$worker.Path
 try {
-    $job.AssignProcess($worker.Handle)
-    if (-not $job.ContainsProcess($worker.Handle)) {
-        throw "worker is not a member of the kill-on-close Job after assignment"
-    }
     [ordered]@{
         schema = "oxvba.excel-vba-oracle-containment-ready.v1"
         run_id = $RunId
         containment_token = $containmentToken
         worker_pid = $worker.Id
-        worker_process_start_utc = $worker.StartTime.ToUniversalTime().ToString("o")
-        worker_executable_path = [string]$worker.Path
+        worker_process_start_utc = $workerStartUtc
+        worker_executable_path = $workerExecutablePath
         worker_job_membership_verified = $true
         published_utc = [DateTime]::UtcNow.ToString("o")
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $containmentReadyFile -Encoding utf8NoBOM
@@ -215,15 +256,16 @@ finally {
 if ($cleanupAuthorityErrors.Count -gt 0) {
     throw "run-excel-vba-oracle: cleanup authority is uncertain: $($cleanupAuthorityErrors -join '; ')$(if ($workerFailure) { "; primary failure: $workerFailure" })"
 }
+$resultsPath = Join-Path $outputDirectory "results.json"
+$results = $null
+$resultsParseError = $null
+if (Test-Path -LiteralPath $resultsPath) {
+    try { $results = Get-Content -Raw -LiteralPath $resultsPath | ConvertFrom-Json -DateKind String }
+    catch { $resultsParseError = $_.Exception.Message }
+}
 $excelLedger = Read-OwnershipLedger -Path $ownershipFile -Kind excel -BaselineExcelPids $baselineExcelPids
 $helperLedger = Read-OwnershipLedger -Path $helperOwnershipFile -Kind guardian -BaselineExcelPids $baselineExcelPids
-if (@($excelLedger.errors).Count -gt 0 -or @($helperLedger.errors).Count -gt 0) {
-    throw "run-excel-vba-oracle: residual audit authority is uncertain: $(@($excelLedger.errors) + @($helperLedger.errors) -join '; ')"
-}
-if (-not (Test-ExcelOracleLedgerCaseBinding -Records @($excelLedger.records) -ExpectedCaseIds @($cases.id)) -or
-    -not (Test-ExcelOracleLedgerCaseBinding -Records @($helperLedger.records) -ExpectedCaseIds @($cases.id))) {
-    throw "run-excel-vba-oracle: ownership ledgers do not bind exactly once to the selected case set"
-}
+$supervisorGuardianEvidence = @(Read-SupervisorGuardianEvidence -OutputDirectory $outputDirectory -CaseIds @($selectedCaseDescriptors.id))
 $remainingOwned = [Collections.Generic.List[int]]::new()
 foreach ($record in @($excelLedger.records)) {
     $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
@@ -245,19 +287,48 @@ foreach ($record in @($helperLedger.records)) {
     elseif ($identityState -eq "same-instance-conflict") { throw "run-excel-vba-oracle: guardian residual identity conflict for PID $($record.pid)" }
 }
 if ($remainingHelpers.Count -ne 0) { throw "run-excel-vba-oracle: owned guardian PIDs remain: $($remainingHelpers -join ', ')" }
-if ($workerFailure) { throw $workerFailure }
-
-$resultsPath = Join-Path $outputDirectory "results.json"
-if (-not (Test-Path -LiteralPath $resultsPath)) { throw "run-excel-vba-oracle: worker did not produce results.json" }
-$results = Get-Content -Raw -LiteralPath $resultsPath | ConvertFrom-Json
-if (-not (Test-ExcelOracleLedgerCaseBinding -Records @($results.cases) -ExpectedCaseIds @($cases.id))) {
-    throw "run-excel-vba-oracle: results do not bind exactly once to the selected case set"
+$workerExitCode = if ($workerQuiesced) { [int]$worker.ExitCode } else { -1 }
+$postCleanup = Resolve-ExcelOraclePostCleanupResult `
+    -Results $results `
+    -ExcelLedger $excelLedger `
+    -HelperLedger $helperLedger `
+    -SupervisorGuardianEvidence $supervisorGuardianEvidence `
+    -SelectedCaseDescriptors $selectedCaseDescriptors `
+    -ExpectedOutputDirectory $outputDirectory `
+    -RunId $RunId `
+    -ExpectedWorkerPid $worker.Id `
+    -ExpectedWorkerStartUtc $workerStartUtc `
+    -ExpectedWorkerExecutablePath $workerExecutablePath `
+    -ExpectedContainmentToken $containmentToken `
+    -ExpectedDiagnosticOnly (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) `
+    -WorkerExitCode $workerExitCode `
+    -WorkerQuiesced $workerQuiesced `
+    -WorkerTimedOut $timedOut
+if (-not [bool]$postCleanup.valid) {
+    $parseContext = if ($resultsParseError) { "; results parse error: $resultsParseError" } else { "" }
+    $workerContext = if ($workerFailure) { "; worker envelope: $workerFailure" } else { "" }
+    throw "run-excel-vba-oracle: post-cleanup result/ledger authority is invalid: $($postCleanup.errors -join '; ')$parseContext$workerContext"
 }
-if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and (@($results.cases).Count -ne 5 -or -not [bool]$results.passed)) {
-    throw "run-excel-vba-oracle: harness self-test did not produce five passing cases"
+if ([string]$postCleanup.disposition -eq "pre-ownership-transport") {
+    $partialCase = @($results.cases)[0]
+    $partialBootstrap = $partialCase.bootstrap_workbook
+    $bootstrapConstructionFailed = [string]$partialCase.preownership_failure_phase -ceq "bootstrap-construction"
+    if (($bootstrapConstructionFailed -and $null -ne $partialBootstrap) -or
+        (-not $bootstrapConstructionFailed -and ($null -eq $partialBootstrap -or -not (Test-ExcelOracleBootstrapWorkbook -Descriptor $partialBootstrap)))) {
+        throw "run-excel-vba-oracle: pre-ownership bootstrap evidence is missing, modified, or has invalid OPC relationship closure; evidence '$outputDirectory'"
+    }
+    throw "run-excel-vba-oracle: first selected case failed before durable ownership after owned Job cleanup: $($postCleanup.transport_error); evidence '$outputDirectory'"
 }
-if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and @($results.cases).Count -ne 1) {
-    throw "run-excel-vba-oracle: targeted diagnostic did not produce exactly one case"
+foreach ($caseResult in @($results.cases)) {
+    if (-not (Test-ExcelOracleBootstrapWorkbook -Descriptor $caseResult.bootstrap_workbook)) {
+        throw "run-excel-vba-oracle: controlled bootstrap workbook is missing, modified, or has invalid OPC relationship closure after worker cleanup for case '$($caseResult.id)'"
+    }
+}
+if ([string]$postCleanup.disposition -eq "complete-case-failure") {
+    $failureDetails = @($results.cases | Where-Object { -not [bool]$_.passed } | ForEach-Object {
+        "$($_.id): compile=$($_.compile_status) run=$($_.run_status) transport=$($_.transport_error)"
+    }) -join "; "
+    throw "run-excel-vba-oracle: selected oracle case expectations failed after owned cleanup: $failureDetails; evidence '$outputDirectory'"
 }
 
 $completedUtc = [DateTime]::UtcNow
@@ -314,8 +385,12 @@ else {
 }
 Write-Output "excel-vba-oracle: $outputDirectory"
 }
+catch {
+    $primaryRunFailure = $_.Exception
+    throw
+}
 finally {
     # Release only the exact stream/path returned by the successful CreateNew
     # claim. Failed run directories and evidence remain intact and fail closed.
-    Exit-ExcelOracleRunClaim -Claim $runClaim
+    Exit-ExcelOracleRunClaim -Claim $runClaim -PrimaryFailure $primaryRunFailure
 }

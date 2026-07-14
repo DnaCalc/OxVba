@@ -2,6 +2,7 @@ param(
     [int]$ExcelPid,
     [string]$ExcelIdentityFile,
     [string]$RunId,
+    [string]$CaseId,
     [string]$ControlFile,
     [string]$EventsFile,
     [string]$ReadyFile,
@@ -42,6 +43,7 @@ foreach ($required in @{
         ExcelPid = $ExcelPid
         ExcelIdentityFile = $ExcelIdentityFile
         RunId = $RunId
+        CaseId = $CaseId
         ControlFile = $ControlFile
         EventsFile = $EventsFile
         ReadyFile = $ReadyFile
@@ -232,6 +234,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
                     schema = "oxvba.excel-vba-oracle-control-status.v1"
                     event_type = "invalid-control"
                     run_id = $RunId
+                    excel_pid = $ExcelPid
                     event_sequence = 0L
                     observed_utc = [DateTime]::UtcNow.ToString("o")
                     control_sha256 = $controlHash
@@ -254,6 +257,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
         if ($invalidControls.Add("stale:$controlKey")) {
             Add-GuardianEvent -Event ([ordered]@{
                 schema = "oxvba.excel-vba-oracle-control-status.v1"; event_type = "invalid-control"; run_id = $RunId
+                excel_pid = $ExcelPid
                 event_sequence = 0L; observed_utc = [DateTime]::UtcNow.ToString("o"); control_sha256 = Get-ExcelOracleSha256 -Text ($control | ConvertTo-Json -Compress)
                 errors = @("control sequence regressed"); valid = $false
             })
@@ -265,6 +269,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
         if ([long]$control.sequence -le $lastControlSequence) {
             Add-GuardianEvent -Event ([ordered]@{
                 schema = "oxvba.excel-vba-oracle-control-status.v1"; event_type = "invalid-control"; run_id = $RunId
+                excel_pid = $ExcelPid
                 event_sequence = 0L; observed_utc = [DateTime]::UtcNow.ToString("o"); control_sha256 = Get-ExcelOracleSha256 -Text ($control | ConvertTo-Json -Compress)
                 errors = @("control sequence was reused"); valid = $false
             })
@@ -277,6 +282,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
             event_type = "operation-armed"
             run_id = $RunId
             case_id = [string]$control.case_id
+            excel_pid = $ExcelPid
             operation_id = [string]$control.operation_id
             phase = [string]$control.phase
             control_sequence = [long]$control.sequence
@@ -289,6 +295,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
         event_type = "guardian-heartbeat"
         run_id = $RunId
         case_id = [string]$control.case_id
+        excel_pid = $ExcelPid
         operation_id = [string]$control.operation_id
         phase = [string]$control.phase
         control_sequence = [long]$control.sequence
@@ -379,3 +386,31 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
     }
     Start-Sleep -Milliseconds $PollMilliseconds
 }
+
+$controlledStopObserved = Test-Path -LiteralPath $StopFile
+$finalExcelProcess = Get-Process -Id $ExcelPid -ErrorAction SilentlyContinue
+$excelIdentityLiveAtStop = $false
+if ($finalExcelProcess) {
+    try { $excelIdentityLiveAtStop = Test-ExcelOracleProcessIdentity -Record $excelIdentity -Process $finalExcelProcess -ExpectedProcessName "EXCEL" -RunId $RunId }
+    catch { $excelIdentityLiveAtStop = $false }
+}
+$exitReason = if ($controlledStopObserved -and $excelIdentityLiveAtStop) { "controlled-stop" }
+    elseif (-not $excelIdentityLiveAtStop) { "excel-identity-lost" }
+    else { "deadline" }
+Add-GuardianEvent -Event ([ordered]@{
+    schema = "oxvba.excel-vba-oracle-final-state.v1"
+    event_type = "guardian-stopped"
+    run_id = $RunId
+    case_id = $CaseId
+    excel_pid = $ExcelPid
+    event_sequence = 0L
+    observed_utc = [DateTime]::UtcNow.ToString("o")
+    guardian_pid = $PID
+    process_name = [string]$selfProcess.ProcessName
+    process_start_utc = $selfProcess.StartTime.ToUniversalTime().ToString("o")
+    executable_path = [string]$selfProcess.Path
+    controlled_stop_observed = [bool]$controlledStopObserved
+    excel_identity_live_at_stop = [bool]$excelIdentityLiveAtStop
+    exit_reason = $exitReason
+})
+if ($exitReason -ne "controlled-stop") { exit 2 }

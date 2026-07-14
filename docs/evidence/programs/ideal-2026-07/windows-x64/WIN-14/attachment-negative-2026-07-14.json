@@ -1,0 +1,51 @@
+{
+  "schema": "oxvba.excel-vba-oracle-attachment-negative-evidence.v1",
+  "run_id": "excel_vba_oracle_d50ce53d005c42ceb89decb099a521a3",
+  "environment_id": "win-x64-dev-oracle-2026-07",
+  "case_id": "success",
+  "certifying": false,
+  "matrix_update": false,
+  "capability_credit": false,
+  "attachment": {
+    "outcome": "deadline",
+    "process_id": 18980,
+    "process_start_utc": "2026-07-14T09:31:13.4811958Z",
+    "recorded_process_path": "",
+    "launch_arguments": [
+      "/x"
+    ],
+    "attempt_count": 195,
+    "observation_limit": 256,
+    "retained_observation_count": 256,
+    "truncated_observation_count": 10878,
+    "last_owned_window_count": 58,
+    "last_top_level_window_count": 16,
+    "last_excel7_window_count": 0,
+    "last_xldesk_window_count": 2,
+    "last_xlmain_window_count": 2,
+    "last_visible_owned_windows": [
+      { "hwnd": "199820", "top_level_hwnd": "199820", "is_top_level": true, "class_name": "XLMAIN", "title": "Excel" },
+      { "hwnd": "199812", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "EXCEL2", "title": "" },
+      { "hwnd": "199818", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "EXCEL2", "title": "" },
+      { "hwnd": "199836", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "XLDESK", "title": "" },
+      { "hwnd": "199848", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "Edit", "title": "" },
+      { "hwnd": "199888", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "NetUIHWND", "title": "" },
+      { "hwnd": "330914", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "EXCEL;", "title": "" },
+      { "hwnd": "396442", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "ComboBox", "title": "" },
+      { "hwnd": "1248202", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "EXCEL<", "title": "" },
+      { "hwnd": "7801464", "top_level_hwnd": "199820", "is_top_level": false, "class_name": "FullpageUIHost", "title": "" }
+    ]
+  },
+  "failure": {
+    "case_transport": "directly launched Excel did not expose exact-PID OBJID_NATIVEOM through an owned window",
+    "supervisor_surface": "ownership ledgers do not bind exactly once to the selected case set",
+    "diagnosis": "The /x process reached Excel's no-workbook start UI. It exposed XLMAIN and XLDESK but no EXCEL7 native-object-model sheet window. The supervisor then masked the valid case-level transport result with the expected-empty pre-ownership ledger binding check."
+  },
+  "cleanup": {
+    "job_containment_terminated_preledger_excel": true,
+    "run_claim_released": true,
+    "remaining_excel_process_count": 0,
+    "remaining_owned_helper_count": 0
+  },
+  "repair_disposition": "Generate and validate a deterministic macro-free OpenXML bootstrap workbook with closed OPC relationships; launch exact excel.exe with exactly ProcessStartInfo.ArgumentList ['/x', bootstrap-path]; reject truncated or foreign-PID window enumeration; attach only through an exact-PID EXCEL7/OBJID_NATIVEOM result; stop relaunches on absence of a durable ownership record; and use the pure post-cleanup result/ledger validator to surface only the exact first-case pre-ownership transport with both ledgers empty and the failed exit envelope."
+}
