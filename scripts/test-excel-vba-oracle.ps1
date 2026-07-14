@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "excel-vba-oracle-contract.ps1")
 . (Join-Path $PSScriptRoot "excel-vba-oracle-job.ps1")
+. (Join-Path $PSScriptRoot "excel-vba-oracle-bootstrap.ps1")
 
 function Assert-True {
     param([Parameter(Mandatory = $true)][bool]$Condition, [Parameter(Mandatory = $true)][string]$Message)
@@ -13,6 +14,132 @@ function Assert-Equal {
     if ($Expected -ne $Actual) {
         throw "test-excel-vba-oracle: $Message (expected '$Expected', got '$Actual')"
     }
+}
+
+function Copy-TestJsonObject {
+    param([Parameter(Mandatory = $true)]$Value)
+    return ($Value | ConvertTo-Json -Depth 20 | ConvertFrom-Json -DateKind String)
+}
+
+function New-TestPostCleanupCase {
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [bool]$Passed = $true,
+        [bool]$OwnershipRecorded = $true,
+        [AllowNull()]$OwnedPid = 7001,
+        [AllowNull()]$ObservedPid = 7001,
+        [string]$CompileStatus = "ok",
+        [string]$RunStatus = "ok",
+        [AllowNull()]$TransportError = $null
+    )
+    $bootstrap = if ($OwnershipRecorded) {
+        [ordered]@{
+            schema = "oxvba.excel-vba-oracle-bootstrap-workbook.v1"
+            path = "C:\fixture\oracle-bootstrap.xlsx"
+            sha256 = "sha256:$('a' * 64)"
+            sha256_after = "sha256:$('a' * 64)"
+            package_parts = @("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml")
+            macro_free = $true
+        }
+    } else { $null }
+    $document = [pscustomobject][ordered]@{
+        schema = "oxvba.excel-vba-oracle-case-result.v1"
+        id = $Id
+        purpose = "offline authority fixture"
+        passed = $Passed
+        owned_excel_pid = if ($OwnershipRecorded) { $OwnedPid } else { $null }
+        observed_excel_pid = $ObservedPid
+        excel_ownership_recorded = $OwnershipRecorded
+        module_path = "C:\fixture\OracleSelfTest.bas"
+        module_sha256 = "sha256:$('b' * 64)"
+        compile_status = $CompileStatus
+        expected_compile_status = "ok"
+        compile_command = $null
+        compile_execution = $null
+        compile_context = $null
+        post_dismiss_selection_diagnostic_only = $null
+        compile_dialogs = @()
+        compile_window_observations = @()
+        run_procedure = "OracleSelfTest.RunProbe"
+        run_status = $RunStatus
+        expected_run_status = "ok"
+        run_value = $null
+        runtime_err = $null
+        macro_failure_disposition = $null
+        runtime_measurement = $null
+        transport_error = $TransportError
+        run_dialogs = @()
+        evidence_status = $null
+        cleanup_status = if ($OwnershipRecorded) { "owned-process-zero" } else { "not-run" }
+        cleanup_authority_errors = @()
+        bootstrap_workbook = $bootstrap
+        defect_declaration = $null
+    }
+    return $document
+}
+
+function New-TestPostCleanupResults {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Cases,
+        [string]$RunId = "run-post",
+        [int]$WorkerPid = 43210,
+        [string]$ContainmentToken = "11111111-2222-3333-4444-555555555555",
+        [bool]$DiagnosticOnly = $false,
+        [AllowNull()]$AggregatePassed = $null
+    )
+    $passed = if ($null -eq $AggregatePassed) { @($Cases | Where-Object { -not [bool]$_.passed }).Count -eq 0 } else { [bool]$AggregatePassed }
+    $document = [pscustomobject][ordered]@{
+        schema = "oxvba.excel-vba-oracle-results.v1"
+        run_id = $RunId
+        generated_utc = "2026-07-14T00:00:03Z"
+        worker_pid = $WorkerPid
+        containment_token = $ContainmentToken
+        containment_authority = [pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-containment-ready.v1"
+            run_id = $RunId
+            containment_token = $ContainmentToken
+            worker_pid = $WorkerPid
+            worker_process_start_utc = "2026-07-14T00:00:01Z"
+            worker_executable_path = "C:\Program Files\PowerShell\7\pwsh.exe"
+            worker_job_membership_verified = $true
+            published_utc = "2026-07-14T00:00:02Z"
+        }
+        diagnostic_only = $DiagnosticOnly
+        cases = @($Cases)
+        passed = $passed
+    }
+    return ($document | ConvertTo-Json -Depth 20 | ConvertFrom-Json -DateKind String)
+}
+
+function New-TestPostCleanupLedger {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$CaseIds,
+        [int]$FirstPid = 7001,
+        [switch]$Guardian
+    )
+    $records = [Collections.Generic.List[object]]::new()
+    for ($index = 0; $index -lt $CaseIds.Count; $index++) {
+        $records.Add([pscustomobject]@{ case_id = $CaseIds[$index]; pid = if ($Guardian) { 8001 + $index } else { $FirstPid + $index } })
+    }
+    return [pscustomobject]@{ records = @($records); errors = @() }
+}
+
+function Invoke-TestPostCleanupResolution {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Results,
+        [Parameter(Mandatory = $true)]$ExcelLedger,
+        [Parameter(Mandatory = $true)]$HelperLedger,
+        [Parameter(Mandatory = $true)][string[]]$ExpectedCaseIds,
+        [int]$WorkerExitCode = 0,
+        [bool]$DiagnosticOnly = $false,
+        [int]$WorkerPid = 43210,
+        [string]$ContainmentToken = "11111111-2222-3333-4444-555555555555",
+        [bool]$WorkerQuiesced = $true,
+        [bool]$WorkerTimedOut = $false
+    )
+    return Resolve-ExcelOraclePostCleanupResult -Results $Results -ExcelLedger $ExcelLedger -HelperLedger $HelperLedger `
+        -ExpectedCaseIds $ExpectedCaseIds -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedContainmentToken $ContainmentToken `
+        -ExpectedDiagnosticOnly $DiagnosticOnly -WorkerExitCode $WorkerExitCode -WorkerQuiesced $WorkerQuiesced -WorkerTimedOut $WorkerTimedOut
 }
 
 function Test-GuardianOwnedWindowEnumerationShape {
@@ -55,6 +182,43 @@ function Test-WorkerEvidenceGatedAcceptanceShape {
         $Source -match 'Test-CompileErrorEvidence' -and
         $Source -match 'Test-AmbiguousMacroEvidence' -and
         $Source -match 'Test-LinkedSuccessfulDismissal'
+}
+
+function Test-WorkerExactPidAttachmentShape {
+    param([Parameter(Mandatory = $true)][string]$Source)
+    return $Source -match 'EnumWindows\(' -and
+        $Source -match 'EnumChildWindows\(' -and
+        $Source -match 'GetWindowThreadProcessId' -and
+        $Source -match 'topLevelProcessId != expectedProcessId' -and
+        $Source -match 'childProcessId == expectedProcessId' -and
+        $Source -match 'const int WindowLimit = 512' -and
+        $Source -match 'Truncated = truncated' -and
+        $Source -match 'Succeeded = completed && !truncated' -and
+        $Source -match 'Test-ExcelOracleWindowEnumerationAuthority' -and
+        $Source -match 'Select-Object -First 128' -and
+        $Source -match 'foreach \(\$window in \$ownedWindows\)' -and
+        $Source -match 'TryGetNativeObjectFromWindow\(\[IntPtr\]\[int64\]\$window\.Hwnd' -and
+        $Source -match '\$applicationPid -eq \$process\.Id -and \[string\]\$window\.ClassName -eq "EXCEL7"' -and
+        $Source -match 'Write-ExcelAttachmentDiagnostic' -and
+        $Source -match 'observation_limit = 256' -and
+        $Source -match 'blocked-owned-window' -and
+        $Source -match 'ProcessStartInfo' -and
+        $Source -match 'ArgumentList\.Add\("/x"\)' -and
+        $Source -match 'ArgumentList\.Add\(\[string\]\$BootstrapWorkbook\.path\)' -and
+        $Source -match 'ArgumentList\.Count -ne 2' -and
+        $Source -match 'ArgumentList -contains "/n"' -and
+        $Source -match 'oracle-bootstrap\.xlsx' -and
+        $Source -match 'attached Excel workbook does not match the controlled bootstrap path' -and
+        $Source -notmatch 'MainWindowHandle|GetActiveObject|New-Object\s+-ComObject|Workbooks\.Add\(|ArgumentList\.Add\("/n"\)'
+}
+
+function Test-RunnerEmptyLedgerShape {
+    param([Parameter(Mandatory = $true)][string]$Source)
+    $match = [regex]::Match($Source, '(?s)function Read-OwnershipLedger\s*\{(?<body>.*?)\r?\n\}\r?\n\r?\nfunction Stop-RecordedOwnedResources')
+    if (-not $match.Success) { return $false }
+    $body = $match.Groups['body'].Value
+    return $body -match '\[string\[\]\]\$lines = \[string\[\]\]::new\(0\)' -and
+        $body -match '-Lines \(\[string\[\]\]\$lines\)'
 }
 
 function Test-RetainedHandleAuthorityShape {
@@ -180,6 +344,7 @@ function Test-RetainedHandleTerminationAuthority {
 
 foreach ($fileName in @(
     "excel-vba-oracle-contract.ps1",
+    "excel-vba-oracle-bootstrap.ps1",
     "excel-vba-oracle-job.ps1",
     "excel-vba-oracle-guardian.ps1",
     "excel-vba-oracle-worker.ps1",
@@ -191,10 +356,64 @@ foreach ($fileName in @(
     [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $fileName), [ref]$tokens, [ref]$parseErrors)
     Assert-Equal 0 @($parseErrors).Count "$fileName must parse"
 }
-foreach ($productionFile in @("excel-vba-oracle-contract.ps1", "excel-vba-oracle-job.ps1", "excel-vba-oracle-guardian.ps1", "excel-vba-oracle-worker.ps1", "run-excel-vba-oracle.ps1")) {
+foreach ($productionFile in @("excel-vba-oracle-contract.ps1", "excel-vba-oracle-bootstrap.ps1", "excel-vba-oracle-job.ps1", "excel-vba-oracle-guardian.ps1", "excel-vba-oracle-worker.ps1", "run-excel-vba-oracle.ps1")) {
     $productionSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot $productionFile)
     Assert-True ($productionSource -notmatch '\.Kill\(') "$productionFile must not use Process.Kill outside harmless offline test fixtures"
 }
+
+$bootstrapDirectory = Join-Path ([IO.Path]::GetTempPath()) "oxvba-oracle-bootstrap-$([Guid]::NewGuid().ToString('N'))"
+[void][IO.Directory]::CreateDirectory($bootstrapDirectory)
+try {
+    $bootstrapA = New-ExcelOracleBootstrapWorkbook -Path (Join-Path $bootstrapDirectory "a.xlsx")
+    $bootstrapB = New-ExcelOracleBootstrapWorkbook -Path (Join-Path $bootstrapDirectory "b.xlsx")
+    Assert-Equal $bootstrapA.sha256 $bootstrapB.sha256 "controlled OpenXML bootstrap package must be byte deterministic"
+    Assert-Equal $true ([bool]$bootstrapA.macro_free) "controlled OpenXML bootstrap must declare macro-free content"
+    Assert-True (Test-ExcelOracleBootstrapWorkbook -Descriptor $bootstrapA) "controlled OpenXML bootstrap must pass hash, part, XML, content-type, and OPC relationship closure"
+    $archive = [IO.Compression.ZipFile]::OpenRead([string]$bootstrapA.path)
+    try {
+        $entryNames = @($archive.Entries | ForEach-Object FullName)
+        $expectedParts = @("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml")
+        Assert-Equal ($expectedParts -join ",") ($entryNames -join ",") "controlled OpenXML bootstrap part order and set"
+        Assert-Equal 0 @($entryNames | Where-Object { $_ -match '(?i)vbaProject|macrosheet|xl4' }).Count "controlled OpenXML bootstrap must contain no macro parts"
+        foreach ($entry in $archive.Entries) {
+            $reader = [IO.StreamReader]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
+            try { $xml = [xml]$reader.ReadToEnd() }
+            finally { $reader.Dispose() }
+            Assert-True ($null -ne $xml.DocumentElement) "OpenXML bootstrap part '$($entry.FullName)' must be well-formed XML"
+        }
+        $contentTypesEntry = $archive.GetEntry("[Content_Types].xml")
+        $contentTypesReader = [IO.StreamReader]::new($contentTypesEntry.Open(), [Text.UTF8Encoding]::new($false))
+        try { $contentTypesText = $contentTypesReader.ReadToEnd() }
+        finally { $contentTypesReader.Dispose() }
+        Assert-True ($contentTypesText -match 'spreadsheetml\.sheet\.main\+xml' -and $contentTypesText -notmatch '(?i)macroEnabled') "bootstrap content types must describe an ordinary macro-free .xlsx workbook"
+    }
+    finally { $archive.Dispose() }
+
+    $missingBootstrap = New-ExcelOracleBootstrapWorkbook -Path (Join-Path $bootstrapDirectory "missing.xlsx")
+    Remove-Item -LiteralPath $missingBootstrap.path -Force
+    Assert-True (-not (Test-ExcelOracleBootstrapWorkbook -Descriptor $missingBootstrap)) "missing bootstrap package must fail closed"
+
+    $modifiedBootstrap = New-ExcelOracleBootstrapWorkbook -Path (Join-Path $bootstrapDirectory "modified.xlsx")
+    [IO.File]::AppendAllText([string]$modifiedBootstrap.path, "modified", [Text.UTF8Encoding]::new($false))
+    Assert-True (-not (Test-ExcelOracleBootstrapWorkbook -Descriptor $modifiedBootstrap)) "modified bootstrap package must fail its recorded hash"
+
+    $brokenRelationship = New-ExcelOracleBootstrapWorkbook -Path (Join-Path $bootstrapDirectory "broken-relationship.xlsx")
+    $updateArchive = [IO.Compression.ZipFile]::Open([string]$brokenRelationship.path, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $relationshipEntry = $updateArchive.GetEntry("xl/_rels/workbook.xml.rels")
+        $relationshipStream = $relationshipEntry.Open()
+        try {
+            $relationshipStream.SetLength(0)
+            $brokenBytes = [Text.UTF8Encoding]::new($false).GetBytes('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/missing.xml"/></Relationships>')
+            $relationshipStream.Write($brokenBytes, 0, $brokenBytes.Length)
+        }
+        finally { $relationshipStream.Dispose() }
+    }
+    finally { $updateArchive.Dispose() }
+    $brokenRelationship.sha256 = "sha256:$((Get-FileHash -LiteralPath $brokenRelationship.path -Algorithm SHA256).Hash.ToLowerInvariant())"
+    Assert-True (-not (Test-ExcelOracleBootstrapWorkbook -Descriptor $brokenRelationship)) "hash-consistent OPC relationship with a missing target must fail closure"
+}
+finally { Remove-Item -LiteralPath $bootstrapDirectory -Recurse -Force -ErrorAction SilentlyContinue }
 
 Test-JobContainsPreLedgerChild -Label "excel-before-ledger"
 Test-JobContainsPreLedgerChild -Label "guardian-before-ledger"
@@ -205,6 +424,94 @@ $jobSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-o
 Assert-True (Test-RetainedHandleAuthorityShape -Source $jobSource) "fallback identity query, termination, and wait must share one retained SafeProcessHandle"
 $reopenedPidMutation = $jobSource.Replace('$retained.TerminateAndWait($TimeoutMilliseconds)', '[Diagnostics.Process]::GetProcessById([int]$Record.pid).Kill()')
 Assert-True (-not (Test-RetainedHandleAuthorityShape -Source $reopenedPidMutation)) "mutation: reopening a PID between identity query and termination must be rejected"
+
+$completeIds = @("success", "compile-failure")
+$completeCases = @(
+    (New-TestPostCleanupCase -Id $completeIds[0] -OwnedPid 7001 -ObservedPid 7001),
+    (New-TestPostCleanupCase -Id $completeIds[1] -OwnedPid 7002 -ObservedPid 7002)
+)
+$completeResults = New-TestPostCleanupResults -Cases $completeCases
+$completeExcelLedger = New-TestPostCleanupLedger -CaseIds $completeIds -FirstPid 7001
+$completeHelperLedger = New-TestPostCleanupLedger -CaseIds $completeIds -Guardian
+$completeResolution = Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds
+Assert-True ([bool]$completeResolution.valid -and [string]$completeResolution.disposition -eq "complete-success") "post-cleanup validator complete success envelope"
+$failedCompleteCases = @(
+    (New-TestPostCleanupCase -Id $completeIds[0] -Passed $false -OwnedPid 7001 -ObservedPid 7001 -TransportError "behavior mismatch"),
+    (New-TestPostCleanupCase -Id $completeIds[1] -OwnedPid 7002 -ObservedPid 7002)
+)
+$failedCompleteResults = New-TestPostCleanupResults -Cases $failedCompleteCases -AggregatePassed $false
+$failedCompleteResolution = Invoke-TestPostCleanupResolution -Results $failedCompleteResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -WorkerExitCode 1
+Assert-True ([bool]$failedCompleteResolution.valid -and [string]$failedCompleteResolution.disposition -eq "complete-case-failure") "fully owned failed cases must surface only through the failed aggregate exit envelope"
+
+$fiveSelectedIds = @("success", "compile-failure", "ambiguous-macro-failure", "intrinsic-shadow", "runtime-full-err")
+$preOwnershipCase = New-TestPostCleanupCase -Id $fiveSelectedIds[0] -Passed $false -OwnershipRecorded $false -OwnedPid $null -ObservedPid 9123 -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "durable ownership write failed"
+$preOwnershipResults = New-TestPostCleanupResults -Cases @($preOwnershipCase) -AggregatePassed $false
+$emptyLedger = New-TestPostCleanupLedger -CaseIds @()
+$preOwnershipResolution = Invoke-TestPostCleanupResolution -Results $preOwnershipResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1
+Assert-True ([bool]$preOwnershipResolution.valid -and [string]$preOwnershipResolution.disposition -eq "pre-ownership-transport" -and [string]$preOwnershipResolution.transport_error -eq "durable ownership write failed") "five-case early stop must surface exactly the first pre-ownership transport after empty-ledger cleanup"
+Assert-True (Test-ExcelOracleShouldStopAfterCase -CaseResult $preOwnershipCase) "ownership-write failure with an observed PID but no durable record must stop relaunches"
+$jobDeferredPreOwnershipResults = Copy-TestJsonObject -Value $preOwnershipResults
+$jobDeferredPreOwnershipResults.cases[0].cleanup_status = "job-contained-preownership"
+Assert-True ([bool](Invoke-TestPostCleanupResolution -Results $jobDeferredPreOwnershipResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "ownership-write failure may surface only after its exact process was deferred to and removed by the supervisor Job"
+$durablyOwnedHarnessFailure = New-TestPostCleanupCase -Id "success" -Passed $false -OwnershipRecorded $true -OwnedPid 7001 -ObservedPid 7001 -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "later failure"
+Assert-True (-not (Test-ExcelOracleShouldStopAfterCase -CaseResult $durablyOwnedHarnessFailure)) "an observed PID must not substitute for or erase the durable ownership-record boundary"
+
+$wrongFirstResults = Copy-TestJsonObject -Value $preOwnershipResults
+$wrongFirstResults.cases[0].id = $fiveSelectedIds[1]
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongFirstResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "special transport from a non-first selected case must fail"
+$extraEarlyResults = New-TestPostCleanupResults -Cases @($preOwnershipCase, (New-TestPostCleanupCase -Id $fiveSelectedIds[1] -Passed $false -OwnershipRecorded $false -OwnedPid $null -ObservedPid $null -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "extra")) -AggregatePassed $false
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $extraEarlyResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "special transport must contain exactly one first-case result"
+$unexpectedExcelLedger = New-TestPostCleanupLedger -CaseIds @($fiveSelectedIds[0]) -FirstPid 9123
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $preOwnershipResults -ExcelLedger $unexpectedExcelLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "special transport with a nonempty Excel ledger must fail"
+$unexpectedHelperLedger = New-TestPostCleanupLedger -CaseIds @($fiveSelectedIds[0]) -Guardian
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $preOwnershipResults -ExcelLedger $emptyLedger -HelperLedger $unexpectedHelperLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "special transport with a nonempty guardian ledger must fail"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $preOwnershipResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 0).valid) "special transport must require the failed worker exit envelope"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $null -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "worker exit failure alone must never bypass result/ledger authority"
+
+$wrongWorkerResults = Copy-TestJsonObject -Value $completeResults
+$wrongWorkerResults.worker_pid = 99999
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongWorkerResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "foreign results worker PID must fail"
+$missingWorkerFieldResults = Copy-TestJsonObject -Value $completeResults
+$missingWorkerFieldResults.PSObject.Properties.Remove("worker_pid")
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $missingWorkerFieldResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "missing results authority field must return invalid without throwing"
+$wrongTokenResults = Copy-TestJsonObject -Value $completeResults
+$wrongTokenResults.containment_token = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongTokenResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "foreign results containment token must fail"
+$stringDiagnosticResults = Copy-TestJsonObject -Value $completeResults
+$stringDiagnosticResults.diagnostic_only = "false"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $stringDiagnosticResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "string diagnostic_only impostor must fail"
+$wrongCaseSchemaResults = Copy-TestJsonObject -Value $completeResults
+$wrongCaseSchemaResults.cases[0].schema = "attacker.v1"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongCaseSchemaResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "wrong case-result schema must fail"
+$missingCaseFieldResults = Copy-TestJsonObject -Value $completeResults
+$missingCaseFieldResults.cases[0].PSObject.Properties.Remove("bootstrap_workbook")
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $missingCaseFieldResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "missing case-result field must return invalid without throwing"
+$stringCasePassedResults = Copy-TestJsonObject -Value $completeResults
+$stringCasePassedResults.cases[0].passed = "true"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $stringCasePassedResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "string case passed impostor must fail"
+$wrongOrderResults = New-TestPostCleanupResults -Cases @($completeCases[1], $completeCases[0])
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongOrderResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "case-result order drift must fail"
+$wrongAggregateResults = New-TestPostCleanupResults -Cases $completeCases -AggregatePassed $false
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongAggregateResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -WorkerExitCode 1).valid) "aggregate/case disagreement must fail"
+$wrongLedgerOrder = New-TestPostCleanupLedger -CaseIds @($completeIds[1], $completeIds[0]) -FirstPid 7001
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $wrongLedgerOrder -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "ownership ledger order drift must fail"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -WorkerExitCode 1).valid) "nonzero worker exit must not bypass a complete-success envelope"
+$missingBootstrapResults = Copy-TestJsonObject -Value $completeResults
+$missingBootstrapResults.cases[0].bootstrap_workbook = $null
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $missingBootstrapResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "complete result with missing bootstrap authority must fail"
+$modifiedBootstrapResults = Copy-TestJsonObject -Value $completeResults
+$modifiedBootstrapResults.cases[0].bootstrap_workbook.sha256_after = "sha256:$('c' * 64)"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $modifiedBootstrapResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "complete result with modified bootstrap bytes must fail"
+
+$completeWindowEnumeration = [pscustomobject]@{ Windows = @([pscustomobject]@{ ProcessId = $PID }); Truncated = $false; Limit = 512; Succeeded = $true; ErrorCode = 0 }
+Assert-True (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $completeWindowEnumeration -ExpectedProcessId $PID) "complete exact-PID window enumeration authority"
+$truncatedWindowEnumeration = Copy-TestJsonObject -Value $completeWindowEnumeration
+$truncatedWindowEnumeration.Truncated = $true
+$truncatedWindowEnumeration.Succeeded = $false
+Assert-True (-not (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $truncatedWindowEnumeration -ExpectedProcessId $PID)) "truncated window enumeration must fail closed"
+$foreignWindowEnumeration = Copy-TestJsonObject -Value $completeWindowEnumeration
+$foreignWindowEnumeration.Windows[0].ProcessId = $PID + 1
+Assert-True (-not (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $foreignWindowEnumeration -ExpectedProcessId $PID)) "foreign-PID candidate in an enumeration must fail closed"
 
 $cases = @(Get-ExcelOracleHarnessCases)
 Assert-Equal 6 $cases.Count "declared harness and bounded diagnostic case count"
@@ -374,6 +681,9 @@ $validExcelLedgerLine = $ownedRecord | ConvertTo-Json -Compress
 $validExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
 Assert-Equal 1 @($validExcelLedger.records).Count "valid Excel ownership ledger record count"
 Assert-Equal 0 @($validExcelLedger.errors).Count "valid Excel ownership ledger error count"
+$emptyExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines ([string[]]::new(0)) -Kind excel -RunId "run-a" -BaselineExcelPids ([int[]]::new(0))
+Assert-Equal 0 @($emptyExcelLedger.records).Count "explicit empty Excel ownership ledger record count"
+Assert-Equal 0 @($emptyExcelLedger.errors).Count "explicit empty Excel ownership ledger error count"
 $malformedExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine, '{not-json') -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
 Assert-Equal 1 @($malformedExcelLedger.errors).Count "mutation: malformed nonempty ownership JSON must make authority uncertain"
 $nullExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @('null') -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
@@ -496,6 +806,24 @@ Assert-True ($guardianSource -match 'ConvertFrom-ExcelOracleGuardianControl' -an
 Assert-True ($guardianSource -match 'operation-armed' -and $guardianSource -match 'guardian-heartbeat') "guardian must acknowledge and heartbeat each operation"
 
 $workerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-worker.ps1")
+$nativeSourceMatch = [regex]::Match($workerSource, "(?s)Add-Type @'\r?\n(?<code>.*?)\r?\n'@")
+Assert-True $nativeSourceMatch.Success "worker native attachment source must be extractable"
+if (-not ([Management.Automation.PSTypeName]'ExcelOracleNativeMethods').Type) {
+    Add-Type -TypeDefinition $nativeSourceMatch.Groups['code'].Value
+}
+$ownedTestEnumeration = [ExcelOracleNativeMethods]::EnumerateOwnedWindows([uint32]$PID)
+Assert-True (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $ownedTestEnumeration -ExpectedProcessId $PID) "native enumeration must complete without truncation and return only exact-PID windows"
+Assert-True (Test-WorkerExactPidAttachmentShape -Source $workerSource) "worker attachment must enumerate bounded exact-PID top-level/descendant windows, verify returned Application.Hwnd PID, and write bounded diagnostics"
+$pidFilterMutation = $workerSource.Replace('topLevelProcessId != expectedProcessId', 'topLevelProcessId == expectedProcessId')
+Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $pidFilterMutation)) "mutation: inverted top-level PID ownership filter must be rejected"
+$unboundedWindowMutation = $workerSource.Replace('Select-Object -First 128', 'Select-Object')
+Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $unboundedWindowMutation)) "mutation: unbounded attachment candidate enumeration must be rejected"
+$unverifiedApplicationMutation = $workerSource.Replace('$applicationPid -eq $process.Id', '$true')
+Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $unverifiedApplicationMutation)) "mutation: accepting an OBJID_NATIVEOM result without exact Application.Hwnd PID verification must be rejected"
+$ambiguousLaunchMutation = $workerSource.Replace('$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)', '$startInfo.Arguments = "/x $($BootstrapWorkbook.path)"')
+Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $ambiguousLaunchMutation)) "mutation: string-concatenated bootstrap launch arguments must be rejected"
+$threeArgumentMutation = $workerSource.Replace('$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)', '$startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path); $startInfo.ArgumentList.Add("/n")').Replace('$startInfo.ArgumentList.Count -ne 2', '$startInfo.ArgumentList.Count -ne 3')
+Assert-True (-not (Test-WorkerExactPidAttachmentShape -Source $threeArgumentMutation)) "mutation: undocumented /n or any third Excel argv must be rejected"
 $compileIndex = $workerSource.IndexOf('$compileControl.Execute()')
 $runIndex = $workerSource.IndexOf('$runValue = $excel.Run($qualifiedName)')
 Assert-True ($compileIndex -ge 0 -and $runIndex -gt $compileIndex) "forced VBE compile must precede Application.Run"
@@ -521,6 +849,8 @@ Assert-True ($workerSource -match 'Get-VbomRuntimeMeasurement' -and $workerSourc
 Assert-True ($workerSource -notmatch '-MacrosEnabled' -and $workerSource -match '-RunnableEntryObserved \(\[bool\]\$runtimeMeasurement\.invocation_entry_observed\)') "configured low AutomationSecurity must not substitute for observed macro entry"
 Assert-True ($workerSource -match 'runtime-unhandled-modal' -and $workerSource -match 'Test-RuntimeErrorEvidence') "live worker must implement the unhandled runtime modal diagnostic"
 Assert-True ($workerSource -notmatch 'New-Object\s+-ComObject\s+Excel\.Application' -and $workerSource -match 'Start-OwnedExcelApplication') "Excel must be directly launched inside prepared job containment, not activated through an uncontained COM launch"
+Assert-True ($workerSource -match 'Test-ExcelOracleShouldStopAfterCase -CaseResult \$caseResult' -and $workerSource -match 'Do not multiply' -and $workerSource -match 'excel_ownership_recorded = \$null -ne \$excelOwnershipRecord') "a pre-ownership attachment/bootstrap failure must stop additional owned Excel launches by durable ownership-record state"
+Assert-True ($workerSource -match 'job-contained-preownership' -and $workerSource -match 'defer it to Job termination') "ownership-write failure must defer the one exact contained Excel process to the supervisor Job without authorizing another launch"
 Assert-True ($workerSource.IndexOf('$containmentAuthority = Wait-ContainmentAuthority') -lt $workerSource.IndexOf('$selectedCases = @(Get-ExcelOracleHarnessCases')) "worker must wait for containment authority before any case mutation"
 $compileControlPublish = $workerSource.IndexOf('Set-GuardianControl -Path $controlFile -CaseId $Case.id -OperationId $compileOperation')
 $compileLiveCheck = $workerSource.IndexOf('Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "forced VBE compile after control publication"')
@@ -529,6 +859,11 @@ $runLiveCheck = $workerSource.IndexOf('Assert-GuardianLive -Process $guardian -R
 Assert-True ($compileControlPublish -ge 0 -and $compileLiveCheck -gt $compileControlPublish -and $runControlPublish -ge 0 -and $runLiveCheck -gt $runControlPublish) "control publication must precede the immediate guardian liveness check for both phases"
 
 $runnerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "run-excel-vba-oracle.ps1")
+Assert-True (Test-RunnerEmptyLedgerShape -Source $runnerSource) "missing ownership ledger paths must bind to explicit empty arrays during pre-ledger cleanup"
+$nullLedgerMutation = $runnerSource.Replace('[string[]]$lines = [string[]]::new(0)', '$lines = if (Test-Path -LiteralPath $Path) { @(Get-Content -LiteralPath $Path) } else { @() }')
+Assert-True (-not (Test-RunnerEmptyLedgerShape -Source $nullLedgerMutation)) "mutation: pipeline-collapsed missing ledger arrays must be rejected"
+Assert-True ($runnerSource -match 'Resolve-ExcelOraclePostCleanupResult' -and $runnerSource -match 'first selected case failed before durable ownership after owned Job cleanup' -and $runnerSource -notmatch 'if \(\$workerFailure\) \{ throw \$workerFailure \}') "runner must use the pure post-cleanup authority result and never let process exit alone bypass ledger binding"
+Assert-True ($runnerSource -match 'Test-ExcelOracleBootstrapWorkbook -Descriptor \$caseResult\.bootstrap_workbook' -and $runnerSource -match 'selected oracle case expectations failed after owned cleanup') "runner must validate persisted bootstrap bytes before surfacing complete success or case failure"
 Assert-True (Test-RunnerIdentityCheckedCleanupShape -Source $runnerSource) "supervisor fallback cleanup must query, terminate, and wait through one retained native handle"
 $pidOnlyCleanupMutation = $runnerSource.Replace('Invoke-ExcelOracleRetainedProcessTermination', 'Invoke-PidOnlyTermination')
 Assert-True (-not (Test-RunnerIdentityCheckedCleanupShape -Source $pidOnlyCleanupMutation)) "mutation: PID-only fallback cleanup must be rejected"

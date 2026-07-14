@@ -13,16 +13,56 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "excel-vba-oracle-contract.ps1")
 . (Join-Path $PSScriptRoot "excel-vba-oracle-job.ps1")
+. (Join-Path $PSScriptRoot "excel-vba-oracle-bootstrap.ps1")
 
 if (-not ([System.Management.Automation.PSTypeName]'ExcelOracleNativeMethods').Type) {
     Add-Type @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
+
+public sealed class ExcelOracleWindowCandidate
+{
+    public long Hwnd { get; set; }
+    public long TopLevelHwnd { get; set; }
+    public bool IsTopLevel { get; set; }
+    public uint ProcessId { get; set; }
+    public string ClassName { get; set; }
+    public string Title { get; set; }
+    public bool Visible { get; set; }
+}
+
+public sealed class ExcelOracleWindowEnumeration
+{
+    public ExcelOracleWindowCandidate[] Windows { get; set; }
+    public bool Truncated { get; set; }
+    public int Limit { get; set; }
+    public bool Succeeded { get; set; }
+    public int ErrorCode { get; set; }
+}
 
 public static class ExcelOracleNativeMethods
 {
+    private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr state);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr state);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumChildWindows(IntPtr parent, EnumWindowsProc callback, IntPtr state);
+
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hwnd, StringBuilder className, int maxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hwnd, StringBuilder title, int maxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
 
     [DllImport("oleacc.dll")]
     private static extern int AccessibleObjectFromWindow(
@@ -31,14 +71,67 @@ public static class ExcelOracleNativeMethods
         ref Guid interfaceId,
         [MarshalAs(UnmanagedType.Interface)] out object nativeObject);
 
-    public static object GetNativeObjectFromWindow(IntPtr hwnd)
+    private static string ReadClassName(IntPtr hwnd)
+    {
+        StringBuilder text = new StringBuilder(257);
+        int count = GetClassName(hwnd, text, text.Capacity);
+        return count > 0 ? text.ToString(0, count) : String.Empty;
+    }
+
+    private static string ReadWindowTitle(IntPtr hwnd)
+    {
+        StringBuilder text = new StringBuilder(513);
+        int count = GetWindowText(hwnd, text, text.Capacity);
+        return count > 0 ? text.ToString(0, count) : String.Empty;
+    }
+
+    private static ExcelOracleWindowCandidate DescribeWindow(IntPtr hwnd, IntPtr topLevel, bool isTopLevel, uint processId)
+    {
+        return new ExcelOracleWindowCandidate {
+            Hwnd = hwnd.ToInt64(),
+            TopLevelHwnd = topLevel.ToInt64(),
+            IsTopLevel = isTopLevel,
+            ProcessId = processId,
+            ClassName = ReadClassName(hwnd),
+            Title = ReadWindowTitle(hwnd),
+            Visible = IsWindowVisible(hwnd)
+        };
+    }
+
+    public static ExcelOracleWindowEnumeration EnumerateOwnedWindows(uint expectedProcessId)
+    {
+        const int WindowLimit = 512;
+        List<ExcelOracleWindowCandidate> windows = new List<ExcelOracleWindowCandidate>();
+        bool truncated = false;
+        bool completed = EnumWindows(delegate(IntPtr topLevel, IntPtr ignored) {
+            uint topLevelProcessId;
+            GetWindowThreadProcessId(topLevel, out topLevelProcessId);
+            if (topLevelProcessId != expectedProcessId) return true;
+            if (windows.Count >= WindowLimit) { truncated = true; return false; }
+            windows.Add(DescribeWindow(topLevel, topLevel, true, topLevelProcessId));
+            EnumChildWindows(topLevel, delegate(IntPtr child, IntPtr childState) {
+                uint childProcessId;
+                GetWindowThreadProcessId(child, out childProcessId);
+                if (childProcessId == expectedProcessId) {
+                    if (windows.Count >= WindowLimit) { truncated = true; return false; }
+                    windows.Add(DescribeWindow(child, topLevel, false, childProcessId));
+                }
+                return true;
+            }, IntPtr.Zero);
+            return !truncated;
+        }, IntPtr.Zero);
+        int errorCode = completed ? 0 : Marshal.GetLastWin32Error();
+        return new ExcelOracleWindowEnumeration {
+            Windows = windows.ToArray(), Truncated = truncated, Limit = WindowLimit,
+            Succeeded = completed && !truncated, ErrorCode = truncated ? 0 : errorCode
+        };
+    }
+
+    public static int TryGetNativeObjectFromWindow(IntPtr hwnd, out object nativeObject)
     {
         const uint OBJID_NATIVEOM = 0xFFFFFFF0;
         Guid dispatch = new Guid("00020400-0000-0000-C000-000000000046");
-        object nativeObject;
-        int hr = AccessibleObjectFromWindow(hwnd, OBJID_NATIVEOM, ref dispatch, out nativeObject);
-        if (hr < 0) Marshal.ThrowExceptionForHR(hr);
-        return nativeObject;
+        return AccessibleObjectFromWindow(hwnd, OBJID_NATIVEOM, ref dispatch, out nativeObject);
     }
 }
 '@
@@ -82,28 +175,145 @@ function Get-ExcelExecutablePath {
     throw "excel-vba-oracle-worker: Excel executable was not found"
 }
 
+function Write-ExcelAttachmentDiagnostic {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$ProcessIdentity,
+        [Parameter(Mandatory = $true)][int]$AttemptCount,
+        [Parameter(Mandatory = $true)][int]$TruncatedObservationCount,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Observations,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$LastWindows,
+        [Parameter(Mandatory = $true)][bool]$WindowEnumerationTruncated,
+        [Parameter(Mandatory = $true)][bool]$WindowEnumerationSucceeded,
+        [Parameter(Mandatory = $true)][int]$WindowEnumerationErrorCode,
+        [Parameter(Mandatory = $true)][ValidateSet("attached", "blocked-owned-window", "process-exited", "deadline", "window-enumeration-truncated", "window-enumeration-invalid")][string]$Outcome
+    )
+    $temporary = "$Path.$PID.tmp"
+    [ordered]@{
+        schema = "oxvba.excel-vba-oracle-attachment-diagnostic.v1"
+        run_id = $RunId
+        generated_utc = [DateTime]::UtcNow.ToString("o")
+        outcome = $Outcome
+        process = $ProcessIdentity
+        attempt_count = $AttemptCount
+        observation_limit = 256
+        window_enumeration_limit = 512
+        window_enumeration_truncated = $WindowEnumerationTruncated
+        window_enumeration_succeeded = $WindowEnumerationSucceeded
+        window_enumeration_error_code = $WindowEnumerationErrorCode
+        last_window_diagnostic_limit = 128
+        observation_count = @($Observations).Count
+        truncated_observation_count = $TruncatedObservationCount
+        observations = @($Observations)
+        last_owned_windows = @($LastWindows)
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporary -Encoding utf8NoBOM
+    Move-Item -LiteralPath $temporary -Destination $Path -Force
+}
+
+function Test-ExcelStartupBlockingWindow {
+    param([Parameter(Mandatory = $true)]$Window)
+    if (-not [bool]$Window.IsTopLevel -or -not [bool]$Window.Visible) { return $false }
+    # XLMAIN is the workbook frame. The Office splash is noninteractive. Any
+    # other visible top-level window owned by this exact new Excel PID may be a
+    # first-run, activation, trust, or recovery surface and must not be driven.
+    return [string]$Window.ClassName -notin @("XLMAIN", "MSOSPLASH", "MsoSplash")
+}
+
 function Start-OwnedExcelApplication {
-    param([Parameter(Mandatory = $true)][string]$ExcelExecutable)
-    $process = Start-Process -FilePath $ExcelExecutable -ArgumentList "/x" -PassThru
+    param(
+        [Parameter(Mandatory = $true)][string]$ExcelExecutable,
+        [Parameter(Mandatory = $true)]$BootstrapWorkbook,
+        [Parameter(Mandatory = $true)][string]$DiagnosticPath
+    )
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $ExcelExecutable
+    $startInfo.UseShellExecute = $false
+    $startInfo.ArgumentList.Add("/x")
+    $startInfo.ArgumentList.Add([string]$BootstrapWorkbook.path)
+    if ($startInfo.ArgumentList.Count -ne 2 -or $startInfo.ArgumentList[0] -cne "/x" -or
+        $startInfo.ArgumentList[1] -cne [string]$BootstrapWorkbook.path -or $startInfo.ArgumentList -contains "/n") {
+        throw "excel-vba-oracle-worker: invalid direct Excel launch argv"
+    }
+    $process = [Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) { throw "excel-vba-oracle-worker: direct Excel bootstrap launch returned no process" }
+    $processIdentity = [ordered]@{
+        pid = $process.Id
+        process_start_utc = $process.StartTime.ToUniversalTime().ToString("o")
+        process_name = [string]$process.ProcessName
+        executable_path = $ExcelExecutable
+        launch_argv = @("/x", [string]$BootstrapWorkbook.path)
+        bootstrap_workbook = $BootstrapWorkbook
+    }
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    $nativeWindow = $null
+    $attemptCount = 0
+    $truncatedObservationCount = 0
+    $observations = [Collections.Generic.List[object]]::new()
+    $lastWindows = @()
     while ([DateTime]::UtcNow -lt $deadline) {
-        if ($process.HasExited) { throw "excel-vba-oracle-worker: directly launched Excel exited before automation attachment" }
+        $attemptCount++
+        if ($process.HasExited) {
+            Write-ExcelAttachmentDiagnostic -Path $DiagnosticPath -ProcessIdentity $processIdentity -AttemptCount $attemptCount -TruncatedObservationCount $truncatedObservationCount -Observations @($observations) -LastWindows @($lastWindows) -WindowEnumerationTruncated $false -WindowEnumerationSucceeded $false -WindowEnumerationErrorCode 0 -Outcome process-exited
+            throw "excel-vba-oracle-worker: directly launched Excel exited before automation attachment; diagnostic '$DiagnosticPath'"
+        }
         $process.Refresh()
-        $hwnd = $process.MainWindowHandle
-        if ($hwnd -ne [IntPtr]::Zero) {
+        $enumeration = [ExcelOracleNativeMethods]::EnumerateOwnedWindows([uint32]$process.Id)
+        $ownedWindows = @($enumeration.Windows |
+            Sort-Object @{ Expression = { if ([string]$_.ClassName -eq "EXCEL7") { 0 } elseif ([bool]$_.IsTopLevel) { 1 } else { 2 } } }, Hwnd)
+        $lastWindows = @($ownedWindows | Select-Object -First 128)
+        if (-not (Test-ExcelOracleWindowEnumerationAuthority -Enumeration $enumeration -ExpectedProcessId $process.Id)) {
+            $enumerationTruncated = $enumeration.Truncated -is [bool] -and [bool]$enumeration.Truncated
+            $enumerationSucceeded = $enumeration.Succeeded -is [bool] -and [bool]$enumeration.Succeeded
+            $enumerationError = if ($enumeration.ErrorCode -is [int] -or $enumeration.ErrorCode -is [long]) { [int]$enumeration.ErrorCode } else { -1 }
+            $enumerationOutcome = if ($enumerationTruncated) { "window-enumeration-truncated" } else { "window-enumeration-invalid" }
+            Write-ExcelAttachmentDiagnostic -Path $DiagnosticPath -ProcessIdentity $processIdentity -AttemptCount $attemptCount -TruncatedObservationCount $truncatedObservationCount -Observations @($observations) -LastWindows @($lastWindows) -WindowEnumerationTruncated $enumerationTruncated -WindowEnumerationSucceeded $enumerationSucceeded -WindowEnumerationErrorCode $enumerationError -Outcome $enumerationOutcome
+            throw "excel-vba-oracle-worker: exact-PID owned-window enumeration was incomplete or invalid; refusing partial attachment authority; diagnostic '$DiagnosticPath'"
+        }
+        $blockingWindows = @($ownedWindows | Where-Object { Test-ExcelStartupBlockingWindow -Window $_ })
+        foreach ($window in $ownedWindows) {
+            $nativeWindow = $null
+            $application = $null
+            $hr = [ExcelOracleNativeMethods]::TryGetNativeObjectFromWindow([IntPtr][int64]$window.Hwnd, [ref]$nativeWindow)
+            $result = if ($hr -lt 0) { "hresult-failure" } elseif ($null -eq $nativeWindow) { "null-native-object" } else { "native-object" }
             try {
-                $nativeWindow = [ExcelOracleNativeMethods]::GetNativeObjectFromWindow($hwnd)
-                $application = $nativeWindow.Application
+                if ($null -ne $nativeWindow) { $application = $nativeWindow.Application }
                 if ($null -ne $application) {
-                    return [pscustomobject]@{ process = $process; application = $application; native_window = $nativeWindow }
+                    $applicationPid = Get-ExcelPidFromApplication -Application $application
+                    if ($applicationPid -eq $process.Id -and [string]$window.ClassName -eq "EXCEL7") { $result = "attached-exact-process-excel7" }
+                    elseif ($applicationPid -eq $process.Id) { $result = "exact-process-native-object-from-non-excel7" }
+                    else { $result = "application-pid-mismatch:$applicationPid" }
                 }
             }
-            catch { }
+            catch { $result = "application-error:$($_.Exception.GetType().FullName):$($_.Exception.Message)" }
+            $observation = [pscustomobject]@{
+                observed_utc = [DateTime]::UtcNow.ToString("o")
+                attempt = $attemptCount
+                pid = [int]$window.ProcessId
+                hwnd = [string]$window.Hwnd
+                top_level_hwnd = [string]$window.TopLevelHwnd
+                is_top_level = [bool]$window.IsTopLevel
+                class_name = [string]$window.ClassName
+                title = [string]$window.Title
+                visible = [bool]$window.Visible
+                hresult = ("0x{0:X8}" -f $hr)
+                result = $result
+            }
+            if ($observations.Count -lt 256) { $observations.Add($observation) } else { $truncatedObservationCount++ }
+            if ($result -eq "attached-exact-process-excel7" -and $blockingWindows.Count -eq 0) {
+                Write-ExcelAttachmentDiagnostic -Path $DiagnosticPath -ProcessIdentity $processIdentity -AttemptCount $attemptCount -TruncatedObservationCount $truncatedObservationCount -Observations @($observations) -LastWindows @($lastWindows) -WindowEnumerationTruncated $false -WindowEnumerationSucceeded $true -WindowEnumerationErrorCode 0 -Outcome attached
+                return [pscustomobject]@{ process = $process; application = $application; native_window = $nativeWindow }
+            }
+            Release-ComObject $application
+            Release-ComObject $nativeWindow
+        }
+        if ($blockingWindows.Count -gt 0) {
+            Write-ExcelAttachmentDiagnostic -Path $DiagnosticPath -ProcessIdentity $processIdentity -AttemptCount $attemptCount -TruncatedObservationCount $truncatedObservationCount -Observations @($observations) -LastWindows @($lastWindows) -WindowEnumerationTruncated $false -WindowEnumerationSucceeded $true -WindowEnumerationErrorCode 0 -Outcome blocked-owned-window
+            $blocked = @($blockingWindows | ForEach-Object { "HWND=$($_.Hwnd) class='$($_.ClassName)' title='$($_.Title)'" }) -join "; "
+            throw "excel-vba-oracle-worker: directly launched Excel exposed an owned visible startup/modal window; refusing broad interaction: $blocked; diagnostic '$DiagnosticPath'"
         }
         Start-Sleep -Milliseconds 100
     }
-    throw "excel-vba-oracle-worker: directly launched Excel did not expose OBJID_NATIVEOM"
+    Write-ExcelAttachmentDiagnostic -Path $DiagnosticPath -ProcessIdentity $processIdentity -AttemptCount $attemptCount -TruncatedObservationCount $truncatedObservationCount -Observations @($observations) -LastWindows @($lastWindows) -WindowEnumerationTruncated $false -WindowEnumerationSucceeded $true -WindowEnumerationErrorCode 0 -Outcome deadline
+    throw "excel-vba-oracle-worker: directly launched Excel did not expose exact-PID OBJID_NATIVEOM through an owned window; diagnostic '$DiagnosticPath'"
 }
 
 function Get-ExcelProcessIds {
@@ -544,6 +754,8 @@ function Invoke-HarnessCase {
     $readyFile = Join-Path $caseDirectory "guardian-ready.json"
     $stopFile = Join-Path $caseDirectory "guardian-stop"
     $excelIdentityFile = Join-Path $caseDirectory "excel-process-identity.json"
+    $excelAttachmentDiagnosticFile = Join-Path $caseDirectory "excel-attachment-diagnostic.json"
+    $bootstrapWorkbookPath = Join-Path $caseDirectory "oracle-bootstrap.xlsx"
     $guardianStdout = Join-Path $caseDirectory "guardian.stdout.txt"
     $guardianStderr = Join-Path $caseDirectory "guardian.stderr.txt"
     $compileEvents = @()
@@ -565,9 +777,15 @@ function Invoke-HarnessCase {
     $evidenceStatus = $null
     $cleanupStatus = "not-run"
     $cleanupAuthorityErrors = [Collections.Generic.List[string]]::new()
+    $bootstrapWorkbook = $null
+    $bootstrapSha256After = $null
 
     try {
-        $launchedExcel = Start-OwnedExcelApplication -ExcelExecutable $script:ExcelExecutablePath
+        $bootstrapWorkbook = New-ExcelOracleBootstrapWorkbook -Path $bootstrapWorkbookPath
+        if (-not (Test-ExcelOracleBootstrapWorkbook -Descriptor $bootstrapWorkbook)) {
+            throw "excel-vba-oracle-worker: controlled bootstrap workbook is missing, modified, or has invalid OPC relationship closure before launch"
+        }
+        $launchedExcel = Start-OwnedExcelApplication -ExcelExecutable $script:ExcelExecutablePath -BootstrapWorkbook $bootstrapWorkbook -DiagnosticPath $excelAttachmentDiagnosticFile
         $ownedExcelProcess = $launchedExcel.process
         $excel = $launchedExcel.application
         $excelNativeWindow = $launchedExcel.native_window
@@ -599,7 +817,14 @@ function Invoke-HarnessCase {
         $guardianOwnershipRecord = Add-HelperOwnershipRecord -Process $guardian -CaseId $Case.id
         $guardianReady = Wait-GuardianReady -ReadyFile $readyFile -Process $guardian
 
-        $workbook = $excel.Workbooks.Add()
+        if ([int]$excel.Workbooks.Count -ne 1) {
+            throw "excel-vba-oracle-worker: directly launched Excel did not open exactly one controlled bootstrap workbook"
+        }
+        $workbook = $excel.Workbooks.Item(1)
+        $actualBootstrapPath = [IO.Path]::GetFullPath([string]$workbook.FullName)
+        if (-not [string]::Equals($actualBootstrapPath, [string]$bootstrapWorkbook.path, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "excel-vba-oracle-worker: attached Excel workbook does not match the controlled bootstrap path"
+        }
         $workbook.Activate()
         $project = $workbook.VBProject
         $component = $project.VBComponents.Add(1)
@@ -806,9 +1031,23 @@ function Invoke-HarnessCase {
                     $excelTermination = Invoke-ExcelOracleRetainedProcessTermination -Record $excelOwnershipRecord -ExpectedProcessName "EXCEL" -RunId $RunId
                     if ([string]$excelTermination.state -eq "same-instance-conflict") { $cleanupAuthorityErrors.Add("Excel retained identity conflict") }
                 }
-                else { $cleanupAuthorityErrors.Add("Excel cleanup lacks its written ownership record") }
+                else {
+                    # The supervisor-owned kill-on-close Job is the durable
+                    # authority for this exact pre-ledger process. Do not invent
+                    # a PID-only cleanup record; defer it to Job termination.
+                    $cleanupStatus = "job-contained-preownership"
+                }
             }
-            $cleanupStatus = if ($ownedExcelProcess.HasExited) { "owned-process-zero" } else { "owned-process-remains" }
+            if ($ownedExcelProcess.HasExited) { $cleanupStatus = "owned-process-zero" }
+            elseif ($cleanupStatus -ne "job-contained-preownership") { $cleanupStatus = "owned-process-remains" }
+        }
+        if ($bootstrapWorkbook) {
+            if (-not (Test-ExcelOracleBootstrapWorkbook -Descriptor $bootstrapWorkbook)) {
+                $cleanupAuthorityErrors.Add("controlled bootstrap workbook is missing, modified, or has invalid OPC relationship closure after close-without-save")
+            }
+            elseif (Test-Path -LiteralPath $bootstrapWorkbook.path) {
+                $bootstrapSha256After = "sha256:$((Get-FileHash -LiteralPath $bootstrapWorkbook.path -Algorithm SHA256).Hash.ToLowerInvariant())"
+            }
         }
         if ($cleanupAuthorityErrors.Count -gt 0) {
             $passed = $false
@@ -823,7 +1062,9 @@ function Invoke-HarnessCase {
         id = $Case.id
         purpose = $Case.purpose
         passed = $passed
-        owned_excel_pid = $excelPid
+        owned_excel_pid = if ($excelOwnershipRecord) { [int]$excelOwnershipRecord.pid } else { $null }
+        observed_excel_pid = $excelPid
+        excel_ownership_recorded = $null -ne $excelOwnershipRecord
         module_path = $modulePath
         module_sha256 = Get-ExcelOracleSha256 -Text $Case.module_source
         compile_status = $compileStatus
@@ -846,6 +1087,16 @@ function Invoke-HarnessCase {
         evidence_status = $evidenceStatus
         cleanup_status = $cleanupStatus
         cleanup_authority_errors = @($cleanupAuthorityErrors)
+        bootstrap_workbook = if ($bootstrapWorkbook) {
+            [ordered]@{
+                schema = $bootstrapWorkbook.schema
+                path = $bootstrapWorkbook.path
+                sha256 = $bootstrapWorkbook.sha256
+                sha256_after = $bootstrapSha256After
+                package_parts = @($bootstrapWorkbook.package_parts)
+                macro_free = [bool]$bootstrapWorkbook.macro_free
+            }
+        } else { $null }
         defect_declaration = if ($Case.id -eq "intrinsic-shadow") { "Public Function Shadowed(ByVal Fix As Double) As Double" } else { $null }
     }
 }
@@ -871,7 +1122,14 @@ $script:SelectedCaseIds = @($selectedCases | ForEach-Object { [string]$_.id })
 $script:GuardianControlSequence = 0L
 $results = [Collections.Generic.List[object]]::new()
 foreach ($case in $selectedCases) {
-    $results.Add((Invoke-HarnessCase -Case $case))
+    $caseResult = Invoke-HarnessCase -Case $case
+    $results.Add($caseResult)
+    if (Test-ExcelOracleShouldStopAfterCase -CaseResult $caseResult) {
+        # A pre-ownership infrastructure failure (bootstrap, exact attachment,
+        # or authority setup) is common to the remaining cases. Do not multiply
+        # owned Excel launches after that boundary has already failed closed.
+        break
+    }
 }
 
 $document = [ordered]@{
@@ -886,4 +1144,4 @@ $document = [ordered]@{
     passed = @($results | Where-Object { -not $_.passed }).Count -eq 0
 }
 $document | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $OutputDirectory "results.json") -Encoding utf8NoBOM
-if (-not $document.passed -and -not $document.diagnostic_only) { exit 1 }
+if (-not $document.passed) { exit 1 }

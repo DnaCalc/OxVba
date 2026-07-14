@@ -567,6 +567,243 @@ function ConvertFrom-ExcelOracleOwnershipLedger {
     return [pscustomobject]@{ records = @($records); errors = @($errors) }
 }
 
+function Test-ExcelOracleShouldStopAfterCase {
+    param([Parameter(Mandatory = $true)]$CaseResult)
+    return $CaseResult.PSObject.Properties.Name -contains "excel_ownership_recorded" -and
+        $CaseResult.excel_ownership_recorded -is [bool] -and
+        -not [bool]$CaseResult.excel_ownership_recorded -and
+        [string]$CaseResult.compile_status -eq "harness-error"
+}
+
+function Test-ExcelOracleWindowEnumerationAuthority {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Enumeration,
+        [Parameter(Mandatory = $true)][int]$ExpectedProcessId
+    )
+    if ($null -eq $Enumeration -or
+        $Enumeration.PSObject.Properties.Name -notcontains "Windows" -or
+        $Enumeration.PSObject.Properties.Name -notcontains "Truncated" -or
+        $Enumeration.PSObject.Properties.Name -notcontains "Limit" -or
+        $Enumeration.PSObject.Properties.Name -notcontains "Succeeded" -or
+        $Enumeration.PSObject.Properties.Name -notcontains "ErrorCode" -or
+        $Enumeration.Truncated -isnot [bool] -or [bool]$Enumeration.Truncated -or
+        $Enumeration.Succeeded -isnot [bool] -or -not [bool]$Enumeration.Succeeded -or
+        ($Enumeration.Limit -isnot [int] -and $Enumeration.Limit -isnot [long]) -or [int]$Enumeration.Limit -ne 512 -or
+        ($Enumeration.ErrorCode -isnot [int] -and $Enumeration.ErrorCode -isnot [long]) -or [int]$Enumeration.ErrorCode -ne 0 -or
+        @($Enumeration.Windows).Count -gt 512) {
+        return $false
+    }
+    return @($Enumeration.Windows | Where-Object {
+        $_.PSObject.Properties.Name -notcontains "ProcessId" -or
+        ($_.ProcessId -isnot [int] -and $_.ProcessId -isnot [long] -and $_.ProcessId -isnot [uint32]) -or
+        [int]$_.ProcessId -ne $ExpectedProcessId
+    }).Count -eq 0
+}
+
+function Resolve-ExcelOraclePostCleanupResult {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Results,
+        [Parameter(Mandatory = $true)][AllowNull()]$ExcelLedger,
+        [Parameter(Mandatory = $true)][AllowNull()]$HelperLedger,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$ExpectedCaseIds,
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [Parameter(Mandatory = $true)][int]$ExpectedWorkerPid,
+        [Parameter(Mandatory = $true)][string]$ExpectedContainmentToken,
+        [Parameter(Mandatory = $true)][bool]$ExpectedDiagnosticOnly,
+        [Parameter(Mandatory = $true)][int]$WorkerExitCode,
+        [Parameter(Mandatory = $true)][bool]$WorkerQuiesced,
+        [Parameter(Mandatory = $true)][bool]$WorkerTimedOut
+    )
+
+    $errors = [Collections.Generic.List[string]]::new()
+    $disposition = "invalid"
+    $transport = $null
+    if ($ExpectedCaseIds.Count -eq 0 -or @($ExpectedCaseIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0 -or
+        @($ExpectedCaseIds | Select-Object -Unique).Count -ne $ExpectedCaseIds.Count) {
+        $errors.Add("expected case identity sequence is invalid")
+    }
+    if (-not $WorkerQuiesced -or $WorkerTimedOut) { $errors.Add("worker exit envelope is not quiesced/non-timeout") }
+    foreach ($ledgerEntry in @(@("excel", $ExcelLedger), @("guardian", $HelperLedger))) {
+        $name = [string]$ledgerEntry[0]
+        $ledger = $ledgerEntry[1]
+        if ($null -eq $ledger -or $ledger.PSObject.Properties.Name -notcontains "records" -or $ledger.PSObject.Properties.Name -notcontains "errors") {
+            $errors.Add("$name ledger result shape is invalid")
+            continue
+        }
+        if ($ledger.records -isnot [array] -or $ledger.errors -isnot [array]) { $errors.Add("$name ledger collections are not arrays") }
+        if (@($ledger.errors).Count -gt 0) { $errors.Add("$name ledger has authority errors") }
+    }
+    if ($null -eq $Results) {
+        $errors.Add("results document is missing")
+        return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
+    }
+
+    $requiredDocumentFields = @("schema", "run_id", "generated_utc", "worker_pid", "containment_token", "containment_authority", "diagnostic_only", "cases", "passed")
+    $actualDocumentFields = @($Results.PSObject.Properties.Name)
+    if ((@($actualDocumentFields | Sort-Object) -join "`n") -cne (@($requiredDocumentFields | Sort-Object) -join "`n")) {
+        $errors.Add("results document field set is invalid")
+        return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
+    }
+    if ($Results.schema -isnot [string] -or $Results.run_id -isnot [string] -or
+        [string]$Results.schema -cne "oxvba.excel-vba-oracle-results.v1" -or [string]$Results.run_id -cne $RunId) {
+        $errors.Add("results schema or run identity is invalid")
+    }
+    try {
+        if ($Results.generated_utc -isnot [string]) { throw "not a string" }
+        [void][DateTime]::Parse([string]$Results.generated_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+    }
+    catch { $errors.Add("results generated_utc is invalid") }
+    if (($Results.worker_pid -isnot [long] -and $Results.worker_pid -isnot [int]) -or [int]$Results.worker_pid -ne $ExpectedWorkerPid) {
+        $errors.Add("results worker_pid is not the exact worker")
+    }
+    if ($Results.containment_token -isnot [string] -or [string]$Results.containment_token -cne $ExpectedContainmentToken) { $errors.Add("results containment token is invalid") }
+    if ($Results.diagnostic_only -isnot [bool] -or [bool]$Results.diagnostic_only -ne $ExpectedDiagnosticOnly) {
+        $errors.Add("results diagnostic_only is not the expected JSON Boolean")
+    }
+    if ($Results.passed -isnot [bool]) { $errors.Add("results passed is not a JSON Boolean") }
+    if ($Results.cases -isnot [array]) { $errors.Add("results cases is not a JSON array") }
+
+    $authority = $Results.containment_authority
+    $requiredAuthorityFields = @("schema", "run_id", "containment_token", "worker_pid", "worker_process_start_utc", "worker_executable_path", "worker_job_membership_verified", "published_utc")
+    if ($null -eq $authority -or
+        (@($authority.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($requiredAuthorityFields | Sort-Object) -join "`n") -or
+        $authority.schema -isnot [string] -or $authority.run_id -isnot [string] -or $authority.containment_token -isnot [string] -or
+        $authority.worker_process_start_utc -isnot [string] -or $authority.worker_executable_path -isnot [string] -or $authority.published_utc -isnot [string] -or
+        [string]$authority.schema -cne "oxvba.excel-vba-oracle-containment-ready.v1" -or
+        [string]$authority.run_id -cne $RunId -or [string]$authority.containment_token -cne $ExpectedContainmentToken -or
+        ($authority.worker_pid -isnot [long] -and $authority.worker_pid -isnot [int]) -or [int]$authority.worker_pid -ne $ExpectedWorkerPid -or
+        $authority.worker_job_membership_verified -isnot [bool] -or -not [bool]$authority.worker_job_membership_verified -or
+        [string]::IsNullOrWhiteSpace([string]$authority.worker_process_start_utc) -or
+        [string]::IsNullOrWhiteSpace([string]$authority.worker_executable_path) -or
+        [string]::IsNullOrWhiteSpace([string]$authority.published_utc)) {
+        $errors.Add("results containment authority is invalid")
+    }
+    else {
+        try {
+            [void][DateTime]::Parse([string]$authority.worker_process_start_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+            [void][DateTime]::Parse([string]$authority.published_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+        }
+        catch { $errors.Add("results containment authority timestamps are invalid") }
+    }
+
+    $requiredCaseFields = @(
+        "schema", "id", "purpose", "passed", "owned_excel_pid", "observed_excel_pid", "excel_ownership_recorded", "module_path", "module_sha256",
+        "compile_status", "expected_compile_status", "compile_command", "compile_execution", "compile_context", "post_dismiss_selection_diagnostic_only",
+        "compile_dialogs", "compile_window_observations", "run_procedure", "run_status", "expected_run_status", "run_value", "runtime_err",
+        "macro_failure_disposition", "runtime_measurement", "transport_error", "run_dialogs", "evidence_status", "cleanup_status",
+        "cleanup_authority_errors", "bootstrap_workbook", "defect_declaration"
+    )
+    $cases = @($Results.cases)
+    $caseFieldSetInvalid = $false
+    for ($index = 0; $index -lt $cases.Count; $index++) {
+        $case = $cases[$index]
+        if ($null -eq $case -or
+            (@($case.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($requiredCaseFields | Sort-Object) -join "`n")) {
+            $errors.Add("case result $index field set is invalid")
+            $caseFieldSetInvalid = $true
+            continue
+        }
+        $requiredStringFields = @("schema", "id", "purpose", "module_path", "module_sha256", "compile_status", "expected_compile_status", "run_procedure", "run_status", "expected_run_status", "cleanup_status")
+        if (@($requiredStringFields | Where-Object { $case.$_ -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$case.$_) }).Count -gt 0 -or
+            [string]$case.schema -cne "oxvba.excel-vba-oracle-case-result.v1" -or [string]$case.module_sha256 -notmatch '^sha256:[0-9a-f]{64}$') {
+            $errors.Add("case result $index scalar identity is invalid")
+        }
+        if ($case.passed -isnot [bool] -or $case.excel_ownership_recorded -isnot [bool]) {
+            $errors.Add("case result $index Boolean status is invalid")
+        }
+        if ($case.compile_dialogs -isnot [array] -or $case.compile_window_observations -isnot [array] -or
+            $case.run_dialogs -isnot [array] -or $case.cleanup_authority_errors -isnot [array] -or
+            @($case.compile_dialogs).Count -ne @($case.compile_dialogs | Where-Object { $null -ne $_ }).Count -or
+            @($case.compile_window_observations).Count -ne @($case.compile_window_observations | Where-Object { $null -ne $_ }).Count -or
+            @($case.run_dialogs).Count -ne @($case.run_dialogs | Where-Object { $null -ne $_ }).Count -or
+            @($case.cleanup_authority_errors | Where-Object { $_ -isnot [string] }).Count -gt 0) {
+            $errors.Add("case result $index collection type is invalid")
+        }
+        if (@($case.cleanup_authority_errors).Count -gt 0) { $errors.Add("case result $index reports cleanup authority errors") }
+        if ([bool]$case.excel_ownership_recorded) {
+            if (($case.owned_excel_pid -isnot [long] -and $case.owned_excel_pid -isnot [int]) -or [int]$case.owned_excel_pid -le 0) {
+                $errors.Add("case result $index durable Excel PID is invalid")
+            }
+            $bootstrap = $case.bootstrap_workbook
+            $requiredBootstrapFields = @("schema", "path", "sha256", "sha256_after", "package_parts", "macro_free")
+            if ($null -eq $bootstrap -or
+                (@($bootstrap.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($requiredBootstrapFields | Sort-Object) -join "`n") -or
+                $bootstrap.schema -isnot [string] -or $bootstrap.path -isnot [string] -or $bootstrap.sha256 -isnot [string] -or $bootstrap.sha256_after -isnot [string] -or
+                [string]$bootstrap.schema -cne "oxvba.excel-vba-oracle-bootstrap-workbook.v1" -or
+                [string]::IsNullOrWhiteSpace([string]$bootstrap.path) -or
+                [string]$bootstrap.sha256 -notmatch '^sha256:[0-9a-f]{64}$' -or
+                [string]$bootstrap.sha256_after -cne [string]$bootstrap.sha256 -or
+                $bootstrap.macro_free -isnot [bool] -or -not [bool]$bootstrap.macro_free -or $bootstrap.package_parts -isnot [array] -or
+                (@($bootstrap.package_parts) -join "`n") -cne (@("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml") -join "`n") -or
+                [string]$case.cleanup_status -cne "owned-process-zero") {
+                $errors.Add("case result $index bootstrap persistence or cleanup status is invalid")
+            }
+        }
+        elseif ($null -ne $case.owned_excel_pid) {
+            $errors.Add("case result $index exposes an owned Excel PID without a durable ownership record")
+        }
+        if ($null -ne $case.observed_excel_pid -and (($case.observed_excel_pid -isnot [long] -and $case.observed_excel_pid -isnot [int]) -or [int]$case.observed_excel_pid -le 0)) {
+            $errors.Add("case result $index observed Excel PID is invalid")
+        }
+        if ($null -ne $case.transport_error -and $case.transport_error -isnot [string]) { $errors.Add("case result $index transport type is invalid") }
+    }
+    if ($caseFieldSetInvalid) {
+        return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
+    }
+    if ($Results.passed -is [bool] -and ([bool]$Results.passed -ne (@($cases | Where-Object { $_.passed -isnot [bool] -or -not [bool]$_.passed }).Count -eq 0))) {
+        $errors.Add("aggregate passed status disagrees with case results")
+    }
+
+    [object[]]$excelRecords = [object[]]::new(0)
+    [object[]]$helperRecords = [object[]]::new(0)
+    if ($null -ne $ExcelLedger -and $ExcelLedger.PSObject.Properties.Name -contains "records") { $excelRecords = [object[]]@($ExcelLedger.records) }
+    if ($null -ne $HelperLedger -and $HelperLedger.PSObject.Properties.Name -contains "records") { $helperRecords = [object[]]@($HelperLedger.records) }
+    $caseIds = @($cases | ForEach-Object { [string]$_.id })
+    $specialTransport = $cases.Count -eq 1 -and $ExpectedCaseIds.Count -gt 0 -and
+        [string]$cases[0].id -ceq [string]$ExpectedCaseIds[0] -and
+        $cases[0].passed -is [bool] -and -not [bool]$cases[0].passed -and
+        $cases[0].excel_ownership_recorded -is [bool] -and -not [bool]$cases[0].excel_ownership_recorded -and
+        $null -eq $cases[0].owned_excel_pid -and
+        [string]$cases[0].compile_status -ceq "harness-error" -and [string]$cases[0].run_status -ceq "not-run" -and
+        [string]$cases[0].cleanup_status -in @("not-run", "owned-process-zero", "job-contained-preownership") -and
+        -not [string]::IsNullOrWhiteSpace([string]$cases[0].transport_error) -and
+        $excelRecords.Count -eq 0 -and $helperRecords.Count -eq 0
+
+    if ($specialTransport) {
+        if ($WorkerExitCode -ne 1 -or $Results.passed -isnot [bool] -or [bool]$Results.passed) {
+            $errors.Add("pre-ownership transport has an invalid exit envelope")
+        }
+        if ($errors.Count -eq 0) {
+            $disposition = "pre-ownership-transport"
+            $transport = [string]$cases[0].transport_error
+        }
+    }
+    else {
+        if (($caseIds -join "`n") -cne ($ExpectedCaseIds -join "`n")) { $errors.Add("case result order does not match the selected case sequence") }
+        if ((@($excelRecords | ForEach-Object { [string]$_.case_id }) -join "`n") -cne ($ExpectedCaseIds -join "`n") -or
+            (@($helperRecords | ForEach-Object { [string]$_.case_id }) -join "`n") -cne ($ExpectedCaseIds -join "`n")) {
+            $errors.Add("ownership ledger order does not match the selected case sequence")
+        }
+        for ($index = 0; $index -lt [Math]::Min($cases.Count, $excelRecords.Count); $index++) {
+            if ($cases[$index].excel_ownership_recorded -isnot [bool] -or -not [bool]$cases[$index].excel_ownership_recorded -or
+                ($cases[$index].owned_excel_pid -isnot [long] -and $cases[$index].owned_excel_pid -isnot [int]) -or
+                [int]$cases[$index].owned_excel_pid -ne [int]$excelRecords[$index].pid) {
+                $errors.Add("case result $index does not bind to its durable Excel ownership record")
+            }
+        }
+        $expectedExitCode = if ($Results.passed -is [bool] -and [bool]$Results.passed) { 0 } else { 1 }
+        if ($WorkerExitCode -ne $expectedExitCode) { $errors.Add("worker exit code disagrees with aggregate result") }
+        if ($errors.Count -eq 0) {
+            if ([bool]$Results.passed) { $disposition = "complete-success" }
+            else {
+                $disposition = "complete-case-failure"
+                $transport = @($cases | Where-Object { -not [bool]$_.passed } | ForEach-Object { [string]$_.transport_error }) -join "; "
+            }
+        }
+    }
+    return [pscustomobject]@{ valid = $errors.Count -eq 0; disposition = $disposition; transport_error = $transport; errors = @($errors) }
+}
+
 function ConvertFrom-ExcelOracleGuardianEventLedger {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Lines,
