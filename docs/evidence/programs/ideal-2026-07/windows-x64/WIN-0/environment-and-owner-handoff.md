@@ -77,14 +77,20 @@ Only `WAC-TARGET-DEV-ENV` additionally transitions as follows:
 Its test anchors are the publication sync/mutation scripts and the environment
 and fixture validators. Its evidence references are the typed development
 environment identity, controlled publication, accepted capture and this
-handoff. Its `fixture_hash` remains `pending`: the environment publication is
-not a built capability fixture.
+handoff. Its stable logical `fixture_id` remains
+`environment-dev-oracle-v1`, while `fixture_hash=n/a`: the environment
+publication is not a built capability fixture. In the derived fixture manifest
+this one environment-only control row uses
+`source_recipe_state=not-applicable` and
+`built_artifact_state=not-applicable`, with path/hash/owner fields `n/a`. No
+other row may use those states.
 
 Deterministic fixture generation therefore yields twelve `environment_state`
 values of `current`, the exact controlled path and hash, and
 `environment_owner_bead=n/a`; the other 45 environment entries remain
-`pending` under the clean certification owner. Every fixture row continues to
-carry `capability_credit=none`.
+`pending` under the clean certification owner. Source recipes are 20 current,
+36 pending and one not applicable; built artifacts are 56 pending and one not
+applicable. Every fixture row continues to carry `capability_credit=none`.
 
 The matching current-stack residual row is now `canonical_truth_state=verified`,
 `current_test_state=current-subset`, `gap_kind=control-satisfied` and
