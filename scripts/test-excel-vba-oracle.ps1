@@ -14,6 +14,20 @@ function Assert-Equal {
     }
 }
 
+function Test-GuardianOwnedWindowEnumerationShape {
+    param([Parameter(Mandatory = $true)][string]$Source)
+    $match = [regex]::Match(
+        $Source,
+        '(?s)function Get-OwnedTopLevelWindows\s*\{(?<body>.*?)\r?\n\}\r?\n\r?\nfunction Get-ElementStrings'
+    )
+    if (-not $match.Success) { return $false }
+    $body = $match.Groups['body'].Value
+    return $body -match 'RootElement\.FindAll' -and
+        $body -match 'Condition\]::TrueCondition' -and
+        $body -match 'ProcessId\s+-eq\s+\$ExcelPid' -and
+        $body -notmatch 'ControlTypeProperty|ControlType\]::Window|AndCondition'
+}
+
 foreach ($fileName in @(
     "excel-vba-oracle-contract.ps1",
     "excel-vba-oracle-guardian.ps1",
@@ -107,6 +121,13 @@ $guardianSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-
 Assert-True ($guardianSource -notmatch 'Stop-Process\s+-Id\s+\$ExcelPid') "guardian must never terminate Excel"
 Assert-True ($guardianSource -match "observed_process_id") "guardian events must record the observed UIA process ID"
 Assert-True ($guardianSource -match "selected_token" -and $guardianSource -match "expanded_line") "guardian must capture token and expanded line"
+Assert-True ($guardianSource -match "Recognized dialog text is authoritative") "guardian must recognize VBE dialogs even when Office omits modal/class metadata"
+Assert-True (Test-GuardianOwnedWindowEnumerationShape -Source $guardianSource) "guardian must enumerate all desktop children before applying the hard PID boundary"
+$windowPrefilterMutation = $guardianSource.Replace(
+    '[Windows.Automation.Condition]::TrueCondition',
+    '[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)'
+)
+Assert-True (-not (Test-GuardianOwnedWindowEnumerationShape -Source $windowPrefilterMutation)) "mutation: ControlType.Window root prefilter must be rejected"
 
 $workerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-worker.ps1")
 $compileIndex = $workerSource.IndexOf('$compileControl.Execute()')
@@ -114,5 +135,8 @@ $runIndex = $workerSource.IndexOf('$runValue = $excel.Run($qualifiedName)')
 Assert-True ($compileIndex -ge 0 -and $runIndex -gt $compileIndex) "forced VBE compile must precede Application.Run"
 Assert-True ($workerSource -match "Wait-GuardianReady" -and $workerSource.IndexOf('Wait-GuardianReady') -lt $compileIndex) "guardian readiness must precede forced compile"
 Assert-True ($workerSource -match "module_sha256") "case evidence must seal module source"
+Assert-True ($workerSource -match "Get-VbeSelectionFromCom") "worker must preserve the VBE COM selection as a scoped fallback"
+Assert-True ($workerSource -match "CodePane.Show\(\)" -and $workerSource -match "compile command ID 578 is disabled") "worker must activate the code pane and reject a disabled compile command"
+Assert-True ($workerSource -match 'no-dialog-unverified') "absence of a captured dialog must remain fail-closed"
 
 Write-Output "test-excel-vba-oracle: PASS"

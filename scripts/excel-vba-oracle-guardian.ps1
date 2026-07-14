@@ -55,19 +55,18 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 function Get-OwnedTopLevelWindows {
-    $pidCondition = [Windows.Automation.PropertyCondition]::new(
-        [Windows.Automation.AutomationElement]::ProcessIdProperty,
-        $ExcelPid
-    )
-    $windowCondition = [Windows.Automation.PropertyCondition]::new(
-        [Windows.Automation.AutomationElement]::ControlTypeProperty,
-        [Windows.Automation.ControlType]::Window
-    )
-    $condition = [Windows.Automation.AndCondition]::new($pidCondition, $windowCondition)
-    return @([Windows.Automation.AutomationElement]::RootElement.FindAll(
+    # Office/VBE top-level HWNDs are not consistently projected as UIA
+    # ControlType.Window. Enumerate every desktop child and then apply the hard
+    # PID boundary, matching the proven oracle probes in this repository.
+    $desktopChildren = [Windows.Automation.AutomationElement]::RootElement.FindAll(
         [Windows.Automation.TreeScope]::Children,
-        $condition
-    ))
+        [Windows.Automation.Condition]::TrueCondition
+    )
+    $owned = [Collections.Generic.List[Windows.Automation.AutomationElement]]::new()
+    foreach ($window in $desktopChildren) {
+        if ([int]$window.Current.ProcessId -eq $ExcelPid) { $owned.Add($window) }
+    }
+    return @($owned)
 }
 
 function Get-ElementStrings {
@@ -184,17 +183,21 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
         }
         catch { }
         $className = [string]$window.Current.ClassName
-        if (-not $isModal -and $className -ne "#32770") { continue }
-
         $texts = @(Get-ElementStrings -Root $window -ControlType ([Windows.Automation.ControlType]::Text))
         $buttons = @(Get-ElementStrings -Root $window -ControlType ([Windows.Automation.ControlType]::Button))
         $policy = Get-ExcelOracleDialogPolicy -Phase ([string]$control.phase) -WindowTitle ([string]$window.Current.Name) -Texts $texts -Buttons $buttons
+        # VBE compile dialogs are not consistently exposed as IsModal/#32770 on
+        # all Office builds. Recognized dialog text is authoritative. Unknown
+        # non-modal application windows are recorded for the bounded audit but
+        # ignored for policy/action purposes.
+        $consideredDialog = $policy.kind -ne "unrecognized-modal" -or $isModal -or $className -eq "#32770"
         $key = "$($control.operation_id)|$(Get-WindowIdentity $window)|$($policy.kind)|$($texts -join '|')"
         if (-not $seen.Add($key)) { continue }
 
-        $vbeSelection = Get-VbeSelection
+        $vbeSelection = if ($consideredDialog) { Get-VbeSelection } else { [pscustomobject]@{ selected_token = $null; expanded_line = $null } }
         $event = [ordered]@{
             schema = "oxvba.excel-vba-oracle-dialog-event.v1"
+            event_type = if ($consideredDialog) { "dialog-observation" } else { "ignored-top-level-window" }
             run_id = $RunId
             operation_id = [string]$control.operation_id
             phase = [string]$control.phase
@@ -205,6 +208,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
             window_class = $className
             window_handle = Get-WindowIdentity $window
             is_modal = $isModal
+            considered_dialog = $consideredDialog
             dialog_text = $texts
             visible_buttons = $buttons
             selected_token = $vbeSelection.selected_token
@@ -213,7 +217,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
             disposition = [string]$policy.disposition
             dismissed_button = $null
         }
-        if ($policy.disposition -eq "capture-then-dismiss" -and [bool]$control.allow_dismiss) {
+        if ($consideredDialog -and $policy.disposition -eq "capture-then-dismiss" -and [bool]$control.allow_dismiss) {
             $event.dismissed_button = Invoke-OwnedDialogButton -Window $window -PreferredButtons @($policy.preferred_buttons)
         }
         ($event | ConvertTo-Json -Compress -Depth 8) | Add-Content -LiteralPath $EventsFile -Encoding utf8NoBOM

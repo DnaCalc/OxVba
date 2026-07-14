@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)][string]$RunId,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [Parameter(Mandatory = $true)][string]$OwnershipFile,
-    [ValidateRange(5, 600)][int]$CaseTimeoutSeconds = 90
+    [ValidateRange(5, 600)][int]$CaseTimeoutSeconds = 90,
+    [string]$DiagnosticCaseId = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,13 +112,9 @@ function Wait-GuardianEventFlush {
         [Parameter(Mandatory = $true)][string]$EventsFile,
         [Parameter(Mandatory = $true)][string]$OperationId
     )
-    $deadline = [DateTime]::UtcNow.AddSeconds(2)
-    do {
-        $events = @(Get-GuardianEvents -EventsFile $EventsFile -OperationId $OperationId)
-        if ($events.Count -gt 0) { return $events }
-        Start-Sleep -Milliseconds 50
-    } while ([DateTime]::UtcNow -lt $deadline)
-    return @()
+    $deadline = [DateTime]::UtcNow.AddMilliseconds(2500)
+    do { Start-Sleep -Milliseconds 50 } while ([DateTime]::UtcNow -lt $deadline)
+    return @(Get-GuardianEvents -EventsFile $EventsFile -OperationId $OperationId)
 }
 
 function Get-VbeCompileControl {
@@ -142,6 +139,53 @@ function Get-VbeCompileControl {
     return $null
 }
 
+function Get-VbeSelectionFromCom {
+    param([Parameter(Mandatory = $true)]$Vbe)
+    try {
+        $pane = $Vbe.ActiveCodePane
+        if ($null -eq $pane) { return $null }
+        $startLine = 0
+        $startColumn = 0
+        $endLine = 0
+        $endColumn = 0
+        $pane.GetSelection([ref]$startLine, [ref]$startColumn, [ref]$endLine, [ref]$endColumn)
+        $line = [string]$pane.CodeModule.Lines($startLine, 1)
+        $token = $null
+        if ($endLine -eq $startLine -and $endColumn -gt $startColumn -and $startColumn -gt 0) {
+            $offset = $startColumn - 1
+            $length = [Math]::Min($line.Length - $offset, $endColumn - $startColumn)
+            if ($offset -ge 0 -and $length -gt 0) { $token = $line.Substring($offset, $length) }
+        }
+        return [pscustomobject]@{
+            selected_token = if ($token) { $token.Trim() } else { $null }
+            expanded_line = $line.Trim("`r", "`n")
+        }
+    }
+    catch { return $null }
+}
+
+function Test-ComObjectIdentity {
+    param($Left, $Right)
+    if ($null -eq $Left -or $null -eq $Right) { return $false }
+    $leftIdentity = [IntPtr]::Zero
+    $rightIdentity = [IntPtr]::Zero
+    try {
+        $leftIdentity = [Runtime.InteropServices.Marshal]::GetIUnknownForObject($Left)
+        $rightIdentity = [Runtime.InteropServices.Marshal]::GetIUnknownForObject($Right)
+        return $leftIdentity -eq $rightIdentity
+    }
+    finally {
+        if ($leftIdentity -ne [IntPtr]::Zero) { [void][Runtime.InteropServices.Marshal]::Release($leftIdentity) }
+        if ($rightIdentity -ne [IntPtr]::Zero) { [void][Runtime.InteropServices.Marshal]::Release($rightIdentity) }
+    }
+}
+
+function Get-ProjectFileName {
+    param($Project)
+    try { return [string]$Project.FileName }
+    catch { return $null }
+}
+
 function Release-ComObject {
     param($Value)
     if ($null -ne $Value -and [Runtime.InteropServices.Marshal]::IsComObject($Value)) {
@@ -161,6 +205,7 @@ function Invoke-HarnessCase {
     $beforePids = @(Get-ExcelProcessIds)
     $excel = $null
     $workbook = $null
+    $project = $null
     $component = $null
     $compileControl = $null
     $guardian = $null
@@ -172,6 +217,10 @@ function Invoke-HarnessCase {
     $guardianStdout = Join-Path $caseDirectory "guardian.stdout.txt"
     $guardianStderr = Join-Path $caseDirectory "guardian.stderr.txt"
     $compileEvents = @()
+    $compileDialogs = @()
+    $compileCommand = $null
+    $compileExecution = $null
+    $compileContext = $null
     $runEvents = @()
     $compileStatus = "not-run"
     $runStatus = "not-run"
@@ -180,6 +229,7 @@ function Invoke-HarnessCase {
     $errorMessage = $null
     $macroDisposition = $null
     $passed = $false
+    $cleanupStatus = "not-run"
 
     try {
         $excel = New-Object -ComObject Excel.Application
@@ -206,23 +256,81 @@ function Invoke-HarnessCase {
         Wait-GuardianReady -ReadyFile $readyFile -Process $guardian
 
         $workbook = $excel.Workbooks.Add()
-        $component = $workbook.VBProject.VBComponents.Add(1)
+        $workbook.Activate()
+        $project = $workbook.VBProject
+        $component = $project.VBComponents.Add(1)
         $component.Name = $Case.module_name
         [void]$component.CodeModule.AddFromString($Case.module_source)
         $excel.VBE.MainWindow.Visible = $true
+        $component.CodeModule.CodePane.Show()
+        try { $excel.VBE.MainWindow.SetFocus() } catch { }
         Start-Sleep -Milliseconds 250
+
+        $activeProject = $excel.VBE.ActiveVBProject
+        $activePane = $excel.VBE.ActiveCodePane
+        $activeModule = if ($activePane) { $activePane.CodeModule } else { $null }
+        $injectedSource = [string]$component.CodeModule.Lines(1, $component.CodeModule.CountOfLines)
+        $compileContext = [pscustomobject]@{
+            injected_project_name = [string]$project.Name
+            injected_project_file_name = Get-ProjectFileName -Project $project
+            active_project_name = if ($activeProject) { [string]$activeProject.Name } else { $null }
+            active_project_file_name = if ($activeProject) { Get-ProjectFileName -Project $activeProject } else { $null }
+            active_project_is_injected_project = Test-ComObjectIdentity -Left $activeProject -Right $project
+            injected_module_name = [string]$component.Name
+            active_module_name = if ($activeModule) { [string]$activeModule.Parent.Name } else { $null }
+            active_module_is_injected_module = if ($activeModule) { Test-ComObjectIdentity -Left $activeModule -Right $component.CodeModule } else { $false }
+            selection_before_execute = Get-VbeSelectionFromCom -Vbe $excel.VBE
+            injected_source = $injectedSource
+            injected_source_sha256 = Get-ExcelOracleSha256 -Text $injectedSource
+        }
+        Release-ComObject $activeModule
+        Release-ComObject $activePane
+        Release-ComObject $activeProject
 
         $compileControl = Get-VbeCompileControl -Vbe $excel.VBE
         if ($null -eq $compileControl) { throw "excel-vba-oracle-worker: VBE compile command ID 578 was not found" }
+        $compileCommand = [ordered]@{
+            id = [int]$compileControl.Id
+            caption = [string]$compileControl.Caption
+            enabled_before = [bool]$compileControl.Enabled
+            enabled_after = $null
+        }
+        if (-not $compileCommand.enabled_before) { throw "excel-vba-oracle-worker: VBE compile command ID 578 is disabled for the active code pane" }
         $compileOperation = "$($Case.id)-compile"
         Set-GuardianControl -Path $controlFile -OperationId $compileOperation -Phase compile -AllowDismiss $true
-        $compileControl.Execute()
+        $executeException = $null
+        $executeReturn = $null
+        try { $executeReturn = $compileControl.Execute() }
+        catch {
+            $executeException = [pscustomobject]@{
+                message = $_.Exception.Message
+                hresult = "0x$($_.Exception.HResult.ToString('x8'))"
+                type = $_.Exception.GetType().FullName
+            }
+        }
         $compileEvents = @(Wait-GuardianEventFlush -EventsFile $eventsFile -OperationId $compileOperation)
-        $compileKinds = @($compileEvents | Select-Object -ExpandProperty classification)
+        $compileDialogs = @($compileEvents | Where-Object { [bool]$_.considered_dialog })
+        $comSelection = Get-VbeSelectionFromCom -Vbe $excel.VBE
+        $compileContext | Add-Member -NotePropertyName selection_after_execute -NotePropertyValue $comSelection
+        if ($comSelection) {
+            foreach ($event in $compileDialogs) {
+                if ([string]::IsNullOrWhiteSpace([string]$event.selected_token)) { $event.selected_token = $comSelection.selected_token }
+                if ([string]::IsNullOrWhiteSpace([string]$event.expanded_line)) { $event.expanded_line = $comSelection.expanded_line }
+            }
+        }
+        $compileCommand.enabled_after = [bool]$compileControl.Enabled
+        $compileExecution = [pscustomobject]@{
+            return_value = if ($null -eq $executeReturn) { $null } else { [string]$executeReturn }
+            exception = $executeException
+        }
+        $compileKinds = @($compileDialogs | Select-Object -ExpandProperty classification)
         if ($compileKinds -contains "security-or-trust" -or $compileKinds -contains "unrecognized-modal") {
             throw "excel-vba-oracle-worker: compile was blocked by a security/trust or unrecognized owned modal"
         }
-        $compileStatus = if ($compileKinds -contains "compile-error") { "compile-error" } else { "ok" }
+        if ($compileKinds -contains "compile-error") { $compileStatus = "compile-error" }
+        elseif ($executeException) { $compileStatus = "harness-error" }
+        elseif (-not [bool]$compileCommand.enabled_after) { $compileStatus = "ok" }
+        else { $compileStatus = "no-dialog-unverified" }
 
         if ($compileStatus -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$Case.run_procedure)) {
             $runOperation = "$($Case.id)-run"
@@ -277,12 +385,18 @@ function Invoke-HarnessCase {
         }
         Release-ComObject $compileControl
         Release-ComObject $component
+        Release-ComObject $project
         Release-ComObject $workbook
         Release-ComObject $excel
         [GC]::Collect()
         [GC]::WaitForPendingFinalizers()
-        if ($excelPid -and (Get-Process -Id $excelPid -ErrorAction SilentlyContinue)) {
-            Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
+        if ($excelPid) {
+            $ownedProcess = Get-Process -Id $excelPid -ErrorAction SilentlyContinue
+            if ($ownedProcess -and -not $ownedProcess.WaitForExit(2000)) {
+                Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
+                [void]$ownedProcess.WaitForExit(5000)
+            }
+            $cleanupStatus = if (Get-Process -Id $excelPid -ErrorAction SilentlyContinue) { "owned-process-remains" } else { "owned-process-zero" }
         }
     }
 
@@ -296,7 +410,11 @@ function Invoke-HarnessCase {
         module_sha256 = Get-ExcelOracleSha256 -Text $Case.module_source
         compile_status = $compileStatus
         expected_compile_status = $Case.expected_compile_status
-        compile_dialogs = @($compileEvents)
+        compile_command = $compileCommand
+        compile_execution = $compileExecution
+        compile_context = $compileContext
+        compile_dialogs = @($compileDialogs)
+        compile_window_observations = @($compileEvents)
         run_procedure = $Case.run_procedure
         run_status = $runStatus
         expected_run_status = $Case.expected_run_status
@@ -305,6 +423,7 @@ function Invoke-HarnessCase {
         macro_failure_disposition = $macroDisposition
         transport_error = $errorMessage
         run_dialogs = @($runEvents)
+        cleanup_status = $cleanupStatus
         defect_declaration = if ($Case.id -eq "intrinsic-shadow") { "Public Function Shadowed(ByVal Fix As Double) As Double" } else { $null }
     }
 }
@@ -313,8 +432,13 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $ownershipParent = Split-Path -Parent $OwnershipFile
 if ($ownershipParent) { New-Item -ItemType Directory -Force -Path $ownershipParent | Out-Null }
 
+$selectedCases = @(Get-ExcelOracleHarnessCases)
+if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
+    $selectedCases = @($selectedCases | Where-Object { $_.id -eq $DiagnosticCaseId })
+    if ($selectedCases.Count -ne 1) { throw "excel-vba-oracle-worker: unknown diagnostic case '$DiagnosticCaseId'" }
+}
 $results = [Collections.Generic.List[object]]::new()
-foreach ($case in @(Get-ExcelOracleHarnessCases)) {
+foreach ($case in $selectedCases) {
     $results.Add((Invoke-HarnessCase -Case $case))
 }
 
@@ -323,8 +447,9 @@ $document = [ordered]@{
     run_id = $RunId
     generated_utc = [DateTime]::UtcNow.ToString("o")
     worker_pid = $PID
+    diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
     cases = @($results)
     passed = @($results | Where-Object { -not $_.passed }).Count -eq 0
 }
 $document | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $OutputDirectory "results.json") -Encoding utf8NoBOM
-if (-not $document.passed) { exit 1 }
+if (-not $document.passed -and -not $document.diagnostic_only) { exit 1 }

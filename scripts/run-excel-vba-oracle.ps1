@@ -5,7 +5,8 @@ param(
     [switch]$PlanOnly,
     [string]$RunId = ("excel_vba_oracle_{0:yyyyMMddTHHmmssZ}" -f [DateTime]::UtcNow),
     [string]$OutputRoot = "artifacts/windows-x64/excel-vba-oracle",
-    [ValidateRange(30, 1800)][int]$TimeoutSeconds = 600
+    [ValidateRange(30, 1800)][int]$TimeoutSeconds = 600,
+    [string]$DiagnosticCaseId = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +32,10 @@ if ([string]$environment.evidence_state -ne "characterized-noncertifying") {
 }
 
 $cases = @(Get-ExcelOracleHarnessCases)
+if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
+    $cases = @($cases | Where-Object { $_.id -eq $DiagnosticCaseId })
+    if ($cases.Count -ne 1) { throw "run-excel-vba-oracle: unknown diagnostic case '$DiagnosticCaseId'" }
+}
 $plan = [ordered]@{
     schema = "oxvba.excel-vba-oracle-plan.v1"
     suite = $Suite
@@ -42,6 +47,7 @@ $plan = [ordered]@{
     matrix_update = $false
     release_credit = $false
     capability_credit = $false
+    diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
     ownership_policy = "record-new-Excel-PID-derived-from-Hwnd; never touch baseline or unrecorded Excel PIDs"
     modal_policy = "start PID-scoped UIA guardian before command-ID-578 compile and runtime invocation; capture first; never auto-enable security/trust prompts"
     compile_policy = "VBE Debug -> Compile VBAProject command ID 578; Application.Run is never a compile check"
@@ -122,6 +128,9 @@ $workerArguments = @(
     "-OwnershipFile", $ownershipFile,
     "-CaseTimeoutSeconds", [string][Math]::Min(120, $TimeoutSeconds)
 )
+if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
+    $workerArguments += @("-DiagnosticCaseId", $DiagnosticCaseId)
+}
 $startedUtc = [DateTime]::UtcNow
 $worker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
 $timedOut = $false
@@ -147,8 +156,11 @@ finally {
 $resultsPath = Join-Path $outputDirectory "results.json"
 if (-not (Test-Path -LiteralPath $resultsPath)) { throw "run-excel-vba-oracle: worker did not produce results.json" }
 $results = Get-Content -Raw -LiteralPath $resultsPath | ConvertFrom-Json
-if (@($results.cases).Count -ne 5 -or -not [bool]$results.passed) {
+if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and (@($results.cases).Count -ne 5 -or -not [bool]$results.passed)) {
     throw "run-excel-vba-oracle: harness self-test did not produce five passing cases"
+}
+if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and @($results.cases).Count -ne 1) {
+    throw "run-excel-vba-oracle: targeted diagnostic did not produce exactly one case"
 }
 
 $remainingOwned = [Collections.Generic.List[int]]::new()
@@ -172,7 +184,8 @@ $transcript = [ordered]@{
     timeout = $timedOut
     no_matrix_update = [bool]$NoMatrixUpdate
     certifying = $false
-    passed = $true
+    diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
+    passed = [bool]$results.passed
     case_count = @($results.cases).Count
 }
 $transcript | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDirectory "transcript.json") -Encoding utf8NoBOM
@@ -180,12 +193,13 @@ $transcript | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $out
 $caseLines = @($results.cases | ForEach-Object {
     "| $($_.id) | $($_.compile_status) | $($_.run_status) | $($_.passed) |"
 })
+$displayResult = if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId)) { "PASS ($(@($results.cases).Count)/5 cases)" } else { "DIAGNOSTIC CAPTURED (case ``$DiagnosticCaseId``; expectation pass=$([bool]$results.passed))" }
 $summary = @"
 # Excel/VBA Oracle Harness Self-Test
 
 - Run: ``$RunId``
 - Environment: ``$EnvironmentId``
-- Result: **PASS** ($(@($results.cases).Count)/5 cases)
+- Result: **$displayResult**
 - Authority: development/oracle characterization only; noncertifying
 - Credit: no canonical matrix, release, certification, or capability credit
 - Ownership: only newly created Excel PIDs derived from their application HWND were recorded and cleaned
@@ -200,5 +214,10 @@ Raw evidence: ``results.json``, ``transcript.json``, ``owned-processes.jsonl``, 
 "@
 Set-Content -LiteralPath (Join-Path $outputDirectory "summary.md") -Value $summary -Encoding utf8NoBOM
 
-Write-Output "excel-vba-oracle: PASS 5/5 (development/oracle, noncertifying, no matrix update)"
+if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
+    Write-Output "excel-vba-oracle: PASS 5/5 (development/oracle, noncertifying, no matrix update)"
+}
+else {
+    Write-Output "excel-vba-oracle: DIAGNOSTIC $DiagnosticCaseId captured (development/oracle, noncertifying, no matrix update)"
+}
 Write-Output "excel-vba-oracle: $outputDirectory"
