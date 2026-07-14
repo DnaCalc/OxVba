@@ -2390,10 +2390,14 @@ impl<'h> Vm3<'h> {
         )
     }
 
-    /// Build SAFEARRAY bounds from `ReDim` upper/lower-bound operands, with
-    /// vm2's overflow guards: `upper < lower` → subscript out of range (9); a dimension above
-    /// `u32::MAX` elements → out of memory (7), so a garbage bound raises a VBA error instead
-    /// of attempting an unbounded host allocation that would abort the process.
+    /// Build SAFEARRAY bounds from `ReDim` upper/lower-bound operands. Each
+    /// bound is a VBA `Long`, so a value outside `Long` range raises Overflow
+    /// (6) instead of silently wrapping through `as i32`; `upper < lower` →
+    /// subscript out of range (9); and a single dimension above `u32::MAX`
+    /// elements → out of memory (7). These guard the bound *shape* only — the
+    /// actual element store is allocated fallibly (the zeroed-scalar path and
+    /// [`try_build_default_elements`]), so an over-large array raises catchable
+    /// error 7 rather than aborting the host on an infallible allocation.
     fn build_bounds(
         &mut self,
         upper_bounds: &[OxOperand],
@@ -2403,12 +2407,12 @@ impl<'h> Vm3<'h> {
         for (i, upper_op) in upper_bounds.iter().enumerate() {
             let lower = if let Some(lower_op) = lower_bounds.get(i) {
                 let lower_v = self.operand(lower_op)?;
-                arith::int(&lower_v).map_err(arith_fault)? as i32
+                subscript_to_long(arith::int(&lower_v).map_err(arith_fault)?)?
             } else {
                 0
             };
             let upper_v = self.operand(upper_op)?;
-            let upper = arith::int(&upper_v).map_err(arith_fault)? as i32;
+            let upper = subscript_to_long(arith::int(&upper_v).map_err(arith_fault)?)?;
             if upper < lower {
                 return Err(Vm3Error::Fault(Fault::new(
                     9,
@@ -2445,7 +2449,7 @@ impl<'h> Vm3<'h> {
         }
         if let ([index_op], [bound]) = (indices, bounds) {
             let index_v = self.operand(index_op)?;
-            let raw = arith::int(&index_v).map_err(arith_fault)? as i32;
+            let raw = subscript_to_long(arith::int(&index_v).map_err(arith_fault)?)?;
             let offset = i64::from(raw) - i64::from(bound.lower);
             if offset < 0 || offset >= i64::from(bound.count) {
                 return Err(Vm3Error::Fault(Fault::new(9, "subscript out of range")));
@@ -2455,7 +2459,7 @@ impl<'h> Vm3<'h> {
         let mut flat = 0usize;
         for (i, index_op) in indices.iter().enumerate() {
             let index_v = self.operand(index_op)?;
-            let raw = arith::int(&index_v).map_err(arith_fault)? as i32;
+            let raw = subscript_to_long(arith::int(&index_v).map_err(arith_fault)?)?;
             let bound = &bounds[i];
             let offset = i64::from(raw) - i64::from(bound.lower);
             if offset < 0 || offset >= i64::from(bound.count) {
@@ -2888,8 +2892,7 @@ impl<'h> Vm3<'h> {
                             "ReDim Preserve may only resize the last dimension",
                         )));
                     }
-                    let mut out: Vec<Variant> =
-                        (0..count).map(|_| default_array_element(element)).collect();
+                    let mut out = try_build_default_elements(element, count)?;
                     for (old_flat, value) in old_elems.into_iter().enumerate() {
                         if let Some(new_flat) = remap_preserve_index(old_flat, &old_bounds, &bounds)
                         {
@@ -2899,10 +2902,10 @@ impl<'h> Vm3<'h> {
                     out
                 }
                 // `ReDim Preserve` of a not-yet-allocated dynamic array just allocates it.
-                None => (0..count).map(|_| default_array_element(element)).collect(),
+                None => try_build_default_elements(element, count)?,
             }
         } else {
-            (0..count).map(|_| default_array_element(element)).collect()
+            try_build_default_elements(element, count)?
         };
         let array = redim_safearray_from_elements(bounds, element, elems, fixed)
             .map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?;
@@ -4951,6 +4954,49 @@ fn arith_fault(e: ArithError) -> Vm3Error {
     Vm3Error::Fault(Fault::from_arith(e))
 }
 
+/// Narrow an evaluated array subscript/bound to a VBA `Long` (i32). VBA array
+/// subscripts and `ReDim` bounds are `Long`, so a value outside `Long` range
+/// raises Overflow (6) — the arithmetic layer yields the exact `i64`, and a
+/// bare `as i32` would silently wrap it (e.g. `a(4294967296#)` reading `a(0)`
+/// or `ReDim a(4294967296)` allocating a single element).
+fn subscript_to_long(v: i64) -> Result<i32, Vm3Error> {
+    i32::try_from(v).map_err(|_| arith_fault(ArithError::overflow()))
+}
+
+/// Backing-store ceiling for an element-wise (Variant/String/Object/record)
+/// array. Each such element is a `Variant` slot built individually, so a
+/// Long-range element count can demand tens of gigabytes and either abort the
+/// host on an infallible allocation or, on an over-committing OS where a huge
+/// reservation "succeeds", stall/OOM-kill it while the elements are built. VBA
+/// itself raises Out of memory (7) for such arrays on ordinary machines, so we
+/// reject clearly-pathological sizes up front. The limit is deliberately far
+/// above any realistic in-memory VBA array (~350M `Variant` slots).
+const MAX_ELEMENTWISE_ARRAY_BYTES: usize = 8 * 1024 * 1024 * 1024;
+
+/// Build `count` default elements for a (re)dimensioned array. A
+/// `map(..).collect()` reserves capacity infallibly, so a large `ReDim` of a
+/// Variant/String/Object/record element (e.g. `ReDim v(0 To 2000000000)`) would
+/// abort the whole host process. A pathological size is rejected up front, and
+/// the remaining allocation is reserved fallibly, so both surface as a catchable
+/// Out of memory (7), matching VBA. (Scalar numeric elements take the separate
+/// zeroed-SAFEARRAY path, which is a single fallible buffer allocation.)
+fn try_build_default_elements(
+    element: &ArrayElementType,
+    count: usize,
+) -> Result<Vec<Variant>, Vm3Error> {
+    let bytes = count.saturating_mul(std::mem::size_of::<Variant>());
+    if bytes > MAX_ELEMENTWISE_ARRAY_BYTES {
+        return Err(Vm3Error::Fault(Fault::new(7, "Out of memory")));
+    }
+    let mut out: Vec<Variant> = Vec::new();
+    out.try_reserve_exact(count)
+        .map_err(|_| Vm3Error::Fault(Fault::new(7, "Out of memory")))?;
+    for _ in 0..count {
+        out.push(default_array_element(element));
+    }
+    Ok(out)
+}
+
 /// Map an old flat element index to its position in a `ReDim Preserve`'d shape, preserving
 /// the element's absolute n-dimensional coordinate (C-order, first dimension outermost — the
 /// same convention [`Vm3::flat_index`] uses). Returns `None` when the coordinate falls outside
@@ -5207,6 +5253,43 @@ mod tests {
         RUNTIME_E_NOINTERFACE, RawRuntimeIUnknown, RawRuntimeIUnknownVtbl, RuntimeGuid,
     };
     use oxvba_runtime::variant::VarType;
+
+    #[test]
+    fn subscript_to_long_overflows_beyond_long_range() {
+        // In-range Long values pass through unchanged.
+        assert_eq!(subscript_to_long(0).unwrap(), 0);
+        assert_eq!(subscript_to_long(i64::from(i32::MAX)).unwrap(), i32::MAX);
+        assert_eq!(subscript_to_long(i64::from(i32::MIN)).unwrap(), i32::MIN);
+        // Anything outside Long range is Overflow (6), never a silent wrap.
+        for v in [
+            i64::from(i32::MAX) + 1,
+            4_294_967_296, // 2^32 used to wrap to 0
+            4_294_967_299, // 2^32 + 3 used to wrap to 3
+            i64::from(i32::MIN) - 1,
+            i64::MAX,
+            i64::MIN,
+        ] {
+            match subscript_to_long(v) {
+                Err(Vm3Error::Fault(f)) => assert_eq!(f.code, 6, "value {v} should overflow"),
+                other => panic!("expected Overflow(6) for {v}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn try_build_default_elements_reports_oom_not_abort() {
+        // A count whose backing store cannot be allocated must surface a
+        // catchable Out of memory (7) rather than an infallible allocation that
+        // aborts the host. `usize::MAX` overflows the byte size deterministically
+        // on every platform without attempting a real large allocation.
+        match try_build_default_elements(&ArrayElementType::Variant, usize::MAX) {
+            Err(Vm3Error::Fault(f)) => assert_eq!(f.code, 7),
+            other => panic!("expected Out of memory (7), got {other:?}"),
+        }
+        // A small count still succeeds and yields the requested number of defaults.
+        let ok = try_build_default_elements(&ArrayElementType::Long, 4).unwrap();
+        assert_eq!(ok.len(), 4);
+    }
 
     /// Bind-free: hand-build a `CoreProgram`, elaborate it to OxIR, run it on vm3, and
     /// read back a snapshot slot.

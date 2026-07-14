@@ -24,7 +24,8 @@ Legend: ☐ open · ◐ in progress · ☑ done
   panics ("byte index not a char boundary"). Any non-ASCII char outside a string/comment/
   bracket — incl. **legal VBA Unicode identifiers** — crashes the compiler/host. Fix: accept
   Unicode letters as identifier chars; advance by full char width in the unknown-char arm.
-- ☐ **B2 vm3-array-bounds** (vm3, HIGH — folds survey #1 + #10) — `crates/oxvba-vm3/src/lib.rs`
+- ☑ **B2 vm3-array-bounds** (vm3, HIGH — folds survey #1 + #10) — `crates/oxvba-vm3/src/lib.rs`
+  (follow-up **B28** created: bring JIT subscript/ReDim to parity with the corrected vm3 oracle)
   (1) `ReDim v(0 To 2000000000)` → `(0..count).map(default_array_element).collect()`
   unbounded alloc → allocator abort (VBA raises catchable err 7); false doc at 2394-2396.
   (2) subscripts/bounds narrowed with bare `as i32` at ~2448/2458/2406/2411 → index ≥ 2^32
