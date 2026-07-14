@@ -74,16 +74,14 @@ function Get-ExcelProcessIds {
     return @(Get-Process -Name EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 }
 
-function Read-OwnershipRecords {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return @() }
-    $records = [Collections.Generic.List[object]]::new()
-    foreach ($line in @(Get-Content -LiteralPath $Path)) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try { $records.Add(($line | ConvertFrom-Json)) }
-        catch { }
-    }
-    return @($records)
+function Read-OwnershipLedger {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][ValidateSet("excel", "guardian")][string]$Kind,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$BaselineExcelPids
+    )
+    $lines = if (Test-Path -LiteralPath $Path) { @(Get-Content -LiteralPath $Path) } else { @() }
+    return ConvertFrom-ExcelOracleOwnershipLedger -Lines $lines -Kind $Kind -RunId $RunId -BaselineExcelPids $BaselineExcelPids
 }
 
 function Stop-RecordedOwnedResources {
@@ -92,24 +90,28 @@ function Stop-RecordedOwnedResources {
         [Parameter(Mandatory = $true)][string]$HelperOwnershipPath,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$BaselineExcelPids
     )
-    foreach ($record in @(Read-OwnershipRecords -Path $OwnershipPath)) {
-        if (-not (Test-ExcelOracleOwnedProcessRecord -Record $record -BaselineExcelPids $BaselineExcelPids -RunId $RunId)) { continue }
+    $excelLedger = Read-OwnershipLedger -Path $OwnershipPath -Kind excel -BaselineExcelPids $BaselineExcelPids
+    $helperLedger = Read-OwnershipLedger -Path $HelperOwnershipPath -Kind guardian -BaselineExcelPids $BaselineExcelPids
+    foreach ($record in @($excelLedger.records)) {
         $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
         if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId)) {
             try { $process.Kill(); [void]$process.WaitForExit(5000) } catch { }
         }
     }
-    foreach ($record in @(Read-OwnershipRecords -Path $HelperOwnershipPath)) {
-        if (-not (Test-ExcelOracleHelperProcessRecord -Record $record -RunId $RunId)) { continue }
+    foreach ($record in @($helperLedger.records)) {
         $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
         if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId)) {
             try { $process.Kill(); [void]$process.WaitForExit(5000) } catch { }
         }
     }
+    return @($excelLedger.errors) + @($helperLedger.errors)
 }
 
 $outputBase = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $repoRoot $OutputRoot }
 $outputDirectory = Join-Path $outputBase $RunId
+if (Test-Path -LiteralPath $outputDirectory) {
+    throw "run-excel-vba-oracle: run directory already exists; refusing stale ready/control/event state: $outputDirectory"
+}
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDirectory "plan.json") -Encoding utf8NoBOM
 
@@ -132,6 +134,9 @@ if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
 $startedUtc = [DateTime]::UtcNow
 $worker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
 $timedOut = $false
+$workerFailure = $null
+$cleanupAuthorityErrors = @()
+$workerQuiesced = $false
 try {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while (-not $worker.HasExited -and [DateTime]::UtcNow -lt $deadline) {
@@ -139,17 +144,53 @@ try {
     }
     if (-not $worker.HasExited) {
         $timedOut = $true
-        try { $worker.Kill() } catch { }
-        throw "run-excel-vba-oracle: worker timed out after $TimeoutSeconds seconds"
+        try { $worker.Kill() }
+        catch { $workerFailure = "worker termination failed: $($_.Exception.Message)" }
+        $workerQuiesced = $worker.WaitForExit(10000)
+        $workerFailure = "run-excel-vba-oracle: worker timed out after $TimeoutSeconds seconds"
     }
-    if ($worker.ExitCode -ne 0) {
+    else {
+        $workerQuiesced = $true
+    }
+    if ($workerQuiesced -and $worker.ExitCode -ne 0) {
         $stderrText = if (Test-Path -LiteralPath $workerStderr) { Get-Content -Raw -LiteralPath $workerStderr } else { "" }
-        throw "run-excel-vba-oracle: worker failed with exit code $($worker.ExitCode): $stderrText"
+        $workerFailure = "run-excel-vba-oracle: worker failed with exit code $($worker.ExitCode): $stderrText"
     }
 }
 finally {
-    Stop-RecordedOwnedResources -OwnershipPath $ownershipFile -HelperOwnershipPath $helperOwnershipFile -BaselineExcelPids $baselineExcelPids
+    if ($workerQuiesced) {
+        $cleanupAuthorityErrors = @(Stop-RecordedOwnedResources -OwnershipPath $ownershipFile -HelperOwnershipPath $helperOwnershipFile -BaselineExcelPids $baselineExcelPids)
+    }
+    else {
+        $cleanupAuthorityErrors = @("exact worker process did not quiesce; ownership ledgers remain mutable and cleanup is unsafe")
+    }
 }
+if ($cleanupAuthorityErrors.Count -gt 0) {
+    throw "run-excel-vba-oracle: cleanup authority is uncertain: $($cleanupAuthorityErrors -join '; ')$(if ($workerFailure) { "; primary failure: $workerFailure" })"
+}
+$excelLedger = Read-OwnershipLedger -Path $ownershipFile -Kind excel -BaselineExcelPids $baselineExcelPids
+$helperLedger = Read-OwnershipLedger -Path $helperOwnershipFile -Kind guardian -BaselineExcelPids $baselineExcelPids
+if (@($excelLedger.errors).Count -gt 0 -or @($helperLedger.errors).Count -gt 0) {
+    throw "run-excel-vba-oracle: residual audit authority is uncertain: $(@($excelLedger.errors) + @($helperLedger.errors) -join '; ')"
+}
+$remainingOwned = [Collections.Generic.List[int]]::new()
+foreach ($record in @($excelLedger.records)) {
+    $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
+    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId)) {
+        $remainingOwned.Add([int]$record.pid)
+    }
+}
+if ($remainingOwned.Count -ne 0) { throw "run-excel-vba-oracle: owned Excel PIDs remain: $($remainingOwned -join ', ')" }
+
+$remainingHelpers = [Collections.Generic.List[int]]::new()
+foreach ($record in @($helperLedger.records)) {
+    $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
+    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId)) {
+        $remainingHelpers.Add([int]$record.pid)
+    }
+}
+if ($remainingHelpers.Count -ne 0) { throw "run-excel-vba-oracle: owned guardian PIDs remain: $($remainingHelpers -join ', ')" }
+if ($workerFailure) { throw $workerFailure }
 
 $resultsPath = Join-Path $outputDirectory "results.json"
 if (-not (Test-Path -LiteralPath $resultsPath)) { throw "run-excel-vba-oracle: worker did not produce results.json" }
@@ -160,26 +201,6 @@ if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and (@($results.cases).Coun
 if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and @($results.cases).Count -ne 1) {
     throw "run-excel-vba-oracle: targeted diagnostic did not produce exactly one case"
 }
-
-$remainingOwned = [Collections.Generic.List[int]]::new()
-foreach ($record in @(Read-OwnershipRecords -Path $ownershipFile)) {
-    if (-not (Test-ExcelOracleOwnedProcessRecord -Record $record -BaselineExcelPids $baselineExcelPids -RunId $RunId)) { continue }
-    $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId)) {
-        $remainingOwned.Add([int]$record.pid)
-    }
-}
-if ($remainingOwned.Count -ne 0) { throw "run-excel-vba-oracle: owned Excel PIDs remain: $($remainingOwned -join ', ')" }
-
-$remainingHelpers = [Collections.Generic.List[int]]::new()
-foreach ($record in @(Read-OwnershipRecords -Path $helperOwnershipFile)) {
-    if (-not (Test-ExcelOracleHelperProcessRecord -Record $record -RunId $RunId)) { continue }
-    $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId)) {
-        $remainingHelpers.Add([int]$record.pid)
-    }
-}
-if ($remainingHelpers.Count -ne 0) { throw "run-excel-vba-oracle: owned guardian PIDs remain: $($remainingHelpers -join ', ')" }
 
 $completedUtc = [DateTime]::UtcNow
 $transcript = [ordered]@{

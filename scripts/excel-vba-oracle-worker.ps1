@@ -102,19 +102,80 @@ function Get-GuardianEvents {
         [Parameter(Mandatory = $true)][string]$EventsFile,
         [string]$OperationId
     )
-    if (-not (Test-Path -LiteralPath $EventsFile)) { return @() }
-    $events = [Collections.Generic.List[object]]::new()
-    foreach ($line in @(Get-Content -LiteralPath $EventsFile)) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try {
-            $event = $line | ConvertFrom-Json
-            if ([string]::IsNullOrWhiteSpace($OperationId) -or [string]$event.operation_id -eq $OperationId) {
-                $events.Add($event)
-            }
-        }
-        catch { }
+    $lines = if (Test-Path -LiteralPath $EventsFile) { @(Get-Content -LiteralPath $EventsFile) } else { @() }
+    $ledger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines $lines -RunId $RunId
+    if (@($ledger.errors).Count -gt 0) {
+        throw "excel-vba-oracle-worker: invalid guardian event ledger: $($ledger.errors -join '; ')"
     }
-    return @($events)
+    return @($ledger.records | Where-Object {
+        [string]::IsNullOrWhiteSpace($OperationId) -or [string]$_.operation_id -eq $OperationId
+    })
+}
+
+function Test-GuardianOperationHealthy {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events)
+    $observations = @($Events | Where-Object { [string]$_.event_type -in @("dialog-observation", "ignored-top-level-window") })
+    if ($observations.Count -eq 0) { return $false }
+    $unsafe = @($observations | Where-Object {
+        [string]$_.event_type -eq "dialog-observation" -and [string]$_.classification -in @("security-or-trust", "unrecognized-modal")
+    })
+    return $unsafe.Count -eq 0
+}
+
+function Test-LinkedSuccessfulDismissal {
+    param(
+        [Parameter(Mandatory = $true)]$Observation,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events
+    )
+    return @($Events | Where-Object {
+        [string]$_.event_type -eq "dismissal-result" -and
+        [string]$_.observation_id -eq [string]$Observation.observation_id -and
+        [string]$_.operation_id -eq [string]$Observation.operation_id -and
+        [bool]$_.succeeded -and
+        -not [string]::IsNullOrWhiteSpace([string]$_.dismissed_button)
+    }).Count -eq 1
+}
+
+function Test-CompileErrorEvidence {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events,
+        [Parameter(Mandatory = $true)][string]$InjectedSource
+    )
+    $sourceLines = @($InjectedSource -split "`r?`n" | ForEach-Object { $_.Trim() })
+    $dialogs = @($Events | Where-Object { [string]$_.event_type -eq "dialog-observation" })
+    if ($dialogs.Count -eq 0 -or @($dialogs | Where-Object { [string]$_.classification -ne "compile-error" }).Count -gt 0) { return $false }
+    $candidates = @($dialogs)
+    foreach ($observation in $candidates) {
+        $text = @($observation.dialog_text) -join " / "
+        if (-not [string]::IsNullOrWhiteSpace($text) -and
+            -not [string]::IsNullOrWhiteSpace([string]$observation.selected_token) -and
+            -not [string]::IsNullOrWhiteSpace([string]$observation.expanded_line) -and
+            ([string]$observation.expanded_line).Contains([string]$observation.selected_token) -and
+            [string]$observation.expanded_line.Trim() -in $sourceLines -and
+            (Test-LinkedSuccessfulDismissal -Observation $observation -Events $Events)) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-AmbiguousMacroEvidence {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events)
+    $dialogs = @($Events | Where-Object { [string]$_.event_type -eq "dialog-observation" })
+    if ($dialogs.Count -eq 0 -or @($dialogs | Where-Object { [string]$_.classification -ne "ambiguous-macro-failure" }).Count -gt 0) { return $false }
+    $candidates = @($dialogs)
+    foreach ($observation in $candidates) {
+        $text = @($observation.dialog_text) -join " / "
+        if (-not [string]::IsNullOrWhiteSpace($text) -and (Test-LinkedSuccessfulDismissal -Observation $observation -Events $Events)) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-NoDialogObservations {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Events)
+    return @($Events | Where-Object { [string]$_.event_type -eq "dialog-observation" }).Count -eq 0
 }
 
 function Wait-GuardianReady {
@@ -124,11 +185,36 @@ function Wait-GuardianReady {
     )
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     while ([DateTime]::UtcNow -lt $deadline) {
-        if (Test-Path -LiteralPath $ReadyFile) { return }
+        if (Test-Path -LiteralPath $ReadyFile) {
+            try {
+                $ready = Get-Content -Raw -LiteralPath $ReadyFile | ConvertFrom-Json
+                if ([string]$ready.schema -ne "oxvba.excel-vba-oracle-guardian-ready.v1" -or [int]$ready.guardian_pid -ne $Process.Id) {
+                    throw "guardian ready schema/PID mismatch"
+                }
+                if (-not (Test-ExcelOracleProcessIdentity -Record $ready -Process $Process -ExpectedProcessName $Process.ProcessName -RunId $RunId)) {
+                    throw "guardian ready PID/start/name/executable identity mismatch"
+                }
+                return $ready
+            }
+            catch {
+                throw "excel-vba-oracle-worker: invalid guardian ready record: $($_.Exception.Message)"
+            }
+        }
         if ($Process.HasExited) { throw "excel-vba-oracle-worker: guardian exited before becoming ready (exit $($Process.ExitCode))" }
         Start-Sleep -Milliseconds 50
     }
     throw "excel-vba-oracle-worker: guardian did not become ready"
+}
+
+function Assert-GuardianLive {
+    param(
+        [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)]$ReadyRecord,
+        [Parameter(Mandatory = $true)][string]$Phase
+    )
+    if ($Process.HasExited -or -not (Test-ExcelOracleProcessIdentity -Record $ReadyRecord -Process $Process -ExpectedProcessName $Process.ProcessName -RunId $RunId)) {
+        throw "excel-vba-oracle-worker: guardian is not live with its exact identity immediately before $Phase"
+    }
 }
 
 function Wait-GuardianEventFlush {
@@ -255,6 +341,8 @@ function Invoke-HarnessCase {
     $errorMessage = $null
     $macroDisposition = $null
     $passed = $false
+    $guardianHealthy = $false
+    $evidenceStatus = $null
     $cleanupStatus = "not-run"
 
     try {
@@ -283,7 +371,7 @@ function Invoke-HarnessCase {
         )
         $guardian = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $guardianArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $guardianStdout -RedirectStandardError $guardianStderr
         Add-HelperOwnershipRecord -Process $guardian -CaseId $Case.id
-        Wait-GuardianReady -ReadyFile $readyFile -Process $guardian
+        $guardianReady = Wait-GuardianReady -ReadyFile $readyFile -Process $guardian
 
         $workbook = $excel.Workbooks.Add()
         $workbook.Activate()
@@ -327,6 +415,7 @@ function Invoke-HarnessCase {
         }
         if (-not $compileCommand.enabled_before) { throw "excel-vba-oracle-worker: VBE compile command ID 578 is disabled for the active code pane" }
         $compileOperation = "$($Case.id)-compile"
+        Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "forced VBE compile"
         Set-GuardianControl -Path $controlFile -OperationId $compileOperation -Phase compile -AllowDismiss $true
         $executeException = $null
         $executeReturn = $null
@@ -343,9 +432,18 @@ function Invoke-HarnessCase {
         $comSelection = Get-VbeSelectionFromCom -Vbe $excel.VBE
         $compileContext | Add-Member -NotePropertyName selection_after_execute -NotePropertyValue $comSelection
         if ($comSelection) {
+            $injectedSourceLines = @($injectedSource -split "`r?`n" | ForEach-Object { $_.Trim() })
             foreach ($event in $compileDialogs) {
-                if ([string]::IsNullOrWhiteSpace([string]$event.selected_token)) { $event.selected_token = $comSelection.selected_token }
-                if ([string]::IsNullOrWhiteSpace([string]$event.expanded_line)) { $event.expanded_line = $comSelection.expanded_line }
+                $uiaSelectionValid = -not [string]::IsNullOrWhiteSpace([string]$event.selected_token) -and
+                    -not [string]::IsNullOrWhiteSpace([string]$event.expanded_line) -and
+                    ([string]$event.expanded_line).Contains([string]$event.selected_token) -and
+                    [string]$event.expanded_line.Trim() -in $injectedSourceLines
+                $fallbackUsed = -not $uiaSelectionValid
+                if ($fallbackUsed) {
+                    $event.selected_token = $comSelection.selected_token
+                    $event.expanded_line = $comSelection.expanded_line
+                }
+                $event | Add-Member -Force -NotePropertyName selection_capture_source -NotePropertyValue $(if ($fallbackUsed) { "vbe-com-post-dialog-fallback" } else { "uia-observation" })
             }
         }
         $compileCommand.enabled_after = [bool]$compileControl.Enabled
@@ -364,6 +462,7 @@ function Invoke-HarnessCase {
 
         if ($compileStatus -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$Case.run_procedure)) {
             $runOperation = "$($Case.id)-run"
+            Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "runtime invocation"
             Set-GuardianControl -Path $controlFile -OperationId $runOperation -Phase run -AllowDismiss $true
             try {
                 $qualifiedName = "'$($workbook.Name)'!$($Case.run_procedure)"
@@ -387,15 +486,44 @@ function Invoke-HarnessCase {
                 $runStatus = $macroDisposition
             }
             $runEvents = @(Wait-GuardianEventFlush -EventsFile $eventsFile -OperationId $runOperation)
+            if ($Case.id -eq "ambiguous-macro-failure" -and $runStatus -eq "ok") {
+                $errorMessage = [string]$runValue
+                $macroDisposition = Get-ExcelOracleMacroFailureDisposition `
+                    -Message $errorMessage `
+                    -CompileStatus $compileStatus `
+                    -AccessVbom $true `
+                    -MacrosEnabled $true `
+                    -TargetExists $false
+                $runStatus = $macroDisposition
+            }
         }
 
-        $passed = $compileStatus -eq $Case.expected_compile_status -and $runStatus -eq $Case.expected_run_status
-        if ($passed -and $Case.expected_value) { $passed = [string]$runValue -eq [string]$Case.expected_value }
-        if ($passed -and $Case.id -eq "runtime-full-err") {
+        $guardianHealthy = $guardian -and -not $guardian.HasExited
+        $compileOperationHealthy = Test-GuardianOperationHealthy -Events $compileEvents
+        $runOperationHealthy = if ($runStatus -eq "not-run") { $false } else { Test-GuardianOperationHealthy -Events $runEvents }
+        $compileErrorEvidence = Test-CompileErrorEvidence -Events $compileEvents -InjectedSource $injectedSource
+        $ambiguousMacroEvidence = Test-AmbiguousMacroEvidence -Events $runEvents
+        $behaviorPassed = $compileStatus -eq $Case.expected_compile_status -and $runStatus -eq $Case.expected_run_status
+        if ($behaviorPassed -and $Case.expected_value) { $behaviorPassed = [string]$runValue -eq [string]$Case.expected_value }
+        if ($behaviorPassed -and $Case.id -eq "runtime-full-err") {
             $expectedErr = Get-ExcelOracleExpectedRuntimeErr
             foreach ($field in @("number", "source", "description", "help_file", "help_context", "erl")) {
-                if ($runtimeErr.$field -ne $expectedErr.$field) { $passed = $false }
+                if ($runtimeErr.$field -ne $expectedErr.$field) { $behaviorPassed = $false }
             }
+        }
+        $authoritativeEvidencePassed = switch ($Case.id) {
+            { $_ -in @("compile-failure", "intrinsic-shadow") } { $compileOperationHealthy -and $compileErrorEvidence; break }
+            "ambiguous-macro-failure" { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and $ambiguousMacroEvidence; break }
+            default { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and (Test-NoDialogObservations -Events $runEvents); break }
+        }
+        $passed = $behaviorPassed -and $guardianHealthy -and $authoritativeEvidencePassed
+        $evidenceStatus = [pscustomobject]@{
+            guardian_healthy_before_cleanup = $guardianHealthy
+            compile_operation_healthy = $compileOperationHealthy
+            run_operation_healthy = $runOperationHealthy
+            compile_error_modal_complete = $compileErrorEvidence
+            ambiguous_macro_modal_and_dismissal_complete = $ambiguousMacroEvidence
+            authoritative_evidence_passed = $authoritativeEvidencePassed
         }
     }
     catch {
@@ -455,6 +583,7 @@ function Invoke-HarnessCase {
         macro_failure_disposition = $macroDisposition
         transport_error = $errorMessage
         run_dialogs = @($runEvents)
+        evidence_status = $evidenceStatus
         cleanup_status = $cleanupStatus
         defect_declaration = if ($Case.id -eq "intrinsic-shadow") { "Public Function Shadowed(ByVal Fix As Double) As Double" } else { $null }
     }

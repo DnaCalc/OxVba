@@ -49,6 +49,14 @@ function Test-RunnerIdentityCheckedCleanupShape {
         $body -notmatch 'Stop-Process'
 }
 
+function Test-WorkerEvidenceGatedAcceptanceShape {
+    param([Parameter(Mandatory = $true)][string]$Source)
+    return $Source -match '\$passed\s*=\s*\$behaviorPassed\s+-and\s+\$guardianHealthy\s+-and\s+\$authoritativeEvidencePassed' -and
+        $Source -match 'Test-CompileErrorEvidence' -and
+        $Source -match 'Test-AmbiguousMacroEvidence' -and
+        $Source -match 'Test-LinkedSuccessfulDismissal'
+}
+
 foreach ($fileName in @(
     "excel-vba-oracle-contract.ps1",
     "excel-vba-oracle-guardian.ps1",
@@ -71,6 +79,8 @@ Assert-True ($cases[1].module_source -match "MissingOracleSymbol") "compile-fail
 Assert-True ($cases[3].module_source -match "ByVal Fix As Double") "intrinsic-shadow source must retain the shadowing declaration"
 Assert-True ($cases[3].module_source -match "Fix\(Fix\)") "intrinsic-shadow source must call through the shadowed name"
 Assert-True ($cases[4].module_source -match '(?m)^100 Err\.Raise') "runtime case must carry an Erl source label"
+Assert-True ($cases[2].module_source -match 'Application\.Run "OracleSelfTest\.MissingMacro"' -and $cases[2].module_source -match 'MsgBox capturedDescription') "ambiguous case must surface the real generic Application.Run failure through an owned modal"
+Assert-Equal "OracleSelfTest.RunProbe" $cases[2].run_procedure "ambiguous case must invoke the existing harness entry after clean compile"
 
 $intrinsics = @(Get-ExcelOracleIntrinsicShadowNames)
 Assert-Equal 10 $intrinsics.Count "intrinsic-shadow catalog count"
@@ -109,6 +119,7 @@ catch { $missingErrRejected = $_.Exception.Message -match "missing" }
 Assert-True $missingErrRejected "incomplete runtime Err payload must fail closed"
 
 $ownedRecord = [pscustomobject]@{
+    schema = "oxvba.excel-vba-oracle-owned-process.v1"
     run_id = "run-a"
     ownership = "owned-new-instance"
     pid = 303
@@ -138,6 +149,7 @@ $wrongPathRecord = $selfRecord | Select-Object *
 $wrongPathRecord.executable_path = Join-Path ([IO.Path]::GetDirectoryName($selfProcess.Path)) "different.exe"
 Assert-True (-not (Test-ExcelOracleProcessIdentity -Record $wrongPathRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self")) "mutation: matching PID/start with different executable must fail closed"
 $helperRecord = [pscustomobject]@{
+    schema = "oxvba.excel-vba-oracle-owned-helper.v1"
     run_id = "run-self"
     ownership = "owned-helper-process"
     role = "guardian"
@@ -149,6 +161,43 @@ $helperRecord = [pscustomobject]@{
 Assert-True (Test-ExcelOracleHelperProcessRecord -Record $helperRecord -RunId "run-self") "complete guardian ownership record must pass structural validation"
 $pidOnlyHelperRecord = [pscustomobject]@{ run_id = "run-self"; ownership = "owned-helper-process"; role = "guardian"; pid = $selfProcess.Id; process_name = $selfProcess.ProcessName }
 Assert-True (-not (Test-ExcelOracleHelperProcessRecord -Record $pidOnlyHelperRecord -RunId "run-self")) "mutation: PID/name-only guardian ownership must fail closed"
+
+$validExcelLedgerLine = $ownedRecord | ConvertTo-Json -Compress
+$validExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
+Assert-Equal 1 @($validExcelLedger.records).Count "valid Excel ownership ledger record count"
+Assert-Equal 0 @($validExcelLedger.errors).Count "valid Excel ownership ledger error count"
+$malformedExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine, '{not-json') -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
+Assert-Equal 1 @($malformedExcelLedger.errors).Count "mutation: malformed nonempty ownership JSON must make authority uncertain"
+$nullExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @('null') -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
+Assert-Equal 1 @($nullExcelLedger.errors).Count "mutation: null ownership JSON must make authority uncertain"
+$wrongSchemaExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine.Replace('owned-process.v1', 'attacker.v1')) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
+Assert-Equal 1 @($wrongSchemaExcelLedger.errors).Count "mutation: wrong ownership schema must make authority uncertain"
+$duplicateExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine, $validExcelLedgerLine) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
+Assert-Equal 1 @($duplicateExcelLedger.errors).Count "mutation: duplicate ownership identity must make authority uncertain"
+
+$observation = [ordered]@{
+    schema = "oxvba.excel-vba-oracle-window-observation.v1"; event_type = "dialog-observation"; observation_id = "obs-1"; run_id = "run-a"
+    operation_id = "compile"; phase = "compile"; excel_pid = 303; observed_process_id = 303; observed_utc = "2026-07-14T00:00:01Z"
+    window_handle = "123"; classification = "compile-error"; disposition = "capture-then-dismiss"; considered_dialog = $true
+    dialog_text = @("Compile error", "Sub or Function not defined"); selected_token = "MissingOracleSymbol"; expanded_line = "RunProbe = MissingOracleSymbol(1)"
+}
+$dismissal = [ordered]@{
+    schema = "oxvba.excel-vba-oracle-dismissal-result.v1"; event_type = "dismissal-result"; observation_id = "obs-1"; run_id = "run-a"
+    operation_id = "compile"; excel_pid = 303; window_handle = "123"; attempted_utc = "2026-07-14T00:00:02Z"; requested_buttons = @("OK"); succeeded = $true; dismissed_button = "OK"
+}
+$observationLine = $observation | ConvertTo-Json -Compress
+$dismissalLine = $dismissal | ConvertTo-Json -Compress
+$validGuardianLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine, $dismissalLine) -RunId "run-a"
+Assert-Equal 2 @($validGuardianLedger.records).Count "valid guardian event ledger record count"
+Assert-Equal 0 @($validGuardianLedger.errors).Count "valid guardian event ledger error count"
+$malformedGuardianLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine, '{not-json') -RunId "run-a"
+Assert-Equal 1 @($malformedGuardianLedger.errors).Count "mutation: malformed guardian JSON must fail capture authority"
+$nullGuardianLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @('null') -RunId "run-a"
+Assert-Equal 1 @($nullGuardianLedger.errors).Count "mutation: null guardian JSON must fail capture authority"
+$orphanDismissalLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($dismissalLine) -RunId "run-a"
+Assert-Equal 1 @($orphanDismissalLedger.errors).Count "mutation: dismissal without a prior observation must fail capture authority"
+$duplicateObservationLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine, $observationLine) -RunId "run-a"
+Assert-Equal 1 @($duplicateObservationLedger.errors).Count "mutation: duplicate guardian observation must fail capture authority"
 
 $guardianOutput = & (Join-Path $PSScriptRoot "excel-vba-oracle-guardian.ps1") -PolicySelfTest
 Assert-True (($guardianOutput -join "`n") -match "passed") "guardian policy self-test"
@@ -201,6 +250,7 @@ $dismissBeforeCaptureMutation = $guardianSource.Replace(
 Assert-True (-not (Test-GuardianCaptureBeforeDismissShape -Source $dismissBeforeCaptureMutation)) "mutation: dismiss-before-capture ordering must be rejected"
 Assert-True ($guardianSource -match 'process_start_utc' -and $guardianSource -match 'executable_path') "guardian ready identity must include start time and executable"
 Assert-True ($guardianSource -match 'Stale top-level UIA children are expected and nonfatal per element') "stale UIA children must be nonfatal per element"
+Assert-True ($guardianSource -match 'Microsoft Visual Basic for Applications\*') "selected-token UIA capture must be scoped to the VBE window"
 
 $workerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-worker.ps1")
 $compileIndex = $workerSource.IndexOf('$compileControl.Execute()')
@@ -213,10 +263,17 @@ Assert-True ($workerSource -match "CodePane.Show\(\)" -and $workerSource -match 
 Assert-True ($workerSource -match 'no-dialog-unverified') "absence of a captured dialog must remain fail-closed"
 Assert-True ($workerSource -match 'owned-helper-process' -and $workerSource -match 'process_start_utc' -and $workerSource -match 'executable_path') "worker must record complete Excel and guardian identities"
 Assert-True ($workerSource -notmatch 'Stop-Process') "worker cleanup must retain exact Process objects instead of PID-only termination"
+Assert-True (Test-WorkerEvidenceGatedAcceptanceShape -Source $workerSource) "case acceptance must be gated by healthy guardian and authoritative modal evidence"
+$statusOnlyAcceptanceMutation = $workerSource.Replace('$passed = $behaviorPassed -and $guardianHealthy -and $authoritativeEvidencePassed', '$passed = $behaviorPassed')
+Assert-True (-not (Test-WorkerEvidenceGatedAcceptanceShape -Source $statusOnlyAcceptanceMutation)) "mutation: status-only case acceptance must be rejected"
+Assert-True ($workerSource -match 'invalid guardian event ledger' -and $workerSource -notmatch 'catch \{ \}\s*\r?\n\s*return @\(\$events\)') "guardian event parsing must fail closed"
+Assert-True ($workerSource -match 'Assert-GuardianLive.+forced VBE compile' -and $workerSource -match 'Assert-GuardianLive.+runtime invocation') "guardian exact liveness must be checked immediately before compile and runtime"
 
 $runnerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "run-excel-vba-oracle.ps1")
 Assert-True (Test-RunnerIdentityCheckedCleanupShape -Source $runnerSource) "supervisor fallback cleanup must check PID/start/name/path identity before Process.Kill"
 $pidOnlyCleanupMutation = $runnerSource.Replace('Test-ExcelOracleProcessIdentity', 'Test-PidOnlyIdentity')
 Assert-True (-not (Test-RunnerIdentityCheckedCleanupShape -Source $pidOnlyCleanupMutation)) "mutation: PID-only fallback cleanup must be rejected"
+Assert-True ($runnerSource -match 'run directory already exists; refusing stale ready/control/event state') "runner must reject reused run directories"
+Assert-True ($runnerSource -match '\$worker\.WaitForExit\(10000\)' -and $runnerSource.IndexOf('$worker.WaitForExit(10000)') -lt $runnerSource.LastIndexOf('Stop-RecordedOwnedResources')) "timeout cleanup must wait for the exact worker before reading ledgers"
 
 Write-Output "test-excel-vba-oracle: PASS"

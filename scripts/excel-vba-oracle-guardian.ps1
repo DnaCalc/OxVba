@@ -115,6 +115,7 @@ function Get-VbeSelection {
     )
     foreach ($window in @(Get-OwnedTopLevelWindows)) {
         try {
+            if ([string]$window.Current.Name -notlike "Microsoft Visual Basic for Applications*") { continue }
             foreach ($document in @($window.FindAll([Windows.Automation.TreeScope]::Descendants, $documentCondition))) {
                 $pattern = $document.GetCurrentPattern([Windows.Automation.TextPattern]::Pattern)
                 $ranges = @($pattern.GetSelection())

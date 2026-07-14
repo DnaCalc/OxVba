@@ -119,8 +119,18 @@ End Function
     $ambiguousMacroSource = @'
 Option Explicit
 
-Public Function ExistingProbe() As String
-    ExistingProbe = "existing-ok"
+Public Function RunProbe() As String
+    Dim capturedDescription As String
+
+    On Error GoTo Handler
+    Application.Run "OracleSelfTest.MissingMacro"
+    RunProbe = "unexpected-success"
+    Exit Function
+
+Handler:
+    capturedDescription = Err.Description
+    MsgBox capturedDescription, vbOKOnly, "Microsoft Excel"
+    RunProbe = capturedDescription
 End Function
 '@
     $intrinsicShadowSource = @'
@@ -195,7 +205,7 @@ End Function
             module_name = "OracleSelfTest"
             module_source = $ambiguousMacroSource
             expected_compile_status = "ok"
-            run_procedure = "OracleSelfTest.MissingMacro"
+            run_procedure = "OracleSelfTest.RunProbe"
             target_exists = $false
             expected_run_status = "missing-macro"
             expected_value = $null
@@ -314,4 +324,136 @@ function Test-ExcelOracleHelperProcessRecord {
         [string]$Record.role -eq "guardian" -and
         [string]$Record.process_name -in @("pwsh", "powershell") -and
         $recordedPid -gt 0
+}
+
+function ConvertFrom-ExcelOracleOwnershipLedger {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Lines,
+        [Parameter(Mandatory = $true)][ValidateSet("excel", "guardian")][string]$Kind,
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [AllowEmptyCollection()][int[]]$BaselineExcelPids = @()
+    )
+
+    $records = [Collections.Generic.List[object]]::new()
+    $errors = [Collections.Generic.List[string]]::new()
+    $keys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    for ($index = 0; $index -lt $Lines.Count; $index++) {
+        $line = [string]$Lines[$index]
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        try { $record = $line | ConvertFrom-Json }
+        catch {
+            $errors.Add("line $($index + 1): malformed JSON")
+            continue
+        }
+        if ($null -eq $record) {
+            $errors.Add("line $($index + 1): null ownership record")
+            continue
+        }
+        $expectedSchema = if ($Kind -eq "excel") { "oxvba.excel-vba-oracle-owned-process.v1" } else { "oxvba.excel-vba-oracle-owned-helper.v1" }
+        if ($record.PSObject.Properties.Name -notcontains "schema" -or [string]$record.schema -ne $expectedSchema) {
+            $errors.Add("line $($index + 1): expected schema $expectedSchema")
+            continue
+        }
+        $valid = if ($Kind -eq "excel") {
+            Test-ExcelOracleOwnedProcessRecord -Record $record -BaselineExcelPids $BaselineExcelPids -RunId $RunId
+        }
+        else {
+            Test-ExcelOracleHelperProcessRecord -Record $record -RunId $RunId
+        }
+        if (-not $valid) {
+            $errors.Add("line $($index + 1): invalid $Kind ownership identity")
+            continue
+        }
+        $key = "$([string]$record.run_id)|$([string]$record.pid)|$([string]$record.process_start_utc)"
+        if (-not $keys.Add($key)) {
+            $errors.Add("line $($index + 1): duplicate $Kind ownership identity")
+            continue
+        }
+        $records.Add($record)
+    }
+    return [pscustomobject]@{ records = @($records); errors = @($errors) }
+}
+
+function ConvertFrom-ExcelOracleGuardianEventLedger {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Lines,
+        [Parameter(Mandatory = $true)][string]$RunId
+    )
+
+    $records = [Collections.Generic.List[object]]::new()
+    $errors = [Collections.Generic.List[string]]::new()
+    $observations = @{}
+    $dismissals = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    for ($index = 0; $index -lt $Lines.Count; $index++) {
+        $line = [string]$Lines[$index]
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        try { $event = $line | ConvertFrom-Json }
+        catch {
+            $errors.Add("line $($index + 1): malformed guardian JSON")
+            continue
+        }
+        if ($null -eq $event) {
+            $errors.Add("line $($index + 1): null guardian event")
+            continue
+        }
+        if ($event.PSObject.Properties.Name -notcontains "schema" -or
+            $event.PSObject.Properties.Name -notcontains "event_type" -or
+            $event.PSObject.Properties.Name -notcontains "run_id") {
+            $errors.Add("line $($index + 1): missing guardian schema/event_type/run_id")
+            continue
+        }
+        if ([string]$event.run_id -ne $RunId) {
+            $errors.Add("line $($index + 1): foreign guardian run_id")
+            continue
+        }
+        if ([string]$event.schema -eq "oxvba.excel-vba-oracle-window-observation.v1" -and [string]$event.event_type -in @("dialog-observation", "ignored-top-level-window")) {
+            $required = @("observation_id", "operation_id", "phase", "excel_pid", "observed_process_id", "observed_utc", "window_handle", "classification", "disposition", "considered_dialog")
+            $missing = @($required | Where-Object { $event.PSObject.Properties.Name -notcontains $_ -or [string]::IsNullOrWhiteSpace([string]$event.$_) })
+            if ($missing.Count -gt 0) {
+                $errors.Add("line $($index + 1): incomplete guardian observation ($($missing -join ','))")
+                continue
+            }
+            $observationId = [string]$event.observation_id
+            if ($observations.ContainsKey($observationId)) {
+                $errors.Add("line $($index + 1): duplicate guardian observation_id")
+                continue
+            }
+            $observations[$observationId] = $event
+            $records.Add($event)
+            continue
+        }
+        if ([string]$event.schema -eq "oxvba.excel-vba-oracle-dismissal-result.v1" -and [string]$event.event_type -eq "dismissal-result") {
+            $required = @("observation_id", "operation_id", "excel_pid", "window_handle", "attempted_utc", "requested_buttons", "succeeded")
+            $missing = @($required | Where-Object { $event.PSObject.Properties.Name -notcontains $_ -or [string]::IsNullOrWhiteSpace([string]$event.$_) })
+            if ($missing.Count -gt 0) {
+                $errors.Add("line $($index + 1): incomplete guardian dismissal ($($missing -join ','))")
+                continue
+            }
+            if ([bool]$event.succeeded -and
+                ($event.PSObject.Properties.Name -notcontains "dismissed_button" -or [string]::IsNullOrWhiteSpace([string]$event.dismissed_button))) {
+                $errors.Add("line $($index + 1): successful dismissal lacks dismissed_button")
+                continue
+            }
+            $observationId = [string]$event.observation_id
+            if (-not $observations.ContainsKey($observationId)) {
+                $errors.Add("line $($index + 1): dismissal precedes or lacks its observation")
+                continue
+            }
+            if (-not $dismissals.Add($observationId)) {
+                $errors.Add("line $($index + 1): duplicate dismissal result")
+                continue
+            }
+            $observation = $observations[$observationId]
+            if ([string]$event.operation_id -ne [string]$observation.operation_id -or
+                [string]$event.excel_pid -ne [string]$observation.excel_pid -or
+                [string]$event.window_handle -ne [string]$observation.window_handle) {
+                $errors.Add("line $($index + 1): dismissal link identity mismatch")
+                continue
+            }
+            $records.Add($event)
+            continue
+        }
+        $errors.Add("line $($index + 1): unknown guardian schema/event_type")
+    }
+    return [pscustomobject]@{ records = @($records); errors = @($errors) }
 }
