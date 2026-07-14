@@ -155,7 +155,9 @@ own process with global `live-counters` enabled. It additionally proves:
 - `cargo clippy -p oxvba-runtime --all-targets --all-features -- -D warnings` — passed with zero warnings.
 - `cargo clippy -p oxvba-differential --test windows_variant_pointer_bstr --all-features --no-deps -- -D warnings` — passed with zero warnings in the touched Windows-isolated target.
 - `cargo +nightly miri test -p oxvba-runtime borrowed_carrier_unwind_safety -- --test-threads=1` — 5 portable neighboring ownership tests passed; the four already-documented exposed-provenance warnings remained visible.
-- `cargo fmt --all -- --check` — passed.
+- `cargo fmt --all -- --check` — passed again after the 2026-07-14
+  fresh-eyes repair normalized the final test-import ordering with
+  `rustfmt 1.8.0-stable (e408947bfd 2026-03-25)`.
 - `git diff --check` — passed.
 - `rg -n "mem::forget|forget\\(" crates` — no matches.
 

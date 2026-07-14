@@ -1101,9 +1101,9 @@ mod tests {
         register_object_variant_pointer, register_string_variant_pointer, register_utf16_string,
         register_variant_pointer, register_variant_var_variant_pointer,
     };
-    use crate::{Decimal96, ObjectRef, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
     use crate::live_counters::thread_live_handle_counts;
+    use crate::{Decimal96, ObjectRef, VarType, Variant, bstr::BStr};
     #[cfg(target_os = "windows")]
     use windows_sys::{
         Win32::Foundation::{
