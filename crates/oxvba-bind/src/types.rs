@@ -231,13 +231,16 @@ pub(crate) fn is_longlong_with(ctx: TypeContext, ty: &VarTypeRef) -> bool {
 }
 
 fn is_fixed_integer(ty: &VarTypeRef) -> bool {
-    match ty {
+    matches!(
+        ty,
         VarTypeRef::Builtin(
-            BuiltinType::Byte | BuiltinType::Integer | BuiltinType::Long | BuiltinType::LongLong,
-        ) => true,
-        VarTypeRef::Builtin(BuiltinType::LongPtr) => true,
-        _ => false,
-    }
+            BuiltinType::Byte
+                | BuiltinType::Integer
+                | BuiltinType::Long
+                | BuiltinType::LongLong
+                | BuiltinType::LongPtr
+        )
+    )
 }
 
 // ── Operator result lattice ─────────────────────────────────────────────────

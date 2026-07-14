@@ -1182,7 +1182,7 @@ fn project_ref_name(include: &str) -> String {
 
 fn logical_include_file_stem(include: &str) -> Option<&str> {
     let file_name = include
-        .rsplit(|ch| ch == '/' || ch == '\\')
+        .rsplit(['/', '\\'])
         .next()
         .filter(|part| !part.is_empty())?;
     Some(
