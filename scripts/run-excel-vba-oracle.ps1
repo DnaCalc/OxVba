@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)][string]$EnvironmentId,
     [switch]$NoMatrixUpdate,
     [switch]$PlanOnly,
-    [string]$RunId = ("excel_vba_oracle_{0:yyyyMMddTHHmmssZ}" -f [DateTime]::UtcNow),
+    [string]$RunId = ("excel_vba_oracle_{0}" -f [Guid]::NewGuid().ToString("N")),
     [string]$OutputRoot = "artifacts/windows-x64/excel-vba-oracle",
     [ValidateRange(30, 1800)][int]$TimeoutSeconds = 600,
     [string]$DiagnosticCaseId = ""
@@ -32,10 +32,13 @@ if ([string]$environment.evidence_state -ne "characterized-noncertifying") {
     throw "run-excel-vba-oracle: environment '$EnvironmentId' is '$($environment.evidence_state)' and is not runnable by this development/oracle supervisor"
 }
 
-$cases = @(Get-ExcelOracleHarnessCases)
+$cases = @(Get-ExcelOracleHarnessCases | Where-Object { -not [bool]$_.diagnostic_only })
 if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
-    $cases = @($cases | Where-Object { $_.id -eq $DiagnosticCaseId })
+    $cases = @(Get-ExcelOracleHarnessCases | Where-Object { $_.id -eq $DiagnosticCaseId })
     if ($cases.Count -ne 1) { throw "run-excel-vba-oracle: unknown diagnostic case '$DiagnosticCaseId'" }
+}
+if (@($cases.id | Select-Object -Unique).Count -ne $cases.Count -or @($cases | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.id) }).Count -gt 0) {
+    throw "run-excel-vba-oracle: selected case identities must be nonempty and unique"
 }
 $plan = [ordered]@{
     schema = "oxvba.excel-vba-oracle-plan.v1"
@@ -60,6 +63,8 @@ $plan = [ordered]@{
             module_sha256 = Get-ExcelOracleSha256 -Text $_.module_source
         }
     })
+    selected_case_count = $cases.Count
+    selected_case_ids = @($cases | ForEach-Object { [string]$_.id })
 }
 if ($PlanOnly) {
     Write-Output ($plan | ConvertTo-Json -Depth 8)
@@ -82,7 +87,7 @@ function Read-OwnershipLedger {
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$BaselineExcelPids
     )
     $lines = if (Test-Path -LiteralPath $Path) { @(Get-Content -LiteralPath $Path) } else { @() }
-    return ConvertFrom-ExcelOracleOwnershipLedger -Lines $lines -Kind $Kind -RunId $RunId -BaselineExcelPids $BaselineExcelPids
+    return ConvertFrom-ExcelOracleOwnershipLedger -Lines $lines -Kind $Kind -RunId $RunId -BaselineExcelPids $BaselineExcelPids -ExpectedCaseIds @($cases.id)
 }
 
 function Stop-RecordedOwnedResources {
@@ -96,24 +101,16 @@ function Stop-RecordedOwnedResources {
     $authorityErrors = [Collections.Generic.List[string]]::new()
     foreach ($errorText in @($excelLedger.errors) + @($helperLedger.errors)) { $authorityErrors.Add([string]$errorText) }
     foreach ($record in @($excelLedger.records)) {
-        $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-        $identityState = Get-ExcelOracleProcessIdentityState -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId
-        if ($identityState -eq "exact") {
-            try { $process.Kill(); [void]$process.WaitForExit(5000) }
-            catch { $authorityErrors.Add("exact Excel identity could not be terminated: $($_.Exception.Message)") }
-        }
-        elseif ($identityState -eq "same-instance-conflict") {
+        try { $termination = Invoke-ExcelOracleRetainedProcessTermination -Record $record -ExpectedProcessName "EXCEL" -RunId $RunId }
+        catch { $authorityErrors.Add("exact Excel identity could not be opened/terminated through one retained handle: $($_.Exception.Message)"); continue }
+        if ($termination.state -eq "same-instance-conflict") {
             $authorityErrors.Add("Excel PID $($record.pid) has the recorded start but conflicting name/executable identity")
         }
     }
     foreach ($record in @($helperLedger.records)) {
-        $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-        $identityState = Get-ExcelOracleProcessIdentityState -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId
-        if ($identityState -eq "exact") {
-            try { $process.Kill(); [void]$process.WaitForExit(5000) }
-            catch { $authorityErrors.Add("exact guardian identity could not be terminated: $($_.Exception.Message)") }
-        }
-        elseif ($identityState -eq "same-instance-conflict") {
+        try { $termination = Invoke-ExcelOracleRetainedProcessTermination -Record $record -ExpectedProcessName ([string]$record.process_name) -RunId $RunId }
+        catch { $authorityErrors.Add("exact guardian identity could not be opened/terminated through one retained handle: $($_.Exception.Message)"); continue }
+        if ($termination.state -eq "same-instance-conflict") {
             $authorityErrors.Add("guardian PID $($record.pid) has the recorded start but conflicting name/executable identity")
         }
     }
@@ -121,11 +118,9 @@ function Stop-RecordedOwnedResources {
 }
 
 $outputBase = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $repoRoot $OutputRoot }
-$outputDirectory = Join-Path $outputBase $RunId
-if (Test-Path -LiteralPath $outputDirectory) {
-    throw "run-excel-vba-oracle: run directory already exists; refusing stale ready/control/event state: $outputDirectory"
-}
-New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
+$runClaim = Enter-ExcelOracleRunClaim -OutputBase $outputBase -RunId $RunId
+$outputDirectory = [string]$runClaim.output_directory
+try {
 $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDirectory "plan.json") -Encoding utf8NoBOM
 
 $ownershipFile = Join-Path $outputDirectory "owned-processes.jsonl"
@@ -153,6 +148,9 @@ $job = [ExcelOracleJob]::new("OxVbaExcelOracle-$PID-$containmentToken")
 $worker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
 try {
     $job.AssignProcess($worker.Handle)
+    if (-not $job.ContainsProcess($worker.Handle)) {
+        throw "worker is not a member of the kill-on-close Job after assignment"
+    }
     [ordered]@{
         schema = "oxvba.excel-vba-oracle-containment-ready.v1"
         run_id = $RunId
@@ -160,12 +158,20 @@ try {
         worker_pid = $worker.Id
         worker_process_start_utc = $worker.StartTime.ToUniversalTime().ToString("o")
         worker_executable_path = [string]$worker.Path
+        worker_job_membership_verified = $true
         published_utc = [DateTime]::UtcNow.ToString("o")
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $containmentReadyFile -Encoding utf8NoBOM
 }
 catch {
     $containmentError = $_.Exception.Message
-    try { $worker.Kill(); [void]$worker.WaitForExit(10000) } catch { }
+    try {
+        $workerIdentity = [pscustomobject]@{
+            run_id = $RunId; pid = $worker.Id; process_name = [string]$worker.ProcessName
+            process_start_utc = $worker.StartTime.ToUniversalTime().ToString("o"); executable_path = [string]$worker.Path
+        }
+        [void](Invoke-ExcelOracleRetainedProcessTermination -Record $workerIdentity -ExpectedProcessName $worker.ProcessName -RunId $RunId -TimeoutMilliseconds 10000)
+    }
+    catch { $containmentError = "$containmentError; retained worker cleanup failed: $($_.Exception.Message)" }
     $job.Dispose()
     throw "run-excel-vba-oracle: worker containment could not be established before mutation authority: $containmentError"
 }
@@ -181,8 +187,8 @@ try {
     }
     if (-not $worker.HasExited) {
         $timedOut = $true
-        try { $worker.Kill() }
-        catch { $terminationFailure = "worker termination failed: $($_.Exception.Message)" }
+        try { $job.Terminate() }
+        catch { $terminationFailure = "worker Job termination failed: $($_.Exception.Message)" }
         $workerQuiesced = $worker.WaitForExit(10000)
         $workerFailure = "run-excel-vba-oracle: worker timed out after $TimeoutSeconds seconds$(if ($terminationFailure) { "; $terminationFailure" })"
     }
@@ -214,6 +220,10 @@ $helperLedger = Read-OwnershipLedger -Path $helperOwnershipFile -Kind guardian -
 if (@($excelLedger.errors).Count -gt 0 -or @($helperLedger.errors).Count -gt 0) {
     throw "run-excel-vba-oracle: residual audit authority is uncertain: $(@($excelLedger.errors) + @($helperLedger.errors) -join '; ')"
 }
+if (-not (Test-ExcelOracleLedgerCaseBinding -Records @($excelLedger.records) -ExpectedCaseIds @($cases.id)) -or
+    -not (Test-ExcelOracleLedgerCaseBinding -Records @($helperLedger.records) -ExpectedCaseIds @($cases.id))) {
+    throw "run-excel-vba-oracle: ownership ledgers do not bind exactly once to the selected case set"
+}
 $remainingOwned = [Collections.Generic.List[int]]::new()
 foreach ($record in @($excelLedger.records)) {
     $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
@@ -240,6 +250,9 @@ if ($workerFailure) { throw $workerFailure }
 $resultsPath = Join-Path $outputDirectory "results.json"
 if (-not (Test-Path -LiteralPath $resultsPath)) { throw "run-excel-vba-oracle: worker did not produce results.json" }
 $results = Get-Content -Raw -LiteralPath $resultsPath | ConvertFrom-Json
+if (-not (Test-ExcelOracleLedgerCaseBinding -Records @($results.cases) -ExpectedCaseIds @($cases.id))) {
+    throw "run-excel-vba-oracle: results do not bind exactly once to the selected case set"
+}
 if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId) -and (@($results.cases).Count -ne 5 -or -not [bool]$results.passed)) {
     throw "run-excel-vba-oracle: harness self-test did not produce five passing cases"
 }
@@ -300,3 +313,9 @@ else {
     Write-Output "excel-vba-oracle: DIAGNOSTIC $DiagnosticCaseId captured (development/oracle, noncertifying, no matrix update)"
 }
 Write-Output "excel-vba-oracle: $outputDirectory"
+}
+finally {
+    # Release only the exact stream/path returned by the successful CreateNew
+    # claim. Failed run directories and evidence remain intact and fail closed.
+    Exit-ExcelOracleRunClaim -Claim $runClaim
+}

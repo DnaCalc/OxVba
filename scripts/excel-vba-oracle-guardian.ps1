@@ -32,6 +32,8 @@ if ($PolicySelfTest) {
     Assert-GuardianPolicy "security-or-trust" "block-no-dismiss" (Get-ExcelOracleDialogPolicy -Phase compile -Texts @("Macros in this project are disabled") -Buttons @("Enable Content"))
     Assert-GuardianPolicy "ambiguous-macro-failure" "capture-then-dismiss" (Get-ExcelOracleDialogPolicy -Phase run -Texts @("Cannot run the macro. The macro may not be available or all macros may be disabled.") -Buttons @("OK"))
     Assert-GuardianPolicy "unrecognized-modal" "block-no-dismiss" (Get-ExcelOracleDialogPolicy -Phase run -Texts @("Unexpected prompt") -Buttons @("Yes", "No"))
+    Assert-GuardianPolicy "unrecognized-modal" "block-no-dismiss" (Get-ExcelOracleDialogPolicy -Phase run -Texts @("Compile error: Sub or Function not defined") -Buttons @("OK"))
+    Assert-GuardianPolicy "unrecognized-modal" "block-no-dismiss" (Get-ExcelOracleDialogPolicy -Phase compile -Texts @("Run-time error '13': Type mismatch") -Buttons @("End"))
     Write-Output "excel-vba-oracle-guardian: policy self-test passed"
     exit 0
 }
@@ -171,7 +173,22 @@ function Invoke-OwnedDialogButton {
 
 function Add-GuardianEvent {
     param([Parameter(Mandatory = $true)]$Event)
-    ($Event | ConvertTo-Json -Compress -Depth 8) | Add-Content -LiteralPath $EventsFile -Encoding utf8NoBOM
+    $script:eventSequence++
+    $Event.event_sequence = $script:eventSequence
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes("$(($Event | ConvertTo-Json -Compress -Depth 8))`n")
+    $stream = [IO.FileStream]::new(
+        $EventsFile,
+        [IO.FileMode]::Append,
+        [IO.FileAccess]::Write,
+        [IO.FileShare]::Read,
+        4096,
+        [IO.FileOptions]::WriteThrough
+    )
+    try {
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+    }
+    finally { $stream.Dispose() }
 }
 
 $readyParent = Split-Path -Parent $ReadyFile
@@ -196,19 +213,88 @@ $ready = [ordered]@{
 $ready | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReadyFile -Encoding utf8NoBOM
 
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$invalidControls = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$armedControls = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$script:eventSequence = 0L
+$lastControlSequence = 0L
 $deadline = [DateTime]::UtcNow.AddSeconds($MaxSeconds)
 while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopFile)) {
     $currentExcelProcess = Get-Process -Id $ExcelPid -ErrorAction SilentlyContinue
     if (-not $currentExcelProcess -or -not (Test-ExcelOracleProcessIdentity -Record $excelIdentity -Process $currentExcelProcess -ExpectedProcessName "EXCEL" -RunId $RunId)) { break }
     $control = $null
     if (Test-Path -LiteralPath $ControlFile) {
-        try { $control = Get-Content -Raw -LiteralPath $ControlFile | ConvertFrom-Json }
-        catch { $control = $null }
+        $controlJson = Get-Content -Raw -LiteralPath $ControlFile
+        $controlHash = Get-ExcelOracleSha256 -Text $controlJson
+        $parsedControl = ConvertFrom-ExcelOracleGuardianControl -Json $controlJson -RunId $RunId
+        if (@($parsedControl.errors).Count -gt 0) {
+            if ($invalidControls.Add($controlHash)) {
+                Add-GuardianEvent -Event ([ordered]@{
+                    schema = "oxvba.excel-vba-oracle-control-status.v1"
+                    event_type = "invalid-control"
+                    run_id = $RunId
+                    event_sequence = 0L
+                    observed_utc = [DateTime]::UtcNow.ToString("o")
+                    control_sha256 = $controlHash
+                    errors = @($parsedControl.errors)
+                    valid = $false
+                })
+            }
+            # An invalid control never arms an operation and can never authorize a dismissal.
+            Start-Sleep -Milliseconds $PollMilliseconds
+            continue
+        }
+        $control = $parsedControl.control
     }
     if ($null -eq $control -or [string]::IsNullOrWhiteSpace([string]$control.operation_id)) {
         Start-Sleep -Milliseconds $PollMilliseconds
         continue
     }
+    $controlKey = "$([string]$control.case_id)|$([string]$control.operation_id)|$([long]$control.sequence)"
+    if ([long]$control.sequence -lt $lastControlSequence) {
+        if ($invalidControls.Add("stale:$controlKey")) {
+            Add-GuardianEvent -Event ([ordered]@{
+                schema = "oxvba.excel-vba-oracle-control-status.v1"; event_type = "invalid-control"; run_id = $RunId
+                event_sequence = 0L; observed_utc = [DateTime]::UtcNow.ToString("o"); control_sha256 = Get-ExcelOracleSha256 -Text ($control | ConvertTo-Json -Compress)
+                errors = @("control sequence regressed"); valid = $false
+            })
+        }
+        Start-Sleep -Milliseconds $PollMilliseconds
+        continue
+    }
+    if ($armedControls.Add($controlKey)) {
+        if ([long]$control.sequence -le $lastControlSequence) {
+            Add-GuardianEvent -Event ([ordered]@{
+                schema = "oxvba.excel-vba-oracle-control-status.v1"; event_type = "invalid-control"; run_id = $RunId
+                event_sequence = 0L; observed_utc = [DateTime]::UtcNow.ToString("o"); control_sha256 = Get-ExcelOracleSha256 -Text ($control | ConvertTo-Json -Compress)
+                errors = @("control sequence was reused"); valid = $false
+            })
+            Start-Sleep -Milliseconds $PollMilliseconds
+            continue
+        }
+        $lastControlSequence = [long]$control.sequence
+        Add-GuardianEvent -Event ([ordered]@{
+            schema = "oxvba.excel-vba-oracle-operation-state.v1"
+            event_type = "operation-armed"
+            run_id = $RunId
+            case_id = [string]$control.case_id
+            operation_id = [string]$control.operation_id
+            phase = [string]$control.phase
+            control_sequence = [long]$control.sequence
+            event_sequence = 0L
+            observed_utc = [DateTime]::UtcNow.ToString("o")
+        })
+    }
+    Add-GuardianEvent -Event ([ordered]@{
+        schema = "oxvba.excel-vba-oracle-operation-state.v1"
+        event_type = "guardian-heartbeat"
+        run_id = $RunId
+        case_id = [string]$control.case_id
+        operation_id = [string]$control.operation_id
+        phase = [string]$control.phase
+        control_sequence = [long]$control.sequence
+        event_sequence = 0L
+        observed_utc = [DateTime]::UtcNow.ToString("o")
+    })
 
     foreach ($window in @(Get-OwnedTopLevelWindows)) {
         try {
@@ -240,11 +326,15 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
                 event_type = if ($consideredDialog) { "dialog-observation" } else { "ignored-top-level-window" }
                 observation_id = $observationId
                 run_id = $RunId
+                case_id = [string]$control.case_id
                 operation_id = [string]$control.operation_id
+                control_sequence = [long]$control.sequence
+                event_sequence = 0L
                 phase = [string]$control.phase
                 excel_pid = $ExcelPid
                 observed_process_id = $observedProcessId
                 observed_utc = [DateTime]::UtcNow.ToString("o")
+                capture_completed_utc = [DateTime]::UtcNow.ToString("o")
                 window_title = $windowTitle
                 window_class = $className
                 window_handle = $windowHandle
@@ -268,7 +358,11 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
                     event_type = "dismissal-result"
                     observation_id = $observationId
                     run_id = $RunId
+                    case_id = [string]$control.case_id
                     operation_id = [string]$control.operation_id
+                    control_sequence = [long]$control.sequence
+                    event_sequence = 0L
+                    phase = [string]$control.phase
                     excel_pid = $ExcelPid
                     window_handle = $windowHandle
                     attempted_utc = [DateTime]::UtcNow.ToString("o")
