@@ -38,31 +38,31 @@ use oxvba_oxir::{
     OxLocal, OxNativeCallee, OxOperand, OxPlace, OxProgram, OxTerminator, OxTy,
 };
 use oxvba_rt_abi::{
-    EventBinding, ExecState, Fault, LoadedProgram, ProcInvokeBridge, RT_ARITH_ADD, RT_ARITH_DIV,
-    RT_ARITH_INT_DIV, RT_ARITH_MOD, RT_ARITH_MUL, RT_ARITH_POW, RT_ARITH_SUB, RT_COMPARE_EQ,
-    RT_COMPARE_GE, RT_COMPARE_GT, RT_COMPARE_LE, RT_COMPARE_LT, RT_COMPARE_NE,
-    RT_ERR_FIELD_DESCRIPTION, RT_ERR_FIELD_HELP_CONTEXT, RT_ERR_FIELD_HELP_FILE,
-    RT_ERR_FIELD_LAST_DLL_ERROR, RT_ERR_FIELD_NUMBER, RT_ERR_FIELD_SOURCE, RT_ERROR_HANDLER_GOTO_0,
-    RT_ERROR_HANDLER_GOTO_LABEL, RT_ERROR_HANDLER_GOTO_MINUS_1, RT_ERROR_HANDLER_RESUME_NEXT,
-    RT_FAULT_DISP_HANDLER, RT_FAULT_DISP_RESUME_NEXT, RT_FAULT_DISP_UNWIND, RT_LOGIC_AND,
-    RT_LOGIC_EQV, RT_LOGIC_IMP, RT_LOGIC_OR, RT_LOGIC_XOR, RT_NUMERIC_CHECKED_BOOLEAN,
-    RT_NUMERIC_CHECKED_BYTE, RT_NUMERIC_CHECKED_CURRENCY, RT_NUMERIC_CHECKED_DATE,
-    RT_NUMERIC_CHECKED_DOUBLE, RT_NUMERIC_CHECKED_INTEGER, RT_NUMERIC_CHECKED_LONG,
-    RT_NUMERIC_CHECKED_LONGLONG, RT_NUMERIC_CHECKED_SINGLE, RT_NUMERIC_WIDENING, RT_RESUME_LABEL,
-    RT_RESUME_NEXT, RT_RESUME_SAME, RT_STRING_COMPARE_BINARY, RT_STRING_COMPARE_TEXT, RawExecState,
+    EventBinding, ExecState, Fault, LoadedProgram, RT_ARITH_ADD, RT_ARITH_DIV, RT_ARITH_INT_DIV,
+    RT_ARITH_MOD, RT_ARITH_MUL, RT_ARITH_POW, RT_ARITH_SUB, RT_COMPARE_EQ, RT_COMPARE_GE,
+    RT_COMPARE_GT, RT_COMPARE_LE, RT_COMPARE_LT, RT_COMPARE_NE, RT_ERR_FIELD_DESCRIPTION,
+    RT_ERR_FIELD_HELP_CONTEXT, RT_ERR_FIELD_HELP_FILE, RT_ERR_FIELD_LAST_DLL_ERROR,
+    RT_ERR_FIELD_NUMBER, RT_ERR_FIELD_SOURCE, RT_ERROR_HANDLER_GOTO_0, RT_ERROR_HANDLER_GOTO_LABEL,
+    RT_ERROR_HANDLER_GOTO_MINUS_1, RT_ERROR_HANDLER_RESUME_NEXT, RT_FAULT_DISP_HANDLER,
+    RT_FAULT_DISP_RESUME_NEXT, RT_FAULT_DISP_UNWIND, RT_LOGIC_AND, RT_LOGIC_EQV, RT_LOGIC_IMP,
+    RT_LOGIC_OR, RT_LOGIC_XOR, RT_NUMERIC_CHECKED_BOOLEAN, RT_NUMERIC_CHECKED_BYTE,
+    RT_NUMERIC_CHECKED_CURRENCY, RT_NUMERIC_CHECKED_DATE, RT_NUMERIC_CHECKED_DOUBLE,
+    RT_NUMERIC_CHECKED_INTEGER, RT_NUMERIC_CHECKED_LONG, RT_NUMERIC_CHECKED_LONGLONG,
+    RT_NUMERIC_CHECKED_SINGLE, RT_NUMERIC_WIDENING, RT_RESUME_LABEL, RT_RESUME_NEXT,
+    RT_RESUME_SAME, RT_STRING_COMPARE_BINARY, RT_STRING_COMPARE_TEXT, RawExecState,
     RtSavedErrState, ST_FAULT, ST_HALT, ST_OK, exec_state_as_raw, rt_add_i16, rt_add_i32,
-    rt_add_i64, rt_add_u8, rt_arith_v, rt_coerce_fixed_string_v, rt_coerce_numeric_v,
-    rt_coerce_string_v, rt_compare_v, rt_currency_add, rt_currency_mul, rt_currency_sub,
-    rt_div_i32, rt_div_i64, rt_err_clear, rt_err_enter_activation, rt_err_i32_field,
-    rt_err_restore_activation, rt_err_string_field_utf8, rt_lib_invoke_with_policy, rt_logical_v,
-    rt_maybe_drain, rt_mul_i16, rt_mul_i32, rt_mul_i64, rt_mul_u8, rt_neg_v, rt_not_v,
-    rt_project_new_object, rt_project_predeclared_instance, rt_project_set_predeclared_instance,
-    rt_raise_array_has_no_bounds, rt_raise_error_number, rt_raise_expected_array,
-    rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref, rt_raise_out_of_memory,
-    rt_raise_out_of_stack, rt_raise_runtime_error_number, rt_raise_subscript_out_of_range,
-    rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume, rt_route_fault,
-    rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8, rt_truthy_v,
-    runtime_class_descriptors_for_program, variant_changed,
+    rt_add_i64, rt_add_u8, rt_arith_v, rt_clear_proc_invoker, rt_coerce_fixed_string_v,
+    rt_coerce_numeric_v, rt_coerce_string_v, rt_compare_v, rt_currency_add, rt_currency_mul,
+    rt_currency_sub, rt_div_i32, rt_div_i64, rt_err_clear, rt_err_enter_activation,
+    rt_err_i32_field, rt_err_restore_activation, rt_err_string_field_utf8, rt_install_proc_invoker,
+    rt_lib_invoke_with_policy, rt_logical_v, rt_maybe_drain, rt_mul_i16, rt_mul_i32, rt_mul_i64,
+    rt_mul_u8, rt_neg_v, rt_not_v, rt_project_new_object, rt_project_predeclared_instance,
+    rt_project_set_predeclared_instance, rt_raise_array_has_no_bounds, rt_raise_error_number,
+    rt_raise_expected_array, rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref,
+    rt_raise_out_of_memory, rt_raise_out_of_stack, rt_raise_runtime_error_number,
+    rt_raise_subscript_out_of_range, rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume,
+    rt_route_fault, rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8,
+    rt_truthy_v, runtime_class_descriptors_for_program, variant_changed,
 };
 use oxvba_runtime::{
     Decimal96, RUNTIME_CLASS_LIFECYCLE_NONE, RuntimeByRefSlot, RuntimeClassDescriptor, VarType,
@@ -260,16 +260,33 @@ impl<'p> CompiledImage<'p> {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
         };
         let state = exec_state_as_raw(&mut exec);
         let mut bridge_ctx = JitProcInvokeCtx {
             run: &mut run as *mut JitRun,
             state,
         };
-        exec.proc_invoker = Some(ProcInvokeBridge {
-            ctx: &mut bridge_ctx as *mut JitProcInvokeCtx as *mut c_void,
-            invoke: jit_proc_invoke,
-        });
+        run.callback_ctx = &raw mut bridge_ctx;
+        // SAFETY: `state` is the live same-thread run state, and `bridge_ctx`
+        // remains live until the registration guard clears the bridge.
+        let install_status = unsafe {
+            rt_install_proc_invoker(
+                state,
+                (&raw mut bridge_ctx).cast::<c_void>(),
+                Some(jit_proc_invoke),
+            )
+        };
+        if install_status != ST_OK {
+            run.callback_ctx = std::ptr::null_mut();
+            return Err(JitError::Runtime(
+                "failed to install the JIT procedure-invocation bridge".to_string(),
+            ));
+        }
+        let _proc_invoker_registration = ProcInvokerRegistration {
+            state,
+            run: &raw mut run,
+        };
 
         oxvba_runtime::reset_pending_terminations();
         if let Some(init) = entry_program.global_initializer {
@@ -312,6 +329,7 @@ impl<'p> CompiledImage<'p> {
             }
         }
 
+        refresh_proc_invoke_run(&mut run);
         // SAFETY: `state` was derived above from the uniquely borrowed, live `exec`
         // and remains valid for this synchronous runtime call.
         let drain_status = unsafe { rt_maybe_drain(state) };
@@ -370,6 +388,7 @@ impl<'p> CompiledImage<'p> {
             return Ok(enter_status);
         }
         run.frames.push(new_jit_frame(program, program_index, f)?);
+        refresh_proc_invoke_run(run);
         // SAFETY: `entry` was produced by Cranelift for the exact `JitEntryFn`
         // signature in `Compiler::entry_signature`; `run` and `state` live for the call.
         let status = unsafe { entry(run, state) };
@@ -395,11 +414,46 @@ struct JitRun {
     next_collection_instance_id: i32,
     programs: *const JitProgramImage,
     program_count: usize,
+    callback_ctx: *mut JitProcInvokeCtx,
 }
 
+#[derive(Clone, Copy)]
 struct JitProcInvokeCtx {
     run: *mut JitRun,
     state: *mut RawExecState,
+}
+
+struct ProcInvokerRegistration {
+    state: *mut RawExecState,
+    run: *mut JitRun,
+}
+
+impl Drop for ProcInvokerRegistration {
+    fn drop(&mut self) {
+        // Clear the runtime-held opaque pointer before its stack storage expires.
+        // SAFETY: registration and guard are confined to the same live run state.
+        let _ = unsafe { rt_clear_proc_invoker(self.state) };
+        if !self.run.is_null() {
+            // SAFETY: the guard is dropped before the owning `JitRun`, and no
+            // procedure callback can start after the bridge was cleared above.
+            unsafe {
+                std::ptr::addr_of_mut!((*self.run).callback_ctx).write(std::ptr::null_mut());
+            }
+        }
+    }
+}
+
+fn refresh_proc_invoke_run(run: &mut JitRun) {
+    let callback_ctx = run.callback_ctx;
+    if callback_ctx.is_null() {
+        return;
+    }
+    // SAFETY: a non-null pointer is installed only while the registration guard
+    // keeps the stack-owned callback context live. Deriving the pointer from this
+    // current reborrow prevents a callback from reusing a superseded `&mut JitRun`.
+    unsafe {
+        std::ptr::addr_of_mut!((*callback_ctx).run).write(run as *mut JitRun);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -421,8 +475,9 @@ unsafe extern "C" fn jit_proc_invoke(
             return ST_FAULT;
         }
         // SAFETY: `ctx` is installed from `CompiledImage::run` and remains live while
-        // runtime callbacks can synchronously enter compiled procedures.
-        let ctx = unsafe { &mut *(ctx as *mut JitProcInvokeCtx) };
+        // runtime callbacks can synchronously enter compiled procedures. Copying the
+        // two raw handles avoids retaining a typed context borrow across recursion.
+        let ctx = unsafe { std::ptr::read(ctx.cast::<JitProcInvokeCtx>()) };
         if ctx.run.is_null() || ctx.state.is_null() {
             return ST_FAULT;
         }
@@ -472,6 +527,7 @@ unsafe extern "C" fn jit_proc_invoke(
         run.frames.push(frame);
         // SAFETY: function pointer bounds were checked above.
         let entry = unsafe { *image.functions.add(proc) };
+        refresh_proc_invoke_run(run);
         // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
         let status = unsafe { entry(run as *mut JitRun, ctx.state) };
         let Some(frame) = run.frames.pop() else {
@@ -8985,7 +9041,7 @@ impl<'a> LowerFunc<'a> {
         module: &mut JITModule,
     ) -> Result<(), JitError> {
         let callee = self.import(builder, module, self.imports.drain_terminations);
-        let call = builder.ins().call(callee, &[self.state]);
+        let call = builder.ins().call(callee, &[self.run, self.state]);
         let status = builder.inst_results(call)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
@@ -9748,6 +9804,7 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         .map_err(module_err)?;
 
     let mut drain_terminations_sig = module.make_signature();
+    drain_terminations_sig.params.push(AbiParam::new(ptr_ty));
     drain_terminations_sig.params.push(AbiParam::new(ptr_ty));
     drain_terminations_sig
         .returns
@@ -12766,7 +12823,10 @@ fn status_guard(work: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(work)).unwrap_or(ST_FAULT)
 }
 
-fn variant_operand_value(run: &JitRun, operand: JitVariantOperandDesc) -> Option<Variant> {
+// SAFETY CONTRACT: a UTF-8 operand's integer-carried pointer must identify `index`
+// readable bytes for this call (unless `index == 0`). Other operand kinds carry no
+// dereferenceable integer. The run and all referenced slots remain live for the call.
+unsafe fn variant_operand_value(run: &JitRun, operand: JitVariantOperandDesc) -> Option<Variant> {
     match operand.kind {
         JIT_VARIANT_OPERAND_PLACE => {
             if operand.area < 0 || operand.index < 0 {
@@ -12792,17 +12852,28 @@ fn variant_operand_value(run: &JitRun, operand: JitVariantOperandDesc) -> Option
         JIT_VARIANT_OPERAND_STR_UTF8 => {
             let len = usize::try_from(operand.index).ok()?;
             let ptr = usize::try_from(operand.value).ok()? as *const u8;
-            if ptr.is_null() && len != 0 {
-                return None;
-            }
-            // SAFETY: string literal descriptors are emitted from `OxConst::Str`
-            // values owned by the live `OxProgram` borrowed for the compiled image.
-            let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+            let bytes = if len == 0 {
+                &[]
+            } else {
+                if ptr.is_null() {
+                    return None;
+                }
+                // SAFETY: upheld by this private decoder's descriptor contract.
+                unsafe { std::slice::from_raw_parts(ptr, len) }
+            };
             let text = std::str::from_utf8(bytes).ok()?;
             Some(Variant::from_string(text.to_owned()))
         }
         _ => None,
     }
+}
+
+macro_rules! variant_operand_value_from_compiled_desc {
+    ($run:expr, $operand:expr) => {{
+        // SAFETY: this macro is confined to generated-entry helpers whose raw
+        // boundary guarantees any UTF-8 descriptor storage for the synchronous call.
+        unsafe { variant_operand_value($run, $operand) }
+    }};
 }
 
 // SAFETY CONTRACT: `state` must be null or the exact live, uniquely borrowed,
@@ -12815,7 +12886,7 @@ unsafe fn variant_operand_value_with_as_new(
     operand: JitVariantOperandDesc,
 ) -> Result<Variant, i32> {
     if operand.kind != JIT_VARIANT_OPERAND_PLACE {
-        return variant_operand_value(run, operand).ok_or(ST_FAULT);
+        return variant_operand_value_from_compiled_desc!(run, operand).ok_or(ST_FAULT);
     }
     if operand.area < 0 || operand.index < 0 {
         return Err(ST_FAULT);
@@ -12857,6 +12928,7 @@ unsafe fn instantiate_as_new_for_jit(
     match binding {
         OxAsNew::ProjectClass { class } => {
             let mut value = Variant::empty();
+            refresh_proc_invoke_run(run);
             // SAFETY: the enclosing JIT boundary validated the live state; the Variant output is initialized, uniquely borrowed storage.
             let status = unsafe {
                 rt_project_new_object(state, program_index as usize, class.0, &mut value)
@@ -12972,16 +13044,18 @@ fn scalar_arg_variant(ty: &OxTy, value: i64) -> Option<Variant> {
 
 fn call_arg_variant_value(run: &JitRun, arg: JitCallArgDesc) -> Option<Variant> {
     match arg.kind {
-        JIT_CALL_ARG_BYVAL_VARIANT | JIT_CALL_ARG_BYREF_COPY => variant_operand_value(
-            run,
-            JitVariantOperandDesc {
-                kind: arg.aux,
-                _pad: 0,
-                value: arg.value,
-                area: arg.area,
-                index: arg.index,
-            },
-        ),
+        JIT_CALL_ARG_BYVAL_VARIANT | JIT_CALL_ARG_BYREF_COPY => {
+            variant_operand_value_from_compiled_desc!(
+                run,
+                JitVariantOperandDesc {
+                    kind: arg.aux,
+                    _pad: 0,
+                    value: arg.value,
+                    area: arg.area,
+                    index: arg.index,
+                }
+            )
+        }
         JIT_CALL_ARG_BYREF_ALIAS => {
             if arg.area < 0 || arg.index < 0 {
                 None
@@ -13088,38 +13162,44 @@ fn omitted_call_arg_desc() -> JitCallArgDesc {
     }
 }
 
-fn call_arg_name(name: JitCallArgNameDesc) -> Result<Option<String>, i32> {
+// SAFETY CONTRACT: for nonnegative lengths, the integer-carried pointer identifies
+// `len` readable UTF-8 bytes for this call (unless `len == 0`).
+unsafe fn call_arg_name(name: JitCallArgNameDesc) -> Result<Option<String>, i32> {
     if name.len < 0 {
         return Ok(None);
     }
-    if name.ptr == 0 {
-        return Err(ST_FAULT);
-    }
     let len = usize::try_from(name.len).map_err(|_| ST_FAULT)?;
     let ptr = usize::try_from(name.ptr).map_err(|_| ST_FAULT)? as *const u8;
-    if ptr.is_null() && len != 0 {
-        return Err(ST_FAULT);
-    }
-    // SAFETY: compiled descriptors point at source names owned by the live OxProgram.
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let bytes = if len == 0 {
+        &[]
+    } else {
+        if ptr.is_null() {
+            return Err(ST_FAULT);
+        }
+        // SAFETY: upheld by this private decoder's descriptor contract.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    };
     let name = std::str::from_utf8(bytes).map_err(|_| ST_FAULT)?;
     Ok(Some(name.to_ascii_lowercase()))
 }
 
-fn call_arg_name_preserved(name: JitCallArgNameDesc) -> Result<Option<String>, i32> {
+// SAFETY CONTRACT: for nonnegative lengths, the integer-carried pointer identifies
+// `len` readable UTF-8 bytes for this call (unless `len == 0`).
+unsafe fn call_arg_name_preserved(name: JitCallArgNameDesc) -> Result<Option<String>, i32> {
     if name.len < 0 {
         return Ok(None);
     }
-    if name.ptr == 0 {
-        return Err(ST_FAULT);
-    }
     let len = usize::try_from(name.len).map_err(|_| ST_FAULT)?;
     let ptr = usize::try_from(name.ptr).map_err(|_| ST_FAULT)? as *const u8;
-    if ptr.is_null() && len != 0 {
-        return Err(ST_FAULT);
-    }
-    // SAFETY: compiled descriptors point at source names owned by the live OxProgram.
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let bytes = if len == 0 {
+        &[]
+    } else {
+        if ptr.is_null() {
+            return Err(ST_FAULT);
+        }
+        // SAFETY: upheld by this private decoder's descriptor contract.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    };
     let name = std::str::from_utf8(bytes).map_err(|_| ST_FAULT)?;
     Ok(Some(name.to_string()))
 }
@@ -13151,7 +13231,8 @@ unsafe fn order_project_member_call_args(
     let mut ordered: Vec<Option<JitCallArgDesc>> = Vec::new();
     let mut next_positional = 0usize;
     for (arg, name) in args.iter().copied().zip(names.iter().copied()) {
-        if let Some(name) = call_arg_name(name)? {
+        // SAFETY: names are compiled descriptors backed by the live OxProgram.
+        if let Some(name) = unsafe { call_arg_name(name) }? {
             let Some(index) = param_names.iter().position(|param| param == &name) else {
                 // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
                 return Err(unsafe { rt_raise_runtime_error_number(state, 448) });
@@ -13792,16 +13873,20 @@ unsafe extern "C" fn rt_jit_stmt_boundary(
         // SAFETY: null was rejected and compiled code gives unique run ownership.
         let run = unsafe { &mut *run };
         clear_current_statement_temps(run, clear_temps_from as usize);
+        refresh_proc_invoke_run(run);
         // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
         unsafe { rt_maybe_drain(state) }
     })
 }
 
-unsafe extern "C" fn rt_jit_drain_terminations(state: *mut RawExecState) -> i32 {
+unsafe extern "C" fn rt_jit_drain_terminations(run: *mut JitRun, state: *mut RawExecState) -> i32 {
     status_guard(|| {
-        if state.is_null() {
+        if run.is_null() || state.is_null() {
             return ST_FAULT;
         }
+        // SAFETY: null was rejected and compiled code gives unique run ownership.
+        let run = unsafe { &mut *run };
+        refresh_proc_invoke_run(run);
         // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
         unsafe { rt_maybe_drain(state) }
     })
@@ -13972,6 +14057,9 @@ unsafe extern "C" fn rt_jit_new_object_to_slot(
             return ST_FAULT;
         }
         let mut value = Variant::empty();
+        // SAFETY: null was rejected and this short reborrow ends before the
+        // runtime helper can synchronously invoke a compiled initializer.
+        refresh_proc_invoke_run(unsafe { &mut *run });
         // SAFETY: null state was rejected and is live for this JIT boundary;
         // `value` is initialized, uniquely borrowed Variant output storage.
         let status = unsafe {
@@ -14015,6 +14103,9 @@ unsafe extern "C" fn rt_jit_predeclared_to_slot(
             return ST_FAULT;
         }
         let mut value = Variant::empty();
+        // SAFETY: null was rejected and this short reborrow ends before the
+        // runtime helper can synchronously invoke a compiled initializer.
+        refresh_proc_invoke_run(unsafe { &mut *run });
         // SAFETY: null state was rejected and is live for this JIT boundary;
         // `value` is initialized, uniquely borrowed Variant output storage.
         let status = unsafe {
@@ -14812,6 +14903,7 @@ unsafe fn invoke_project_member_with_me(
     }
     // SAFETY: function pointer bounds were checked above.
     let entry = unsafe { *image.functions.add(proc) };
+    refresh_proc_invoke_run(run);
     // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state` remain live.
     let status = unsafe { entry(run as *mut JitRun, state) };
     let return_value = if status == ST_OK {
@@ -15233,7 +15325,8 @@ unsafe fn invoke_foreign_member_to_slot_for_jit(
                 None => return ST_FAULT,
             }
         };
-        let name = match call_arg_name_preserved(name) {
+        // SAFETY: names are compiled descriptors backed by the live OxProgram.
+        let name = match unsafe { call_arg_name_preserved(name) } {
             Ok(name) => name,
             Err(status) => return status,
         };
@@ -15250,19 +15343,28 @@ unsafe fn invoke_foreign_member_to_slot_for_jit(
         args: call_args,
         call_kind_hint: Some(project_member_kind_to_dynamic(kind)),
     };
-    // SAFETY: JIT helpers receive pointers produced by `exec_state_as_raw` for a
-    // live `ExecState` during the synchronous compiled run.
-    let exec = match unsafe { jit_exec_state_mut(state) } {
-        Some(exec) => exec,
-        None => return ST_FAULT,
+    let host = {
+        // SAFETY: JIT helpers receive pointers produced by `exec_state_as_raw` for a
+        // live `ExecState`. Copying the host reference ends this typed state borrow
+        // before a host call that may synchronously re-enter VBA.
+        let exec = match unsafe { jit_exec_state_mut(state) } {
+            Some(exec) => exec,
+            None => return ST_FAULT,
+        };
+        exec.host
     };
-    let (value, writebacks) = match exec
-        .host
+    refresh_proc_invoke_run(run);
+    let (value, writebacks) = match host
         .com()
         .dispatch_invoke_dynamic_variant_with_writebacks(&request)
     {
         Ok(result) => result,
         Err(err) => {
+            // SAFETY: the host call returned, so no callback-owned state borrow
+            // remains and the live execution state may be borrowed again.
+            let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+                return ST_FAULT;
+            };
             exec.err_engine.raise(Fault::from_hal(err), "OxVba");
             return ST_FAULT;
         }
@@ -15540,7 +15642,7 @@ unsafe extern "C" fn rt_jit_record_get_to_slot(
         let record = unsafe { *record };
         // SAFETY: null was rejected and source is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(record) = variant_operand_value(run_ref, record) else {
+        let Some(record) = variant_operand_value_from_compiled_desc!(run_ref, record) else {
             return ST_FAULT;
         };
         let value = match record.read_record_field_variant(field_index as usize) {
@@ -15580,7 +15682,7 @@ unsafe extern "C" fn rt_jit_record_set(
         let value = unsafe { *value };
         // SAFETY: null was rejected and value is cloned before mutable record access.
         let run_ref = unsafe { &*run };
-        let Some(value) = variant_operand_value(run_ref, value) else {
+        let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, value) else {
             return ST_FAULT;
         };
         // SAFETY: immutable borrows ended; compiled caller gives unique run ownership.
@@ -15616,7 +15718,7 @@ unsafe extern "C" fn rt_jit_record_lset(
         let value = unsafe { *value };
         // SAFETY: null was rejected and value is cloned before mutable record access.
         let run_ref = unsafe { &*run };
-        let Some(value) = variant_operand_value(run_ref, value) else {
+        let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, value) else {
             return ST_FAULT;
         };
         // SAFETY: immutable borrows ended; compiled caller gives unique run ownership.
@@ -15791,7 +15893,7 @@ unsafe extern "C" fn rt_jit_record_array_get_to_slot(
         let record = unsafe { *record };
         // SAFETY: null was rejected and source is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(record) = variant_operand_value(run_ref, record) else {
+        let Some(record) = variant_operand_value_from_compiled_desc!(run_ref, record) else {
             return ST_FAULT;
         };
         // SAFETY: the current compiled-run boundary owns the live unique state handle;
@@ -15848,7 +15950,7 @@ unsafe extern "C" fn rt_jit_record_array_set(
         let value = unsafe { *value };
         // SAFETY: null was rejected and all immutable values are cloned before mutation.
         let run_ref = unsafe { &*run };
-        let Some(value) = variant_operand_value(run_ref, value) else {
+        let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, value) else {
             return ST_FAULT;
         };
         let Some(record) = slot_ref(run_ref, record_area as u32, record_index as u32) else {
@@ -16010,7 +16112,7 @@ unsafe extern "C" fn rt_jit_project_field_array_set(
                 Ok(value) => value,
                 Err(status) => return status,
             };
-        let value = match variant_operand_value(run, value_operand) {
+        let value = match variant_operand_value_from_compiled_desc!(run, value_operand) {
             Some(value) => value,
             None => return ST_FAULT,
         };
@@ -16101,7 +16203,7 @@ unsafe extern "C" fn rt_jit_validate_assignment(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and this helper clones the source only.
         let run_ref = unsafe { &*run };
-        let Some(value) = variant_operand_value(run_ref, operand) else {
+        let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         let is_object = matches!(value.vtype(), VarType::Object) || jit_is_nothing(&value);
@@ -16247,7 +16349,7 @@ unsafe extern "C" fn rt_jit_array_literal_to_slot(
         let run_ref = unsafe { &*run };
         let mut values = Vec::with_capacity(argc);
         for operand in operands {
-            let Some(value) = variant_operand_value(run_ref, *operand) else {
+            let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, *operand) else {
                 return ST_FAULT;
             };
             values.push(value);
@@ -16956,7 +17058,7 @@ unsafe extern "C" fn rt_jit_array_set_variant_slot(
         // SAFETY: null was rejected and both the assigned value and flat index are resolved
         // before taking a mutable borrow of the array slot.
         let run_ref = unsafe { &*run };
-        let Some(value) = variant_operand_value(run_ref, value) else {
+        let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, value) else {
             return ST_FAULT;
         };
         let Some(array) = slot_ref(run_ref, array_area, array_index) else {
@@ -17053,7 +17155,7 @@ unsafe extern "C" fn rt_jit_bound_to_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the operand is read before destination write.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operand) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         let Some((bounds, _len)) = src.safearray_bounds_len() else {
@@ -17122,7 +17224,7 @@ unsafe extern "C" fn rt_jit_for_each_init_variant_array(
         let source = unsafe { *source };
         // SAFETY: null was rejected and the source is cloned before mutating iterator state.
         let run_ref = unsafe { &*run };
-        let Some(source) = variant_operand_value(run_ref, source) else {
+        let Some(source) = variant_operand_value_from_compiled_desc!(run_ref, source) else {
             return ST_FAULT;
         };
         let Some(array) = source.as_safearray() else {
@@ -17258,7 +17360,7 @@ unsafe extern "C" fn rt_jit_unbox_to_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the operand is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operand) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         if checked != 0 && !variant_matches_unbox_target(&src, target) {
@@ -17294,10 +17396,10 @@ unsafe extern "C" fn rt_jit_arith_v_to_slot(
         // SAFETY: null was rejected and the compiled call gives shared access while
         // operand values are cloned out before the destination slot is borrowed mutably.
         let run_ref = unsafe { &*run };
-        let Some(lhs) = variant_operand_value(run_ref, operands[0]) else {
+        let Some(lhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[0]) else {
             return ST_FAULT;
         };
-        let Some(rhs) = variant_operand_value(run_ref, operands[1]) else {
+        let Some(rhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[1]) else {
             return ST_FAULT;
         };
         // SAFETY: null was rejected and operand clones no longer borrow from `run`.
@@ -17326,10 +17428,10 @@ unsafe extern "C" fn rt_jit_concat_v_to_slot(
         let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
         // SAFETY: null was rejected and operand values are cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(lhs) = variant_operand_value(run_ref, operands[0]) else {
+        let Some(lhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[0]) else {
             return ST_FAULT;
         };
-        let Some(rhs) = variant_operand_value(run_ref, operands[1]) else {
+        let Some(rhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[1]) else {
             return ST_FAULT;
         };
         let out = match arith::concat(&lhs, &rhs) {
@@ -17371,7 +17473,7 @@ unsafe extern "C" fn rt_jit_neg_v_to_slot(
         // SAFETY: null was rejected and the source value is cloned before the
         // destination slot is borrowed mutably.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operands[0]) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operands[0]) else {
             return ST_FAULT;
         };
         // SAFETY: null was rejected and the source clone no longer borrows from `run`.
@@ -17403,10 +17505,10 @@ unsafe extern "C" fn rt_jit_compare_v_to_slot(
         // SAFETY: null was rejected and operand values are cloned before `run` is
         // borrowed mutably for destination storage.
         let run_ref = unsafe { &*run };
-        let Some(lhs) = variant_operand_value(run_ref, operands[0]) else {
+        let Some(lhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[0]) else {
             return ST_FAULT;
         };
-        let Some(rhs) = variant_operand_value(run_ref, operands[1]) else {
+        let Some(rhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[1]) else {
             return ST_FAULT;
         };
         // SAFETY: null was rejected and operand clones no longer borrow from `run`.
@@ -17557,10 +17659,10 @@ unsafe extern "C" fn rt_jit_logical_v_to_slot(
         // SAFETY: null was rejected and operand values are cloned before `run` is
         // borrowed mutably for destination storage.
         let run_ref = unsafe { &*run };
-        let Some(lhs) = variant_operand_value(run_ref, operands[0]) else {
+        let Some(lhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[0]) else {
             return ST_FAULT;
         };
-        let Some(rhs) = variant_operand_value(run_ref, operands[1]) else {
+        let Some(rhs) = variant_operand_value_from_compiled_desc!(run_ref, operands[1]) else {
             return ST_FAULT;
         };
         // SAFETY: null was rejected and operand clones no longer borrow from `run`.
@@ -17589,7 +17691,7 @@ unsafe extern "C" fn rt_jit_not_v_to_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the operand is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operand) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         // SAFETY: null was rejected and operand clone no longer borrows from `run`.
@@ -17618,7 +17720,7 @@ unsafe extern "C" fn rt_jit_truthy_v_to_bool_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the operand is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operand) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         let mut truthy = 0;
@@ -17652,10 +17754,10 @@ unsafe extern "C" fn rt_jit_variant_changed_to_bool_slot(
         let operands = unsafe { std::slice::from_raw_parts(operands, 2) };
         // SAFETY: null was rejected and operand values are cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(current) = variant_operand_value(run_ref, operands[0]) else {
+        let Some(current) = variant_operand_value_from_compiled_desc!(run_ref, operands[0]) else {
             return ST_FAULT;
         };
-        let Some(original) = variant_operand_value(run_ref, operands[1]) else {
+        let Some(original) = variant_operand_value_from_compiled_desc!(run_ref, operands[1]) else {
             return ST_FAULT;
         };
         let changed = variant_changed(&current, &original);
@@ -17681,7 +17783,7 @@ unsafe extern "C" fn rt_jit_coerce_numeric_v_to_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the operand is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operand) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         // SAFETY: null was rejected and operand clone no longer borrows from `run`.
@@ -17710,7 +17812,7 @@ unsafe extern "C" fn rt_jit_coerce_string_v_to_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the operand is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operand) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         let mut coerced = Variant::empty();
@@ -17746,7 +17848,7 @@ unsafe extern "C" fn rt_jit_coerce_fixed_string_v_to_slot(
         let operand = unsafe { *operand };
         // SAFETY: null was rejected and the operand is cloned before destination write.
         let run_ref = unsafe { &*run };
-        let Some(src) = variant_operand_value(run_ref, operand) else {
+        let Some(src) = variant_operand_value_from_compiled_desc!(run_ref, operand) else {
             return ST_FAULT;
         };
         let mut coerced = Variant::empty();
@@ -18746,6 +18848,7 @@ unsafe extern "C" fn rt_jit_call_extern_proc_i32(
         }
         // SAFETY: bounds and null checks above prove the function pointer exists.
         let entry = unsafe { *image.functions.add(proc) };
+        refresh_proc_invoke_run(run);
         // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state`
         // remain live for the nested call.
         let status = unsafe { entry(run as *mut JitRun, state) };
@@ -18992,6 +19095,7 @@ unsafe extern "C" fn rt_jit_call_proc_i32(
         }
         // SAFETY: bounds and null checks above prove the function pointer exists.
         let entry = unsafe { *image.functions.add(proc) };
+        refresh_proc_invoke_run(run);
         // SAFETY: the function pointer uses the JIT entry ABI and `run`/`state`
         // remain live for the nested call.
         let status = unsafe { entry(run as *mut JitRun, state) };
@@ -19251,7 +19355,7 @@ unsafe extern "C" fn rt_jit_lib_invoke_to_slot(
         let run_ref = unsafe { &*run };
         let mut argv = Vec::with_capacity(argc);
         for operand in operands {
-            let Some(value) = variant_operand_value(run_ref, *operand) else {
+            let Some(value) = variant_operand_value_from_compiled_desc!(run_ref, *operand) else {
                 return ST_FAULT;
             };
             argv.push(value);
@@ -21610,6 +21714,7 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -21654,6 +21759,7 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
         };
         let state = exec_state_as_raw(&mut exec);
         let entry = compiled.functions[0][0];
@@ -34378,6 +34484,7 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34437,6 +34544,7 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34525,6 +34633,7 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34617,6 +34726,7 @@ mod tests {
             next_collection_instance_id: i32::MIN + 1,
             programs: program_images.as_ptr(),
             program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
         };
         let host = NullHostServices::new(HostPolicy::default());
         let mut exec = ExecState::new(&host);
@@ -34637,6 +34747,188 @@ mod tests {
         };
         assert_eq!(status, ST_OK);
         assert_eq!(globals.first().and_then(Variant::as_i32), Some(77));
+    }
+
+    unsafe extern "C" fn nested_as_new_initializer_entry(
+        run: *mut JitRun,
+        state: *mut RawExecState,
+    ) -> i32 {
+        if run.is_null() || state.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: the fake entry is invoked only through `jit_proc_invoke` with
+        // the live synthetic run used by the test below.
+        let run = unsafe { &mut *run };
+        let depth = run.frames.len();
+        if depth == 1 {
+            // SAFETY: the test owns the live state/run pair; this shared As-New
+            // path synchronously re-enters the same initializer at depth two.
+            let nested = match unsafe {
+                instantiate_as_new_for_jit(
+                    run,
+                    state,
+                    0,
+                    OxAsNew::ProjectClass { class: ClassId(0) },
+                )
+            } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+            run.explicit_refs.push(nested);
+        }
+        run.explicit_refs.push(Variant::from_i32(depth as i32));
+        ST_OK
+    }
+
+    #[test]
+    fn jit_fake_entry_reenters_as_new_and_registration_clears_before_context_drop() {
+        let initializer = OxFunc {
+            name: "Class_Initialize".to_string(),
+            kind: ProcedureKind::Sub,
+            locals: vec![OxLocal {
+                name: "Me".to_string(),
+                ty: OxTy::Variant,
+                array_element: None,
+                param: Some(OxParamInfo {
+                    optional: false,
+                    by_ref: false,
+                    variadic: false,
+                }),
+                escaped: false,
+            }],
+            temps: Vec::new(),
+            param_count: 1,
+            return_local: None,
+            blocks: vec![OxBlock {
+                id: BlockId(0),
+                instrs: Vec::new(),
+                fault_target: None,
+                terminator: OxTerminator::Return,
+            }],
+            entry: BlockId(0),
+        };
+        let program = OxProgram {
+            funcs: vec![initializer],
+            classes: vec![OxClass {
+                name: "Widget".to_string(),
+                predeclared: false,
+                initialize: Some(FuncId(0)),
+                terminate: None,
+                fields: Vec::new(),
+                methods: Vec::new(),
+                as_new_fields: Vec::new(),
+                implements: Vec::new(),
+            }],
+            unit_name: "VBAProject".to_string(),
+            ..OxProgram::empty()
+        };
+        let functions: Vec<JitEntryFn> = vec![nested_as_new_initializer_entry];
+        let program_images = [JitProgramImage {
+            program: &program,
+            functions: functions.as_ptr(),
+            function_count: functions.len(),
+        }];
+        let mut globals = Vec::new();
+        let mut globals_table = vec![&mut globals as *mut Vec<Variant>];
+        let mut run = JitRun {
+            globals: globals_table.as_mut_ptr(),
+            global_count: globals_table.len(),
+            frames: Vec::new(),
+            explicit_refs: Vec::new(),
+            for_each: HashMap::new(),
+            as_new_slots: HashMap::new(),
+            param_array_aliases: HashMap::new(),
+            next_collection_instance_id: i32::MIN + 1,
+            programs: program_images.as_ptr(),
+            program_count: program_images.len(),
+            callback_ctx: std::ptr::null_mut(),
+        };
+        let host = NullHostServices::new(HostPolicy::default());
+        let mut exec = ExecState::new(&host);
+        exec.programs = vec![build_loaded(&program).expect("loaded")];
+        let state = exec_state_as_raw(&mut exec);
+        let mut bridge_ctx = JitProcInvokeCtx {
+            run: &raw mut run,
+            state,
+        };
+        run.callback_ctx = &raw mut bridge_ctx;
+        assert_eq!(
+            // SAFETY: state, run, callback context, program, and fake entry table all
+            // remain live until the registration guard is explicitly dropped.
+            unsafe {
+                rt_install_proc_invoker(
+                    state,
+                    (&raw mut bridge_ctx).cast::<c_void>(),
+                    Some(jit_proc_invoke),
+                )
+            },
+            ST_OK
+        );
+        let registration = ProcInvokerRegistration {
+            state,
+            run: &raw mut run,
+        };
+        let mut object = Variant::empty();
+
+        // SAFETY: the installed bridge and initialized output satisfy the object
+        // helper contract; the fake initializer performs one nested As-New call.
+        let status = unsafe { rt_project_new_object(state, 0, 0, &mut object) };
+
+        assert_eq!(status, ST_OK);
+        assert!(object.as_object_ref().is_some());
+        assert!(run.frames.is_empty());
+        assert!(run.param_array_aliases.is_empty());
+        assert_eq!(
+            run.explicit_refs
+                .iter()
+                .filter_map(Variant::as_i32)
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+
+        drop(registration);
+        assert!(run.callback_ctx.is_null());
+        exec.err_engine.clear_err();
+        let mut after_clear = Variant::empty();
+        // SAFETY: state/output remain live; this call must fail closed because
+        // the RAII guard cleared the bridge before `bridge_ctx` can expire.
+        let status_after_clear = unsafe { rt_project_new_object(state, 0, 0, &mut after_clear) };
+        assert_eq!(status_after_clear, ST_FAULT);
+        assert_eq!(exec.err_engine.err.number, 5);
+        assert!(run.frames.is_empty());
+    }
+
+    #[test]
+    fn jit_lowers_explicit_termination_drain_with_current_run_handle() {
+        let main = OxFunc {
+            name: "Main".to_string(),
+            kind: ProcedureKind::Sub,
+            locals: Vec::new(),
+            temps: Vec::new(),
+            param_count: 0,
+            return_local: None,
+            blocks: vec![OxBlock {
+                id: BlockId(0),
+                instrs: vec![OxInst::DrainTerminations],
+                fault_target: None,
+                terminator: OxTerminator::Return,
+            }],
+            entry: BlockId(0),
+        };
+        let program = OxProgram {
+            funcs: vec![main],
+            entry: Some(FuncId(0)),
+            unit_name: "VBAProject".to_string(),
+            ..OxProgram::empty()
+        };
+        assert_eq!(verify_program(&program), Ok(()));
+        let engine = JitEngine;
+        let compiled = engine.compile_image(&[&program]).expect("compile");
+        let host = NullHostServices::new(HostPolicy::default());
+
+        let outcome = compiled.run(&host).expect("run");
+
+        assert!(!outcome.raised, "{:?}", outcome.err);
     }
 
     #[test]

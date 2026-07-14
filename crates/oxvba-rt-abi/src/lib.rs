@@ -188,6 +188,18 @@ pub struct EventFabric<'h> {
     pub project_event_sink: Option<ProjectEventSink<'h>>,
 }
 
+/// Synchronous engine callback used by the runtime for VBA procedure activation.
+///
+/// # Safety
+/// The installer must keep `ctx` live on the installing thread until the bridge is
+/// cleared and through every callback already in flight when it is cleared. A non-null
+/// `me` points to an initialized `Variant` that is readable only for the duration of
+/// the call and must not be retained. The callback must validate the program/procedure
+/// indexes, must not unwind across the C ABI boundary, and must not replace or clear
+/// its installed bridge before the enclosing runtime callback sequence returns. It may
+/// synchronously re-enter the runtime using the same execution state. It returns one
+/// of the runtime `ST_*` status codes; a nonzero `suppress` requests the engine's
+/// existing suppressed-fault activation behavior.
 pub type ProcInvokeFn = unsafe extern "C" fn(
     ctx: *mut c_void,
     target_prog: usize,
@@ -197,9 +209,20 @@ pub type ProcInvokeFn = unsafe extern "C" fn(
 ) -> i32;
 
 #[derive(Clone, Copy)]
-pub struct ProcInvokeBridge {
-    pub ctx: *mut c_void,
-    pub invoke: ProcInvokeFn,
+struct ProcInvokeBridge {
+    ctx: *mut c_void,
+    invoke: ProcInvokeFn,
+}
+
+struct PredeclaredInitCallback {
+    bridge: ProcInvokeBridge,
+    proc: usize,
+    failed_identity: i32,
+}
+
+struct PredeclaredInitPlan {
+    value: Variant,
+    callback: Option<PredeclaredInitCallback>,
 }
 
 /// One linked VBA project image's mutable runtime tables.
@@ -725,34 +748,79 @@ fn cleanup_terminated_owner(exec: &mut ExecState<'_>, owner_raw: i32) {
         .retain(|key, _| withevents_owner_raw(*key) != owner_raw);
 }
 
-pub fn maybe_drain_with_bridge(exec: &mut ExecState<'_>) -> Result<(), Fault> {
-    if exec.draining {
-        return Ok(());
-    }
-    let Some(bridge) = exec.proc_invoker else {
-        if oxvba_runtime::has_pending_terminations() {
-            return Err(Fault::new(
-                5,
-                "rt_maybe_drain requires an installed ProcInvoker",
-            ));
+struct DrainGuard {
+    state: *mut RawExecState,
+}
+
+impl Drop for DrainGuard {
+    fn drop(&mut self) {
+        // SAFETY: the guard is created only after validating the live state and is
+        // dropped before the synchronous raw-state boundary returns.
+        if let Some(exec) = unsafe { state_from_raw(self.state) } {
+            exec.draining = false;
         }
-        return Ok(());
+    }
+}
+
+// SAFETY CONTRACT: `state` is the live same-thread execution-state handle for the
+// complete synchronous drain. No typed borrow of it is retained across callbacks.
+unsafe fn maybe_drain_with_bridge(state: *mut RawExecState) -> Result<(), Fault> {
+    let bridge = {
+        // SAFETY: upheld by this private raw-state orchestrator's contract.
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return Err(Fault::new(5, "runtime ABI state pointer is null"));
+        };
+        if exec.draining {
+            return Ok(());
+        }
+        let Some(bridge) = exec.proc_invoker else {
+            if oxvba_runtime::has_pending_terminations() {
+                return Err(Fault::new(
+                    5,
+                    "rt_maybe_drain requires an installed ProcInvoker",
+                ));
+            }
+            return Ok(());
+        };
+        exec.draining = true;
+        bridge
     };
-    exec.draining = true;
+    let _drain_guard = DrainGuard { state };
     while oxvba_runtime::has_pending_terminations() {
-        for work in take_termination_batch(exec) {
+        let batch = {
+            // SAFETY: no other typed state borrow is live at this point.
+            let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                return Err(Fault::new(5, "runtime ABI state pointer is null"));
+            };
+            take_termination_batch(exec)
+        };
+        for work in batch {
             if let (Some(proc), Some(object)) = (work.terminate, work.object) {
-                let saved_err_engine = exec.err_engine.clone();
-                // SAFETY: the installed bridge owns the opaque context and accepts a borrowed
-                // Variant for the duration of the call. Terminate faults are suppressed.
+                let saved_err_engine = {
+                    // SAFETY: no other typed state borrow is live at this point.
+                    let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                        return Err(Fault::new(5, "runtime ABI state pointer is null"));
+                    };
+                    exec.err_engine.clone()
+                };
+                // SAFETY: the bridge was installed through the checked raw boundary;
+                // the owned Variant is borrowed only for this synchronous callback.
+                // No typed execution-state borrow is live while it may re-enter.
                 let _ = unsafe { (bridge.invoke)(bridge.ctx, work.bundle, proc.0, &object, 1) };
+                // SAFETY: the callback has returned and no other typed state borrow is live.
+                let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                    return Err(Fault::new(5, "runtime ABI state pointer is null"));
+                };
                 exec.err_engine = saved_err_engine;
             }
             oxvba_runtime::finish_pending_termination(work.instance_id);
+            // SAFETY: the callback has returned and no other typed state borrow is live.
+            let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                return Err(Fault::new(5, "runtime ABI state pointer is null"));
+            };
             cleanup_terminated_owner(exec, work.instance_id);
         }
     }
-    exec.draining = false;
     Ok(())
 }
 
@@ -768,7 +836,7 @@ pub struct ExecState<'h> {
     pub events: EventFabric<'h>,
     pub lib: LibContext,
     pub host: &'h dyn HostServices,
-    pub proc_invoker: Option<ProcInvokeBridge>,
+    proc_invoker: Option<ProcInvokeBridge>,
     pub next_instance_id: i32,
     pub draining: bool,
     _not_send: PhantomData<Rc<()>>,
@@ -2042,8 +2110,13 @@ pub unsafe extern "C" fn rt_lib_invoke_with_policy(
         let Some(exec) = (unsafe { state_from_raw(state) }) else {
             return ST_FAULT;
         };
-        // SAFETY: null with nonzero length was rejected; zero-length null is permitted.
-        let argv = unsafe { slice::from_raw_parts(args, argc) };
+        let argv = if argc == 0 {
+            &[]
+        } else {
+            // SAFETY: nonzero-length null was rejected and the exported helper
+            // contract guarantees `argc` consecutive initialized Variants.
+            unsafe { slice::from_raw_parts(args, argc) }
+        };
         if string_typed_alias != 0 && argv.iter().any(|arg| arg.vtype() == VarType::Null) {
             // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
             return unsafe { seat_fault(state, Fault::new(94, "invalid use of Null")) };
@@ -2067,12 +2140,9 @@ pub unsafe extern "C" fn rt_lib_invoke_with_policy(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rt_maybe_drain(state: *mut RawExecState) -> i32 {
     with_status(|| {
-        // SAFETY: the exported helper contract guarantees that a non-null state came from
-        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
-        let Some(exec) = (unsafe { state_from_raw(state) }) else {
-            return ST_FAULT;
-        };
-        maybe_drain_with_bridge(exec)
+        // SAFETY: the exported helper contract supplies the live same-thread state;
+        // the private orchestrator ensures no typed borrow survives a callback.
+        unsafe { maybe_drain_with_bridge(state) }
             .map(|_| ST_OK)
             // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
             .unwrap_or_else(|fault| unsafe { seat_fault(state, fault) })
@@ -2084,7 +2154,10 @@ pub unsafe extern "C" fn rt_maybe_drain(state: *mut RawExecState) -> i32 {
 /// # Safety
 /// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
 /// aliasing, and pointer/length requirements documented on [RawExecState].
-/// Specifically, non-null `state` must be uniquely borrowed; when `invoke` is present, `ctx` must satisfy that callback and remain valid until the bridge is replaced or cleared.
+/// Specifically, non-null `state` must be uniquely borrowed; when `invoke` is present,
+/// `ctx` must satisfy [`ProcInvokeFn`] and remain valid on this thread until the bridge
+/// is replaced or cleared and until any callback already in flight has returned. The
+/// caller must clear the bridge before destroying `ctx`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rt_install_proc_invoker(
     state: *mut RawExecState,
@@ -2135,60 +2208,58 @@ pub unsafe extern "C" fn rt_project_new_object(
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        // SAFETY: the exported helper contract guarantees that a non-null state came from
-        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
-        let Some(exec) = (unsafe { state_from_raw(state) }) else {
-            return ST_FAULT;
-        };
-        let Some(loaded) = exec.programs.get(program_index) else {
-            // SAFETY: the exported helper contract guarantees that non-null
-            // `state` is the live, uniquely borrowed execution state.
-            return unsafe {
-                seat_fault(
-                    state,
-                    Fault::new(5, format!("unknown program {program_index}")),
-                )
+        let plan = {
+            // SAFETY: the exported helper contract supplies the live state. This
+            // borrow ends before the optional initializer callback below.
+            let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                return ST_FAULT;
             };
-        };
-        let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
-            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
-            return unsafe {
-                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
-            };
-        };
-        let Some(class) = loaded.program.classes.get(class_index) else {
-            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
-            return unsafe {
-                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
-            };
-        };
-        let instance_id = exec.next_instance_id;
-        exec.next_instance_id += 1;
-        let object = ObjectRef::from_project_instance(
-            instance_id,
-            class_index as i32,
-            program_index as i32,
-            class.terminate.is_some(),
-            descriptor,
-        );
-        let value = Variant::from_object_ref(object.clone());
-        if let Some(init) = class.initialize {
-            let Some(bridge) = exec.proc_invoker else {
-                // SAFETY: the exported helper contract guarantees that non-null
-                // `state` is the live, uniquely borrowed execution state.
-                return unsafe {
-                    seat_fault(
-                        state,
-                        Fault::new(
-                            5,
-                            "rt_project_new_object requires an installed ProcInvoker for Class_Initialize",
-                        ),
-                    )
+            (|| -> Result<(Variant, Option<(ProcInvokeBridge, usize)>), Fault> {
+                let Some(loaded) = exec.programs.get(program_index) else {
+                    return Err(Fault::new(5, format!("unknown program {program_index}")));
                 };
-            };
-            // SAFETY: the installed bridge owns its opaque context for this run. The `Me`
-            // Variant is borrowed only for the duration of the synchronous initializer call.
-            let status = unsafe { (bridge.invoke)(bridge.ctx, program_index, init.0, &value, 0) };
+                let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
+                    return Err(Fault::new(5, format!("unknown class {class_index}")));
+                };
+                let Some(class) = loaded.program.classes.get(class_index) else {
+                    return Err(Fault::new(5, format!("unknown class {class_index}")));
+                };
+                let initialize = class.initialize;
+                let has_terminate = class.terminate.is_some();
+                let callback = match initialize {
+                    Some(init) => Some((
+                        exec.proc_invoker.ok_or_else(|| {
+                            Fault::new(
+                                5,
+                                "rt_project_new_object requires an installed ProcInvoker for Class_Initialize",
+                            )
+                        })?,
+                        init.0,
+                    )),
+                    None => None,
+                };
+                let instance_id = exec.next_instance_id;
+                exec.next_instance_id += 1;
+                let object = ObjectRef::from_project_instance(
+                    instance_id,
+                    class_index as i32,
+                    program_index as i32,
+                    has_terminate,
+                    descriptor,
+                );
+                Ok((Variant::from_object_ref(object), callback))
+            })()
+        };
+        let (value, callback) = match plan {
+            Ok(plan) => plan,
+            // SAFETY: the state borrow used to construct the plan ended above.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
+        };
+        if let Some((bridge, init)) = callback {
+            // SAFETY: the installed bridge contract keeps its opaque context live.
+            // The owned `Me` Variant is borrowed only for this synchronous call,
+            // and no typed execution-state borrow is live while it may re-enter.
+            let status = unsafe { (bridge.invoke)(bridge.ctx, program_index, init, &value, 0) };
             if status != ST_OK {
                 return status;
             }
@@ -2233,85 +2304,88 @@ pub unsafe extern "C" fn rt_project_predeclared_instance(
     out: *mut Variant,
 ) -> i32 {
     with_status(|| {
-        // SAFETY: the exported helper contract guarantees that a non-null state came from
-        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
-        let Some(exec) = (unsafe { state_from_raw(state) }) else {
-            return ST_FAULT;
-        };
-        if let Some(existing) = exec
-            .programs
-            .get(program_index)
-            .and_then(|loaded| loaded.predeclared_singletons.get(&class_index))
-        {
-            // SAFETY: the exported helper contract guarantees live unique state and aligned, initialized, uniquely writable typed output storage.
-            return unsafe { write_out(state, out, existing.clone()) };
-        }
-        let Some(loaded) = exec.programs.get(program_index) else {
-            // SAFETY: the exported helper contract guarantees that non-null
-            // `state` is the live, uniquely borrowed execution state.
-            return unsafe {
-                seat_fault(
-                    state,
-                    Fault::new(5, format!("unknown program {program_index}")),
-                )
+        let plan = {
+            // SAFETY: the exported helper contract supplies the live state. This
+            // borrow ends before the optional initializer callback below.
+            let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                return ST_FAULT;
             };
-        };
-        let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
-            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
-            return unsafe {
-                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
-            };
-        };
-        let Some(class) = loaded.program.classes.get(class_index) else {
-            // SAFETY: the exported helper contract guarantees that non-null `state` is the live, uniquely borrowed execution state.
-            return unsafe {
-                seat_fault(state, Fault::new(5, format!("unknown class {class_index}")))
-            };
-        };
-        let initialize = class.initialize;
-        let has_terminate = class.terminate.is_some();
-        let instance_id = exec.next_instance_id;
-        exec.next_instance_id += 1;
-        let object = ObjectRef::from_project_instance(
-            instance_id,
-            class_index as i32,
-            program_index as i32,
-            has_terminate,
-            descriptor,
-        );
-        let value = Variant::from_object_ref(object.clone());
-        let Some(loaded) = exec.programs.get_mut(program_index) else {
-            // SAFETY: the exported helper contract guarantees that non-null
-            // `state` is the live, uniquely borrowed execution state.
-            return unsafe {
-                seat_fault(
-                    state,
-                    Fault::new(5, format!("unknown program {program_index}")),
-                )
-            };
-        };
-        loaded
-            .predeclared_singletons
-            .insert(class_index, value.clone());
-        if let Some(init) = initialize {
-            let Some(bridge) = exec.proc_invoker else {
-                // SAFETY: the exported helper contract guarantees that non-null
-                // `state` is the live, uniquely borrowed execution state.
-                return unsafe {
-                    seat_fault(
-                        state,
+            (|| -> Result<PredeclaredInitPlan, Fault> {
+                if let Some(existing) = exec
+                    .programs
+                    .get(program_index)
+                    .and_then(|loaded| loaded.predeclared_singletons.get(&class_index))
+                {
+                    return Ok(PredeclaredInitPlan {
+                        value: existing.clone(),
+                        callback: None,
+                    });
+                }
+                let Some(loaded) = exec.programs.get(program_index) else {
+                    return Err(Fault::new(5, format!("unknown program {program_index}")));
+                };
+                let Some(descriptor) = loaded.class_descriptors.get(class_index).copied() else {
+                    return Err(Fault::new(5, format!("unknown class {class_index}")));
+                };
+                let Some(class) = loaded.program.classes.get(class_index) else {
+                    return Err(Fault::new(5, format!("unknown class {class_index}")));
+                };
+                let initialize = class.initialize;
+                let has_terminate = class.terminate.is_some();
+                let bridge = match initialize {
+                    Some(_) => Some(exec.proc_invoker.ok_or_else(|| {
                         Fault::new(
                             5,
                             "rt_project_predeclared_instance requires an installed ProcInvoker for Class_Initialize",
-                        ),
-                    )
+                        )
+                    })?),
+                    None => None,
                 };
-            };
-            // SAFETY: the installed bridge owns its opaque context for this run. The `Me`
-            // Variant is borrowed only for the duration of the synchronous initializer call.
-            let status = unsafe { (bridge.invoke)(bridge.ctx, program_index, init.0, &value, 0) };
+                let instance_id = exec.next_instance_id;
+                exec.next_instance_id += 1;
+                let object = ObjectRef::from_project_instance(
+                    instance_id,
+                    class_index as i32,
+                    program_index as i32,
+                    has_terminate,
+                    descriptor,
+                );
+                let value = Variant::from_object_ref(object);
+                exec.programs[program_index]
+                    .predeclared_singletons
+                    .insert(class_index, value.clone());
+                Ok(PredeclaredInitPlan {
+                    value,
+                    callback: initialize.zip(bridge).map(|(init, bridge)| {
+                        PredeclaredInitCallback {
+                            bridge,
+                            proc: init.0,
+                            failed_identity: instance_id,
+                        }
+                    }),
+                })
+            })()
+        };
+        let PredeclaredInitPlan { value, callback } = match plan {
+            Ok(plan) => plan,
+            // SAFETY: the state borrow used to construct the plan ended above.
+            Err(fault) => return unsafe { seat_fault(state, fault) },
+        };
+        if let Some(PredeclaredInitCallback {
+            bridge,
+            proc,
+            failed_identity,
+        }) = callback
+        {
+            // SAFETY: the installed bridge contract keeps its opaque context live.
+            // The owned `Me` Variant is borrowed only for this synchronous call,
+            // and no typed execution-state borrow is live while it may re-enter.
+            let status = unsafe { (bridge.invoke)(bridge.ctx, program_index, proc, &value, 0) };
             if status != ST_OK {
-                let failed_identity = object_identity(&value);
+                // SAFETY: the callback returned, so the state may be borrowed again.
+                let Some(exec) = (unsafe { state_from_raw(state) }) else {
+                    return status;
+                };
                 let Some(loaded) = exec.programs.get_mut(program_index) else {
                     return status;
                 };
@@ -3721,6 +3795,32 @@ mod tests {
     }
 
     #[test]
+    fn lib_invoke_accepts_null_pointer_for_zero_arguments() {
+        // SAFETY: the live state and initialized output satisfy the helper contract;
+        // null is explicitly permitted for the zero-length argument slice.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let date_id = NativeImplId::ALL
+                .iter()
+                .position(|id| *id == NativeImplId::DateNow)
+                .expect("Date id") as u32;
+            let mut out = Variant::empty();
+
+            let status = rt_lib_invoke(
+                exec_state_as_raw(&mut state),
+                date_id,
+                std::ptr::null(),
+                0,
+                &mut out,
+            );
+
+            assert_eq!(status, ST_OK);
+            assert_eq!(out.as_date_f64(), Some(46_082.0));
+        }
+    }
+
+    #[test]
     fn err_and_fault_shims_route_through_err_engine() {
         // SAFETY: this test passes a uniquely borrowed live ExecState and only
         // initialized local input/output slots that remain valid for every helper call.
@@ -3824,6 +3924,180 @@ mod tests {
             let host = NullHostServices::new(HostPolicy::default());
             let mut state = ExecState::new(&host);
             assert_eq!(rt_maybe_drain(exec_state_as_raw(&mut state)), ST_OK);
+        }
+    }
+
+    fn lifecycle_test_program(
+        initialize: Option<FuncId>,
+        terminate: Option<FuncId>,
+        predeclared: bool,
+    ) -> OxProgram {
+        OxProgram {
+            unit_name: "LifecycleTest".to_string(),
+            classes: vec![oxvba_oxir::OxClass {
+                name: "Widget".to_string(),
+                predeclared,
+                initialize,
+                terminate,
+                fields: Vec::new(),
+                methods: Vec::new(),
+                as_new_fields: Vec::new(),
+                implements: Vec::new(),
+            }],
+            ..OxProgram::default()
+        }
+    }
+
+    fn loaded_test_program(program: &OxProgram) -> LoadedProgram<'_> {
+        LoadedProgram {
+            program,
+            globals: Vec::new(),
+            class_descriptors: runtime_class_descriptors_for_program(program),
+            predeclared_singletons: HashMap::new(),
+            event_routes: HashMap::new(),
+        }
+    }
+
+    struct PredeclaredReentryCtx {
+        state: *mut RawExecState,
+        calls: usize,
+        nested_status: i32,
+        nested_identity: i32,
+    }
+
+    unsafe extern "C" fn reenter_predeclared_initializer(
+        ctx: *mut c_void,
+        target_prog: usize,
+        _proc: usize,
+        _me: *const Variant,
+        _suppress: i32,
+    ) -> i32 {
+        if ctx.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: the test installs this exact context for the complete call.
+        let ctx = unsafe { &mut *ctx.cast::<PredeclaredReentryCtx>() };
+        ctx.calls += 1;
+        let mut nested = Variant::empty();
+        // SAFETY: the callback receives the still-live same-thread state and an
+        // initialized unique output. The predeclared slot is already populated,
+        // so this nested call does not recursively invoke the bridge.
+        ctx.nested_status =
+            unsafe { rt_project_predeclared_instance(ctx.state, target_prog, 0, &mut nested) };
+        ctx.nested_identity = object_identity(&nested);
+        ST_FAULT
+    }
+
+    #[test]
+    fn predeclared_initializer_can_reenter_and_failed_instance_is_removed() {
+        // This control-plane test deliberately avoids generated code and is suitable
+        // for Miri: it exercises the callback/reborrow boundary with a fake entry.
+        // SAFETY: all raw state, callback-context, and output pointers below come
+        // from live uniquely owned test locals and are cleared before those expire.
+        unsafe {
+            let program = lifecycle_test_program(Some(FuncId(0)), None, true);
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state.programs.push(loaded_test_program(&program));
+            let raw_state = exec_state_as_raw(&mut state);
+            let mut callback = PredeclaredReentryCtx {
+                state: raw_state,
+                calls: 0,
+                nested_status: ST_FAULT,
+                nested_identity: 0,
+            };
+            assert_eq!(
+                rt_install_proc_invoker(
+                    raw_state,
+                    (&raw mut callback).cast::<c_void>(),
+                    Some(reenter_predeclared_initializer),
+                ),
+                ST_OK
+            );
+            let mut out = Variant::empty();
+
+            let status = rt_project_predeclared_instance(raw_state, 0, 0, &mut out);
+
+            assert_eq!(rt_clear_proc_invoker(raw_state), ST_OK);
+            assert_eq!(status, ST_FAULT);
+            assert_eq!(callback.calls, 1);
+            assert_eq!(callback.nested_status, ST_OK);
+            assert_ne!(callback.nested_identity, 0);
+            assert!(state.programs[0].predeclared_singletons.is_empty());
+        }
+    }
+
+    struct DrainReentryCtx {
+        state: *mut RawExecState,
+        calls: usize,
+        nested_status: i32,
+    }
+
+    unsafe extern "C" fn reenter_drain_callback(
+        ctx: *mut c_void,
+        _target_prog: usize,
+        _proc: usize,
+        _me: *const Variant,
+        _suppress: i32,
+    ) -> i32 {
+        if ctx.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: the test installs this exact context for the complete call.
+        let ctx = unsafe { &mut *ctx.cast::<DrainReentryCtx>() };
+        ctx.calls += 1;
+        // SAFETY: the callback receives the live same-thread state. The nested
+        // drain observes the guard and returns without borrowing across recursion.
+        ctx.nested_status = unsafe { rt_maybe_drain(ctx.state) };
+        // SAFETY: the same live state may be used after the nested call returns.
+        unsafe { rt_raise_runtime_error_number(ctx.state, 91) }
+    }
+
+    #[test]
+    fn termination_drain_reentry_restores_err_and_resets_guard() {
+        // This fake-entry lifecycle test contains no Cranelift execution and can run
+        // under Miri to check raw callback reborrows and cleanup ordering.
+        // SAFETY: all raw state, callback-context, and output pointers below come
+        // from live uniquely owned test locals and are cleared before those expire.
+        unsafe {
+            oxvba_runtime::reset_pending_terminations();
+            let program = lifecycle_test_program(None, Some(FuncId(0)), false);
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            state.programs.push(loaded_test_program(&program));
+            let raw_state = exec_state_as_raw(&mut state);
+            let mut callback = DrainReentryCtx {
+                state: raw_state,
+                calls: 0,
+                nested_status: ST_FAULT,
+            };
+            assert_eq!(
+                rt_install_proc_invoker(
+                    raw_state,
+                    (&raw mut callback).cast::<c_void>(),
+                    Some(reenter_drain_callback),
+                ),
+                ST_OK
+            );
+            let mut object = Variant::empty();
+            assert_eq!(rt_project_new_object(raw_state, 0, 0, &mut object), ST_OK);
+            drop(object);
+            assert!(oxvba_runtime::has_pending_terminations());
+            state
+                .err_engine
+                .raise(Fault::new(7, "saved Err"), "LifecycleTest");
+
+            let status = rt_maybe_drain(raw_state);
+
+            assert_eq!(rt_clear_proc_invoker(raw_state), ST_OK);
+            assert_eq!(status, ST_OK);
+            assert_eq!(callback.calls, 1);
+            assert_eq!(callback.nested_status, ST_OK);
+            assert_eq!(state.err_engine.err.number, 7);
+            assert_eq!(state.err_engine.err.description, "saved Err");
+            assert!(!state.draining);
+            assert!(!oxvba_runtime::has_pending_terminations());
+            oxvba_runtime::reset_pending_terminations();
         }
     }
 }
