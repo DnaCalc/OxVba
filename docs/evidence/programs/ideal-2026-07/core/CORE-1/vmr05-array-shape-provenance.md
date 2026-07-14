@@ -6,7 +6,7 @@ Bead: `bd-59co.2.2.18`
 
 Base: `b5592e8d`
 
-Effect: support
+Effect: delivery
 
 Result: the VMR05 array-shape fixture is valid VBA. The parser now accepts
 `Explicit` as an ordinary identifier outside its contextual role in
@@ -17,10 +17,12 @@ and the Core capability profile remains in progress.
 
 ## Semantic adjudication
 
-The authority used was Microsoft **[MS-VBAL]-250520**, section 3.3.5.2,
-"Reserved Identifiers and IDENTIFIER", from the pinned Foundation extraction:
+The authority index is `docs/FOUNDATION_SPEC_REFERENCE.md`. Following that
+index, the authority used was Microsoft **[MS-VBAL]-250520**, section 3.3.5.2,
+"Reserved Identifiers and IDENTIFIER", from the pinned sibling-repository
+Foundation extraction:
 
-`C:\Work\DnaCalc\Foundation\reference\runs\20260301-ms-vbal-pass07\outputs\docs\discovered-ms-vbal-250520-f945507e\segments.jsonl`
+`../Foundation/reference/runs/20260301-ms-vbal-pass07/outputs/docs/discovered-ms-vbal-250520-f945507e/segments.jsonl`
 
 The extracted source identifies the downloaded document and original Office
 Protocol Documentation URL. The relevant segment chain is:
@@ -115,8 +117,9 @@ module text supplied by the host/editor.
 
 ## Residual boundary
 
-- This support leaf corrects one parser classification and its evidence; it
-  does not close compiler, VM3, JIT, language-service, or release parity.
+- This bounded delivery slice corrects one parser classification and its
+  evidence; it does not close any whole compiler, VM3, JIT, language-service,
+  or release capability row.
 - It supplies no Excel-oracle observation because the normative grammar fully
   decides the identifier question. Future behavioral ambiguity still follows
   the repository's Excel/VBA oracle protocol.
