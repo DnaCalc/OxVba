@@ -6,111 +6,151 @@ Bead: `bd-59co.2.2.26`
 
 Baseline: `b5604905554d29d14277fbf17d4720184cdf12ed`
 
-Code commit: `a2c012bb564d5c12d4c6246e4f37eb176bfa8fa5`
+Initial code commit: `a2c012bb564d5c12d4c6246e4f37eb176bfa8fa5`
+
+Re-entry follow-up commit: `648936d7`
 
 Branch: `codex/bd-59co-2-2-26-rt-abi-safety`
 
-Status: targeted repair complete. This is evidence for the runtime-ABI safety
-boundary only, not workspace-wide closure or a new VBA parity claim.
+Status: the bounded raw-pointer and procedure-callback repair is implemented and
+passes its focused gates. This record does not claim workspace strict-Clippy
+closure, complete host/HAL re-entry policy, or complete `RUNTIME-ABI-001`.
+Independent controller review and integration gates remain required.
 
-## Scope and finding disposition
+## Implemented repair
 
-The baseline strict command reported 44 `oxvba-rt-abi` Clippy errors. They
-covered a derivable `EventFabric::default`, an eight-input
-`runtime_member_descriptor`, public raw-pointer helpers that were callable from
-safe Rust, and undocumented pointer conversions/dereferences. No lint
-suppression was added.
+The initial commit established the explicit unsafe boundary:
 
-The repair applies one consistent boundary model:
+- all 63 exported `#[unsafe(no_mangle)]` runtime helpers are
+  `pub unsafe extern "C" fn` with `# Safety` contracts;
+- `RawExecState` and the private raw conversion/read/write/release cores state
+  provenance, alignment, initialization, liveness, aliasing, same-thread,
+  extent and ownership obligations;
+- the corresponding JIT raw-state forwarders and function-pointer types are
+  unsafe, with no lint suppression or exported C symbol-name change;
+- `EventFabric` derives the field-equivalent `Default`, and the former
+  eight-argument runtime-member construction is grouped in an owning input.
 
-- all 63 exported `#[unsafe(no_mangle)]` runtime helpers are now
-  `pub unsafe extern "C" fn`, each with a `# Safety` contract covering its
-  actual state, value, output, callback-context, pointer/length, and aliasing
-  obligations;
-- `RawExecState` records the shared provenance, alignment, initialization,
-  liveness, exclusivity, same-thread, allocation-extent, and ownership rules;
-- private raw cores (`state_from_raw`, `seat_fault`, `write_out<T>`,
-  `read_in<T>`, and `release_variant_slot`) are unsafe and document their exact
-  contracts. In particular, `state_from_raw` performs a null check and a
-  conversion; it does not claim to validate arbitrary non-null pointers;
-- output contracts require initialized, uniquely writable storage because the
-  existing generic assignment path replaces the prior typed value;
-- Rust and JIT callers cross the boundary only in documented unsafe blocks.
-  The analogous JIT raw-state conversion and 32 private raw-state forwarding
-  helpers were also made unsafe so safe in-crate Rust cannot smuggle an
-  arbitrary handle to a dereference;
-- a compile-fail doctest proves safe Rust cannot call `rt_err_clear`, while the
-  existing behavior suites exercise status, Err, release, arithmetic,
-  activation, routing, library, and JIT paths through the explicit boundary.
+Review of that implementation found additional soundness gaps. Commit
+`648936d7` repairs them:
 
-`EventFabric` now derives `Default`. The removed manual implementation used
-`HashMap::new`, `0`, `false`, `Vec::new`, and `None` for the corresponding
-fields, exactly matching each field type's derived default.
+- `rt_lib_invoke[_with_policy]` now maps `(null, 0)` to `&[]` rather than
+  calling `slice::from_raw_parts(null, 0)`;
+- `ProcInvokeBridge`, `ExecState::proc_invoker` and the typed drain core are
+  private. The only installation surface is the unsafe install/clear ABI, and
+  `ProcInvokeFn` documents context, `Me`, same-thread, no-unwind, re-entry,
+  status and in-flight-lifetime obligations;
+- termination drain, `New`, and predeclared-instance construction use short
+  execution-state borrows. No `&mut ExecState` survives a procedure callback;
+  drain reset is RAII-managed and saved `Err` is restored after suppressed
+  termination callbacks;
+- failed predeclared initialization removes the failed singleton only if a
+  re-entrant action has not replaced it. Missing-invoker failure no longer
+  publishes a singleton or consumes an instance identity;
+- the JIT installs the bridge through the ABI and owns an RAII registration
+  guard that clears the opaque context before its stack storage expires;
+- the callback context is copied as raw handles rather than mutably borrowed
+  across recursion. The current `JitRun` reborrow is refreshed before all five
+  generated-entry call sites, shared and direct As-New/New/predeclared paths,
+  statement/final/explicit termination drains, and dynamic host invocation;
+- explicit termination drain now carries the current internal run handle. This
+  is a private generated-helper signature change; its declaration, emission and
+  registered implementation changed together;
+- integer-carried UTF-8 operand/name decoders are unsafe with explicit storage
+  contracts, and zero-length descriptors use `&[]` without dereferencing a
+  null pointer.
 
-`RuntimeMemberDescriptorInput` groups the method/display/dispatch/vtable/
-default/enumerator inputs. Both construction paths retain their prior field
-mapping and precedence rules; this is a Rust call-shape change only.
+The new tests cover null/zero built-in invocation, predeclared initializer
+re-entry and failure cleanup, termination-drain recursion/Err restoration/RAII
+reset, a nested fake JIT initializer through the shared As-New path, frame and
+alias cleanup, bridge clearing before context expiry, and the changed explicit
+drain helper signature.
 
-## ABI and behavior preservation
+## ABI, API and observable behavior
 
-The baseline and repaired source each contain 63 exported `rt_*` functions and
-63 `#[unsafe(no_mangle)]` attributes. A name-set comparison found no missing or
-added exported helper. `unsafe` changes Rust's caller obligation; it does not
-change the C calling convention, symbol name, parameter layout, return layout,
-or generated-code address registration.
+The 63 public C helper names, calling conventions and parameter/result layouts
+from the initial repair remain unchanged. No C ABI version change is required.
+The internal `rt_jit_drain_terminations` generated-helper signature is not an
+exported product ABI and was changed coherently with its only producer.
 
-No helper body was given a new fallback, status value, or panic policy.
-`with_status`/JIT `status_guard` catch-unwind boundaries remain in place, and
-the existing `ST_OK`, `ST_FAULT`, `ST_HALT`, full `Err`, activation restore,
-callback, release, and termination-drain ordering remains unchanged. The
-runtime and JIT suites below are the executable regression evidence.
+This follow-up intentionally hardens the Rust source API: external Rust code can
+no longer construct `ProcInvokeBridge` or mutate `ExecState::proc_invoker`
+directly. Repository search found no consumer other than the JIT, which now uses
+the install/clear ABI. This is a source-compatibility break for any untracked
+out-of-repository caller, but not a C ABI break.
 
-Observable axes:
+Observable changes are repairs, not preservation claims:
 
-- Result: all focused runtime and JIT tests retain their expected status and
-  return values; strict runtime Clippy is warning-free.
-- Full Err: arithmetic, type mismatch, stack, explicit raise, routing, resume,
-  and activation tests retain number, description, source, and policy behavior.
-- Side effects: output writes, argument handling, project initialization, and
-  JIT slot updates retain their prior order; unsafe blocks only expose the
-  pre-existing caller invariants.
-- Lifecycle/order: type-specific release, callback activation, frame cleanup,
-  restoration, and termination draining remain covered by the passing suites.
-- Transport: C symbols and ABI signatures are unchanged; Rust raw-pointer use
-  is now statically unsafe at every exported and private dereference boundary.
-- Balance: this bead changes no allocation or AddRef/Release algorithm. Existing
-  release/lifecycle tests pass; no workspace-wide counter certification is
-  claimed here.
+- Result: valid zero-argument built-ins accept the documented null pointer;
+  invalid/missing callback state fails closed.
+- Full Err: termination callback faults remain suppressed and the caller's
+  complete saved error engine is restored; initializer faults retain their
+  returned status.
+- Side effects: predeclared instances are visible during recursive
+  `Class_Initialize`, but a failed instance is removed unless re-entry replaced
+  it. Missing bridge failure does not leave a singleton behind.
+- Lifecycle/order: registration clears before callback context drop; nested
+  initializer frames and parameter-array aliases balance; termination drain
+  returns its guard to non-draining state.
+- Transport: public C transport is unchanged. Private integer-pointer decoders
+  now expose their actual unsafe preconditions.
+- Balance: no allocation/AddRef/Release algorithm changed. Focused lifecycle
+  tests pass, but no workspace-wide live-counter claim is made here.
 
-## Commands and exact results
+## Exact command evidence
 
-Executed in the isolated worktree rooted at baseline
-`b5604905554d29d14277fbf17d4720184cdf12ed`:
+Executed in the isolated worker worktree:
 
 | Command | Result |
 |---|---|
-| `cargo fmt --all` | Pass. |
-| `cargo clippy -p oxvba-rt-abi --all-targets -- -D warnings` | Pass; exit 0, zero warnings. The baseline had 44 errors. |
-| `cargo test -p oxvba-rt-abi` | Pass: 34 unit tests and 1 compile-fail doctest; 0 failed. |
-| `cargo test -p oxvba-jit` | Pass: 164 unit tests; 0 failed; doc-tests contain 0 tests. |
-| `cargo check -p oxvba-jit --message-format=short` | Pass. |
-| `cargo clippy -p oxvba-jit --all-targets --message-format=short -- -D clippy::undocumented-unsafe-blocks` | Pass for the safety lint. It reports 21 inherited non-safety warnings outside this bead's strict runtime gate. |
-| Baseline/current exported-name and `no_mangle` comparison | `BASE_EXPORTS=63 CURRENT_EXPORTS=63`, no missing/added names, `NO_MANGLE_BASE=63 NO_MANGLE_CURRENT=63`. |
-| Added-line suppression scan for `allow`, `expect`, `clippy::`, and `undocumented_unsafe_blocks` | No added suppression or override. |
+| `cargo fmt --all -- --check` | Pass. |
+| `cargo check -p oxvba-rt-abi -p oxvba-jit` | Pass. |
+| `cargo clippy -p oxvba-rt-abi --all-targets -- -D warnings` | Pass; zero warnings. |
+| `cargo clippy -p oxvba-jit --all-targets -- -D clippy::undocumented_unsafe_blocks -D clippy::missing_safety_doc -D unsafe_op_in_unsafe_fn` | Pass for the selected safety lints. It also reports the 21 baseline JIT warnings listed below. |
+| `cargo test -p oxvba-rt-abi` | Pass: 37 unit tests and 1 compile-fail doctest; 0 failed. |
+| `cargo test -p oxvba-jit` | Pass: 166 unit tests; 0 failed; doc-tests contain 0 tests. |
+| `cargo miri --version` | Not available: stable MSVC reports that the `miri` component/cargo-miri is unavailable. No Miri run is claimed. |
 | `git diff --check` | Pass. |
 
-## Fresh-eyes verdict
+The two runtime fake-callback tests deliberately contain no Cranelift execution
+and are suitable extracted Miri targets once an enabled nightly Miri toolchain
+is available.
 
-The final audit specifically looked for safe private functions hiding raw
-dereferences, false pointer-validation claims, incomplete null/alignment/
-lifetime/aliasing/length/output-initialization contracts, undocumented unsafe
-blocks, symbol drift, callback-context lifetime gaps, panic-boundary movement,
-and release/order changes. It found and repaired the hidden private runtime and
-JIT forwarding cores described above. The final signature scans leave no safe
-private runtime function accepting raw pointers other than
-`exec_state_as_raw`, which only converts a live typed mutable reference into an
-opaque handle.
+## Required successors and non-claims
 
-No public contract/version conflict was found. The governing system contract's
-`RUNTIME-ABI-001` requirement for unsafe raw-pointer entry points behind typed
-wrappers is satisfied by this repair.
+Workspace strict Clippy is not green. The exact inherited `oxvba-jit` roster is:
+
+- `clippy::too_many_arguments`: lines 3001, 3018, 3108, 3554, 3948, 4013,
+  4881, 15105, 15305 and 19668;
+- `clippy::collapsible_if`: lines 7077, 7087, 7097, 7116, 7121, 7131 and 7144;
+- `clippy::needless_borrow`: line 9119;
+- `clippy::nonminimal_bool`: lines 13434 and 13463;
+- `clippy::needless_lifetimes`: line 14794.
+
+These findings are outside the changed soundness lines and need a bounded
+delivery successor before the baseline lane can close.
+
+The explicit procedure bridge and JIT dynamic COM call are now re-entry-safe,
+but a broader architectural residual remains: `rt_lib_invoke_with_policy`
+threads `&mut ExecState::lib` through `oxvba_lib::invoke`, and HAL facets such as
+event pumping/COM may eventually permit synchronous project re-entry. The
+library-context ownership/re-entry policy must be specified and implemented
+before general host re-entry is claimed. Related COM unsubscribe/event paths
+must be audited under the Windows interop plan rather than inferred safe from
+the current Linux/null-host tests.
+
+This bead therefore realizes the unsafe raw-entry and current ProcInvoke/JIT
+re-entry slice of `RUNTIME-ABI-001`; it does not satisfy the clause's future
+versioned helper catalog, general typed-wrapper, host/apartment or Windows
+interop requirements.
+
+## Worker review verdict
+
+The worker's second review searched for null/zero slice construction, safe
+integer-pointer decoders, public callback-bridge bypasses, mutable state/run/
+context borrows spanning callbacks, every generated-entry call, As-New and
+termination-drain paths, dynamic host invocation, registration drop order,
+symbol/signature drift, missing safety comments and lint suppression. The
+issues found in that review are repaired above or recorded as explicit
+successors. An independent non-author review has been requested and is not
+represented as completed evidence here.
