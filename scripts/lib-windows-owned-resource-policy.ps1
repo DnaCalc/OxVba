@@ -44,6 +44,260 @@ namespace OxVba {
         }
     }
 }
+
+'@
+    }
+}
+
+function Initialize-WindowsOwnedProcessNative {
+    if (-not ('OxVba.WindowsProcessNative' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace OxVba {
+    public static class WindowsProcessNative {
+        private const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILETIME {
+            public uint LowDateTime;
+            public uint HighDateTime;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(int desiredAccess, bool inheritHandle, int processId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetProcessTimes(
+            IntPtr process,
+            out FILETIME creationTime,
+            out FILETIME exitTime,
+            out FILETIME kernelTime,
+            out FILETIME userTime);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool QueryFullProcessImageName(
+            IntPtr process,
+            int flags,
+            StringBuilder executablePath,
+            ref int size);
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        public static int QueryCreationFileTimeUtc(int processId, out long fileTimeUtc) {
+            fileTimeUtc = 0;
+            IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+            if (process == IntPtr.Zero) return Marshal.GetLastWin32Error();
+            try {
+                FILETIME creation;
+                FILETIME exit;
+                FILETIME kernel;
+                FILETIME user;
+                if (!GetProcessTimes(process, out creation, out exit, out kernel, out user)) {
+                    return Marshal.GetLastWin32Error();
+                }
+                fileTimeUtc = unchecked((long)(((ulong)creation.HighDateTime << 32) | creation.LowDateTime));
+                return 0;
+            }
+            finally {
+                CloseHandle(process);
+            }
+        }
+
+        public static int QueryExecutablePath(int processId, out string executablePath) {
+            executablePath = null;
+            IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+            if (process == IntPtr.Zero) return Marshal.GetLastWin32Error();
+            try {
+                int capacity = 32768;
+                StringBuilder value = new StringBuilder(capacity);
+                if (!QueryFullProcessImageName(process, 0, value, ref capacity)) {
+                    return Marshal.GetLastWin32Error();
+                }
+                executablePath = value.ToString();
+                return 0;
+            }
+            finally {
+                CloseHandle(process);
+            }
+        }
+    }
+}
+'@
+    }
+}
+
+function Initialize-WindowsOwnedFileNative {
+    if (-not ('OxVba.WindowsOwnedFileNative' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using Microsoft.Win32.SafeHandles;
+
+namespace OxVba {
+    public static class WindowsOwnedFileNative {
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint DELETE = 0x00010000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint OPEN_EXISTING = 3;
+        private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+        private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
+        private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+        private const int ERROR_FILE_NOT_FOUND = 2;
+        private const int ERROR_PATH_NOT_FOUND = 3;
+        private const int FileDispositionInfo = 4;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION {
+            public uint FileAttributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+            public uint VolumeSerialNumber;
+            public uint FileSizeHigh;
+            public uint FileSizeLow;
+            public uint NumberOfLinks;
+            public uint FileIndexHigh;
+            public uint FileIndexLow;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FILE_DISPOSITION_INFO {
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool DeleteFile;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFile(
+            string fileName, uint desiredAccess, uint shareMode, IntPtr securityAttributes,
+            uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetFileInformationByHandle(
+            SafeFileHandle file, out BY_HANDLE_FILE_INFORMATION information);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ReadFile(
+            SafeFileHandle file, byte[] buffer, uint bytesToRead, out uint bytesRead,
+            IntPtr overlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetFileInformationByHandle(
+            SafeFileHandle file, int informationClass, ref FILE_DISPOSITION_INFO information,
+            uint bufferSize);
+
+        private static string VolumeIdentity(BY_HANDLE_FILE_INFORMATION information) {
+            return information.VolumeSerialNumber.ToString("x8", CultureInfo.InvariantCulture);
+        }
+
+        private static string FileIdentity(BY_HANDLE_FILE_INFORMATION information) {
+            ulong value = ((ulong)information.FileIndexHigh << 32) | information.FileIndexLow;
+            return value.ToString("x16", CultureInfo.InvariantCulture);
+        }
+
+        public static int QueryIdentity(
+            SafeFileHandle file, out string volumeSerialHex, out string fileIdHex) {
+            volumeSerialHex = null;
+            fileIdHex = null;
+            if (file == null || file.IsInvalid || file.IsClosed) return 6;
+            BY_HANDLE_FILE_INFORMATION information;
+            if (!GetFileInformationByHandle(file, out information)) {
+                return Marshal.GetLastWin32Error();
+            }
+            if ((information.FileAttributes &
+                    (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+                return 4390;
+            }
+            volumeSerialHex = VolumeIdentity(information);
+            fileIdHex = FileIdentity(information);
+            return 0;
+        }
+
+        public static string DeleteExact(
+            string path, string expectedVolumeSerialHex, string expectedFileIdHex,
+            long expectedLength, string expectedSha256, out string detail) {
+            detail = null;
+            using (SafeFileHandle file = CreateFile(
+                path, GENERIC_READ | DELETE, FILE_SHARE_READ,
+                IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero)) {
+                if (file.IsInvalid) {
+                    int openError = Marshal.GetLastWin32Error();
+                    detail = "open-error=" + openError.ToString(CultureInfo.InvariantCulture);
+                    return openError == ERROR_FILE_NOT_FOUND || openError == ERROR_PATH_NOT_FOUND
+                        ? "missing" : "unverifiable";
+                }
+
+                BY_HANDLE_FILE_INFORMATION information;
+                if (!GetFileInformationByHandle(file, out information)) {
+                    detail = "identity-error=" + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture);
+                    return "unverifiable";
+                }
+                if ((information.FileAttributes &
+                        (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+                    detail = "not-an-owned-regular-file";
+                    return "unverifiable";
+                }
+
+                string actualVolume = VolumeIdentity(information);
+                string actualFile = FileIdentity(information);
+                if (!String.Equals(actualVolume, expectedVolumeSerialHex, StringComparison.Ordinal) ||
+                    !String.Equals(actualFile, expectedFileIdHex, StringComparison.Ordinal)) {
+                    detail = "expected=" + expectedVolumeSerialHex + ":" + expectedFileIdHex +
+                        ";actual=" + actualVolume + ":" + actualFile;
+                    return "identity-mismatch";
+                }
+
+                ulong unsignedLength = ((ulong)information.FileSizeHigh << 32) | information.FileSizeLow;
+                if (unsignedLength > Int64.MaxValue || (long)unsignedLength != expectedLength) {
+                    detail = "length-mismatch";
+                    return "content-mismatch";
+                }
+                string actualSha;
+                using (SHA256 sha = SHA256.Create()) {
+                    byte[] buffer = new byte[81920];
+                    while (true) {
+                        uint bytesRead;
+                        if (!ReadFile(file, buffer, (uint)buffer.Length, out bytesRead, IntPtr.Zero)) {
+                            detail = "read-error=" + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture);
+                            return "unverifiable";
+                        }
+                        if (bytesRead == 0) break;
+                        sha.TransformBlock(buffer, 0, (int)bytesRead, buffer, 0);
+                    }
+                    sha.TransformFinalBlock(new byte[0], 0, 0);
+                    actualSha = "sha256:" + BitConverter.ToString(sha.Hash)
+                        .Replace("-", "").ToLowerInvariant();
+                }
+                if (!String.Equals(actualSha, expectedSha256, StringComparison.Ordinal)) {
+                    detail = "sha256-mismatch";
+                    return "content-mismatch";
+                }
+
+                FILE_DISPOSITION_INFO disposition = new FILE_DISPOSITION_INFO { DeleteFile = true };
+                if (!SetFileInformationByHandle(
+                        file, FileDispositionInfo, ref disposition,
+                        (uint)Marshal.SizeOf(typeof(FILE_DISPOSITION_INFO)))) {
+                    detail = "delete-error=" + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture);
+                    return "unverifiable";
+                }
+                detail = "exact-volume-file-id-content";
+                return "deleted";
+            }
+        }
+    }
+}
 '@
     }
 }
@@ -525,7 +779,10 @@ function Assert-WindowsOwnedRawDescriptorJson {
 
     switch ($Kind) {
         'file' {
-            Assert-WindowsOwnedJsonObjectShape -Element $Element -Schema ([ordered]@{ path = 'string'; mutation_mode = 'string' }) -Owner $Owner
+            Assert-WindowsOwnedJsonObjectShape -Element $Element -Schema ([ordered]@{
+                path = 'string'; mutation_mode = 'string'; creation_disposition = 'string';
+                volume_serial_hex = 'string'; file_id_hex = 'string'
+            }) -Owner $Owner
         }
         'registry' {
             Assert-WindowsOwnedJsonObjectShape -Element $Element -Schema ([ordered]@{
@@ -883,19 +1140,153 @@ function Read-WindowsOwnedResourceJournal {
     return $journal
 }
 
+function Test-WindowsOwnedProcessMissingError {
+    param([Parameter(Mandatory = $true)][int]$ErrorCode)
+
+    return $ErrorCode -in @(6, 87, 1168)
+}
+
+function Get-WindowsOwnedProcessCreationProbe {
+    param(
+        [Parameter(Mandatory = $true)][int]$ProcessId,
+        $Process = $null
+    )
+
+    $ownsProcess = $null -eq $Process
+    if ($ownsProcess) {
+        $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $Process) {
+        return [pscustomobject][ordered]@{ state = 'missing'; start_utc = ''; error_code = 0 }
+    }
+    try {
+        try {
+            $start = $Process.StartTime.ToUniversalTime().ToString(
+                'yyyy-MM-ddTHH:mm:ss.fffffffZ',
+                [Globalization.CultureInfo]::InvariantCulture)
+            return [pscustomobject][ordered]@{ state = 'observed'; start_utc = $start; error_code = 0 }
+        }
+        catch {
+            Initialize-WindowsOwnedProcessNative
+            [long]$creationFileTime = 0
+            $errorCode = [OxVba.WindowsProcessNative]::QueryCreationFileTimeUtc($ProcessId, [ref]$creationFileTime)
+            if ($errorCode -eq 0) {
+                $start = [DateTime]::FromFileTimeUtc($creationFileTime).ToString(
+                    'yyyy-MM-ddTHH:mm:ss.fffffffZ',
+                    [Globalization.CultureInfo]::InvariantCulture)
+                return [pscustomobject][ordered]@{ state = 'observed'; start_utc = $start; error_code = 0 }
+            }
+            $hasExited = $false
+            try { $hasExited = [bool]$Process.HasExited } catch { }
+            if ($hasExited -or (Test-WindowsOwnedProcessMissingError -ErrorCode $errorCode)) {
+                return [pscustomobject][ordered]@{ state = 'missing'; start_utc = ''; error_code = $errorCode }
+            }
+            return [pscustomobject][ordered]@{ state = 'unverifiable'; start_utc = ''; error_code = $errorCode }
+        }
+    }
+    finally {
+        if ($ownsProcess) {
+            $Process.Dispose()
+        }
+    }
+}
+
+function Get-WindowsOwnedProcessExecutableProbe {
+    param(
+        [Parameter(Mandatory = $true)][int]$ProcessId,
+        $Process = $null
+    )
+
+    $ownsProcess = $null -eq $Process
+    if ($ownsProcess) {
+        $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $Process) {
+        return [pscustomobject][ordered]@{ state = 'missing'; path = ''; error_code = 0 }
+    }
+    try {
+        try {
+            $path = [IO.Path]::GetFullPath([string]$Process.Path)
+            return [pscustomobject][ordered]@{ state = 'observed'; path = $path; error_code = 0 }
+        }
+        catch {
+            Initialize-WindowsOwnedProcessNative
+            $nativePath = ''
+            $errorCode = [OxVba.WindowsProcessNative]::QueryExecutablePath($ProcessId, [ref]$nativePath)
+            if ($errorCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($nativePath)) {
+                return [pscustomobject][ordered]@{
+                    state = 'observed'
+                    path = [IO.Path]::GetFullPath($nativePath)
+                    error_code = 0
+                }
+            }
+            $hasExited = $false
+            try { $hasExited = [bool]$Process.HasExited } catch { }
+            if ($hasExited -or (Test-WindowsOwnedProcessMissingError -ErrorCode $errorCode)) {
+                return [pscustomobject][ordered]@{ state = 'missing'; path = ''; error_code = $errorCode }
+            }
+            return [pscustomobject][ordered]@{ state = 'unverifiable'; path = ''; error_code = $errorCode }
+        }
+    }
+    finally {
+        if ($ownsProcess) {
+            $Process.Dispose()
+        }
+    }
+}
+
+function Resolve-WindowsOwnedProcessCleanupIdentity {
+    param(
+        [Parameter(Mandatory = $true)][int]$ProcessId,
+        [Parameter(Mandatory = $true)][string]$RecordedStartUtc,
+        [Parameter(Mandatory = $true)][string]$RecordedExecutablePath,
+        [Parameter(Mandatory = $true)][scriptblock]$CreationQuery,
+        [Parameter(Mandatory = $true)][scriptblock]$ExecutableQuery
+    )
+
+    $creation = & $CreationQuery $ProcessId
+    Assert-WindowsOwnedExactProperties -Value $creation -Expected @('state', 'start_utc', 'error_code') -Owner 'process creation-time probe'
+    if ([string]$creation.state -notin @('observed', 'missing', 'unverifiable') -or [int]$creation.error_code -lt 0 -or
+        ([string]$creation.state -ceq 'observed' -and
+            ([int]$creation.error_code -ne 0 -or [string]$creation.start_utc -notmatch '^\d{4}-\d{2}-\d{2}T')) -or
+        ([string]$creation.state -cne 'observed' -and -not [string]::IsNullOrEmpty([string]$creation.start_utc))) {
+        throw 'process creation-time probe returned an invalid result'
+    }
+    if ([string]$creation.state -ceq 'missing') {
+        return 'recorded-child-already-exited'
+    }
+    if ([string]$creation.state -ceq 'unverifiable') {
+        throw "owned child PID '$ProcessId' has an unverifiable creation-time identity (error=$($creation.error_code))"
+    }
+    if ([string]$creation.start_utc -cne $RecordedStartUtc) {
+        return 'recorded-child-already-exited-or-pid-reused'
+    }
+
+    $executable = & $ExecutableQuery $ProcessId
+    Assert-WindowsOwnedExactProperties -Value $executable -Expected @('state', 'path', 'error_code') -Owner 'process executable probe'
+    if ([string]$executable.state -notin @('observed', 'missing', 'unverifiable') -or [int]$executable.error_code -lt 0 -or
+        ([string]$executable.state -ceq 'observed' -and
+            ([int]$executable.error_code -ne 0 -or [string]::IsNullOrWhiteSpace([string]$executable.path))) -or
+        ([string]$executable.state -cne 'observed' -and -not [string]::IsNullOrEmpty([string]$executable.path))) {
+        throw 'process executable probe returned an invalid result'
+    }
+    if ([string]$executable.state -ceq 'missing') {
+        return 'recorded-child-already-exited'
+    }
+    if ([string]$executable.state -ceq 'unverifiable') {
+        throw "owned child PID '$ProcessId' has an unverifiable executable identity (error=$($executable.error_code))"
+    }
+    if (-not (Test-WindowsOwnedExactPathEqual -Left ([string]$executable.path) -Right $RecordedExecutablePath)) {
+        throw "owned child PID '$ProcessId' has an unexpected executable identity"
+    }
+    return 'exact-live-child'
+}
+
 function Get-WindowsOwnedProcessStartUtc {
     param([Parameter(Mandatory = $true)][int]$ProcessId)
 
-    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-    if ($null -eq $process) {
-        return $null
-    }
-    try {
-        return $process.StartTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ", [Globalization.CultureInfo]::InvariantCulture)
-    }
-    catch {
-        return $null
-    }
+    $probe = Get-WindowsOwnedProcessCreationProbe -ProcessId $ProcessId
+    return $(if ([string]$probe.state -ceq 'observed') { [string]$probe.start_utc } else { $null })
 }
 
 function Test-WindowsOwnedProcessIdentity {
@@ -1217,9 +1608,12 @@ function Assert-WindowsOwnedResourceDescriptor {
     $kind = [string]$Resource.kind
     switch ($kind) {
         'file' {
-            Assert-WindowsOwnedExactProperties -Value $Resource.descriptor -Expected @('path', 'mutation_mode') -Owner "$owner file descriptor"
+            Assert-WindowsOwnedExactProperties -Value $Resource.descriptor -Expected @(
+                'path', 'mutation_mode', 'creation_disposition', 'volume_serial_hex', 'file_id_hex'
+            ) -Owner "$owner file descriptor"
             $path = Assert-WindowsOwnedConfinedPath -Journal $Journal -Path ([string]$Resource.descriptor.path) -Owner "$owner file"
             if ([string]$Resource.descriptor.mutation_mode -cne 'create-only' -or
+                [string]$Resource.descriptor.creation_disposition -notin @('pending', 'created-owned') -or
                 -not (Test-WindowsOwnedExactPathEqual -Left $path -Right ([string]$Resource.descriptor.path))) {
                 throw "$owner file policy permits only one canonical create-only path"
             }
@@ -1233,6 +1627,15 @@ function Assert-WindowsOwnedResourceDescriptor {
             }
             if ([bool]$Resource.before.exists -or -not [bool]$Resource.expected.exists) {
                 throw "$owner file must describe an absent-to-exact create-only mutation"
+            }
+            if ([string]$Resource.state -ceq 'active' -and
+                [string]$Resource.descriptor.creation_disposition -cne 'created-owned') {
+                throw "$owner active file requires a durable created-owned disposition"
+            }
+            $hasIdentity = [string]$Resource.descriptor.volume_serial_hex -match '^[0-9a-f]{8}$' -and
+                [string]$Resource.descriptor.file_id_hex -match '^[0-9a-f]{16}$'
+            if (([string]$Resource.descriptor.creation_disposition -ceq 'created-owned') -ne $hasIdentity) {
+                throw "$owner file identity must be absent while pending and exact after created-owned"
             }
         }
         'registry' {
@@ -1494,16 +1897,25 @@ function Assert-WindowsOwnedJournalLifecycle {
                 $facts.prepared++
             }
             'resource-prepared-updated' {
-                if ($cleanupEverStarted -or [string]$resource.kind -cne 'registry' -or
-                    $facts.prepared -ne 1 -or $facts.active -ne 0) {
+                if ($cleanupEverStarted -or $facts.prepared -ne 1 -or $facts.active -ne 0 -or
+                    [string]$resource.kind -notin @('file', 'registry')) {
                     throw "owned-resource '$resourceId' has an invalid prepared-update event"
                 }
-                $updateIndex = [int]$facts.updated
-                $keyOwnership = @($resource.descriptor.key_ownership)
-                if ($updateIndex -ge $keyOwnership.Count -or
-                    [string]$keyOwnership[$updateIndex].creation_disposition -ceq 'pending' -or
-                    [string]$event.detail -cne "registry-key[$updateIndex]=$([string]$keyOwnership[$updateIndex].creation_disposition)") {
-                    throw "owned-resource '$resourceId' prepared-update event does not match its durable Registry64 disposition prefix"
+                if ([string]$resource.kind -ceq 'file') {
+                    if ($facts.updated -ne 0 -or
+                        [string]$resource.descriptor.creation_disposition -cne 'created-owned' -or
+                        [string]$event.detail -cne 'file-creation=created-owned') {
+                        throw "owned-resource '$resourceId' prepared-update event does not prove its durable file creation disposition"
+                    }
+                }
+                else {
+                    $updateIndex = [int]$facts.updated
+                    $keyOwnership = @($resource.descriptor.key_ownership)
+                    if ($updateIndex -ge $keyOwnership.Count -or
+                        [string]$keyOwnership[$updateIndex].creation_disposition -ceq 'pending' -or
+                        [string]$event.detail -cne "registry-key[$updateIndex]=$([string]$keyOwnership[$updateIndex].creation_disposition)") {
+                        throw "owned-resource '$resourceId' prepared-update event does not match its durable Registry64 disposition prefix"
+                    }
                 }
                 $facts.updated++
             }
@@ -1547,7 +1959,13 @@ function Assert-WindowsOwnedJournalLifecycle {
             ([string]$resource.state -ceq 'conflict' -and $facts.conflicts -lt 1)) {
             throw "owned-resource '$($resource.resource_id)' lifecycle events do not match its terminal state"
         }
-        if ([string]$resource.kind -ceq 'registry' -and $facts.updated -ne
+        if ([string]$resource.kind -ceq 'file') {
+            $expectedUpdates = if ([string]$resource.descriptor.creation_disposition -ceq 'created-owned') { 1 } else { 0 }
+            if ($facts.updated -ne $expectedUpdates) {
+                throw "owned-resource '$($resource.resource_id)' file disposition event does not match its descriptor"
+            }
+        }
+        elseif ([string]$resource.kind -ceq 'registry' -and $facts.updated -ne
             @($resource.descriptor.key_ownership | Where-Object { [string]$_.creation_disposition -cne 'pending' }).Count) {
             throw "owned-resource '$($resource.resource_id)' Registry64 disposition events do not match its descriptor"
         }
@@ -1642,6 +2060,58 @@ function Get-WindowsOwnedFileSnapshot {
     }
 }
 
+function Get-WindowsOwnedFileIdentityFromHandle {
+    param(
+        [Parameter(Mandatory = $true)][Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    Initialize-WindowsOwnedFileNative
+    $volumeSerialHex = ''
+    $fileIdHex = ''
+    $errorCode = [OxVba.WindowsOwnedFileNative]::QueryIdentity(
+        $Handle, [ref]$volumeSerialHex, [ref]$fileIdHex)
+    if ($errorCode -ne 0 -or $volumeSerialHex -notmatch '^[0-9a-f]{8}$' -or
+        $fileIdHex -notmatch '^[0-9a-f]{16}$') {
+        throw "$Owner could not capture an exact regular-file volume/file identity (error=$errorCode)"
+    }
+    return [pscustomobject][ordered]@{
+        volume_serial_hex = $volumeSerialHex
+        file_id_hex = $fileIdHex
+    }
+}
+
+function Remove-WindowsOwnedExactFileInstance {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$Descriptor,
+        [Parameter(Mandatory = $true)]$Expected
+    )
+
+    Initialize-WindowsOwnedFileNative
+    $detail = ''
+    $result = [OxVba.WindowsOwnedFileNative]::DeleteExact(
+        $Path,
+        [string]$Descriptor.volume_serial_hex,
+        [string]$Descriptor.file_id_hex,
+        [long]$Expected.length,
+        [string]$Expected.sha256,
+        [ref]$detail)
+    switch ($result) {
+        'deleted' { return 'delete-exact-volume-file-id-content' }
+        'missing' { return 'already-before' }
+        'identity-mismatch' {
+            throw "owned file '$Path' is a different volume/file identity ($detail); cleanup preserves it"
+        }
+        'content-mismatch' {
+            throw "owned file '$Path' changed from its expected content ($detail); cleanup preserves it"
+        }
+        default {
+            throw "owned file '$Path' could not be safely verified/deleted ($detail); cleanup preserves it"
+        }
+    }
+}
+
 function Test-WindowsOwnedObjectEqual {
     param($Left, $Right)
 
@@ -1682,7 +2152,13 @@ function New-WindowsOwnedFile {
             length = [long]$Bytes.Length
             sha256 = Get-WindowsOwnedSha256Bytes -Bytes $Bytes
         }
-        $descriptor = [pscustomobject][ordered]@{ path = $full; mutation_mode = 'create-only' }
+        $descriptor = [pscustomobject][ordered]@{
+            path = $full
+            mutation_mode = 'create-only'
+            creation_disposition = 'pending'
+            volume_serial_hex = ''
+            file_id_hex = ''
+        }
         $resourceId = Add-WindowsOwnedPreparedResource -JournalPath $JournalPath -Lease $Lease -Kind file -Descriptor $descriptor -Before $before -Expected $expected -Journal $journal
         $confirmedPath = Assert-WindowsOwnedConfinedPath -Journal $journal -Path $full -Owner 'owned file operation boundary'
         if (-not (Test-WindowsOwnedExactPathEqual -Left $confirmedPath -Right $full)) {
@@ -1692,10 +2168,16 @@ function New-WindowsOwnedFile {
         try {
             $stream.Write($Bytes, 0, $Bytes.Length)
             $stream.Flush($true)
+            $identity = Get-WindowsOwnedFileIdentityFromHandle -Handle $stream.SafeFileHandle -Owner "owned file '$full'"
+            $descriptor.volume_serial_hex = [string]$identity.volume_serial_hex
+            $descriptor.file_id_hex = [string]$identity.file_id_hex
         }
         finally {
             $stream.Dispose()
         }
+        $descriptor.creation_disposition = 'created-owned'
+        Set-WindowsOwnedPreparedResourceDescriptor -JournalPath $JournalPath -Lease $Lease -ResourceId $resourceId `
+            -Descriptor $descriptor -Detail 'file-creation=created-owned' -Journal $journal
         Set-WindowsOwnedResourceActive -JournalPath $JournalPath -Lease $Lease -ResourceId $resourceId -Journal $journal
         return $resourceId
     }
@@ -2429,19 +2911,8 @@ function Register-WindowsOwnedDialogRepresentation {
 function Get-WindowsOwnedProcessExecutablePath {
     param([Parameter(Mandatory = $true)][int]$ProcessId)
 
-    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-    if ($null -eq $process) {
-        return $null
-    }
-    try {
-        return [IO.Path]::GetFullPath([string]$process.Path)
-    }
-    catch {
-        return $null
-    }
-    finally {
-        $process.Dispose()
-    }
+    $probe = Get-WindowsOwnedProcessExecutableProbe -ProcessId $ProcessId
+    return $(if ([string]$probe.state -ceq 'observed') { [string]$probe.path } else { $null })
 }
 
 function Invoke-WindowsOwnedSingleResourceCleanup {
@@ -2462,12 +2933,15 @@ function Invoke-WindowsOwnedSingleResourceCleanup {
             if (-not (Test-WindowsOwnedObjectEqual -Left $actual -Right $Resource.expected)) {
                 throw "owned file '$path' drifted from both its before and expected snapshots"
             }
+            if ([string]$Resource.descriptor.creation_disposition -cne 'created-owned') {
+                throw "owned file '$path' exists without a durable created-owned disposition; cleanup preserves it"
+            }
             $confirmedPath = Assert-WindowsOwnedConfinedPath -Journal $Journal -Path $path -Owner 'owned file cleanup operation boundary'
             if (-not (Test-WindowsOwnedExactPathEqual -Left $confirmedPath -Right $path)) {
                 throw "owned file '$path' changed across its cleanup boundary"
             }
-            [IO.File]::Delete($confirmedPath)
-            return 'delete-exact-file'
+            return Remove-WindowsOwnedExactFileInstance -Path $confirmedPath -Descriptor $Resource.descriptor `
+                -Expected $Resource.expected
         }
         'registry' {
             $path = ConvertTo-WindowsOwnedRegistryPath -Path ([string]$Resource.descriptor.path) -Owner 'owned registry cleanup'
@@ -2512,21 +2986,19 @@ function Invoke-WindowsOwnedSingleResourceCleanup {
                 return 'recorded-child-already-exited'
             }
             try {
-                try {
-                    $actualStart = $process.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffffffZ', [Globalization.CultureInfo]::InvariantCulture)
-                    $actualExecutable = [IO.Path]::GetFullPath([string]$process.Path)
-                }
-                catch {
-                    if ($process.HasExited) {
-                        return 'recorded-child-already-exited'
-                    }
-                    throw "owned child PID '$pidValue' has an unverifiable start/executable identity"
-                }
-                if ($actualStart -cne $start) {
-                    return 'recorded-child-already-exited-or-pid-reused'
-                }
-                if (-not (Test-WindowsOwnedExactPathEqual -Left $actualExecutable -Right ([string]$Resource.descriptor.executable_path))) {
-                    throw "owned child PID '$pidValue' has an unexpected executable identity"
+                $creationQuery = {
+                    param([int]$IgnoredProcessId)
+                    Get-WindowsOwnedProcessCreationProbe -ProcessId $pidValue -Process $process
+                }.GetNewClosure()
+                $executableQuery = {
+                    param([int]$IgnoredProcessId)
+                    Get-WindowsOwnedProcessExecutableProbe -ProcessId $pidValue -Process $process
+                }.GetNewClosure()
+                $identity = Resolve-WindowsOwnedProcessCleanupIdentity -ProcessId $pidValue -RecordedStartUtc $start `
+                    -RecordedExecutablePath ([string]$Resource.descriptor.executable_path) `
+                    -CreationQuery $creationQuery -ExecutableQuery $executableQuery
+                if ($identity -cne 'exact-live-child') {
+                    return $identity
                 }
                 if (-not $process.HasExited) {
                     $process.Kill($true)

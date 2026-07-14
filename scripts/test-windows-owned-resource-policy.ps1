@@ -87,7 +87,7 @@ function Remove-ExactEmptyDirectory {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if (Test-Path -LiteralPath $Path -PathType Container) {
-        try { [IO.Directory]::Delete([IO.Path]::GetFullPath($Path), $false) } catch { }
+        [IO.Directory]::Delete([IO.Path]::GetFullPath($Path), $false)
     }
 }
 
@@ -170,6 +170,50 @@ function New-TestPreparedRegistryMutation {
             before = $before
             expected = $expected
             journal = $journal
+        }
+    }
+    finally {
+        Exit-WindowsOwnedJournalLease -Lease $lease
+    }
+}
+
+function New-TestPreparedFileMutation {
+    param(
+        [Parameter(Mandatory = $true)][string]$JournalPath,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes
+    )
+
+    $lease = Enter-WindowsOwnedJournalLease -JournalPath $JournalPath
+    try {
+        $journal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $lease -JournalPath $JournalPath
+        $full = Assert-WindowsOwnedConfinedPath -Journal $journal -Path $Path -Owner 'synthetic prepared file'
+        $before = Get-WindowsOwnedFileSnapshot -Path $full
+        if ([bool]$before.exists) {
+            throw 'synthetic prepared file requires an absent path'
+        }
+        $expected = [pscustomobject][ordered]@{
+            exists = $true
+            length = [long]$Bytes.Length
+            sha256 = Get-WindowsOwnedSha256Bytes -Bytes $Bytes
+        }
+        $descriptor = [pscustomobject][ordered]@{
+            path = $full
+            mutation_mode = 'create-only'
+            creation_disposition = 'pending'
+            volume_serial_hex = ''
+            file_id_hex = ''
+        }
+        $resourceId = Add-WindowsOwnedPreparedResource -JournalPath $JournalPath -Lease $lease -Kind file `
+            -Descriptor $descriptor -Before $before -Expected $expected -Journal $journal
+        return [pscustomobject]@{
+            resource_id = $resourceId
+            descriptor = $descriptor
+            before = $before
+            expected = $expected
+            journal = $journal
+            path = $full
+            bytes = $Bytes
         }
     }
     finally {
@@ -346,6 +390,7 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
         -ComInitialization logical-only-no-com -ReentryPolicy reject -MessagePump none -MaxReentryDepth 0
 
     $mainJournal = Read-WindowsOwnedResourceJournal -JournalPath $mainJournalPath
+    $fileResource = Get-WindowsOwnedRecordedResource -Journal $mainJournal -ResourceId $fileResourceId -Kind file -RequireActive
     $processResource = Get-WindowsOwnedRecordedResource -Journal $mainJournal -ResourceId $processResourceId -Kind process -RequireActive
     $dialogResource = Get-WindowsOwnedRecordedResource -Journal $mainJournal -ResourceId $dialogResourceId -Kind dialog -RequireActive
     foreach ($resourceId in @($fileResourceId, $registryResourceId, $processResourceId)) {
@@ -356,6 +401,10 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     Assert-PolicyTrue -Condition ((Test-WindowsOwnedExactPathEqual -Left ([string]$processResource.descriptor.executable_path) -Right $executable) -and
         [int]$processResource.descriptor.pid -gt 0 -and -not [string]::IsNullOrEmpty([string]$processResource.descriptor.process_start_utc)) `
         -Message 'child cleanup identity records exact executable path, PID, and start time'
+    Assert-PolicyTrue -Condition ([string]$fileResource.descriptor.creation_disposition -ceq 'created-owned' -and
+        [string]$fileResource.descriptor.volume_serial_hex -match '^[0-9a-f]{8}$' -and
+        [string]$fileResource.descriptor.file_id_hex -match '^[0-9a-f]{16}$') `
+        -Message 'file cleanup identity records the exact volume and file ID captured from its creation handle'
     $activationResource = @($mainJournal.resources | Where-Object { [string]$_.kind -ceq 'file' -and (Test-WindowsOwnedExactPathEqual -Left ([string]$_.descriptor.path) -Right $activationPath) })[0]
     Assert-PolicyTrue -Condition ([int]$processResource.sequence -lt [int]$activationResource.sequence) -Message 'child PID/start is durable before the activation token exists'
     Assert-PolicyTrue -Condition (Assert-WindowsOwnedCleanupIntent -JournalPath $mainJournalPath -Kind file -SelectorMode exact-recorded-file -ResourceId $fileResourceId -Selector $payloadPath) -Message 'exact file cleanup identity is accepted'
@@ -412,6 +461,44 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     }
 
     Assert-PolicyTrue -Condition (Test-WindowsOwnedProcessIdentity -ProcessId ([int]$processResource.descriptor.pid) -StartUtc ([string]$processResource.descriptor.process_start_utc)) -Message 'only the exact journaled harmless child is live'
+    $syntheticRecordedStart = '2026-01-02T03:04:05.0000000Z'
+    $syntheticReusedStart = '2026-01-02T03:04:06.0000000Z'
+    $script:syntheticExecutableProbeCalls = 0
+    $neverExecutable = {
+        param([int]$IgnoredProcessId)
+        $script:syntheticExecutableProbeCalls++
+        throw 'executable query must not run before an exact creation-time match'
+    }
+    $reusedDecision = Resolve-WindowsOwnedProcessCleanupIdentity -ProcessId 1234 `
+        -RecordedStartUtc $syntheticRecordedStart -RecordedExecutablePath $executable `
+        -CreationQuery { param([int]$IgnoredProcessId) [pscustomobject][ordered]@{ state = 'observed'; start_utc = $syntheticReusedStart; error_code = 0 } } `
+        -ExecutableQuery $neverExecutable
+    Assert-PolicyTrue -Condition ($reusedDecision -ceq 'recorded-child-already-exited-or-pid-reused' -and
+        $script:syntheticExecutableProbeCalls -eq 0) -Message 'PID reuse is decided from creation time before executable identity is queried'
+    $missingDecision = Resolve-WindowsOwnedProcessCleanupIdentity -ProcessId 1234 `
+        -RecordedStartUtc $syntheticRecordedStart -RecordedExecutablePath $executable `
+        -CreationQuery { param([int]$IgnoredProcessId) [pscustomobject][ordered]@{ state = 'missing'; start_utc = ''; error_code = 87 } } `
+        -ExecutableQuery $neverExecutable
+    Assert-PolicyTrue -Condition ($missingDecision -ceq 'recorded-child-already-exited' -and
+        $script:syntheticExecutableProbeCalls -eq 0) -Message 'missing PID is accepted as the recorded child already gone without executable lookup'
+    Expect-PolicyRejection -Name 'unverifiable live creation time' -MessagePattern 'unverifiable creation-time' -Action {
+        Resolve-WindowsOwnedProcessCleanupIdentity -ProcessId 1234 `
+            -RecordedStartUtc $syntheticRecordedStart -RecordedExecutablePath $executable `
+            -CreationQuery { param([int]$IgnoredProcessId) [pscustomobject][ordered]@{ state = 'unverifiable'; start_utc = ''; error_code = 5 } } `
+            -ExecutableQuery $neverExecutable
+    }
+    Assert-PolicyTrue -Condition ($script:syntheticExecutableProbeCalls -eq 0) -Message 'unverifiable live creation time fails closed before executable lookup'
+    $missingAfterMatch = Resolve-WindowsOwnedProcessCleanupIdentity -ProcessId 1234 `
+        -RecordedStartUtc $syntheticRecordedStart -RecordedExecutablePath $executable `
+        -CreationQuery { param([int]$IgnoredProcessId) [pscustomobject][ordered]@{ state = 'observed'; start_utc = $syntheticRecordedStart; error_code = 0 } } `
+        -ExecutableQuery { param([int]$IgnoredProcessId) [pscustomobject][ordered]@{ state = 'missing'; path = ''; error_code = 87 } }
+    Assert-PolicyTrue -Condition ($missingAfterMatch -ceq 'recorded-child-already-exited') -Message 'process exit after a matching creation-time query is harmless'
+    Expect-PolicyRejection -Name 'matching process with wrong executable' -MessagePattern 'unexpected executable identity' -Action {
+        Resolve-WindowsOwnedProcessCleanupIdentity -ProcessId 1234 `
+            -RecordedStartUtc $syntheticRecordedStart -RecordedExecutablePath $executable `
+            -CreationQuery { param([int]$IgnoredProcessId) [pscustomobject][ordered]@{ state = 'observed'; start_utc = $syntheticRecordedStart; error_code = 0 } } `
+            -ExecutableQuery { param([int]$IgnoredProcessId) [pscustomobject][ordered]@{ state = 'observed'; path = 'C:\Windows\System32\not-owned.exe'; error_code = 0 } }
+    }
     Assert-PolicyTrue -Condition ((Get-WindowsOwnedRegistryValueSnapshot -Path $registryPath -ValueName $ownedValueName).exists) -Message 'real owned HKCU value exists before rollback'
     Assert-PolicyTrue -Condition (Test-Path -LiteralPath $payloadPath -PathType Leaf) -Message 'real confined file exists before rollback'
 
@@ -557,6 +644,132 @@ while ([DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     [IO.File]::WriteAllBytes($driftPath, $driftExpectedBytes)
     [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $driftJournalPath)
     Assert-PolicyTrue -Condition (-not (Test-Path -LiteralPath $driftPath)) -Message 'conflict is recoverable after exact expected state is restored'
+
+    $fileCaseBytes = [Text.UTF8Encoding]::new($false).GetBytes("file-disposition-$testId")
+
+    $preexistingFileJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer
+    $preexistingFileJournal = Register-TestJournal -JournalPath $preexistingFileJournalPath
+    $preexistingFilePath = Join-Path ([string]$preexistingFileJournal.run_root) 'preexisting-file.bin'
+    [IO.File]::WriteAllBytes($preexistingFilePath, $fileCaseBytes)
+    Expect-PolicyRejection -Name 'pre-existing file create-only refusal' -MessagePattern 'already exists' -Action {
+        New-WindowsOwnedFile -JournalPath $preexistingFileJournalPath -Path $preexistingFilePath -Bytes $fileCaseBytes
+    }
+    Assert-PolicyTrue -Condition ((Get-WindowsOwnedFileSnapshot $preexistingFilePath).sha256 -ceq
+        (Get-WindowsOwnedSha256Bytes $fileCaseBytes)) -Message 'pre-existing file is preserved without a prepared ownership record'
+    [IO.File]::Delete($preexistingFilePath)
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $preexistingFileJournalPath)
+
+    $beforeFileCreateJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer
+    $beforeFileCreateJournal = Register-TestJournal -JournalPath $beforeFileCreateJournalPath
+    $beforeFileCreatePath = Join-Path ([string]$beforeFileCreateJournal.run_root) 'before-create.bin'
+    [void](New-TestPreparedFileMutation -JournalPath $beforeFileCreateJournalPath -Path $beforeFileCreatePath -Bytes $fileCaseBytes)
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $beforeFileCreateJournalPath)
+    Assert-PolicyTrue -Condition (-not (Test-Path -LiteralPath $beforeFileCreatePath)) -Message 'pending file record before creation cleans as already absent without inferred ownership'
+
+    $externalFileJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer
+    $externalFileJournal = Register-TestJournal -JournalPath $externalFileJournalPath
+    $externalFilePath = Join-Path ([string]$externalFileJournal.run_root) 'external-winner.bin'
+    [void](New-TestPreparedFileMutation -JournalPath $externalFileJournalPath -Path $externalFilePath -Bytes $fileCaseBytes)
+    [IO.File]::WriteAllBytes($externalFilePath, $fileCaseBytes)
+    Expect-PolicyRejection -Name 'prepared file followed by external winner' -MessagePattern 'without a durable created-owned disposition|conflicts' -Action {
+        Invoke-WindowsOwnedResourceCleanup -JournalPath $externalFileJournalPath
+    }
+    Assert-PolicyTrue -Condition ((Get-WindowsOwnedFileSnapshot $externalFilePath).sha256 -ceq
+        (Get-WindowsOwnedSha256Bytes $fileCaseBytes)) -Message 'pending external-winner file is preserved as a cleanup conflict'
+    [IO.File]::Delete($externalFilePath)
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $externalFileJournalPath)
+
+    $beforeFileDispositionJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer
+    $beforeFileDispositionJournal = Register-TestJournal -JournalPath $beforeFileDispositionJournalPath
+    $beforeFileDispositionPath = Join-Path ([string]$beforeFileDispositionJournal.run_root) 'before-disposition.bin'
+    [void](New-TestPreparedFileMutation -JournalPath $beforeFileDispositionJournalPath -Path $beforeFileDispositionPath -Bytes $fileCaseBytes)
+    $beforeDispositionStream = [IO.FileStream]::new(
+        $beforeFileDispositionPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write,
+        [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough)
+    try {
+        $beforeDispositionStream.Write($fileCaseBytes, 0, $fileCaseBytes.Length)
+        $beforeDispositionStream.Flush($true)
+    }
+    finally {
+        $beforeDispositionStream.Dispose()
+    }
+    Expect-PolicyRejection -Name 'file create before disposition crash window' -MessagePattern 'without a durable created-owned disposition|conflicts' -Action {
+        Invoke-WindowsOwnedResourceCleanup -JournalPath $beforeFileDispositionJournalPath
+    }
+    Assert-PolicyTrue -Condition (Test-Path -LiteralPath $beforeFileDispositionPath -PathType Leaf) -Message 'file created before durable disposition remains a blocking ambiguity'
+    [IO.File]::Delete($beforeFileDispositionPath)
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $beforeFileDispositionJournalPath)
+
+    $afterFileDispositionJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer
+    $afterFileDispositionJournal = Register-TestJournal -JournalPath $afterFileDispositionJournalPath
+    $afterFileDispositionPath = Join-Path ([string]$afterFileDispositionJournal.run_root) 'after-disposition.bin'
+    $afterFilePrepared = New-TestPreparedFileMutation -JournalPath $afterFileDispositionJournalPath -Path $afterFileDispositionPath -Bytes $fileCaseBytes
+    $afterDispositionLease = Enter-WindowsOwnedJournalLease -JournalPath $afterFileDispositionJournalPath
+    try {
+        $afterDispositionJournal = Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $afterDispositionLease -JournalPath $afterFileDispositionJournalPath
+        $afterDispositionResource = Get-WindowsOwnedRecordedResource -Journal $afterDispositionJournal `
+            -ResourceId $afterFilePrepared.resource_id -Kind file
+    $afterDispositionStream = [IO.FileStream]::new(
+            $afterFileDispositionPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write,
+            [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough)
+    try {
+        $afterDispositionStream.Write($fileCaseBytes, 0, $fileCaseBytes.Length)
+        $afterDispositionStream.Flush($true)
+        $afterDispositionIdentity = Get-WindowsOwnedFileIdentityFromHandle -Handle $afterDispositionStream.SafeFileHandle `
+            -Owner 'synthetic file after-disposition identity'
+        $afterDispositionResource.descriptor.volume_serial_hex = [string]$afterDispositionIdentity.volume_serial_hex
+        $afterDispositionResource.descriptor.file_id_hex = [string]$afterDispositionIdentity.file_id_hex
+        }
+        finally {
+            $afterDispositionStream.Dispose()
+        }
+        $afterDispositionResource.descriptor.creation_disposition = 'created-owned'
+        Set-WindowsOwnedPreparedResourceDescriptor -JournalPath $afterFileDispositionJournalPath -Lease $afterDispositionLease `
+            -ResourceId $afterFilePrepared.resource_id -Descriptor $afterDispositionResource.descriptor `
+            -Detail 'file-creation=created-owned' -Journal $afterDispositionJournal
+    }
+    finally {
+        Exit-WindowsOwnedJournalLease -Lease $afterDispositionLease
+    }
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $afterFileDispositionJournalPath)
+    Assert-PolicyTrue -Condition (-not (Test-Path -LiteralPath $afterFileDispositionPath)) -Message 'durable created-owned file disposition permits exact cleanup before activation'
+
+    $replacementJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer
+    $replacementJournal = Register-TestJournal -JournalPath $replacementJournalPath
+    $replacementPath = Join-Path ([string]$replacementJournal.run_root) 'same-content-replacement.bin'
+    [void](New-WindowsOwnedFile -JournalPath $replacementJournalPath -Path $replacementPath -Bytes $fileCaseBytes)
+    $replacementJournal = Read-WindowsOwnedResourceJournal -JournalPath $replacementJournalPath
+    $ownedReplacementRecord = @($replacementJournal.resources | Where-Object { [string]$_.kind -ceq 'file' })[0]
+    $originalIdentity = "$($ownedReplacementRecord.descriptor.volume_serial_hex):$($ownedReplacementRecord.descriptor.file_id_hex)"
+    $retainedOriginal = [IO.FileStream]::new(
+        $replacementPath, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+        ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try {
+        [IO.File]::Delete($replacementPath)
+        [IO.File]::WriteAllBytes($replacementPath, $fileCaseBytes)
+        $replacementStream = [IO.FileStream]::new(
+            $replacementPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $replacementIdentity = Get-WindowsOwnedFileIdentityFromHandle -Handle $replacementStream.SafeFileHandle `
+                -Owner 'synthetic same-content replacement identity'
+        }
+        finally {
+            $replacementStream.Dispose()
+        }
+        Assert-PolicyTrue -Condition ("$($replacementIdentity.volume_serial_hex):$($replacementIdentity.file_id_hex)" -cne $originalIdentity) `
+            -Message 'same-content replacement regression holds the deleted original open so file identity differs deterministically'
+        Expect-PolicyRejection -Name 'same-content different-file replacement' -MessagePattern 'different volume/file identity|cleanup conflicts' -Action {
+            Invoke-WindowsOwnedResourceCleanup -JournalPath $replacementJournalPath
+        }
+        Assert-PolicyTrue -Condition ((Get-WindowsOwnedFileSnapshot -Path $replacementPath).sha256 -ceq
+            (Get-WindowsOwnedSha256Bytes -Bytes $fileCaseBytes)) `
+            -Message 'same-content replacement is preserved when its stable file identity is not owned'
+    }
+    finally {
+        $retainedOriginal.Dispose()
+    }
+    [IO.File]::Delete($replacementPath)
+    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $replacementJournalPath)
 
     $absentAncestorJournalPath = New-WindowsOwnedResourceJournal -RepositoryRoot $repository -TempRoot $outer `
         -AllowedRegistryPaths @($absentRegistryPath)
@@ -933,14 +1146,19 @@ $lease = Enter-WindowsOwnedJournalLease -JournalPath $JournalPath
     Assert-PolicyTrue -Condition ((Get-WindowsOwnedSha256Text -Text ($logicalSentinel | ConvertTo-Json -Compress)) -ceq $logicalSentinelDigest) -Message 'final logical sentinel has zero drift'
     Assert-PolicyTrue -Condition ($script:WindowsOwnedActiveLeases.Count -eq 0) -Message 'all per-process transaction lease tokens are released after normal, race, conflict, and recovery paths'
 
-    "PASS: Windows owned-resource policy ($script:assertionCount assertions; $script:rejectionCount fail-closed mutations; real HKCU/file/child; logical COM/UIA only)"
 }
 finally {
+    $teardownErrors = [Collections.Generic.List[string]]::new()
+    $completedJournals = [Collections.Generic.List[object]]::new()
+    $recordedProcesses = [Collections.Generic.List[object]]::new()
+
     if ($null -ne $script:tamperBackup -and $null -ne $script:tamperJournal -and (Test-Path -LiteralPath $script:tamperJournal -PathType Leaf)) {
-        try { [IO.File]::WriteAllBytes($script:tamperJournal, $script:tamperBackup) } catch { }
+        try { [IO.File]::WriteAllBytes($script:tamperJournal, $script:tamperBackup) }
+        catch { $teardownErrors.Add("tamper journal restore: $($_.Exception.Message)") }
     }
     if ($null -ne $script:junctionPath -and (Test-Path -LiteralPath $script:junctionPath)) {
-        try { [IO.Directory]::Delete($script:junctionPath, $false) } catch { }
+        try { [IO.Directory]::Delete($script:junctionPath, $false) }
+        catch { $teardownErrors.Add("junction cleanup: $($_.Exception.Message)") }
     }
     try {
         $conflictKey = Open-TestRegistryKey64 -Path $conflictNamespacePath -Writable
@@ -954,71 +1172,154 @@ finally {
             }
         }
     }
-    catch { }
+    catch { $teardownErrors.Add("conflict sentinel rollback: $($_.Exception.Message)") }
+
     foreach ($journalPath in @($script:journalPaths | Select-Object -Unique)) {
         if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) { continue }
+        $journal = $null
         try {
             $journal = Read-WindowsOwnedResourceJournal -JournalPath $journalPath
             if ([string]$journal.state -cne 'completed') {
-                if (Test-WindowsOwnedProcessIdentity -ProcessId ([int]$journal.owner_pid) -StartUtc ([string]$journal.owner_process_start_utc)) {
-                    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $journalPath)
+                $cleanupError = $null
+                for ($attempt = 1; $attempt -le 2; $attempt++) {
+                    try {
+                        if (Test-WindowsOwnedProcessIdentity -ProcessId ([int]$journal.owner_pid) -StartUtc ([string]$journal.owner_process_start_utc)) {
+                            [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $journalPath)
+                        }
+                        else {
+                            [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $journalPath -RecoveryMode)
+                        }
+                        $cleanupError = $null
+                        break
+                    }
+                    catch {
+                        $cleanupError = $_.Exception.Message
+                        if ($attempt -lt 2) { Start-Sleep -Milliseconds 100 }
+                    }
+                    $journal = Read-WindowsOwnedResourceJournal -JournalPath $journalPath
                 }
-                else {
-                    [void](Invoke-WindowsOwnedResourceCleanup -JournalPath $journalPath -RecoveryMode)
+                if ($null -ne $cleanupError) {
+                    $teardownErrors.Add("journal cleanup '$journalPath': $cleanupError")
                 }
             }
+            $journal = Read-WindowsOwnedResourceJournal -JournalPath $journalPath
+            foreach ($resource in @($journal.resources | Where-Object { [string]$_.kind -ceq 'process' -and [int]$_.descriptor.pid -gt 0 })) {
+                $recordedProcesses.Add([pscustomobject]@{
+                    pid = [int]$resource.descriptor.pid
+                    start_utc = [string]$resource.descriptor.process_start_utc
+                    resource_id = [string]$resource.resource_id
+                })
+            }
+            if ([string]$journal.state -ceq 'completed') {
+                $completedJournals.Add([pscustomobject]@{
+                    journal_path = [IO.Path]::GetFullPath($journalPath)
+                    run_root = [IO.Path]::GetFullPath([string]$journal.run_root)
+                })
+            }
+            else {
+                $teardownErrors.Add("journal '$journalPath' remains '$($journal.state)'; recovery root is preserved")
+            }
         }
-        catch { }
+        catch { $teardownErrors.Add("journal validation '$journalPath': $($_.Exception.Message)") }
     }
 
-    try {
-        $key = Open-TestRegistryKey64 -Path $registryPath -Writable
-        if ($null -ne $key) {
+    if ($teardownErrors.Count -eq 0) {
+        foreach ($entry in $completedJournals) {
             try {
-                $key.DeleteValue($ownedValueName, $false)
-                $key.DeleteValue($neighborValueName, $false)
-                $key.Flush()
-                $empty = $key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0
+                $remaining = @(Get-ChildItem -LiteralPath ([string]$entry.run_root) -Force -ErrorAction Stop)
+                if ($remaining.Count -ne 0) {
+                    throw "completed run root contains $($remaining.Count) residual entries"
+                }
             }
-            finally {
-                $key.Dispose()
-            }
-            if ($empty) {
-                Remove-TestRegistryKey64IfEmpty -Path $registryPath
-            }
-        }
-    }
-    catch { }
-    foreach ($extraRegistryPath in @($script:extraRegistryPaths | Select-Object -Unique | Sort-Object { $_.Length } -Descending)) {
-        try { Remove-TestRegistryKey64IfEmpty -Path $extraRegistryPath } catch { }
-    }
-    foreach ($ownedAbsentNamespace in @(
-        [pscustomobject]@{ path = $registryNamespacePath; existed = $registryNamespaceExisted },
-        [pscustomobject]@{ path = $absentNamespacePath; existed = $absentNamespaceExisted },
-        [pscustomobject]@{ path = $conflictNamespacePath; existed = $conflictNamespaceExisted }
-    )) {
-        if (-not [bool]$ownedAbsentNamespace.existed) {
-            try { Remove-TestRegistryKey64IfEmpty -Path ([string]$ownedAbsentNamespace.path) } catch { }
+            catch { $teardownErrors.Add("completed run-root audit '$($entry.run_root)': $($_.Exception.Message)") }
         }
     }
 
-    if (Test-Path -LiteralPath $fileSentinel -PathType Leaf) {
-        [IO.File]::Delete($fileSentinel)
-    }
-    foreach ($journalPath in @($script:journalPaths | Select-Object -Unique)) {
-        if (Test-Path -LiteralPath $journalPath -PathType Leaf) {
-            try {
-                $journal = Read-WindowsOwnedResourceJournal -JournalPath $journalPath
-                if ([string]$journal.state -ceq 'completed') { [IO.File]::Delete($journalPath) }
+    if ($teardownErrors.Count -eq 0) {
+        try {
+            $key = Open-TestRegistryKey64 -Path $registryPath -Writable
+            if ($null -ne $key) {
+                try {
+                    $key.DeleteValue($ownedValueName, $false)
+                    $key.DeleteValue($neighborValueName, $false)
+                    $key.Flush()
+                    $empty = $key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0
+                }
+                finally {
+                    $key.Dispose()
+                }
+                if ($empty) {
+                    Remove-TestRegistryKey64IfEmpty -Path $registryPath
+                }
             }
-            catch { }
+        }
+        catch { $teardownErrors.Add("main Registry64 fixture cleanup: $($_.Exception.Message)") }
+        foreach ($extraRegistryPath in @($script:extraRegistryPaths | Select-Object -Unique | Sort-Object { $_.Length } -Descending)) {
+            try { Remove-TestRegistryKey64IfEmpty -Path $extraRegistryPath }
+            catch { $teardownErrors.Add("extra Registry64 cleanup '$extraRegistryPath': $($_.Exception.Message)") }
+        }
+        foreach ($ownedAbsentNamespace in @(
+            [pscustomobject]@{ path = $registryNamespacePath; existed = $registryNamespaceExisted },
+            [pscustomobject]@{ path = $absentNamespacePath; existed = $absentNamespaceExisted },
+            [pscustomobject]@{ path = $conflictNamespacePath; existed = $conflictNamespaceExisted }
+        )) {
+            if (-not [bool]$ownedAbsentNamespace.existed) {
+                try { Remove-TestRegistryKey64IfEmpty -Path ([string]$ownedAbsentNamespace.path) }
+                catch { $teardownErrors.Add("Registry64 namespace cleanup '$($ownedAbsentNamespace.path)': $($_.Exception.Message)") }
+            }
+        }
+
+        if (Test-Path -LiteralPath $fileSentinel -PathType Leaf) {
+            try { [IO.File]::Delete($fileSentinel) }
+            catch { $teardownErrors.Add("file sentinel cleanup: $($_.Exception.Message)") }
+        }
+
+        foreach ($entry in $completedJournals) {
+            try {
+                [IO.File]::Delete([string]$entry.journal_path)
+                Remove-ExactEmptyDirectory -Path ([string]$entry.run_root)
+            }
+            catch { $teardownErrors.Add("completed journal/root cleanup '$($entry.journal_path)': $($_.Exception.Message)") }
         }
     }
-    foreach ($root in @($script:runRoots | Select-Object -Unique | Sort-Object { $_.Length } -Descending)) {
-        Remove-ExactEmptyDirectory -Path $root
+
+    if ($teardownErrors.Count -eq 0) {
+        try { Remove-ExactEmptyDirectory -Path $junctionTarget }
+        catch { $teardownErrors.Add("junction target cleanup: $($_.Exception.Message)") }
+        try { Remove-ExactEmptyDirectory -Path $runDirectory }
+        catch { $teardownErrors.Add("run infrastructure cleanup: $($_.Exception.Message)") }
+        try { Remove-ExactEmptyDirectory -Path $journalDirectory }
+        catch { $teardownErrors.Add("journal infrastructure cleanup: $($_.Exception.Message)") }
+        try { Remove-ExactEmptyDirectory -Path $outer }
+        catch { $teardownErrors.Add("outer fixture cleanup: $($_.Exception.Message)") }
     }
-    Remove-ExactEmptyDirectory -Path $junctionTarget
-    Remove-ExactEmptyDirectory -Path $runDirectory
-    Remove-ExactEmptyDirectory -Path $journalDirectory
-    Remove-ExactEmptyDirectory -Path $outer
+
+    if ($teardownErrors.Count -eq 0 -and (Test-Path -LiteralPath $outer)) {
+        $teardownErrors.Add("owned test root '$outer' remains after exact teardown")
+    }
+    if ($teardownErrors.Count -eq 0) {
+        foreach ($identity in $recordedProcesses) {
+            if (Test-WindowsOwnedProcessIdentity -ProcessId ([int]$identity.pid) -StartUtc ([string]$identity.start_utc)) {
+                $teardownErrors.Add("recorded process '$($identity.resource_id)' remains live after teardown")
+            }
+        }
+        if ((Get-WindowsOwnedRegistryValueSnapshot -Path $registryPath -ValueName $ownedValueName).exists -or
+            (Get-WindowsOwnedRegistryValueSnapshot -Path $registryPath -ValueName $neighborValueName).exists) {
+            $teardownErrors.Add('main Registry64 fixture values remain after teardown')
+        }
+        foreach ($extraRegistryPath in @($script:extraRegistryPaths | Select-Object -Unique)) {
+            if (Test-WindowsOwnedRegistryKeyExists -Path $extraRegistryPath) {
+                $teardownErrors.Add("extra Registry64 fixture key '$extraRegistryPath' remains after teardown")
+            }
+        }
+        if ($script:WindowsOwnedActiveLeases.Count -ne 0) {
+            $teardownErrors.Add("$($script:WindowsOwnedActiveLeases.Count) in-process journal leases remain after teardown")
+        }
+    }
+
+    if ($teardownErrors.Count -ne 0) {
+        throw "owned-resource teardown failed without deleting recovery prerequisites: $($teardownErrors -join ' | ')"
+    }
 }
+
+"PASS: Windows owned-resource policy ($script:assertionCount assertions; $script:rejectionCount fail-closed mutations; real HKCU/file/child; logical COM/UIA only; exact teardown verified)"
