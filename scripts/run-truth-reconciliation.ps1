@@ -19,6 +19,8 @@ try {
     & "$PSScriptRoot/validate-windows-fixture-manifest.ps1"
     & "$PSScriptRoot/validate-contract-clause-disposition.ps1"
     & "$PSScriptRoot/validate-environment-manifest.ps1"
+    & "$PSScriptRoot/sync-win14-certification-manifest.ps1" -Check
+    & "$PSScriptRoot/validate-win14-certification-manifest.ps1"
     & "$PSScriptRoot/validate-ideal-legacy-migration.ps1"
     & "$PSScriptRoot/validate-closure-taxonomy.ps1"
     & "$PSScriptRoot/validate-bead-traceability.ps1"
