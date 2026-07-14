@@ -57,19 +57,22 @@ Implementation/test history:
 - `9bdebb8f6f0ad19e5b8c10e55bf2c0efbb98a370`
   (`fix(win0): bind cleanup to exact resource identity`); and
 - `116b34ea77afb0f08fef487a05422a9973d5b0d3`
-  (`fix(win0): harden exact Windows ownership transactions`).
+  (`fix(win0): harden exact Windows ownership transactions`); and
+- `da345b9375b8e59ae4dfffb9cfed907f4395adb2`
+  (`fix(win0): preserve pending mutation authority`).
 
 Prior normative/evidence repairs are
 `1dbb7a7699dd2280eebcb2fb9db6912df36f5bc9` and
 `6eb844b56ec53c29c189187b8fe68852815569f9`. The current normative successor is
-`ac1d272e4c3843b6a0744308066193b38a1ffad3`; this evidence update is
+`ac1d272e4c3843b6a0744308066193b38a1ffad3` and
+`5da284ed7354741444167357ce666d6429af3c47`; this evidence update is
 intentionally separate from implementation and specification commits.
 
 | artifact | SHA-256 |
 |---|---|
-| `scripts/lib-windows-owned-resource-policy.ps1` | `ab33c3c1a2c88ce12a40c6bddc4a910c55db1e59eaaae6ff0f2ad7d26a24be51` |
-| `scripts/test-windows-owned-resource-policy.ps1` | `a8cd8247218dd5c613d97697b3e7a6123863efaae64ea843cc98cbfcf2603850` |
-| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence update | `89ba98f17cd40a94c0032fe509b61cf9d02349aa4927cac2e0f6afa2d659d3ec` |
+| `scripts/lib-windows-owned-resource-policy.ps1` | `bf935e7c0afeeabc26a56796a517300104a9cc875b193592a9eec95090c2b46e` |
+| `scripts/test-windows-owned-resource-policy.ps1` | `ca48dab5bdde2a0a3605c0ef03b0052c1249f56dab98a594b55df9a3251e84fa` |
+| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence update | `05a2b09ebd49bc87d75b5a49999d7d2beada4a79475ed475fd6dbdf6432ce9cf` |
 
 The journal schema remains
 `oxvba-windows-owned-resource-journal-v1`, version `1`. The root now explicitly
@@ -89,10 +92,10 @@ pwsh -NoProfile -File ./scripts/test-windows-owned-resource-policy.ps1
 Final result after the fresh-eyes hardening pass:
 
 ```text
-PASS: Windows owned-resource policy (81 assertions; 64 fail-closed mutations; real HKCU/file/child; logical COM/UIA only; exact teardown verified)
+PASS: Windows owned-resource policy (81 assertions; 65 fail-closed mutations; real HKCU/file/child; logical COM/UIA only; exact teardown verified)
 ```
 
-The final run completed in 208.853 seconds on the Windows x64 development host.
+The final run completed in 361.251 seconds on the Windows x64 development host.
 An earlier independent controller run of the predecessor revision passed with
 69 assertions and 53 fail-closed probes. That historical pass is retained as
 independent review evidence, not substituted for the final implementation run.
@@ -109,7 +112,7 @@ and gives only the test-local post-activation gate its own bounded wait.
 |---|---|
 | PowerShell AST parse of both scripts | pass |
 | `git diff --check` | pass |
-| full owned-resource acceptance suite | pass, 81 assertions / 64 rejections |
+| full owned-resource acceptance suite | pass, 81 assertions / 65 rejections |
 | completed run's exact temporary root | absent after validated teardown |
 | completed run's exact Registry64 namespace/values | absent after validated teardown |
 | completed run's recorded writer/abandon/loop child processes | zero |
@@ -128,7 +131,8 @@ actual token object, journal path/name, PID, managed thread, acquired state,
 exact validated journal object, canonical content digest, immutable
 identity/allowlist digest, and pending mutation ticket. A fabricated token,
 separate reread object, modified bound object, allowlist expansion, publication
-without a ticket, and concurrently replaced signed history are rejected. An
+without a ticket, revalidation attempting to discard a pending ticket, and
+concurrently replaced signed history are rejected. An
 abandoned mutex is mutation-disabled until the complete existing journal is
 strictly reread and validated; an absent new run must prove both immutable paths
 absent after parent/reparse validation before infrastructure creation.
@@ -305,7 +309,7 @@ is returned as a failing diagnostic while the journal and recovery root remain.
 
 ## Fail-closed coverage
 
-The 64 negative probes cover:
+The 65 negative probes cover:
 
 - caller-root/infrastructure/run/confined reparse paths, path escape, wildcard,
   controlled roots, drive-relative, ADS, UNC, namespace/device, and reserved
