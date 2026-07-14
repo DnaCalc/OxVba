@@ -407,6 +407,11 @@ try {
         Expect-PolicyRejection -Name 'journal publication without mutation ticket' -MessagePattern 'explicit validated mutation ticket' -Action {
             Write-WindowsOwnedResourceJournal -Journal $leaseBoundJournal -Lease $leaseProbe
         }
+        $pendingLeaseMutation = Start-WindowsOwnedJournalMutation -Lease $leaseProbe -Journal $leaseBoundJournal
+        Expect-PolicyRejection -Name 'revalidation cannot discard pending mutation ticket' -MessagePattern 'cannot discard an exact pending mutation ticket' -Action {
+            Confirm-WindowsOwnedJournalLeaseRevalidated -Lease $leaseProbe -JournalPath $leaseProbeJournalPath
+        }
+        Write-WindowsOwnedResourceJournal -Journal $leaseBoundJournal -Lease $leaseProbe -Mutation $pendingLeaseMutation
         $leaseHistoryBackup = [IO.File]::ReadAllBytes($leaseProbeJournalPath)
         $concurrentLeaseJournal = Read-WindowsOwnedResourceJournal -JournalPath $leaseProbeJournalPath
         $concurrentLeaseJournal.updated_utc = ([DateTime]::UtcNow.AddSeconds(1)).ToString('O')

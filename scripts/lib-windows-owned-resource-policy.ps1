@@ -1277,10 +1277,15 @@ function Get-WindowsOwnedJournalImmutableDigest {
 function Set-WindowsOwnedJournalLeaseBinding {
     param(
         [Parameter(Mandatory = $true)]$Lease,
-        [Parameter(Mandatory = $true)]$Journal
+        [Parameter(Mandatory = $true)]$Journal,
+        $CompletedMutation = $null
     )
 
     Assert-WindowsOwnedJournalLease -Lease $Lease -JournalPath ([string]$Journal.journal_path) -AllowPendingRevalidation
+    if ($null -ne $Lease.pending_mutation -and
+        ($null -eq $CompletedMutation -or -not [object]::ReferenceEquals($Lease.pending_mutation, $CompletedMutation))) {
+        throw 'owned-resource lease revalidation cannot discard an exact pending mutation ticket'
+    }
     $computed = Get-WindowsOwnedJournalDigest -Journal $Journal
     if ([string]$Journal.journal_digest -cne $computed) {
         throw 'owned-resource journal cannot bind a lease to non-canonical history'
@@ -1450,7 +1455,7 @@ function Write-WindowsOwnedResourceJournal {
     if (-not [string]::IsNullOrEmpty($operationError) -or $temporaryCleanupError -ne 0) {
         throw "owned-resource journal publication failed without path-based temp cleanup: operation='$operationError'; handle_cleanup_error=$temporaryCleanupError; recovery prerequisites preserved"
     }
-    Set-WindowsOwnedJournalLeaseBinding -Lease $Lease -Journal $Journal
+    Set-WindowsOwnedJournalLeaseBinding -Lease $Lease -Journal $Journal -CompletedMutation $Mutation
 }
 
 function Read-WindowsOwnedResourceJournal {
