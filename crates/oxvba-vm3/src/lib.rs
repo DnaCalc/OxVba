@@ -1746,8 +1746,9 @@ impl<'h> Vm3<'h> {
                         )
                         .map(|array| array.with_fixed_size(true));
                     }
-                    let elems: Vec<Variant> =
-                        (0..count).map(|_| default_array_element(&et)).collect();
+                    let elems: Vec<Variant> = (0..count)
+                        .map(|_| default_array_element(&et))
+                        .collect::<Result<Vec<_>, String>>()?;
                     redim_safearray_from_elements(bounds, &et, elems, true)
                 });
                 match reset {
@@ -4992,7 +4993,7 @@ fn try_build_default_elements(
     out.try_reserve_exact(count)
         .map_err(|_| Vm3Error::Fault(Fault::new(7, "Out of memory")))?;
     for _ in 0..count {
-        out.push(default_array_element(element));
+        out.push(default_array_element(element).map_err(|e| Vm3Error::Fault(Fault::new(13, e)))?);
     }
     Ok(out)
 }

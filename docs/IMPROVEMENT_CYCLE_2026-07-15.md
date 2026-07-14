@@ -31,7 +31,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
   (2) subscripts/bounds narrowed with bare `as i32` at ~2448/2458/2406/2411 → index ≥ 2^32
   wraps (SilentWrong element) / `ReDim a(2^32)` truncates to 0. Fix: range-check i64 against
   Long range → err 6/9; cap element count/bytes against a budget + `try_reserve` → Fault 7.
-- ☐ **B3 oxir-array-elem-panic** (bundle, MED) — `crates/oxvba-bundle/src/array_runtime.rs:122/124`
+- ☑ **B3 oxir-array-elem-panic** (bundle, MED) — `crates/oxvba-bundle/src/array_runtime.rs:122/124`
   `default_array_element` `expect()`s record layout/alloc for a Record element; guest UDTs
   (>64 KiB, zero-sized field) `Err` → `ReDim arr(..) As BigUDT` aborts host. Sibling `NewRecord`
   maps identical failures to Fault(13). Fix: return `Result`, propagate `?` at resize_with sites.

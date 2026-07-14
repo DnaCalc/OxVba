@@ -103,8 +103,8 @@ pub fn array_element_type_for_vartype(element_vt: u16) -> ArrayElementType {
 /// `Lines(i).Words(j).Rect.X` reads back. Scalar defaults are typed zero values so typed
 /// SAFEARRAY storage can encode them directly instead of relying on a boundary-time Variant
 /// projection.
-pub fn default_array_element(element_type: &ArrayElementType) -> Variant {
-    match element_type {
+pub fn default_array_element(element_type: &ArrayElementType) -> Result<Variant, String> {
+    let value = match element_type {
         ArrayElementType::Variant => Variant::empty(),
         ArrayElementType::Integer => Variant::from_i16(0),
         ArrayElementType::Long => Variant::from_i32(0),
@@ -117,15 +117,20 @@ pub fn default_array_element(element_type: &ArrayElementType) -> Variant {
         ArrayElementType::String => Variant::from_string(""),
         ArrayElementType::FixedString(len) => Variant::from_utf16_units(&vec![0; *len]),
         ArrayElementType::Boolean => Variant::from_bool(false),
+        // A UDT-record element can fail to lay out or allocate for guest-legal
+        // types (a record above the 64 KiB size limit, a zero-sized fixed-array
+        // or string field, excessive nesting depth). These used to `expect()`
+        // and abort the host on an ordinary `ReDim arr(..) As BigUdt`; return the
+        // error so callers can seat a recoverable type mismatch (13), mirroring
+        // the scalar `NewRecord` path.
         ArrayElementType::Record(fields) => {
-            let layout = vba_record_layout_for_fields(fields)
-                .expect("bundle UDT array element layout should map to VBA record layout");
-            let record = VbaRecord::new_default(layout)
-                .expect("default VBA record allocation should succeed");
+            let layout = vba_record_layout_for_fields(fields)?;
+            let record = VbaRecord::new_default(layout)?;
             Variant::from_vba_record(record)
         }
         ArrayElementType::FixedArray { .. } => Variant::empty(),
-    }
+    };
+    Ok(value)
 }
 
 /// Project a UDT field list into a native [`VbaRecordLayout`] (anonymous fields, in order).

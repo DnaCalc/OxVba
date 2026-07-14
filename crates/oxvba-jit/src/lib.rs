@@ -16671,6 +16671,20 @@ fn jit_redim_element_supports_zeroed(element: &ArrayElementType) -> bool {
     )
 }
 
+/// Fill a capacity-reserved vector with `count` default array elements,
+/// propagating a UDT-record layout/allocation failure (guest-legal but
+/// oversized/invalid record) instead of panicking inside `resize_with`.
+fn jit_fill_default_array_elements(
+    values: &mut Vec<Variant>,
+    element: &ArrayElementType,
+    count: usize,
+) -> Result<(), String> {
+    for _ in 0..count {
+        values.push(default_array_element(element)?);
+    }
+    Ok(())
+}
+
 fn jit_redim_default_safearray(
     bounds: Vec<SafeArrayBound>,
     element: &ArrayElementType,
@@ -16689,7 +16703,8 @@ fn jit_redim_default_safearray(
     values
         .try_reserve_exact(count)
         .map_err(|_| JitRedimDefaultArrayError::OutOfMemory)?;
-    values.resize_with(count, || default_array_element(element));
+    jit_fill_default_array_elements(&mut values, element, count)
+        .map_err(|_| JitRedimDefaultArrayError::TypeMismatch)?;
     redim_safearray_from_elements(bounds, element, values, fixed)
         .map_err(|_| JitRedimDefaultArrayError::TypeMismatch)
 }
@@ -16894,7 +16909,10 @@ unsafe extern "C" fn rt_jit_array_redim_to_slot(
                 // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
                 return unsafe { rt_raise_out_of_memory(state) };
             }
-            values.resize_with(count, || default_array_element(&element));
+            if jit_fill_default_array_elements(&mut values, &element, count).is_err() {
+                // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                return unsafe { rt_raise_type_mismatch(state) };
+            }
             // SAFETY: null was rejected; all element reads clone into `values` before the
             // destination slot is replaced below.
             let run_ref = unsafe { &*run };
@@ -16992,7 +17010,10 @@ unsafe extern "C" fn rt_jit_array_erase_variant_slot(
                     if values.try_reserve_exact(count).is_err() {
                         return ST_FAULT;
                     }
-                    values.resize_with(count, || default_array_element(&element));
+                    if jit_fill_default_array_elements(&mut values, &element, count).is_err() {
+                        // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
+                        return unsafe { rt_raise_type_mismatch(state) };
+                    }
                     match redim_safearray_from_elements(bounds, &element, values, true) {
                         Ok(array) => Variant::from_safearray(array),
                         // SAFETY: the enclosing JIT boundary validated `state` as the live, uniquely owned execution state.
