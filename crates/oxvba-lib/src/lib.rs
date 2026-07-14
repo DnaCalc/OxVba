@@ -3,9 +3,10 @@
 //! Every currently cataloged `oxvba_bundle::NativeImplId` is dispatched here to
 //! a Rust body. Pure functions compute over
 //! `oxvba_runtime::Variant`; host-sensitive functions delegate to the
-//! `oxvba_hal::HostServices` facets. The interpreter calls [`invoke`] for every
-//! native built-in call (COM dispatch and `Declare` are handled by the VM via the
-//! host directly, not here).
+//! `oxvba_hal::HostServices` facets. Runtimes route every native built-in through
+//! either [`invoke_context_free`] or [`invoke_contextual`]; there is deliberately
+//! no safe dispatcher that accepts both a host and mutable library context (COM
+//! dispatch and `Declare` are handled by the VM via the host directly, not here).
 //!
 //! Exhaustive matching proves coverage of the current internal catalog, not
 //! completeness of the real VBA library. Member-level signature, VM3/JIT,
@@ -101,6 +102,17 @@ pub enum ContextFreeInvokeError {
     ContextRequired,
     /// The context-free body ran and raised a VBA library fault.
     Library(LibError),
+}
+
+/// Whether a built-in requires mutable per-execution library context.
+///
+/// This classification is intentionally tiny: only the VBA random-number
+/// functions own contextual state. All other built-ins are context-free, even
+/// when they call the host. Consumers use this function to choose one of the two
+/// disjoint dispatch APIs rather than holding host access and [`LibContext`] at
+/// the same call boundary.
+pub const fn is_contextual(id: NativeImplId) -> bool {
+    matches!(id, NativeImplId::Rnd | NativeImplId::Randomize)
 }
 
 // ── Argument / value helpers (shared by the family modules) ──────────────────
@@ -483,20 +495,6 @@ pub fn invoke_contextual(
     }
 }
 
-/// Compatibility dispatcher for callers that already own both host and context.
-pub fn invoke(
-    id: NativeImplId,
-    args: &[Variant],
-    host: &dyn HostServices,
-    ctx: &mut LibContext,
-) -> LibResult<Variant> {
-    match invoke_context_free(id, args, host) {
-        Ok(value) => Ok(value),
-        Err(ContextFreeInvokeError::Library(err)) => Err(err),
-        Err(ContextFreeInvokeError::ContextRequired) => invoke_contextual(id, args, ctx),
-    }
-}
-
 #[cfg(test)]
 mod dispatch_policy_tests {
     use super::*;
@@ -519,6 +517,17 @@ mod dispatch_policy_tests {
             invoke_context_free(NativeImplId::DoEvents, &[], &host),
             Err(ContextFreeInvokeError::Library(_))
         ));
+    }
+
+    #[test]
+    fn complete_catalog_classifies_only_rnd_and_randomize_as_contextual() {
+        let contextual: Vec<_> = NativeImplId::ALL
+            .iter()
+            .copied()
+            .filter(|id| is_contextual(*id))
+            .collect();
+
+        assert_eq!(contextual, vec![NativeImplId::Rnd, NativeImplId::Randomize]);
     }
 
     #[test]

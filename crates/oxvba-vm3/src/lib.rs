@@ -1335,8 +1335,8 @@ impl<'h> Vm3<'h> {
             // reference to another VBA *project* needs a multi-`OxProgram` linker (deferred —
             // surfaced as an explicit `Unimplemented`, never a silent skip).
             OxInst::CallExtern { dst, import, args } => self.call_extern(*dst, *import, args)?,
-            // A base-library built-in funnels through the single shared `oxvba_lib::invoke`
-            // (the identical bridge vm2 uses); `Declare Lib` marshalling is M3.
+            // A base-library built-in is classified into the disjoint context-free or
+            // contextual `oxvba-lib` dispatcher; `Declare Lib` marshalling is M3.
             OxInst::CallNative { dst, callee, args } => match callee {
                 OxNativeCallee::Builtin(id) => {
                     let argv = self.native_args(args)?;
@@ -4167,8 +4167,8 @@ impl<'h> Vm3<'h> {
         Ok(ret)
     }
 
-    /// Invoke a base-library built-in. Most builtins are the pure shared
-    /// `oxvba_lib::invoke`, but a few are host/bundle-aware and the pure body would
+    /// Invoke a base-library built-in. Most builtins use the shared context-free
+    /// `oxvba-lib` dispatcher, but a few are host/bundle-aware and the pure body would
     /// return a generically-wrong value: `TypeName` of an object yields the literal
     /// `"Object"` from the pure body, so resolve the real class/COM name here, where the
     /// host COM facet is in reach — never let the generic `"Object"` leak as a
@@ -4180,6 +4180,13 @@ impl<'h> Vm3<'h> {
     /// `extern "C"` shim that recovers `&mut Vm3` from its `ctx` and calls *this* method,
     /// so the interpreter and compiled code share one implementation and cannot drift.
     /// Keep its shape `(ctx, id, &[Variant]) -> Result<Variant, _>` ABI-friendly.
+    ///
+    /// Current VM3 hosts receive only shared HAL facets, never a VM/session callback.
+    /// `StandardHostServices::DoEvents` pumps/marks queued work and returns; VM3 polls
+    /// that queue from `StmtBoundary`. A custom host that stores and dereferences a
+    /// `Vm3` raw pointer supplies separate unsafe authority not granted by
+    /// `HostServices`; same-VM synchronous re-entry needs the future stable session
+    /// root rather than pretending this safe API supports it.
     fn invoke_native_lib(
         &mut self,
         id: NativeImplId,
@@ -4211,8 +4218,20 @@ impl<'h> Vm3<'h> {
             // pure body (which yields the generic "Object"), exactly as vm2 does.
             return Ok(Variant::from_string(name));
         }
-        oxvba_lib::invoke(id, argv, self.exec.host, &mut self.exec.lib)
-            .map_err(|e| Vm3Error::Fault(Fault::from_lib(e)))
+        if oxvba_lib::is_contextual(id) {
+            return oxvba_lib::invoke_contextual(id, argv, &mut self.exec.lib)
+                .map_err(|e| Vm3Error::Fault(Fault::from_lib(e)));
+        }
+
+        match oxvba_lib::invoke_context_free(id, argv, self.exec.host) {
+            Ok(value) => Ok(value),
+            Err(oxvba_lib::ContextFreeInvokeError::Library(err)) => {
+                Err(Vm3Error::Fault(Fault::from_lib(err)))
+            }
+            Err(oxvba_lib::ContextFreeInvokeError::ContextRequired) => Err(Vm3Error::Malformed(
+                format!("contextual built-in {id:?} escaped VM3 dispatch classification"),
+            )),
+        }
     }
 
     /// Marshal a native built-in's arguments to plain values — a built-in reads the
@@ -5142,8 +5161,8 @@ mod tests {
     use super::*;
     use std::ffi::c_void;
     use std::sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU32, Ordering},
     };
 
     use oxvba_bundle::coreir::{
@@ -6406,7 +6425,7 @@ mod tests {
 
     #[test]
     fn call_native_builtin_invokes_the_shared_library() {
-        // Sub Main() : n = Len("abc")   ->  n = 3 (through the shared `oxvba_lib::invoke`).
+        // Sub Main() : n = Len("abc")   ->  n = 3 (through the context-free dispatcher).
         let main = proc(
             "Main",
             ProcedureKind::Sub,
@@ -6426,6 +6445,196 @@ mod tests {
         let prog = procs_program(vec![main]);
         let vm = run_core(&prog);
         assert_eq!(vm.slot(0).and_then(|v| v.as_i32()), Some(3));
+    }
+
+    /// A bounded host probe for the current VM3 event-pump contract. The host
+    /// receives no VM/session callback; `DoEvents` returns first, and VM3 polls
+    /// queued COM callbacks only from its following `StmtBoundary`.
+    struct QueuedDoEventsHost {
+        inner: NullHostServices,
+        in_do_events: AtomicBool,
+        order: Mutex<Vec<&'static str>>,
+    }
+
+    impl QueuedDoEventsHost {
+        fn new() -> Self {
+            Self {
+                inner: NullHostServices::new(HostPolicy::deterministic_runtime()),
+                in_do_events: AtomicBool::new(false),
+                order: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn push(&self, event: &'static str) {
+            self.order.lock().expect("order lock").push(event);
+        }
+    }
+
+    impl HostServices for QueuedDoEventsHost {
+        fn profile(&self) -> HalProfileId {
+            self.inner.profile()
+        }
+        fn descriptor(&self) -> HalDescriptor {
+            self.inner.descriptor()
+        }
+        fn policy(&self) -> &HostPolicy {
+            self.inner.policy()
+        }
+        fn console(&self) -> &dyn ConsoleHal {
+            self.inner.console()
+        }
+        fn ui(&self) -> &dyn UiInteractionHal {
+            self.inner.ui()
+        }
+        fn events(&self) -> &dyn EventPumpHal {
+            self
+        }
+        fn fs(&self) -> &dyn FileSystemHal {
+            self.inner.fs()
+        }
+        fn process(&self) -> &dyn ProcessEnvHal {
+            self.inner.process()
+        }
+        fn com(&self) -> &dyn ComHal {
+            self
+        }
+        fn time_locale(&self) -> &dyn TimeLocaleHal {
+            self.inner.time_locale()
+        }
+        fn dynlink(&self) -> &dyn DynamicLinkHal {
+            self.inner.dynlink()
+        }
+        fn diag(&self) -> &dyn DiagnosticsHal {
+            self.inner.diag()
+        }
+    }
+
+    impl EventPumpHal for QueuedDoEventsHost {
+        fn do_events_variant(&self) -> HalResult<Variant> {
+            assert!(
+                !self.in_do_events.swap(true, Ordering::AcqRel),
+                "DoEvents must not recursively enter this host probe"
+            );
+            self.push("do-events-enter");
+            // StandardHostServices performs a bounded OS pump and marks a queued
+            // COM callback here. It has no safe VM3 callback authority.
+            self.push("do-events-exit");
+            self.in_do_events.store(false, Ordering::Release);
+            Ok(Variant::from_i32(0))
+        }
+    }
+
+    impl ComHal for QueuedDoEventsHost {
+        fn describe_object(
+            &self,
+            object: ObjectRef,
+        ) -> HalResult<Option<oxvba_com::ComObjectDescriptor>> {
+            self.inner.com().describe_object(object)
+        }
+
+        fn subscribe_event(
+            &self,
+            object: ObjectRef,
+            event: ComMemberToken,
+        ) -> HalResult<ComSubscriptionToken> {
+            self.inner.com().subscribe_event(object, event)
+        }
+
+        fn poll_event_callback(&self) -> HalResult<Option<ComCallbackPayload>> {
+            assert!(
+                !self.in_do_events.load(Ordering::Acquire),
+                "VM3 must not poll or dispatch a callback inside the host DoEvents call"
+            );
+            self.push("stmt-boundary-poll");
+            Ok(None)
+        }
+
+        fn event_callback_subscription(
+            &self,
+            callback: ComCallbackToken,
+        ) -> HalResult<ComSubscriptionToken> {
+            self.inner.com().event_callback_subscription(callback)
+        }
+
+        fn event_callback_arity(&self, callback: ComCallbackToken) -> HalResult<usize> {
+            self.inner.com().event_callback_arity(callback)
+        }
+
+        fn resolve_typelib_reference(
+            &self,
+            request: &TypeLibResolveRequest,
+        ) -> HalResult<TypeLibResolvedIdentity> {
+            self.inner.com().resolve_typelib_reference(request)
+        }
+
+        fn load_typelib_metadata(
+            &self,
+            identity: &TypeLibResolvedIdentity,
+        ) -> HalResult<TypeLibMetadataBlob> {
+            self.inner.com().load_typelib_metadata(identity)
+        }
+
+        fn invalidate_typelib_cache(
+            &self,
+            scope: TypeLibCacheScope,
+            reference_name: Option<&str>,
+        ) -> HalResult<Variant> {
+            self.inner
+                .com()
+                .invalidate_typelib_cache(scope, reference_name)
+        }
+    }
+
+    #[test]
+    fn do_events_returns_before_vm3_polls_callbacks_and_rng_context_remains_usable() {
+        let main = proc(
+            "Main",
+            ProcedureKind::Sub,
+            Vec::new(),
+            vec![
+                local("before", VarTypeRef::Builtin(BuiltinType::Single)),
+                local("after", VarTypeRef::Builtin(BuiltinType::Single)),
+            ],
+            None,
+            vec![
+                assign(
+                    lc(0),
+                    CoreValue::Call {
+                        callee: CoreCallee::Native(NativeImplId::Rnd),
+                        args: Vec::new(),
+                    },
+                ),
+                CoreStmt::Eval(CoreValue::Call {
+                    callee: CoreCallee::Native(NativeImplId::DoEvents),
+                    args: Vec::new(),
+                }),
+                assign(
+                    lc(1),
+                    CoreValue::Call {
+                        callee: CoreCallee::Native(NativeImplId::Rnd),
+                        args: Vec::new(),
+                    },
+                ),
+            ],
+        );
+        let oxp = oxvba_oxir::elaborate::elaborate(&procs_program(vec![main]))
+            .expect("elaborate DoEvents probe");
+        let host = QueuedDoEventsHost::new();
+        let vm = Vm3::run(&oxp, &host).expect("VM3 DoEvents probe");
+
+        assert!(vm.slot(0).and_then(|value| value.as_f32()).is_some());
+        assert!(vm.slot(1).and_then(|value| value.as_f32()).is_some());
+
+        let order = host.order.lock().expect("order lock");
+        let enter = order
+            .iter()
+            .position(|event| *event == "do-events-enter")
+            .expect("DoEvents entered host");
+        assert_eq!(order.get(enter + 1), Some(&"do-events-exit"));
+        assert!(
+            order[enter + 2..].contains(&"stmt-boundary-poll"),
+            "VM3 must poll queued callbacks only after host DoEvents returns: {order:?}"
+        );
     }
 
     // ── Native interop (M3-7): Declare Lib + pointer helpers + AddressOf ──────────
