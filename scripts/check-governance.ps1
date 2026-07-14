@@ -63,6 +63,15 @@ try {
     Write-Host "[governance] environment-manifest"
     & "$PSScriptRoot/validate-environment-manifest.ps1"
 
+    Write-Host "[governance] win14-certification-manifest-sync"
+    & "$PSScriptRoot/sync-win14-certification-manifest.ps1" -Check
+
+    Write-Host "[governance] win14-certification-manifest"
+    & "$PSScriptRoot/validate-win14-certification-manifest.ps1"
+
+    Write-Host "[governance] win14-certification-manifest-mutations"
+    & "$PSScriptRoot/test-win14-certification-manifest.ps1"
+
     Write-Host "[governance] legacy-migration"
     & "$PSScriptRoot/validate-ideal-legacy-migration.ps1"
 
