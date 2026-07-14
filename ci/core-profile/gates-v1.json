@@ -21,11 +21,11 @@
   "supervision": {
     "cleanup_reserve_ms": 500,
     "native_source_path": "scripts/core-gate-process-supervisor.cs",
-    "windows_transport": "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr",
+    "windows_transport": "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr",
     "linux_launcher_path": "/usr/bin/setsid",
     "linux_bash_path": "/usr/bin/bash",
     "linux_supervisor_path": "scripts/core-gate-linux-supervisor.sh",
-    "linux_transport": "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
+    "linux_transport": "setsid-fd-posix-spawn-pidfd-subreaper-v6:child-dup2-bound-inputs;no-ambient-parent-inheritance;pinned-glibc-x64-abi;direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
   },
   "gates": [
     {

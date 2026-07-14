@@ -19,10 +19,10 @@ $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop | Select-
 $platform = if ($IsWindows) { "windows-x64" } elseif ($IsLinux) { "linux-x64" } else { throw "unsupported test platform" }
 $oppositePlatform = if ($IsWindows) { "linux-x64" } else { "windows-x64" }
 $expectedTransport = if ($IsWindows) {
-    "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
+    "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
 }
 else {
-    "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
+    "setsid-fd-posix-spawn-pidfd-subreaper-v6:child-dup2-bound-inputs;no-ambient-parent-inheritance;pinned-glibc-x64-abi;direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
 }
 $expectedContainment = if ($IsWindows) { "windows-job-object-v2" } else { "linux-pidfd-subreaper-v1" }
 
@@ -86,6 +86,16 @@ function Assert-ProcessGone {
     throw "core profile gate test: $Owner process $ProcessId remained after cleanup"
 }
 
+function Wait-TestFile {
+    param([Parameter(Mandatory = $true)][string]$Path, [int]$TimeoutSeconds = 15)
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    while ($timer.ElapsedMilliseconds -lt ($TimeoutSeconds * 1000)) {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) { return }
+        Start-Sleep -Milliseconds 5
+    }
+    throw "core profile gate test: timed out waiting for controlled file '$Path'"
+}
+
 function Invoke-FixtureGit {
     param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string[]]$Arguments)
     $output = @(& $git -C $Root @Arguments 2>&1)
@@ -146,11 +156,11 @@ function New-TestManifest {
         supervision = [pscustomobject][ordered]@{
             cleanup_reserve_ms = 500
             native_source_path = "scripts/core-gate-process-supervisor.cs"
-            windows_transport = "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
+            windows_transport = "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
             linux_launcher_path = "/usr/bin/setsid"
             linux_bash_path = "/usr/bin/bash"
             linux_supervisor_path = "scripts/core-gate-linux-supervisor.sh"
-            linux_transport = "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
+            linux_transport = "setsid-fd-posix-spawn-pidfd-subreaper-v6:child-dup2-bound-inputs;no-ambient-parent-inheritance;pinned-glibc-x64-abi;direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
         }
         gates = @($Gates)
     }
@@ -319,7 +329,7 @@ try {
         Assert-Matches $boundedCaptureMatch.Value "Get-ToolIdentityById -Tools \`$ProbeContext\.tools -Id `"$sealedUtility`"" "tool probes do not revalidate exact Linux $sealedUtility identity"
     }
     $candidateIndex = $runnerSource.IndexOf('$toolCandidates = Get-ToolCandidates', [StringComparison]::Ordinal)
-    $addTypeIndex = $runnerSource.IndexOf('Add-Type -Path', [StringComparison]::Ordinal)
+    $addTypeIndex = $runnerSource.IndexOf('Add-Type -TypeDefinition', [StringComparison]::Ordinal)
     $versionIndex = $runnerSource.IndexOf('$tools = Get-ToolIdentities', [StringComparison]::Ordinal)
     Assert-True ($candidateIndex -ge 0 -and $candidateIndex -lt $addTypeIndex -and $addTypeIndex -lt $versionIndex) "tool path/hash resolution, supervisor load, and contained probing are not ordered fail-closed"
     $nativeSource = [IO.File]::ReadAllText((Join-Path $repoRoot "scripts/core-gate-process-supervisor.cs"), $utf8)
@@ -327,6 +337,16 @@ try {
     Assert-Matches $nativeSource 'pidfd_send_signal' "Linux containment does not signal through pidfd authority"
     Assert-True ($nativeSource -notmatch 'extern int kill\(|SignalGroup|GroupExists') "native Linux containment retains numeric PID/PGID signaling"
     Assert-Matches $nativeSource 'ArmRootWithForcedConfirmationFailureForTest' "Linux containment lacks a post-pidfd confirmation-failure proof hook"
+    Assert-Matches $nativeSource 'windows-retained-file-and-ancestor-handles|BindAncestorDirectories' "Windows launch does not retain admitted file and ancestor handles"
+    Assert-Matches $nativeSource 'posix_spawn\(' "Linux launch does not enter the fd-bound executable through posix_spawn"
+    Assert-Matches $nativeSource 'posix_spawn_file_actions_adddup2' "Linux launch does not create child-only descriptor authority through posix_spawn file actions"
+    Assert-Matches $nativeSource 'RequireCloseOnExec' "Linux launch does not enforce CLOEXEC on admitted parent descriptors"
+    Assert-Matches $nativeSource 'OXVBA_CORE_GATE_TEST_PROBE_UNRELATED_INHERITANCE' "Linux launch lacks the unrelated concurrent-child inheritance sentinel"
+    Assert-Matches $nativeSource 'gnu_get_libc_version' "Linux file-actions ABI is not guarded by a fail-closed glibc identity check"
+    Assert-True ($nativeSource -notmatch 'SetCloseOnExec|F_SETFD') "Linux launch still has a global parent descriptor-inheritance window"
+    Assert-Matches $nativeSource 'memfd_create' "Linux launch does not snapshot admitted bytes into sealed descriptors"
+    Assert-Matches $nativeSource 'FSealWrite' "Linux launch does not make admitted byte snapshots immutable"
+    Assert-Matches $nativeSource 'openat2' "Linux launch does not bind repository inputs below retained directory descriptors"
     $armRootStart = $nativeSource.IndexOf('private ulong ArmRootCore', [StringComparison]::Ordinal)
     $armRootEnd = $nativeSource.IndexOf('public bool TerminateAll', $armRootStart, [StringComparison]::Ordinal)
     Assert-True ($armRootStart -ge 0 -and $armRootEnd -gt $armRootStart) "Linux root-confirmation implementation could not be isolated"
@@ -380,6 +400,62 @@ try {
             $confirmationSentinel.Dispose()
         }
         Write-Host "core-profile-gates unconfirmed-root pidfd abort: ok"
+
+        $postSpawnSentinel = [Diagnostics.Process]::Start($sentinelStart)
+        $postSpawnScript = Join-Path $tempBase "forced-post-spawn-gate.sh"
+        $postSpawnMarker = Join-Path $tempBase "forced-post-spawn-gate-ran"
+        $postSpawnPidPath = Join-Path $tempBase "forced-post-spawn.pid"
+        $postSpawnReady = Join-Path $tempBase "forced-post-spawn.ready"
+        $postSpawnAck = Join-Path $tempBase "forced-post-spawn.ack"
+        $postSpawnStdout = Join-Path $tempBase "forced-post-spawn.stdout"
+        $postSpawnStderr = Join-Path $tempBase "forced-post-spawn.stderr"
+        Write-Utf8Text -Path $postSpawnScript -Text "printf ran > '$postSpawnMarker'`n"
+        [IO.File]::WriteAllBytes($postSpawnStdout, [byte[]]::new(0))
+        [IO.File]::WriteAllBytes($postSpawnStderr, [byte[]]::new(0))
+        $postSpawnSupervisor = Join-Path $repoRoot "scripts/core-gate-linux-supervisor.sh"
+        [string[]]$postSpawnInputs = @("/usr/bin/setsid", "/usr/bin/bash", $postSpawnSupervisor, $postSpawnScript)
+        [string[]]$postSpawnHashes = @($postSpawnInputs | ForEach-Object { Get-FileSha256 -Path $_ })
+        $postSpawnEnvironment = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+        foreach ($entry in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
+            $postSpawnEnvironment[[string]$entry.Key] = [string]$entry.Value
+        }
+        # Warm lazy exception/stack-trace assemblies before taking the exact
+        # descriptor baseline used by the forced failure path.
+        try { throw [InvalidOperationException]::new("descriptor-baseline-warmup") }
+        catch { [void]$_.Exception.ToString() }
+        $postSpawnBaselineFds = [OxVbaCoreGatePosixChild]::CountOpenDescriptorsForTest()
+        try {
+            [Environment]::SetEnvironmentVariable("OXVBA_CORE_GATE_TEST_FORCE_POST_SPAWN_FAILURE", "1")
+            [Environment]::SetEnvironmentVariable("OXVBA_CORE_GATE_TEST_FORCED_POST_SPAWN_PID_PATH", $postSpawnPidPath)
+            [Environment]::SetEnvironmentVariable("OXVBA_CORE_GATE_TEST_PROBE_UNRELATED_INHERITANCE", "1")
+            $postSpawnFailure = $null
+            try {
+                [void][OxVbaCoreGatePosixChild]::Start(
+                    "/usr/bin/setsid", "/usr/bin/bash", $postSpawnSupervisor, "/usr/bin/bash",
+                    [string[]]@($postSpawnScript), $repoRoot, $postSpawnEnvironment,
+                    $postSpawnReady, $postSpawnAck, "forced-post-spawn", $postSpawnStdout, $postSpawnStderr,
+                    $postSpawnInputs, $postSpawnHashes)
+            }
+            catch { $postSpawnFailure = $_.Exception }
+            Assert-True ($null -ne $postSpawnFailure) "forced post-spawn launch failure did not fail"
+            Assert-Matches "$postSpawnFailure" 'after pidfd retention' "forced post-spawn failure occurred before exact pidfd ownership"
+            Assert-True (Test-Path -LiteralPath $postSpawnPidPath -PathType Leaf) "forced post-spawn child did not publish its exact pid"
+            $postSpawnPid = [int][IO.File]::ReadAllText($postSpawnPidPath, $utf8)
+            Assert-ProcessGone -ProcessId $postSpawnPid -Owner "forced post-spawn exact child"
+            Assert-True (-not (Test-Path -LiteralPath $postSpawnMarker)) "gate ran after forced post-spawn launch failure"
+            Assert-True (-not (Test-Path -LiteralPath $postSpawnReady)) "ready descriptor path remained after forced post-spawn cleanup"
+            Assert-True (-not (Test-Path -LiteralPath $postSpawnAck)) "ack descriptor path remained after forced post-spawn cleanup"
+            Assert-Equal ([OxVbaCoreGatePosixChild]::CountOpenDescriptorsForTest()) $postSpawnBaselineFds "forced post-spawn cleanup leaked parent descriptors"
+            Assert-True (-not $postSpawnSentinel.HasExited) "forced post-spawn cleanup terminated an unrelated sentinel"
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable("OXVBA_CORE_GATE_TEST_FORCE_POST_SPAWN_FAILURE", $null)
+            [Environment]::SetEnvironmentVariable("OXVBA_CORE_GATE_TEST_FORCED_POST_SPAWN_PID_PATH", $null)
+            [Environment]::SetEnvironmentVariable("OXVBA_CORE_GATE_TEST_PROBE_UNRELATED_INHERITANCE", $null)
+            if (-not $postSpawnSentinel.HasExited) { $postSpawnSentinel.Kill($true); [void]$postSpawnSentinel.WaitForExit(5000) }
+            $postSpawnSentinel.Dispose()
+        }
+        Write-Host "core-profile-gates child-only fd actions, concurrent inheritance sentinel, and post-spawn abort: ok"
     }
     Write-Host "core-profile-gates deterministic plan and x64 architecture gate: ok"
 
@@ -411,6 +487,11 @@ try {
         Assert-Equal $architecture.process_architecture "x64" "process architecture was not recorded as x64"
         Assert-Equal $architecture.is_64_bit_process $true "64-bit process state was not recorded"
     }
+    if ($IsLinux) {
+        Assert-Matches $positivePlan.supervision.linux_libc_identity '^glibc-[0-9]+\.[0-9]+-x64$' "pinned glibc x64 identity was not recorded in the plan"
+        Assert-Equal $positiveRun.results[0].libc_identity $positivePlan.supervision.linux_libc_identity "gate glibc identity drifted from the admitted plan"
+    }
+    else { Assert-Equal $positiveRun.results[0].libc_identity "not-applicable" "Windows gate recorded a libc identity" }
     Assert-Equal $positiveRun.source.status "clean" "source identity is not clean"
     Assert-Matches $positiveRun.source.head '^[0-9a-f]{40,64}$' "source HEAD is not recorded"
     Assert-Matches $positiveRun.source.tree '^[0-9a-f]{40,64}$' "source tree is not recorded"
@@ -616,16 +697,185 @@ $run.status = "failed"; $run.results = @($result)
     Assert-Equal $replaceRun.results[1].status "not-run" "replacement target command ran"
 
     $manifestDriftRoot = New-FixtureRoot -Name "manifest-drift"
-    Write-Utf8Text -Path (Join-Path $manifestDriftRoot "scripts/manifest-drift.ps1") -Text '[IO.File]::AppendAllText($env:OXVBA_CORE_GATE_MANIFEST_PATH, " ", [Text.UTF8Encoding]::new($false))'
+    Write-Utf8Text -Path (Join-Path $manifestDriftRoot "scripts/manifest-drift.ps1") -Text @'
+$blocked = $false
+try { [IO.File]::AppendAllText($env:OXVBA_CORE_GATE_MANIFEST_PATH, " ", [Text.UTF8Encoding]::new($false)) }
+catch { $blocked = $true; Write-Output "manifest-write-blocked" }
+if (-not $blocked) { throw "admitted manifest instance remained writable" }
+'@
     Write-TestManifest -Root $manifestDriftRoot -Manifest (New-TestManifest -Gates @((New-TestGate -Order 1 -Id "manifest-drift" -Command "scripts/manifest-drift.ps1")))
     Initialize-FixtureGit -Root $manifestDriftRoot
     $manifestDrift = Invoke-Runner -Root $manifestDriftRoot -Arguments @("-RepositoryRoot", $manifestDriftRoot, "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "manifest-drift")
-    Assert-NoSuccessOutput -Result $manifestDrift -Owner "mid-run manifest drift"
-    Assert-Matches (Get-RunManifest -Root $manifestDriftRoot -RunId "manifest-drift").failure 'source checkout must be clean|versioned manifest changed|identity changed' "manifest drift was not explicit"
-    Write-Host "core-profile-gates committed source/command/manifest seal: ok"
+    Assert-Equal $manifestDrift.exit_code 0 "admitted manifest write was not blocked: $($manifestDrift.stderr)"
+    $manifestDriftOutput = Get-Content -LiteralPath (Join-Path (Get-RunRoot -Root $manifestDriftRoot -RunId "manifest-drift") "commands/001-manifest-drift/stdout.log") -Raw
+    Assert-Matches $manifestDriftOutput 'manifest-write-blocked' "admitted manifest write did not report the immutable-input boundary"
+    Write-Host "core-profile-gates committed source/command/manifest seal and immutable manifest input: ok"
 
     }
     if ($Phase -in @("All", "Extended")) {
+
+    $identityToolDirectory = Join-Path $tempBase "identity-tool-bin"
+    $hostileToolDirectory = Join-Path $tempBase "identity-tool-hostile"
+    [void](New-Item -ItemType Directory -Path $identityToolDirectory)
+    [void](New-Item -ItemType Directory -Path $hostileToolDirectory)
+    $identityCargoName = if ($IsWindows) { "cargo.exe" } else { "cargo" }
+    $identityCargo = Join-Path $identityToolDirectory $identityCargoName
+    $hostileCargo = Join-Path $hostileToolDirectory $identityCargoName
+    $identitySource = Join-Path $tempBase "identity-cargo.rs"
+    $hostileSource = Join-Path $tempBase "identity-cargo-hostile.rs"
+    Write-Utf8Text -Path $identitySource -Text @'
+use std::env;
+fn main() {
+    if env::args().any(|arg| arg == "--version") { println!("cargo 1.94.1 (identity-bound fixture)"); }
+    else { println!("ORIGINAL-EXECUTABLE"); }
+}
+'@
+    Write-Utf8Text -Path $hostileSource -Text @'
+use std::env;
+fn main() {
+    if env::args().any(|arg| arg == "--version") { println!("cargo 9.99.9 (hostile fixture)"); }
+    else { println!("HOSTILE-EXECUTABLE"); }
+}
+'@
+    $rustc = (Get-Command rustc -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $identityCompile = @(& $rustc --edition=2021 $identitySource -o $identityCargo 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "could not compile identity-bound executable fixture:`n$($identityCompile -join "`n")" }
+    $hostileCompile = @(& $rustc --edition=2021 $hostileSource -o $hostileCargo 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "could not compile hostile executable fixture:`n$($hostileCompile -join "`n")" }
+    if ($IsLinux) {
+        & /usr/bin/chmod +x $identityCargo $hostileCargo
+        if ($LASTEXITCODE -ne 0) { throw "could not make identity-bound executable fixtures executable" }
+    }
+
+    $identityExecutableRoot = New-FixtureRoot -Name "identity-bound-executable"
+    Write-TestManifest -Root $identityExecutableRoot -Manifest (New-TestManifest -Gates @(
+            (New-TestGate -Order 1 -Id "executable-identity" -Kind "cargo" -Command "cargo" -Arguments @("--identity-gate") -CargoWorkspace $true)))
+    Initialize-FixtureGit -Root $identityExecutableRoot
+    $identityReady = Join-Path $tempBase "identity-executable.ready"
+    $identityRelease = Join-Path $tempBase "identity-executable.release"
+    $unrelatedPath = Join-Path $tempBase "identity-unrelated.txt"
+    $unrelatedMoved = Join-Path $tempBase "identity-unrelated.moved.txt"
+    Write-Utf8Text -Path $unrelatedPath -Text "unrelated`n"
+    $sentinelStart = [Diagnostics.ProcessStartInfo]::new()
+    $sentinelStart.FileName = if ($IsWindows) { $pwsh } else { "/usr/bin/sleep" }
+    $sentinelStart.UseShellExecute = $false
+    if ($IsWindows) {
+        # Admission performs several owned tool/source probes before the gate-
+        # unique pause. Keep the unrelated sentinel beyond loaded-host probe
+        # time; the finally block still terminates only this exact owned PID.
+        foreach ($argument in @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 180")) {
+            [void]$sentinelStart.ArgumentList.Add($argument)
+        }
+    }
+    else { [void]$sentinelStart.ArgumentList.Add("180") }
+    $identitySentinel = [Diagnostics.Process]::Start($sentinelStart)
+    $identityHandle = $null
+    try {
+        $identityHandle = New-RunnerProcess -Root $identityExecutableRoot -Arguments @("-RepositoryRoot", $identityExecutableRoot,
+            "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "identity-executable") `
+            -Environment @{
+                PATH = "$identityToolDirectory$([IO.Path]::PathSeparator)$env:PATH"
+                # The manifest is admitted only by the delivery gate, unlike
+                # Cargo which is also admitted by its version probe. Pausing on
+                # this gate-unique input proves the Cargo instance and every
+                # other gate input have already been retained.
+                OXVBA_CORE_GATE_TEST_INPUT_ADMISSION_MATCH = (Join-Path $identityExecutableRoot "ci/core-profile/gates-v1.json")
+                OXVBA_CORE_GATE_TEST_INPUT_ADMISSION_READY = $identityReady
+                OXVBA_CORE_GATE_TEST_INPUT_ADMISSION_RELEASE = $identityRelease
+            }
+        try { Wait-TestFile -Path $identityReady -TimeoutSeconds 60 }
+        catch {
+            if (-not (Test-Path -LiteralPath $identityRelease)) { Write-Utf8Text -Path $identityRelease -Text "release`n" }
+            $earlyIdentityResult = Complete-RunnerProcess -Handle $identityHandle -TimeoutSeconds 60
+            $identityHandle = $null
+            throw "identity-bound executable runner did not reach the gate-unique manifest admission; stdout=$($earlyIdentityResult.stdout); stderr=$($earlyIdentityResult.stderr)"
+        }
+        if ($IsWindows) {
+            $writeBlocked = $false
+            try { [IO.File]::WriteAllText($identityCargo, "hostile", $utf8) } catch { $writeBlocked = $true }
+            $fileRenameBlocked = $false
+            try { Move-Item -LiteralPath $identityCargo -Destination "$identityCargo.moved" -ErrorAction Stop } catch { $fileRenameBlocked = $true }
+            $directoryRenameBlocked = $false
+            try { [IO.Directory]::Move($identityToolDirectory, "$identityToolDirectory.moved") } catch { $directoryRenameBlocked = $true }
+            Assert-True ($writeBlocked -and $fileRenameBlocked -and $directoryRenameBlocked) "Windows admitted executable or ancestor remained replaceable"
+        }
+        else {
+            Move-Item -LiteralPath $identityToolDirectory -Destination "$identityToolDirectory.admitted" -ErrorAction Stop
+            [void](New-Item -ItemType SymbolicLink -Path $identityToolDirectory -Target $hostileToolDirectory)
+        }
+        Move-Item -LiteralPath $unrelatedPath -Destination $unrelatedMoved -ErrorAction Stop
+        Write-Utf8Text -Path $identityRelease -Text "release`n"
+        $identityResult = Complete-RunnerProcess -Handle $identityHandle -TimeoutSeconds 60
+        $identityHandle = $null
+        if ($IsWindows) { Assert-Equal $identityResult.exit_code 0 "Windows identity-bound executable run failed: $($identityResult.stderr)" }
+        else {
+            Assert-NoSuccessOutput -Result $identityResult -Owner "Linux post-admission executable replacement"
+            Assert-Matches "$($identityResult.stdout)`n$($identityResult.stderr)" "tool 'cargo' identity changed" "Linux executable replacement did not fail closed after exact execution"
+        }
+        $identityOutput = Get-Content -LiteralPath (Join-Path (Get-RunRoot -Root $identityExecutableRoot -RunId "identity-executable") "commands/001-executable-identity/stdout.log") -Raw
+        Assert-Matches $identityOutput 'ORIGINAL-EXECUTABLE' "admitted executable bytes were not consumed"
+        Assert-True ($identityOutput -notmatch 'HOSTILE-EXECUTABLE') "replacement executable bytes were consumed"
+        Assert-True (Test-Path -LiteralPath $unrelatedMoved -PathType Leaf) "unrelated file rename was redirected or blocked"
+        Assert-True (-not $identitySentinel.HasExited) "identity-bound cleanup terminated an unrelated sentinel"
+    }
+    finally {
+        if (-not (Test-Path -LiteralPath $identityRelease)) { Write-Utf8Text -Path $identityRelease -Text "release`n" }
+        if ($null -ne $identityHandle) { try { [void](Complete-RunnerProcess -Handle $identityHandle -TimeoutSeconds 60) } catch {} }
+        if (-not $identitySentinel.HasExited) { $identitySentinel.Kill($true); [void]$identitySentinel.WaitForExit(5000) }
+        $identitySentinel.Dispose()
+    }
+    Write-Host "core-profile-gates identity-bound executable and ancestor replacement: ok"
+
+    $identityCommandRoot = New-FixtureRoot -Name "identity-bound-command"
+    $identityCommand = Join-Path $identityCommandRoot "scripts/identity-command.ps1"
+    Write-Utf8Text -Path $identityCommand -Text "Write-Output 'ORIGINAL-COMMAND'`n"
+    $hostileCommandDirectory = Join-Path $tempBase "identity-command-hostile"
+    [void](New-Item -ItemType Directory -Path $hostileCommandDirectory)
+    Write-Utf8Text -Path (Join-Path $hostileCommandDirectory "identity-command.ps1") -Text "Write-Output 'HOSTILE-COMMAND'`n"
+    Write-TestManifest -Root $identityCommandRoot -Manifest (New-TestManifest -Gates @(
+            (New-TestGate -Order 1 -Id "command-identity" -Command "scripts/identity-command.ps1")))
+    Initialize-FixtureGit -Root $identityCommandRoot
+    $commandReady = Join-Path $tempBase "identity-command.ready"
+    $commandRelease = Join-Path $tempBase "identity-command.release"
+    $commandEnvironment = @{
+        OXVBA_CORE_GATE_TEST_INPUT_ADMISSION_MATCH = $identityCommand
+        OXVBA_CORE_GATE_TEST_INPUT_ADMISSION_READY = $commandReady
+        OXVBA_CORE_GATE_TEST_INPUT_ADMISSION_RELEASE = $commandRelease
+    }
+    if ($IsLinux) { $commandEnvironment.OXVBA_CORE_GATE_TEST_PROBE_UNRELATED_INHERITANCE = "1" }
+    $commandHandle = New-RunnerProcess -Root $identityCommandRoot -Arguments @("-RepositoryRoot", $identityCommandRoot,
+        "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "identity-command") `
+        -Environment $commandEnvironment
+    try {
+        Wait-TestFile -Path $commandReady -TimeoutSeconds 60
+        if ($IsWindows) {
+            $commandRenameBlocked = $false
+            try { Move-Item -LiteralPath $identityCommand -Destination "$identityCommand.moved" -ErrorAction Stop } catch { $commandRenameBlocked = $true }
+            $commandAncestorBlocked = $false
+            try { [IO.Directory]::Move((Join-Path $identityCommandRoot "scripts"), (Join-Path $identityCommandRoot "scripts.moved")) } catch { $commandAncestorBlocked = $true }
+            Assert-True ($commandRenameBlocked -and $commandAncestorBlocked) "Windows admitted command or ancestor remained replaceable"
+        }
+        else {
+            Move-Item -LiteralPath (Join-Path $identityCommandRoot "scripts") -Destination (Join-Path $identityCommandRoot "scripts.admitted") -ErrorAction Stop
+            [void](New-Item -ItemType SymbolicLink -Path (Join-Path $identityCommandRoot "scripts") -Target $hostileCommandDirectory)
+        }
+        Write-Utf8Text -Path $commandRelease -Text "release`n"
+        $commandResult = Complete-RunnerProcess -Handle $commandHandle -TimeoutSeconds 60
+        $commandHandle = $null
+        if ($IsWindows) { Assert-Equal $commandResult.exit_code 0 "Windows identity-bound command run failed: $($commandResult.stderr)" }
+        else {
+            Assert-NoSuccessOutput -Result $commandResult -Owner "Linux post-admission command-ancestor replacement"
+            Assert-Matches "$($commandResult.stdout)`n$($commandResult.stderr)" 'source checkout must be clean|identity changed|disappeared' "Linux command-ancestor replacement did not fail closed"
+        }
+        $commandOutput = Get-Content -LiteralPath (Join-Path (Get-RunRoot -Root $identityCommandRoot -RunId "identity-command") "commands/001-command-identity/stdout.log") -Raw
+        Assert-Matches $commandOutput 'ORIGINAL-COMMAND' "admitted command bytes were not consumed"
+        Assert-True ($commandOutput -notmatch 'HOSTILE-COMMAND') "replacement command bytes were consumed"
+    }
+    finally {
+        if (-not (Test-Path -LiteralPath $commandRelease)) { Write-Utf8Text -Path $commandRelease -Text "release`n" }
+        if ($null -ne $commandHandle) { try { [void](Complete-RunnerProcess -Handle $commandHandle -TimeoutSeconds 60) } catch {} }
+    }
+    Write-Host "core-profile-gates identity-bound command/interpreter handoff: ok"
 
     if ($IsWindows) {
         $handleRoot = New-FixtureRoot -Name "handle-allowlist"
