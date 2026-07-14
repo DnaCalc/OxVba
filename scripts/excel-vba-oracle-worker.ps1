@@ -5,8 +5,9 @@ param(
     [Parameter(Mandatory = $true)][string]$HelperOwnershipFile,
     [Parameter(Mandatory = $true)][string]$ContainmentReadyFile,
     [Parameter(Mandatory = $true)][string]$ContainmentToken,
-    [ValidateRange(5, 600)][int]$CaseTimeoutSeconds = 90,
-    [string]$DiagnosticCaseId = ""
+    [Parameter(Mandatory = $true)][string]$SelectedCaseDescriptorFile,
+    [Parameter(Mandatory = $true)][string]$SelectedCaseDescriptorDigest,
+    [ValidateRange(5, 600)][int]$CaseTimeoutSeconds = 90
 )
 
 $ErrorActionPreference = "Stop"
@@ -511,6 +512,7 @@ function Get-VbeSelectionFromCom {
             if ($offset -ge 0 -and $length -gt 0) { $token = $line.Substring($offset, $length) }
         }
         return [pscustomobject]@{
+            schema = "oxvba.excel-vba-oracle-vbe-selection.v1"
             selected_token = if ($token) { $token.Trim() } else { $null }
             expanded_line = $line.Trim("`r", "`n")
         }
@@ -558,6 +560,7 @@ function Get-CompileAuthoritySnapshot {
     $injectedPane = $Component.CodeModule.CodePane
     $source = [string]$Component.CodeModule.Lines(1, $Component.CodeModule.CountOfLines)
     $snapshot = [pscustomobject]@{
+        schema = "oxvba.excel-vba-oracle-compile-authority-snapshot.v1"
         stage = $Stage
         captured_utc = [DateTime]::UtcNow.ToString("o")
         active_project_is_injected_project = Test-ComObjectIdentity -Left $activeProject -Right $Project
@@ -636,18 +639,16 @@ function Release-ComObject {
 }
 
 function Invoke-HarnessCase {
-    param([Parameter(Mandatory = $true)]$Case)
+    param([Parameter(Mandatory = $true)]$Descriptor)
 
-    $matchingDescriptors = @($script:SelectedCaseDescriptors | Where-Object { [string]$_.id -ceq [string]$Case.id })
-    if ($matchingDescriptors.Count -ne 1 -or -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $matchingDescriptors[0])) {
-        throw "excel-vba-oracle-worker: case is not bound to exactly one sealed selected descriptor"
+    if (-not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $Descriptor)) {
+        throw "excel-vba-oracle-worker: attempted to execute an invalid selected descriptor"
     }
-    $caseDescriptor = $matchingDescriptors[0]
 
-    $caseDirectory = Join-Path $OutputDirectory $Case.id
+    $caseDirectory = Join-Path $OutputDirectory $Descriptor.id
     New-Item -ItemType Directory -Force -Path $caseDirectory | Out-Null
-    $modulePath = Join-Path $caseDirectory "$($Case.module_name).bas"
-    Set-Content -LiteralPath $modulePath -Value $Case.module_source -Encoding utf8NoBOM
+    $modulePath = Join-Path $caseDirectory "$($Descriptor.module_name).bas"
+    Set-Content -LiteralPath $modulePath -Value $Descriptor.module_source -Encoding utf8NoBOM
 
     $beforePids = @(Get-ExcelProcessIds)
     $excel = $null
@@ -711,7 +712,7 @@ function Invoke-HarnessCase {
         if ($excelPid -in $beforePids) {
             throw "excel-vba-oracle-worker: Excel PID $excelPid existed before this case; refusing ownership"
         }
-        $excelOwnershipRecord = Add-OwnershipRecord -Process $ownedExcelProcess -BeforePids $beforePids -CaseId $Case.id
+        $excelOwnershipRecord = Add-OwnershipRecord -Process $ownedExcelProcess -BeforePids $beforePids -CaseId $Descriptor.id
         $excelOwnershipRecord | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $excelIdentityFile -Encoding utf8NoBOM
 
         $guardianArguments = @(
@@ -726,7 +727,7 @@ function Invoke-HarnessCase {
             "-MaxSeconds", [string]$CaseTimeoutSeconds
         )
         $guardian = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $guardianArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $guardianStdout -RedirectStandardError $guardianStderr
-        $guardianOwnershipRecord = Add-HelperOwnershipRecord -Process $guardian -CaseId $Case.id
+        $guardianOwnershipRecord = Add-HelperOwnershipRecord -Process $guardian -CaseId $Descriptor.id
         $guardianReady = Wait-GuardianReady -ReadyFile $readyFile -Process $guardian
 
         if ([int]$excel.Workbooks.Count -ne 1) {
@@ -740,8 +741,8 @@ function Invoke-HarnessCase {
         $workbook.Activate()
         $project = $workbook.VBProject
         $component = $project.VBComponents.Add(1)
-        $component.Name = $Case.module_name
-        [void]$component.CodeModule.AddFromString($Case.module_source)
+        $component.Name = $Descriptor.module_name
+        [void]$component.CodeModule.AddFromString($Descriptor.module_source)
         $excel.VBE.MainWindow.Visible = $true
         $component.CodeModule.CodePane.Show()
         try { $excel.VBE.MainWindow.SetFocus() } catch { }
@@ -749,7 +750,7 @@ function Invoke-HarnessCase {
 
         $injectedSource = [string]$component.CodeModule.Lines(1, $component.CodeModule.CountOfLines)
         $injectedSourceSha256 = Get-ExcelOracleSha256 -Text $injectedSource
-        $selectedSourceSha256 = Get-ExcelOracleSha256 -Text ([string]$Case.module_source)
+        $selectedSourceSha256 = Get-ExcelOracleSha256 -Text ([string]$Descriptor.module_source)
         if ($injectedSourceSha256 -cne $selectedSourceSha256) {
             throw "excel-vba-oracle-worker: injected module source does not match the selected case before compile authority"
         }
@@ -776,8 +777,8 @@ function Invoke-HarnessCase {
             enabled_after = $null
         }
         if (-not $compileCommand.enabled_before) { throw "excel-vba-oracle-worker: VBE compile command ID 578 is disabled for the active code pane" }
-        $compileOperation = "$($Case.id)-compile"
-        $compileControlRecord = Set-GuardianControl -Path $controlFile -CaseId $Case.id -OperationId $compileOperation -Phase compile -AllowDismiss $true
+        $compileOperation = "$($Descriptor.id)-compile"
+        $compileControlRecord = Set-GuardianControl -Path $controlFile -CaseId $Descriptor.id -OperationId $compileOperation -Phase compile -AllowDismiss $true
         $compileArm = Wait-GuardianOperationArmed -EventsFile $eventsFile -Control $compileControlRecord -Process $guardian -ReadyRecord $guardianReady
         Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "forced VBE compile after control publication"
         $compileContext.authority_before_execute = Get-CompileAuthoritySnapshot -Vbe $excel.VBE -Project $project -Component $component -ExpectedSourceSha256 $selectedSourceSha256 -Stage "immediately-before-execute"
@@ -815,16 +816,16 @@ function Invoke-HarnessCase {
         elseif (-not [bool]$compileCommand.enabled_after) { $compileStatus = "ok" }
         else { $compileStatus = "no-dialog-unverified" }
 
-        $runtimeMeasurement = Get-VbomRuntimeMeasurement -Project $project -Excel $excel -InvocationEntry ([string]$Case.run_procedure) -MacroProbeTarget ([string]$Case.macro_probe_target) -CompileStatus $compileStatus
-        if ($compileStatus -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$Case.run_procedure)) {
-            $runOperation = "$($Case.id)-run"
-            $runControlRecord = Set-GuardianControl -Path $controlFile -CaseId $Case.id -OperationId $runOperation -Phase run -AllowDismiss $true
+        $runtimeMeasurement = Get-VbomRuntimeMeasurement -Project $project -Excel $excel -InvocationEntry ([string]$Descriptor.run_procedure) -MacroProbeTarget ([string]$Descriptor.macro_probe_target) -CompileStatus $compileStatus
+        if ($compileStatus -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$Descriptor.run_procedure)) {
+            $runOperation = "$($Descriptor.id)-run"
+            $runControlRecord = Set-GuardianControl -Path $controlFile -CaseId $Descriptor.id -OperationId $runOperation -Phase run -AllowDismiss $true
             $runArm = Wait-GuardianOperationArmed -EventsFile $eventsFile -Control $runControlRecord -Process $guardian -ReadyRecord $guardianReady
             Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "runtime invocation after control publication"
             try {
-                $qualifiedName = "'$($workbook.Name)'!$($Case.run_procedure)"
+                $qualifiedName = "'$($workbook.Name)'!$($Descriptor.run_procedure)"
                 $runValue = $excel.Run($qualifiedName)
-                $observationPrefix = [string]$Case.invocation_observation_prefix
+                $observationPrefix = [string]$Descriptor.invocation_observation_prefix
                 if (-not [string]::IsNullOrWhiteSpace($observationPrefix)) {
                     if ([string]$runValue -like "$observationPrefix*") {
                         $runtimeMeasurement.invocation_entry_observed = $true
@@ -837,7 +838,7 @@ function Invoke-HarnessCase {
                     $runtimeMeasurement.invocation_observation = "qualified-entry-returned"
                     $runtimeMeasurement.macros_runnable_entry = $true
                 }
-                if ($Case.id -eq "runtime-full-err") {
+                if ($Descriptor.id -eq "runtime-full-err") {
                     $runtimeErr = ConvertFrom-ExcelOracleRuntimeErr -Json ([string]$runValue)
                     $runStatus = "runtime-err-captured"
                 }
@@ -857,8 +858,8 @@ function Invoke-HarnessCase {
             }
             $runInvocationCompletedUtc = [DateTime]::UtcNow
             $runEvents = @(Wait-GuardianEventFlush -EventsFile $eventsFile -OperationId $runOperation -ArmRecord $runArm -InvocationCompletedUtc $runInvocationCompletedUtc)
-            if ($Case.id -eq "ambiguous-macro-failure" -and $runStatus -eq "ok") {
-                $observationPrefix = [string]$Case.invocation_observation_prefix
+            if ($Descriptor.id -eq "ambiguous-macro-failure" -and $runStatus -eq "ok") {
+                $observationPrefix = [string]$Descriptor.invocation_observation_prefix
                 if (-not [bool]$runtimeMeasurement.invocation_entry_observed -or -not ([string]$runValue).StartsWith($observationPrefix, [StringComparison]::Ordinal)) {
                     throw "excel-vba-oracle-worker: ambiguous macro probe did not return its entry-observation sentinel"
                 }
@@ -871,7 +872,7 @@ function Invoke-HarnessCase {
                     -TargetExists ([bool]$runtimeMeasurement.macro_probe_target_exists)
                 $runStatus = $macroDisposition
             }
-            if ($Case.id -eq "runtime-unhandled-modal" -and (Test-RuntimeErrorEvidence -Events $runEvents)) {
+            if ($Descriptor.id -eq "runtime-unhandled-modal" -and (Test-RuntimeErrorEvidence -Events $runEvents)) {
                 $runtimeMeasurement.invocation_entry_observed = $true
                 $runtimeMeasurement.invocation_observation = "owned-runtime-error-modal"
                 $runtimeMeasurement.macros_runnable_entry = $true
@@ -882,20 +883,20 @@ function Invoke-HarnessCase {
         $guardianHealthy = $guardian -and -not $guardian.HasExited
         $compileOperationHealthy = Test-GuardianOperationHealthy -Events $compileEvents
         $runOperationHealthy = if ($runStatus -eq "not-run") { $false } else { Test-GuardianOperationHealthy -Events $runEvents }
-        $compileErrorEvidence = if ($Case.expected_compile_status -eq "compile-error") {
-            Test-CompileErrorEvidence -Events $compileEvents -InjectedSource $injectedSource -ExpectedToken ([string]$Case.expected_selected_token) -ExpectedLine ([string]$Case.expected_expanded_line)
+        $compileErrorEvidence = if ($Descriptor.expected_compile_status -eq "compile-error") {
+            Test-CompileErrorEvidence -Events $compileEvents -InjectedSource $injectedSource -ExpectedToken ([string]$Descriptor.expected_selected_token) -ExpectedLine ([string]$Descriptor.expected_expanded_line)
         } else { $false }
         $ambiguousMacroEvidence = Test-AmbiguousMacroEvidence -Events $runEvents
         $runtimeErrorEvidence = Test-RuntimeErrorEvidence -Events $runEvents
-        $behaviorPassed = $compileStatus -eq $Case.expected_compile_status -and $runStatus -eq $Case.expected_run_status
-        if ($behaviorPassed -and $Case.expected_value) { $behaviorPassed = [string]$runValue -eq [string]$Case.expected_value }
-        if ($behaviorPassed -and $Case.id -eq "runtime-full-err") {
+        $behaviorPassed = $compileStatus -eq $Descriptor.expected_compile_status -and $runStatus -eq $Descriptor.expected_run_status
+        if ($behaviorPassed -and $Descriptor.expected_value) { $behaviorPassed = [string]$runValue -eq [string]$Descriptor.expected_value }
+        if ($behaviorPassed -and $Descriptor.id -eq "runtime-full-err") {
             $expectedErr = Get-ExcelOracleExpectedRuntimeErr
             foreach ($field in @("number", "source", "description", "help_file", "help_context", "erl")) {
                 if ($runtimeErr.$field -ne $expectedErr.$field) { $behaviorPassed = $false }
             }
         }
-        $authoritativeEvidencePassed = switch ($Case.id) {
+        $authoritativeEvidencePassed = switch ($Descriptor.id) {
             { $_ -in @("compile-failure", "intrinsic-shadow") } { $compileOperationHealthy -and $compileErrorEvidence; break }
             "ambiguous-macro-failure" { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and $ambiguousMacroEvidence; break }
             "runtime-unhandled-modal" { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and $runtimeErrorEvidence; break }
@@ -976,29 +977,29 @@ function Invoke-HarnessCase {
 
     return [pscustomobject]@{
         schema = "oxvba.excel-vba-oracle-case-result.v1"
-        id = $Case.id
-        purpose = $Case.purpose
+        id = $Descriptor.id
+        purpose = $Descriptor.purpose
         passed = $passed
         owned_excel_pid = if ($excelOwnershipRecord) { [int]$excelOwnershipRecord.pid } else { $null }
         observed_excel_pid = $excelPid
         excel_ownership_recorded = $null -ne $excelOwnershipRecord
-        selected_case_descriptor_sha256 = [string]$caseDescriptor.descriptor_sha256
-        module_name = [string]$caseDescriptor.module_name
+        selected_case_descriptor_sha256 = [string]$Descriptor.descriptor_sha256
+        module_name = [string]$Descriptor.module_name
         module_path = $modulePath
-        module_sha256 = [string]$caseDescriptor.module_sha256
-        case_diagnostic_only = [bool]$caseDescriptor.diagnostic_only
-        evidence_contract = [string]$caseDescriptor.evidence_contract
+        module_sha256 = [string]$Descriptor.module_sha256
+        case_diagnostic_only = [bool]$Descriptor.diagnostic_only
+        evidence_contract = [string]$Descriptor.evidence_contract
         compile_status = $compileStatus
-        expected_compile_status = $Case.expected_compile_status
+        expected_compile_status = $Descriptor.expected_compile_status
         compile_command = $compileCommand
         compile_execution = $compileExecution
         compile_context = $compileContext
         post_dismiss_selection_diagnostic_only = $postDismissSelectionDiagnostic
         compile_dialogs = @($compileDialogs)
         compile_window_observations = @($compileEvents)
-        run_procedure = $Case.run_procedure
+        run_procedure = $Descriptor.run_procedure
         run_status = $runStatus
-        expected_run_status = $Case.expected_run_status
+        expected_run_status = $Descriptor.expected_run_status
         run_value = if ($null -eq $runValue) { $null } else { [string]$runValue }
         runtime_err = $runtimeErr
         macro_failure_disposition = $macroDisposition
@@ -1018,7 +1019,7 @@ function Invoke-HarnessCase {
                 macro_free = [bool]$bootstrapWorkbook.macro_free
             }
         } else { $null }
-        defect_declaration = if ($Case.id -eq "intrinsic-shadow") { "Public Function Shadowed(ByVal Fix As Double) As Double" } else { $null }
+        defect_declaration = if ($Descriptor.id -eq "intrinsic-shadow") { "Public Function Shadowed(ByVal Fix As Double) As Double" } else { $null }
     }
 }
 
@@ -1028,27 +1029,20 @@ if ($ownershipParent) { New-Item -ItemType Directory -Force -Path $ownershipPare
 $helperOwnershipParent = Split-Path -Parent $HelperOwnershipFile
 if ($helperOwnershipParent) { New-Item -ItemType Directory -Force -Path $helperOwnershipParent | Out-Null }
 
+$descriptorEnvelope = Read-ExcelOracleSelectedCaseDescriptorEnvelope -Path $SelectedCaseDescriptorFile -ExpectedAggregateSha256 $SelectedCaseDescriptorDigest
+$selectedCaseDescriptors = @($descriptorEnvelope.descriptors)
+$diagnosticOnly = $selectedCaseDescriptors.Count -eq 1 -and [bool]$selectedCaseDescriptors[0].diagnostic_only
+if (($diagnosticOnly -and @($selectedCaseDescriptors | Where-Object { -not [bool]$_.diagnostic_only }).Count -gt 0) -or
+    (-not $diagnosticOnly -and @($selectedCaseDescriptors | Where-Object { [bool]$_.diagnostic_only }).Count -gt 0)) {
+    throw "excel-vba-oracle-worker: selected descriptor sequence mixes diagnostic and ordinary cases"
+}
+$script:SelectedCaseIds = @($selectedCaseDescriptors | ForEach-Object { [string]$_.id })
 $containmentAuthority = Wait-ContainmentAuthority
 $script:ExcelExecutablePath = Get-ExcelExecutablePath
-
-$selectedCases = @(Get-ExcelOracleHarnessCases | Where-Object { -not [bool]$_.diagnostic_only })
-if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
-    $selectedCases = @(Get-ExcelOracleHarnessCases | Where-Object { $_.id -eq $DiagnosticCaseId })
-    if ($selectedCases.Count -ne 1) { throw "excel-vba-oracle-worker: unknown diagnostic case '$DiagnosticCaseId'" }
-}
-if (@($selectedCases.id | Select-Object -Unique).Count -ne $selectedCases.Count -or @($selectedCases | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.id) }).Count -gt 0) {
-    throw "excel-vba-oracle-worker: selected case identities must be nonempty and unique"
-}
-$script:SelectedCaseIds = @($selectedCases | ForEach-Object { [string]$_.id })
-$script:SelectedCaseDescriptors = @(New-ExcelOracleSelectedCaseDescriptors -Cases $selectedCases)
-if ($script:SelectedCaseDescriptors.Count -ne $selectedCases.Count -or
-    @($script:SelectedCaseDescriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
-    throw "excel-vba-oracle-worker: selected case descriptor sealing failed"
-}
 $script:GuardianControlSequence = 0L
 $results = [Collections.Generic.List[object]]::new()
-foreach ($case in $selectedCases) {
-    $caseResult = Invoke-HarnessCase -Case $case
+foreach ($descriptor in $selectedCaseDescriptors) {
+    $caseResult = Invoke-HarnessCase -Descriptor $descriptor
     $results.Add($caseResult)
     if (Test-ExcelOracleShouldStopAfterCase -CaseResult $caseResult) {
         # A pre-ownership infrastructure failure (bootstrap, exact attachment,
@@ -1065,7 +1059,8 @@ $document = [ordered]@{
     worker_pid = $PID
     containment_token = $ContainmentToken
     containment_authority = $containmentAuthority
-    diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
+    selected_case_descriptor_digest = [string]$descriptorEnvelope.aggregate_sha256
+    diagnostic_only = $diagnosticOnly
     cases = @($results)
     passed = @($results | Where-Object { -not $_.passed }).Count -eq 0
 }

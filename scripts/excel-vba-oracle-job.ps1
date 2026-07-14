@@ -278,7 +278,9 @@ function Start-ExcelOracleContainedProcess {
     param(
         [Parameter(Mandatory = $true)][string]$JobName,
         [Parameter(Mandatory = $true)][string]$RunId,
-        [Parameter(Mandatory = $true)][scriptblock]$StartProcess
+        [Parameter(Mandatory = $true)][scriptblock]$StartProcess,
+        [scriptblock]$AssignProcess = { param($Job, $Process) $Job.AssignProcess($Process.Handle) },
+        [scriptblock]$TestMembership = { param($Job, $Process) $Job.ContainsProcess($Process.Handle) }
     )
     $job = $null
     $process = $null
@@ -288,8 +290,8 @@ function Start-ExcelOracleContainedProcess {
         if ($process -isnot [Diagnostics.Process]) {
             throw "process start callback did not return a Diagnostics.Process"
         }
-        $job.AssignProcess($process.Handle)
-        if (-not $job.ContainsProcess($process.Handle)) {
+        & $AssignProcess $job $process
+        if (-not [bool](& $TestMembership $job $process)) {
             throw "started process is not a member of the kill-on-close Job after assignment"
         }
         return [pscustomobject]@{ job = $job; process = $process }

@@ -46,6 +46,7 @@ if ($selectedCaseDescriptors.Count -ne $cases.Count -or
     @($selectedCaseDescriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
     throw "run-excel-vba-oracle: selected case descriptor sealing failed"
 }
+$selectedCaseDescriptorEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $selectedCaseDescriptors
 $plan = [ordered]@{
     schema = "oxvba.excel-vba-oracle-plan.v1"
     suite = $Suite
@@ -72,6 +73,7 @@ $plan = [ordered]@{
     })
     selected_case_count = $cases.Count
     selected_case_ids = @($cases | ForEach-Object { [string]$_.id })
+    selected_case_descriptor_digest = [string]$selectedCaseDescriptorEnvelope.aggregate_sha256
 }
 if ($PlanOnly) {
     Write-Output ($plan | ConvertTo-Json -Depth 8)
@@ -133,6 +135,8 @@ $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDir
 
 $ownershipFile = Join-Path $outputDirectory "owned-processes.jsonl"
 $helperOwnershipFile = Join-Path $outputDirectory "owned-helper-processes.jsonl"
+$selectedCaseDescriptorFile = Join-Path $outputDirectory "selected-case-descriptors.json"
+$selectedCaseDescriptorEnvelope | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $selectedCaseDescriptorFile -Encoding utf8NoBOM
 $containmentReadyFile = Join-Path $outputDirectory "containment-ready.json"
 $containmentToken = [Guid]::NewGuid().ToString("D")
 $workerStdout = Join-Path $outputDirectory "worker.stdout.txt"
@@ -146,11 +150,10 @@ $workerArguments = @(
     "-HelperOwnershipFile", $helperOwnershipFile,
     "-ContainmentReadyFile", $containmentReadyFile,
     "-ContainmentToken", $containmentToken,
+    "-SelectedCaseDescriptorFile", $selectedCaseDescriptorFile,
+    "-SelectedCaseDescriptorDigest", [string]$selectedCaseDescriptorEnvelope.aggregate_sha256,
     "-CaseTimeoutSeconds", [string][Math]::Min(120, $TimeoutSeconds)
 )
-if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
-    $workerArguments += @("-DiagnosticCaseId", $DiagnosticCaseId)
-}
 $startedUtc = [DateTime]::UtcNow
 $containedWorker = Start-ExcelOracleContainedProcess -JobName "OxVbaExcelOracle-$PID-$containmentToken" -RunId $RunId -StartProcess {
     Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
