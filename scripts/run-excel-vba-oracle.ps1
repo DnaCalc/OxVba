@@ -100,6 +100,34 @@ function Read-OwnershipLedger {
     return ConvertFrom-ExcelOracleOwnershipLedger -Lines ([string[]]$lines) -Kind $Kind -RunId $RunId -BaselineExcelPids $BaselineExcelPids -ExpectedCaseIds @($cases.id)
 }
 
+function Read-SupervisorGuardianEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$OutputDirectory,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$CaseIds
+    )
+
+    $evidence = [Collections.Generic.List[object]]::new()
+    foreach ($caseId in $CaseIds) {
+        $ledgerPath = Join-Path (Join-Path $OutputDirectory $caseId) "guardian-events.jsonl"
+        if (-not (Test-Path -LiteralPath $ledgerPath -PathType Leaf)) { continue }
+        $stream = [IO.File]::Open($ledgerPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            $memory = [IO.MemoryStream]::new()
+            try { $stream.CopyTo($memory); $bytes = $memory.ToArray() }
+            finally { $memory.Dispose() }
+        }
+        finally { $stream.Dispose() }
+        $evidence.Add([pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-supervisor-guardian-ledger.v1"
+            case_id = $caseId
+            ledger_path = $ledgerPath
+            ledger_sha256 = Get-ExcelOracleBytesSha256 -Bytes $bytes
+            raw_base64 = [Convert]::ToBase64String($bytes)
+        })
+    }
+    return @($evidence)
+}
+
 function Stop-RecordedOwnedResources {
     param(
         [Parameter(Mandatory = $true)][string]$OwnershipPath,
@@ -237,6 +265,7 @@ if (Test-Path -LiteralPath $resultsPath) {
 }
 $excelLedger = Read-OwnershipLedger -Path $ownershipFile -Kind excel -BaselineExcelPids $baselineExcelPids
 $helperLedger = Read-OwnershipLedger -Path $helperOwnershipFile -Kind guardian -BaselineExcelPids $baselineExcelPids
+$supervisorGuardianEvidence = @(Read-SupervisorGuardianEvidence -OutputDirectory $outputDirectory -CaseIds @($selectedCaseDescriptors.id))
 $remainingOwned = [Collections.Generic.List[int]]::new()
 foreach ($record in @($excelLedger.records)) {
     $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
@@ -263,7 +292,9 @@ $postCleanup = Resolve-ExcelOraclePostCleanupResult `
     -Results $results `
     -ExcelLedger $excelLedger `
     -HelperLedger $helperLedger `
+    -SupervisorGuardianEvidence $supervisorGuardianEvidence `
     -SelectedCaseDescriptors $selectedCaseDescriptors `
+    -ExpectedOutputDirectory $outputDirectory `
     -RunId $RunId `
     -ExpectedWorkerPid $worker.Id `
     -ExpectedWorkerStartUtc $workerStartUtc `

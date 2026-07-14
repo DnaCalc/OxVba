@@ -289,12 +289,70 @@ function Get-ExcelOracleExpectedRuntimeErr {
     }
 }
 
+function Test-ExcelOracleRuntimeErrFieldEqual {
+    param($Left, $Right)
+
+    if ($Left -is [string] -or $Right -is [string]) {
+        return $Left -is [string] -and $Right -is [string] -and
+            [string]::Equals([string]$Left, [string]$Right, [StringComparison]::Ordinal)
+    }
+    if (($Left -is [int] -or $Left -is [long]) -and ($Right -is [int] -or $Right -is [long])) {
+        return [long]$Left -eq [long]$Right
+    }
+    return $false
+}
+
 function Get-ExcelOracleSha256 {
     param([Parameter(Mandatory = $true)][string]$Text)
 
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($Text -replace "`r`n", "`n"))
     $hash = [Security.Cryptography.SHA256]::HashData($bytes)
     return "sha256:$([Convert]::ToHexString($hash).ToLowerInvariant())"
+}
+
+function Get-ExcelOracleExactTextSha256 {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
+
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Text)
+    return Get-ExcelOracleBytesSha256 -Bytes $bytes
+}
+
+function Get-ExcelOracleBytesSha256 {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][byte[]]$Bytes)
+
+    $hash = [Security.Cryptography.SHA256]::HashData($Bytes)
+    return "sha256:$([Convert]::ToHexString($hash).ToLowerInvariant())"
+}
+
+function Get-ExcelOracleObjectSequenceDigest {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Values)
+
+    $json = @($Values | ForEach-Object { $_ | ConvertTo-Json -Compress -Depth 20 }) -join "`n"
+    return Get-ExcelOracleExactTextSha256 -Text $json
+}
+
+function Get-ExcelOracleEvidenceUtcValues {
+    param([AllowNull()]$Value, [string]$Path = "evidence")
+
+    $values = [Collections.Generic.List[object]]::new()
+    if ($null -eq $Value) { return @($values) }
+    if ($Value -is [array]) {
+        for ($index = 0; $index -lt $Value.Count; $index++) {
+            foreach ($nested in @(Get-ExcelOracleEvidenceUtcValues -Value $Value[$index] -Path "$Path[$index]")) { $values.Add($nested) }
+        }
+        return @($values)
+    }
+    if ($Value -is [string] -or $Value -is [ValueType]) { return @($values) }
+    foreach ($property in @($Value.PSObject.Properties)) {
+        $propertyPath = "$Path.$($property.Name)"
+        if ([string]$property.Name -match '(?i)_utc$') {
+            $values.Add([pscustomobject]@{ path = $propertyPath; value = $property.Value })
+        }
+        else {
+            foreach ($nested in @(Get-ExcelOracleEvidenceUtcValues -Value $property.Value -Path $propertyPath)) { $values.Add($nested) }
+        }
+    }
+    return @($values)
 }
 
 function Get-ExcelOracleCaseEvidenceContract {
@@ -394,7 +452,10 @@ function Test-ExcelOracleSelectedCaseDescriptor {
     if ([string]$Descriptor.id -eq "runtime-full-err") {
         $expectedErr = Get-ExcelOracleExpectedRuntimeErr
         if ($null -eq $Descriptor.expected_runtime_err -or
-            @(@("number", "source", "description", "help_file", "help_context", "erl") | Where-Object { $Descriptor.expected_runtime_err.PSObject.Properties.Name -notcontains $_ -or $Descriptor.expected_runtime_err.$_ -ne $expectedErr.$_ }).Count -gt 0) {
+            @(@("number", "source", "description", "help_file", "help_context", "erl") | Where-Object {
+                $Descriptor.expected_runtime_err.PSObject.Properties.Name -notcontains $_ -or
+                -not (Test-ExcelOracleRuntimeErrFieldEqual -Left $Descriptor.expected_runtime_err.$_ -Right $expectedErr.$_)
+            }).Count -gt 0) {
             return $false
         }
     }
@@ -456,7 +517,8 @@ function Read-ExcelOracleSelectedCaseDescriptorEnvelope {
 function Enter-ExcelOracleRunClaim {
     param(
         [Parameter(Mandatory = $true)][string]$OutputBase,
-        [Parameter(Mandatory = $true)][string]$RunId
+        [Parameter(Mandatory = $true)][string]$RunId,
+        [scriptblock]$RemoveClaim = { param($Path) Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
     )
 
     if ([string]::IsNullOrWhiteSpace($RunId) -or $RunId.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0 -or
@@ -488,9 +550,10 @@ function Enter-ExcelOracleRunClaim {
         }
     }
     catch {
-        $stream.Dispose()
-        Remove-Item -LiteralPath $claimPath -Force -ErrorAction SilentlyContinue
-        throw
+        $primaryFailure = $_.Exception
+        $failedClaim = [pscustomobject]@{ run_id = $RunId; output_directory = $outputDirectory; claim_path = $claimPath; stream = $stream }
+        Exit-ExcelOracleRunClaim -Claim $failedClaim -PrimaryFailure $primaryFailure -RemoveClaim $RemoveClaim
+        throw $primaryFailure
     }
 }
 
@@ -912,7 +975,9 @@ function Resolve-ExcelOraclePostCleanupResult {
         [Parameter(Mandatory = $true)][AllowNull()]$Results,
         [Parameter(Mandatory = $true)][AllowNull()]$ExcelLedger,
         [Parameter(Mandatory = $true)][AllowNull()]$HelperLedger,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$SupervisorGuardianEvidence,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$SelectedCaseDescriptors,
+        [Parameter(Mandatory = $true)][string]$ExpectedOutputDirectory,
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][int]$ExpectedWorkerPid,
         [Parameter(Mandatory = $true)][string]$ExpectedWorkerStartUtc,
@@ -932,6 +997,16 @@ function Resolve-ExcelOraclePostCleanupResult {
         $errors.Add("selected case descriptor sequence is invalid")
         return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
     }
+    $expectedOutputFullPath = $null
+    try {
+        if (-not [IO.Path]::IsPathFullyQualified($ExpectedOutputDirectory)) { throw "not fully qualified" }
+        $expectedOutputFullPath = [IO.Path]::GetFullPath($ExpectedOutputDirectory)
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals($expectedOutputFullPath, $ExpectedOutputDirectory)) { throw "not canonical" }
+    }
+    catch {
+        $errors.Add("expected output directory is not a canonical fully qualified path")
+        return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
+    }
     $expectedCaseIds = @($SelectedCaseDescriptors | ForEach-Object { [string]$_.id })
     if (@($expectedCaseIds | Select-Object -Unique).Count -ne $expectedCaseIds.Count) {
         $errors.Add("selected case descriptor identities are not unique")
@@ -946,6 +1021,49 @@ function Resolve-ExcelOraclePostCleanupResult {
         }
         if ($ledger.records -isnot [array] -or $ledger.errors -isnot [array]) { $errors.Add("$name ledger collections are not arrays") }
         if (@($ledger.errors).Count -gt 0) { $errors.Add("$name ledger has authority errors") }
+    }
+    [object[]]$excelRecords = [object[]]::new(0)
+    [object[]]$helperRecords = [object[]]::new(0)
+    if ($null -ne $ExcelLedger -and $ExcelLedger.PSObject.Properties.Name -contains "records") { $excelRecords = [object[]]@($ExcelLedger.records) }
+    if ($null -ne $HelperLedger -and $HelperLedger.PSObject.Properties.Name -contains "records") { $helperRecords = [object[]]@($HelperLedger.records) }
+
+    $supervisorGuardianByCase = @{}
+    foreach ($guardianEvidence in @($SupervisorGuardianEvidence)) {
+        $requiredGuardianEvidenceFields = @("schema", "case_id", "ledger_path", "ledger_sha256", "raw_base64")
+        if ($null -eq $guardianEvidence -or
+            (@($guardianEvidence.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($requiredGuardianEvidenceFields | Sort-Object) -join "`n") -or
+            $guardianEvidence.schema -isnot [string] -or [string]$guardianEvidence.schema -cne "oxvba.excel-vba-oracle-supervisor-guardian-ledger.v1" -or
+            $guardianEvidence.case_id -isnot [string] -or $guardianEvidence.ledger_path -isnot [string] -or
+            $guardianEvidence.ledger_sha256 -isnot [string] -or $guardianEvidence.raw_base64 -isnot [string]) {
+            $errors.Add("supervisor guardian evidence shape is invalid")
+            continue
+        }
+        $caseId = [string]$guardianEvidence.case_id
+        if (@($expectedCaseIds | Where-Object { [string]$_ -ceq $caseId }).Count -ne 1 -or $supervisorGuardianByCase.ContainsKey($caseId)) {
+            $errors.Add("supervisor guardian evidence case identity is unselected or duplicated")
+            continue
+        }
+        $expectedLedgerPath = [IO.Path]::GetFullPath((Join-Path (Join-Path $expectedOutputFullPath $caseId) "guardian-events.jsonl"))
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$guardianEvidence.ledger_path, $expectedLedgerPath)) {
+            $errors.Add("supervisor guardian evidence path is not the exact case ledger path")
+            continue
+        }
+        try {
+            $guardianBytes = [Convert]::FromBase64String([string]$guardianEvidence.raw_base64)
+            if ([string]$guardianEvidence.ledger_sha256 -cne (Get-ExcelOracleBytesSha256 -Bytes $guardianBytes)) {
+                throw "digest mismatch"
+            }
+            $guardianRawText = [Text.UTF8Encoding]::new($false, $true).GetString($guardianBytes)
+            [string[]]$guardianLines = [string[]]@($guardianRawText -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+            $parsedGuardian = ConvertFrom-ExcelOracleGuardianEventLedger -Lines $guardianLines -RunId $RunId -ExpectedCaseIds @($caseId)
+            if (@($parsedGuardian.errors).Count -gt 0) { throw "invalid ledger: $(@($parsedGuardian.errors) -join '; ')" }
+            $supervisorGuardianByCase[$caseId] = [pscustomobject]@{
+                ledger_path = $expectedLedgerPath
+                ledger_sha256 = [string]$guardianEvidence.ledger_sha256
+                records = @($parsedGuardian.records)
+            }
+        }
+        catch { $errors.Add("supervisor guardian evidence for '$caseId' is invalid: $($_.Exception.Message)") }
     }
     if ($null -eq $Results) {
         $errors.Add("results document is missing")
@@ -1004,7 +1122,7 @@ function Resolve-ExcelOraclePostCleanupResult {
             $expectedWorkerStart = [DateTime]::Parse($ExpectedWorkerStartUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
             $authorityWorkerStart = [DateTime]::Parse([string]$authority.worker_process_start_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
             $authorityPublished = [DateTime]::Parse([string]$authority.published_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
-            if ($authorityWorkerStart -ne $expectedWorkerStart -or $authorityPublished -lt $authorityWorkerStart -or $null -eq $generatedUtc -or $generatedUtc -lt $authorityPublished) {
+            if ($authorityWorkerStart -ne $expectedWorkerStart -or $authorityPublished -lt $authorityWorkerStart -or $null -eq $generatedUtc -or $generatedUtc -le $authorityPublished) {
                 throw "worker start/publish/result timestamp order is invalid"
             }
         }
@@ -1030,10 +1148,22 @@ function Resolve-ExcelOraclePostCleanupResult {
             $caseFieldSetInvalid = $true
             continue
         }
+        $descriptor = if ($index -lt $SelectedCaseDescriptors.Count) { $SelectedCaseDescriptors[$index] } else { $null }
+        if ($null -eq $descriptor) {
+            $errors.Add("case result $index has no selected descriptor")
+            $derivedCasePasses.Add($false)
+            continue
+        }
+        $expectedCaseDirectory = [IO.Path]::GetFullPath((Join-Path $expectedOutputFullPath ([string]$descriptor.id)))
+        $expectedModulePath = [IO.Path]::GetFullPath((Join-Path $expectedCaseDirectory "$([string]$descriptor.module_name).bas"))
+        $expectedBootstrapPath = [IO.Path]::GetFullPath((Join-Path $expectedCaseDirectory "oracle-bootstrap.xlsx"))
         $requiredStringFields = @("schema", "id", "purpose", "selected_case_descriptor_sha256", "module_name", "module_path", "module_sha256", "evidence_contract", "compile_status", "expected_compile_status", "run_status", "expected_run_status", "cleanup_status")
         if (@($requiredStringFields | Where-Object { $case.$_ -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$case.$_) }).Count -gt 0 -or
             [string]$case.schema -cne "oxvba.excel-vba-oracle-case-result.v1" -or [string]$case.module_sha256 -notmatch '^sha256:[0-9a-f]{64}$') {
             $errors.Add("case result $index scalar identity is invalid")
+        }
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$case.module_path, $expectedModulePath)) {
+            $errors.Add("case result $index module path is not the exact supervisor-derived case path")
         }
         if ($case.passed -isnot [bool] -or $case.excel_ownership_recorded -isnot [bool] -or $case.case_diagnostic_only -isnot [bool]) {
             $errors.Add("case result $index Boolean status is invalid")
@@ -1059,6 +1189,7 @@ function Resolve-ExcelOraclePostCleanupResult {
                 $bootstrap.schema -isnot [string] -or $bootstrap.path -isnot [string] -or $bootstrap.sha256 -isnot [string] -or $bootstrap.sha256_after -isnot [string] -or
                 [string]$bootstrap.schema -cne "oxvba.excel-vba-oracle-bootstrap-workbook.v1" -or
                 [string]::IsNullOrWhiteSpace([string]$bootstrap.path) -or
+                -not [StringComparer]::OrdinalIgnoreCase.Equals([string]$bootstrap.path, $expectedBootstrapPath) -or
                 [string]$bootstrap.sha256 -notmatch '^sha256:[0-9a-f]{64}$' -or
                 [string]$bootstrap.sha256_after -cne [string]$bootstrap.sha256 -or
                 $bootstrap.macro_free -isnot [bool] -or -not [bool]$bootstrap.macro_free -or $bootstrap.package_parts -isnot [array] -or
@@ -1073,31 +1204,23 @@ function Resolve-ExcelOraclePostCleanupResult {
         if ($null -ne $case.observed_excel_pid -and (($case.observed_excel_pid -isnot [long] -and $case.observed_excel_pid -isnot [int]) -or [int]$case.observed_excel_pid -le 0)) {
             $errors.Add("case result $index observed Excel PID is invalid")
         }
-        if ($null -ne $case.transport_error -and $case.transport_error -isnot [string]) { $errors.Add("case result $index transport type is invalid") }
+        if ($null -ne $case.transport_error -and ($case.transport_error -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$case.transport_error))) { $errors.Add("case result $index transport type is invalid") }
         if ($null -ne $case.run_value -and $case.run_value -isnot [string]) { $errors.Add("case result $index run_value type is invalid") }
         if ($null -ne $case.macro_failure_disposition -and $case.macro_failure_disposition -isnot [string]) { $errors.Add("case result $index macro failure disposition type is invalid") }
 
-        $descriptor = if ($index -lt $SelectedCaseDescriptors.Count) { $SelectedCaseDescriptors[$index] } else { $null }
-        if ($null -eq $descriptor) {
-            $errors.Add("case result $index has no selected descriptor")
-            $derivedCasePasses.Add($false)
-            continue
-        }
-        else {
-            $sameRunProcedure = ($null -eq $descriptor.run_procedure -and $null -eq $case.run_procedure) -or
-                ($null -ne $descriptor.run_procedure -and $null -ne $case.run_procedure -and [string]$case.run_procedure -ceq [string]$descriptor.run_procedure)
-            if ([string]$case.id -cne [string]$descriptor.id -or
-                [string]$case.purpose -cne [string]$descriptor.purpose -or
-                [string]$case.selected_case_descriptor_sha256 -cne [string]$descriptor.descriptor_sha256 -or
-                [string]$case.module_name -cne [string]$descriptor.module_name -or
-                [string]$case.module_sha256 -cne [string]$descriptor.module_sha256 -or
-                [string]$case.expected_compile_status -cne [string]$descriptor.expected_compile_status -or
-                [string]$case.expected_run_status -cne [string]$descriptor.expected_run_status -or
-                -not $sameRunProcedure -or
-                $case.case_diagnostic_only -isnot [bool] -or [bool]$case.case_diagnostic_only -ne [bool]$descriptor.diagnostic_only -or
-                [string]$case.evidence_contract -cne [string]$descriptor.evidence_contract) {
-                $errors.Add("case result $index does not bind exactly to its immutable selected descriptor")
-            }
+        $sameRunProcedure = ($null -eq $descriptor.run_procedure -and $null -eq $case.run_procedure) -or
+            ($null -ne $descriptor.run_procedure -and $null -ne $case.run_procedure -and [string]$case.run_procedure -ceq [string]$descriptor.run_procedure)
+        if ([string]$case.id -cne [string]$descriptor.id -or
+            [string]$case.purpose -cne [string]$descriptor.purpose -or
+            [string]$case.selected_case_descriptor_sha256 -cne [string]$descriptor.descriptor_sha256 -or
+            [string]$case.module_name -cne [string]$descriptor.module_name -or
+            [string]$case.module_sha256 -cne [string]$descriptor.module_sha256 -or
+            [string]$case.expected_compile_status -cne [string]$descriptor.expected_compile_status -or
+            [string]$case.expected_run_status -cne [string]$descriptor.expected_run_status -or
+            -not $sameRunProcedure -or
+            $case.case_diagnostic_only -isnot [bool] -or [bool]$case.case_diagnostic_only -ne [bool]$descriptor.diagnostic_only -or
+            [string]$case.evidence_contract -cne [string]$descriptor.evidence_contract) {
+            $errors.Add("case result $index does not bind exactly to its immutable selected descriptor")
         }
 
         $compileCommandValid = $false
@@ -1158,7 +1281,8 @@ function Resolve-ExcelOraclePostCleanupResult {
             $compileContextValid = $contextFieldsValid -and
                 [string]$case.compile_context.schema -ceq "oxvba.excel-vba-oracle-compile-context.v1" -and
                 $case.compile_context.injected_project_name -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$case.compile_context.injected_project_name) -and
-                ($null -eq $case.compile_context.injected_project_file_name -or $case.compile_context.injected_project_file_name -is [string]) -and
+                $case.compile_context.injected_project_file_name -is [string] -and
+                [StringComparer]::OrdinalIgnoreCase.Equals([string]$case.compile_context.injected_project_file_name, $expectedBootstrapPath) -and
                 $case.compile_context.injected_module_name -is [string] -and [string]$case.compile_context.injected_module_name -ceq [string]$case.module_name -and
                 $case.compile_context.injected_source -is [string] -and [string]$case.compile_context.injected_source -ceq [string]$descriptor.module_source -and
                 [string]$case.compile_context.injected_source_sha256 -ceq [string]$case.module_sha256 -and
@@ -1194,12 +1318,55 @@ function Resolve-ExcelOraclePostCleanupResult {
             if (-not $runtimeErrValid) { $errors.Add("case result $index runtime_err schema or types are invalid") }
         }
 
-        $compileLedger = ConvertTo-ExcelOracleValidatedGuardianEvents -Events @($case.compile_window_observations) -RunId $RunId -CaseId ([string]$case.id)
-        $runLedger = ConvertTo-ExcelOracleValidatedGuardianEvents -Events @($case.run_dialogs) -RunId $RunId -CaseId ([string]$case.id)
-        if (@($compileLedger.errors).Count -gt 0) { $errors.Add("case result $index compile guardian evidence is invalid: $(@($compileLedger.errors) -join '; ')") }
-        if (@($runLedger.errors).Count -gt 0) { $errors.Add("case result $index run guardian evidence is invalid: $(@($runLedger.errors) -join '; ')") }
-        $compileEvents = @($compileLedger.records)
-        $runEvents = @($runLedger.records)
+        $workerCompileLedger = ConvertTo-ExcelOracleValidatedGuardianEvents -Events @($case.compile_window_observations) -RunId $RunId -CaseId ([string]$case.id)
+        $workerCompileDialogs = ConvertTo-ExcelOracleValidatedGuardianEvents -Events @($case.compile_dialogs) -RunId $RunId -CaseId ([string]$case.id)
+        $workerRunLedger = ConvertTo-ExcelOracleValidatedGuardianEvents -Events @($case.run_dialogs) -RunId $RunId -CaseId ([string]$case.id)
+        if (@($workerCompileLedger.errors).Count -gt 0) { $errors.Add("case result $index embedded compile guardian evidence is invalid: $(@($workerCompileLedger.errors) -join '; ')") }
+        if (@($workerCompileDialogs.errors).Count -gt 0) { $errors.Add("case result $index embedded compile dialog evidence is invalid: $(@($workerCompileDialogs.errors) -join '; ')") }
+        if (@($workerRunLedger.errors).Count -gt 0) { $errors.Add("case result $index embedded run guardian evidence is invalid: $(@($workerRunLedger.errors) -join '; ')") }
+
+        $supervisorGuardianRecords = @()
+        if ($supervisorGuardianByCase.ContainsKey([string]$case.id)) {
+            $supervisorGuardianRecords = @($supervisorGuardianByCase[[string]$case.id].records)
+        }
+        elseif ([bool]$case.excel_ownership_recorded) {
+            $errors.Add("case result $index lacks its supervisor-retained guardian event ledger")
+        }
+        $compileEvents = @($supervisorGuardianRecords | Where-Object {
+            $_.PSObject.Properties.Name -contains "operation_id" -and [string]$_.operation_id -ceq "$([string]$case.id)-compile"
+        })
+        $runEvents = @($supervisorGuardianRecords | Where-Object {
+            $_.PSObject.Properties.Name -contains "operation_id" -and [string]$_.operation_id -ceq "$([string]$case.id)-run"
+        })
+        $supervisorCompileDialogs = @($compileEvents | Where-Object { [string]$_.event_type -ceq "dialog-observation" })
+        if ((Get-ExcelOracleObjectSequenceDigest -Values @($workerCompileLedger.records)) -cne (Get-ExcelOracleObjectSequenceDigest -Values $compileEvents) -or
+            (Get-ExcelOracleObjectSequenceDigest -Values @($workerCompileDialogs.records)) -cne (Get-ExcelOracleObjectSequenceDigest -Values $supervisorCompileDialogs) -or
+            (Get-ExcelOracleObjectSequenceDigest -Values @($workerRunLedger.records)) -cne (Get-ExcelOracleObjectSequenceDigest -Values $runEvents)) {
+            $errors.Add("case result $index embedded guardian evidence does not exactly match the supervisor-retained ledger records")
+        }
+        $guardianFinalEvents = @($supervisorGuardianRecords | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })
+        $caseHelperRecords = @($helperRecords | Where-Object { [string]$_.case_id -ceq [string]$case.id })
+        $guardianFinalHealthy = $guardianFinalEvents.Count -eq 1 -and $caseHelperRecords.Count -eq 1 -and
+            [bool]$guardianFinalEvents[0].controlled_stop_observed -and [bool]$guardianFinalEvents[0].excel_identity_live_at_stop -and
+            [string]$guardianFinalEvents[0].exit_reason -ceq "controlled-stop" -and
+            [int]$guardianFinalEvents[0].guardian_pid -eq [int]$caseHelperRecords[0].pid -and
+            [string]$guardianFinalEvents[0].process_name -ceq [string]$caseHelperRecords[0].process_name -and
+            [string]$guardianFinalEvents[0].process_start_utc -ceq [string]$caseHelperRecords[0].process_start_utc -and
+            [StringComparer]::OrdinalIgnoreCase.Equals([string]$guardianFinalEvents[0].executable_path, [string]$caseHelperRecords[0].executable_path)
+        if ([bool]$case.excel_ownership_recorded -and -not $guardianFinalHealthy) {
+            $errors.Add("case result $index lacks an exact healthy guardian final state bound to its supervisor-retained helper identity")
+        }
+        foreach ($timestamp in @(
+                @(Get-ExcelOracleEvidenceUtcValues -Value $case -Path "case[$index]") +
+                @(Get-ExcelOracleEvidenceUtcValues -Value $supervisorGuardianRecords -Path "supervisor_guardian[$index]")
+            )) {
+            try {
+                if ($timestamp.value -isnot [string]) { throw "not a JSON string" }
+                $evidenceUtc = [DateTime]::Parse([string]$timestamp.value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+                if ($null -eq $generatedUtc -or $evidenceUtc -ge $generatedUtc) { throw "not earlier than results generation" }
+            }
+            catch { $errors.Add("case result $index evidence timestamp '$([string]$timestamp.path)' is invalid or later than generated_utc") }
+        }
         $compileHealthy = Test-GuardianOperationHealthy -Events $compileEvents
         $runHealthy = Test-GuardianOperationHealthy -Events $runEvents
         $compileErrorComplete = if ($null -ne $descriptor -and $null -ne $descriptor.expected_selected_token -and $null -ne $descriptor.expected_expanded_line) {
@@ -1237,11 +1404,10 @@ function Resolve-ExcelOraclePostCleanupResult {
             $evidenceStatusValid = (@($case.evidence_status.PSObject.Properties.Name | Sort-Object) -join "`n") -ceq (@($evidenceFields | Sort-Object) -join "`n") -and
                 [string]$case.evidence_status.schema -ceq "oxvba.excel-vba-oracle-evidence-status.v1" -and
                 @($evidenceFields | Where-Object { $_ -ne "schema" -and $case.evidence_status.$_ -isnot [bool] }).Count -eq 0
-            if ($evidenceStatusValid) {
-                $guardianHealthyBeforeCleanup = [bool]$case.evidence_status.guardian_healthy_before_cleanup
-            }
+            if ($evidenceStatusValid) { $guardianHealthyBeforeCleanup = $guardianFinalHealthy }
             if ($evidenceStatusValid -and
-                ([bool]$case.evidence_status.compile_operation_healthy -ne $compileHealthy -or
+                ([bool]$case.evidence_status.guardian_healthy_before_cleanup -ne $guardianFinalHealthy -or
+                 [bool]$case.evidence_status.compile_operation_healthy -ne $compileHealthy -or
                  [bool]$case.evidence_status.run_operation_healthy -ne $runHealthy -or
                  [bool]$case.evidence_status.compile_error_modal_complete -ne $compileErrorComplete -or
                  [bool]$case.evidence_status.ambiguous_macro_modal_and_dismissal_complete -ne $ambiguousComplete -or
@@ -1280,7 +1446,9 @@ function Resolve-ExcelOraclePostCleanupResult {
         if ($case.run_value -is [string] -and $null -ne $case.runtime_err -and $runtimeErrValid) {
             try {
                 $parsedRunValueErr = ConvertFrom-ExcelOracleRuntimeErr -Json ([string]$case.run_value)
-                $runValueErrMatches = @(@("number", "source", "description", "help_file", "help_context", "erl") | Where-Object { $parsedRunValueErr.$_ -ne $case.runtime_err.$_ }).Count -eq 0
+                $runValueErrMatches = @(@("number", "source", "description", "help_file", "help_context", "erl") | Where-Object {
+                    -not (Test-ExcelOracleRuntimeErrFieldEqual -Left $parsedRunValueErr.$_ -Right $case.runtime_err.$_)
+                }).Count -eq 0
             }
             catch { $runValueErrMatches = $false }
         }
@@ -1310,11 +1478,11 @@ function Resolve-ExcelOraclePostCleanupResult {
         $runtimeModalShape = $shouldInvoke -and $runHealthy -and $runtimeMeasurementMatchesDescriptor -and $entryObserved -and
             [string]$case.runtime_measurement.invocation_observation -ceq "owned-runtime-error-modal" -and
             $runtimeErrorComplete -and -not $ambiguousComplete -and $null -eq $case.run_value -and $null -eq $case.runtime_err
-        if (-not $shouldInvoke -and [bool]$case.excel_ownership_recorded -and (-not $noRunPayload -or $entryObserved)) {
+        if (-not $shouldInvoke -and (-not $noRunPayload -or $entryObserved)) {
             $errors.Add("case result $index compile-not-run shape contains runtime operation, payload, Err, disposition, or observation evidence")
         }
         $runtimeShapeCount = @(@($returnSuccessShape, $fullErrShape, $ambiguousShape, $runtimeModalShape) | Where-Object { $_ }).Count
-        if ($shouldInvoke -and [bool]$case.excel_ownership_recorded -and $runtimeShapeCount -ne 1) {
+        if ($shouldInvoke -and $runtimeShapeCount -ne 1) {
             $errors.Add("case result $index runtime evidence does not form exactly one admitted mutually exclusive outcome")
         }
         $derivedRunStatus = if (-not $shouldInvoke) { "not-run" }
@@ -1339,22 +1507,29 @@ function Resolve-ExcelOraclePostCleanupResult {
         if ($behaviorPassed -and $null -ne $descriptor.expected_runtime_err) {
             $behaviorPassed = $runtimeErrValid -and $null -ne $case.runtime_err
             foreach ($field in @("number", "source", "description", "help_file", "help_context", "erl")) {
-                if ($behaviorPassed -and $case.runtime_err.$field -ne $descriptor.expected_runtime_err.$field) { $behaviorPassed = $false }
+                if ($behaviorPassed -and -not (Test-ExcelOracleRuntimeErrFieldEqual -Left $case.runtime_err.$field -Right $descriptor.expected_runtime_err.$field)) { $behaviorPassed = $false }
             }
         }
         $cleanupPassed = $case.excel_ownership_recorded -is [bool] -and [bool]$case.excel_ownership_recorded -and
             [string]$case.cleanup_status -ceq "owned-process-zero" -and @($case.cleanup_authority_errors).Count -eq 0
-        $derivedCasePasses.Add([bool]($behaviorPassed -and $runtimeMeasurementMatchesDescriptor -and $runtimeErrValid -and
-            $evidenceStatusValid -and $guardianHealthyBeforeCleanup -and $authoritativeEvidencePassed -and $cleanupPassed))
+        $casePassBeforeTransport = [bool]($behaviorPassed -and $runtimeMeasurementMatchesDescriptor -and $runtimeErrValid -and
+            $evidenceStatusValid -and $guardianHealthyBeforeCleanup -and $authoritativeEvidencePassed -and $cleanupPassed)
+        $transportShapeValid = if ($casePassBeforeTransport) { $null -eq $case.transport_error }
+            else { $case.transport_error -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$case.transport_error) }
+        if (-not $transportShapeValid) { $errors.Add("case result $index transport_error does not match the derived success/failure shape") }
+        $derivedCasePasses.Add([bool]($casePassBeforeTransport -and $transportShapeValid))
     }
     if ($caseFieldSetInvalid) {
         return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
     }
-    [object[]]$excelRecords = [object[]]::new(0)
-    [object[]]$helperRecords = [object[]]::new(0)
-    if ($null -ne $ExcelLedger -and $ExcelLedger.PSObject.Properties.Name -contains "records") { $excelRecords = [object[]]@($ExcelLedger.records) }
-    if ($null -ne $HelperLedger -and $HelperLedger.PSObject.Properties.Name -contains "records") { $helperRecords = [object[]]@($HelperLedger.records) }
     $caseIds = @($cases | ForEach-Object { [string]$_.id })
+    $preOwnershipEvidenceEmpty = $cases.Count -eq 1 -and
+        $null -eq $cases[0].compile_command -and $null -eq $cases[0].compile_execution -and $null -eq $cases[0].compile_context -and
+        $null -eq $cases[0].post_dismiss_selection_diagnostic_only -and @($cases[0].compile_dialogs).Count -eq 0 -and
+        @($cases[0].compile_window_observations).Count -eq 0 -and $null -eq $cases[0].run_value -and $null -eq $cases[0].runtime_err -and
+        $null -eq $cases[0].macro_failure_disposition -and $null -eq $cases[0].runtime_measurement -and @($cases[0].run_dialogs).Count -eq 0 -and
+        $null -eq $cases[0].evidence_status -and $null -eq $cases[0].bootstrap_workbook -and @($cases[0].cleanup_authority_errors).Count -eq 0 -and
+        $supervisorGuardianByCase.Count -eq 0
     $specialTransport = $cases.Count -eq 1 -and $expectedCaseIds.Count -gt 0 -and
         [string]$cases[0].id -ceq [string]$expectedCaseIds[0] -and
         $cases[0].passed -is [bool] -and -not [bool]$cases[0].passed -and
@@ -1363,7 +1538,7 @@ function Resolve-ExcelOraclePostCleanupResult {
         [string]$cases[0].compile_status -ceq "harness-error" -and [string]$cases[0].run_status -ceq "not-run" -and
         [string]$cases[0].cleanup_status -in @("not-run", "owned-process-zero", "job-contained-preownership") -and
         -not [string]::IsNullOrWhiteSpace([string]$cases[0].transport_error) -and
-        $excelRecords.Count -eq 0 -and $helperRecords.Count -eq 0
+        $preOwnershipEvidenceEmpty -and $excelRecords.Count -eq 0 -and $helperRecords.Count -eq 0
 
     if ($specialTransport) {
         if ($WorkerExitCode -ne 1 -or $Results.passed -isnot [bool] -or [bool]$Results.passed) {
@@ -1424,7 +1599,7 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
     for ($index = 0; $index -lt $Lines.Count; $index++) {
         $line = [string]$Lines[$index]
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try { $event = $line | ConvertFrom-Json }
+        try { $event = $line | ConvertFrom-Json -DateKind String }
         catch {
             $errors.Add("line $($index + 1): malformed guardian JSON")
             continue
@@ -1480,6 +1655,23 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
                 $errors.Add("line $($index + 1): operation control_sequence is not a positive JSON integer")
                 continue
             }
+        }
+        elseif ([string]$event.event_type -ceq "guardian-stopped" -and [string]$event.schema -ceq "oxvba.excel-vba-oracle-final-state.v1") {
+            $lifecycleRecognized = $true
+            $required = @("schema", "event_type", "run_id", "case_id", "event_sequence", "observed_utc", "guardian_pid", "process_name", "process_start_utc", "executable_path", "controlled_stop_observed", "excel_identity_live_at_stop", "exit_reason")
+            if ((@($event.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($required | Sort-Object) -join "`n") -or
+                $event.case_id -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$event.case_id) -or
+                ($ExpectedCaseIds.Count -gt 0 -and @($ExpectedCaseIds | Where-Object { [string]$_ -ceq [string]$event.case_id }).Count -ne 1) -or
+                ($event.guardian_pid -isnot [int] -and $event.guardian_pid -isnot [long]) -or [int]$event.guardian_pid -le 0 -or
+                $event.process_name -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$event.process_name) -or
+                $event.executable_path -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$event.executable_path) -or
+                $event.controlled_stop_observed -isnot [bool] -or $event.excel_identity_live_at_stop -isnot [bool] -or
+                $event.exit_reason -isnot [string] -or [string]$event.exit_reason -notin @("controlled-stop", "excel-identity-lost", "deadline")) {
+                $errors.Add("line $($index + 1): invalid guardian final state")
+                continue
+            }
+            try { [void][DateTime]::Parse([string]$event.process_start_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) }
+            catch { $errors.Add("line $($index + 1): invalid guardian final process start"); continue }
         }
         if ([string]$event.schema -eq "oxvba.excel-vba-oracle-window-observation.v1" -and [string]$event.event_type -in @("dialog-observation", "ignored-top-level-window")) {
             $required = @("observation_id", "case_id", "operation_id", "control_sequence", "event_sequence", "phase", "excel_pid", "observed_process_id", "observed_utc", "capture_completed_utc", "window_handle", "classification", "disposition", "considered_dialog", "is_modal")

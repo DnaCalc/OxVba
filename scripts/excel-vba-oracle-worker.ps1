@@ -684,8 +684,10 @@ function Invoke-HarnessCase {
     $runValue = $null
     $runtimeErr = $null
     $errorMessage = $null
+    $runtimeFailureMessage = $null
     $macroDisposition = $null
     $passed = $false
+    $behaviorPassed = $false
     $guardianHealthy = $false
     $evidenceStatus = $null
     $cleanupStatus = "not-run"
@@ -720,6 +722,7 @@ function Invoke-HarnessCase {
             "-ExcelPid", [string]$excelPid,
             "-ExcelIdentityFile", $excelIdentityFile,
             "-RunId", $RunId,
+            "-CaseId", [string]$Descriptor.id,
             "-ControlFile", $controlFile,
             "-EventsFile", $eventsFile,
             "-ReadyFile", $readyFile,
@@ -847,9 +850,9 @@ function Invoke-HarnessCase {
                 }
             }
             catch {
-                $errorMessage = $_.Exception.Message
+                $runtimeFailureMessage = $_.Exception.Message
                 $macroDisposition = Get-ExcelOracleMacroFailureDisposition `
-                    -Message $errorMessage `
+                    -Message $runtimeFailureMessage `
                     -CompileStatus $compileStatus `
                     -AccessVbom ([bool]$runtimeMeasurement.access_vbom) `
                     -RunnableEntryObserved ([bool]$runtimeMeasurement.invocation_entry_observed) `
@@ -863,9 +866,9 @@ function Invoke-HarnessCase {
                 if (-not [bool]$runtimeMeasurement.invocation_entry_observed -or -not ([string]$runValue).StartsWith($observationPrefix, [StringComparison]::Ordinal)) {
                     throw "excel-vba-oracle-worker: ambiguous macro probe did not return its entry-observation sentinel"
                 }
-                $errorMessage = ([string]$runValue).Substring($observationPrefix.Length)
+                $runtimeFailureMessage = ([string]$runValue).Substring($observationPrefix.Length)
                 $macroDisposition = Get-ExcelOracleMacroFailureDisposition `
-                    -Message $errorMessage `
+                    -Message $runtimeFailureMessage `
                     -CompileStatus $compileStatus `
                     -AccessVbom ([bool]$runtimeMeasurement.access_vbom) `
                     -RunnableEntryObserved ([bool]$runtimeMeasurement.invocation_entry_observed) `
@@ -893,8 +896,13 @@ function Invoke-HarnessCase {
         if ($behaviorPassed -and $Descriptor.id -eq "runtime-full-err") {
             $expectedErr = Get-ExcelOracleExpectedRuntimeErr
             foreach ($field in @("number", "source", "description", "help_file", "help_context", "erl")) {
-                if ($runtimeErr.$field -ne $expectedErr.$field) { $behaviorPassed = $false }
+                if (-not (Test-ExcelOracleRuntimeErrFieldEqual -Left $runtimeErr.$field -Right $expectedErr.$field)) { $behaviorPassed = $false }
             }
+        }
+        if ($behaviorPassed) { $errorMessage = $null }
+        elseif ([string]::IsNullOrWhiteSpace($errorMessage)) {
+            $errorMessage = if (-not [string]::IsNullOrWhiteSpace($runtimeFailureMessage)) { $runtimeFailureMessage }
+                else { "observed compile '$compileStatus' and run '$runStatus' did not satisfy the sealed case contract" }
         }
         $authoritativeEvidencePassed = switch ($Descriptor.id) {
             { $_ -in @("compile-failure", "intrinsic-shadow") } { $compileOperationHealthy -and $compileErrorEvidence; break }
@@ -916,6 +924,7 @@ function Invoke-HarnessCase {
     }
     catch {
         $errorMessage = $_.Exception.Message
+        $passed = $false
         if ($compileStatus -eq "not-run") { $compileStatus = "harness-error" }
     }
     finally {
@@ -927,6 +936,45 @@ function Invoke-HarnessCase {
                     if ([string]$guardianTermination.state -eq "same-instance-conflict") { $cleanupAuthorityErrors.Add("guardian retained identity conflict") }
                 }
                 else { $cleanupAuthorityErrors.Add("guardian cleanup lacks its written ownership record") }
+            }
+            if ($guardian.HasExited -and $guardianOwnershipRecord -and (Test-Path -LiteralPath $eventsFile)) {
+                try {
+                    $finalGuardianEvents = @(Get-GuardianEvents -EventsFile $eventsFile)
+                    $compileEvents = @($finalGuardianEvents | Where-Object { $_.PSObject.Properties.Name -contains "operation_id" -and [string]$_.operation_id -ceq "$($Descriptor.id)-compile" })
+                    $compileDialogs = @($compileEvents | Where-Object { [string]$_.event_type -ceq "dialog-observation" })
+                    $runEvents = @($finalGuardianEvents | Where-Object { $_.PSObject.Properties.Name -contains "operation_id" -and [string]$_.operation_id -ceq "$($Descriptor.id)-run" })
+                    $finalState = @($finalGuardianEvents | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })
+                    $guardianHealthy = $finalState.Count -eq 1 -and [bool]$finalState[0].controlled_stop_observed -and
+                        [bool]$finalState[0].excel_identity_live_at_stop -and [string]$finalState[0].exit_reason -ceq "controlled-stop" -and
+                        [int]$finalState[0].guardian_pid -eq [int]$guardianOwnershipRecord.pid -and
+                        [string]$finalState[0].process_name -ceq [string]$guardianOwnershipRecord.process_name -and
+                        [string]$finalState[0].process_start_utc -ceq [string]$guardianOwnershipRecord.process_start_utc -and
+                        [StringComparer]::OrdinalIgnoreCase.Equals([string]$finalState[0].executable_path, [string]$guardianOwnershipRecord.executable_path)
+                    if (-not $guardianHealthy) { $cleanupAuthorityErrors.Add("guardian final state is missing, unhealthy, or not bound to its exact process identity") }
+                    if ($null -ne $evidenceStatus) {
+                        $compileOperationHealthy = Test-GuardianOperationHealthy -Events $compileEvents
+                        $runOperationHealthy = Test-GuardianOperationHealthy -Events $runEvents
+                        $compileErrorEvidence = if ($Descriptor.expected_compile_status -eq "compile-error") {
+                            Test-CompileErrorEvidence -Events $compileEvents -InjectedSource $injectedSource -ExpectedToken ([string]$Descriptor.expected_selected_token) -ExpectedLine ([string]$Descriptor.expected_expanded_line)
+                        } else { $false }
+                        $ambiguousMacroEvidence = Test-AmbiguousMacroEvidence -Events $runEvents
+                        $runtimeErrorEvidence = Test-RuntimeErrorEvidence -Events $runEvents
+                        $authoritativeEvidencePassed = switch ($Descriptor.id) {
+                            { $_ -in @("compile-failure", "intrinsic-shadow") } { $compileOperationHealthy -and $compileErrorEvidence; break }
+                            "ambiguous-macro-failure" { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and $ambiguousMacroEvidence; break }
+                            "runtime-unhandled-modal" { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and $runtimeErrorEvidence; break }
+                            default { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and (Test-NoDialogObservations -Events $runEvents); break }
+                        }
+                        $passed = $behaviorPassed -and $guardianHealthy -and $authoritativeEvidencePassed -and [string]::IsNullOrWhiteSpace($errorMessage)
+                        $evidenceStatus = [pscustomobject]@{
+                            schema = "oxvba.excel-vba-oracle-evidence-status.v1"; guardian_healthy_before_cleanup = $guardianHealthy
+                            compile_operation_healthy = $compileOperationHealthy; run_operation_healthy = $runOperationHealthy
+                            compile_error_modal_complete = $compileErrorEvidence; ambiguous_macro_modal_and_dismissal_complete = $ambiguousMacroEvidence
+                            runtime_error_modal_and_dismissal_complete = $runtimeErrorEvidence; authoritative_evidence_passed = $authoritativeEvidencePassed
+                        }
+                    }
+                }
+                catch { $cleanupAuthorityErrors.Add("supervisor-bound final guardian evidence could not be sealed: $($_.Exception.Message)"); $passed = $false }
             }
         }
         if ($workbook) {

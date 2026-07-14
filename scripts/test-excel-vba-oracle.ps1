@@ -93,6 +93,8 @@ function New-TestPostCleanupCase {
         [AllowNull()]$TransportError = $null
     )
     $descriptor = @(Get-TestSelectedCaseDescriptors -CaseIds @($Id))[0]
+    $outputDirectory = "C:\fixture\run-post"
+    $caseDirectory = Join-Path $outputDirectory $Id
     if ([string]::IsNullOrEmpty($CompileStatus)) { $CompileStatus = if (-not $Passed -and $OwnershipRecorded) { "no-dialog-unverified" } else { [string]$descriptor.expected_compile_status } }
     if ([string]::IsNullOrEmpty($RunStatus)) { $RunStatus = if (-not $Passed -and $OwnershipRecorded) { "not-run" } else { [string]$descriptor.expected_run_status } }
     $hasExecutionEvidence = $OwnershipRecorded -and $CompileStatus -ne "harness-error"
@@ -118,7 +120,7 @@ function New-TestPostCleanupCase {
     $bootstrap = if ($OwnershipRecorded) {
         [ordered]@{
             schema = "oxvba.excel-vba-oracle-bootstrap-workbook.v1"
-            path = "C:\fixture\oracle-bootstrap.xlsx"
+            path = Join-Path $caseDirectory "oracle-bootstrap.xlsx"
             sha256 = "sha256:$('a' * 64)"
             sha256_after = "sha256:$('a' * 64)"
             package_parts = @("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml")
@@ -135,7 +137,7 @@ function New-TestPostCleanupCase {
         excel_ownership_recorded = $OwnershipRecorded
         selected_case_descriptor_sha256 = $descriptor.descriptor_sha256
         module_name = $descriptor.module_name
-        module_path = "C:\fixture\OracleSelfTest.bas"
+        module_path = Join-Path $caseDirectory "$($descriptor.module_name).bas"
         module_sha256 = $descriptor.module_sha256
         case_diagnostic_only = [bool]$descriptor.diagnostic_only
         evidence_contract = $descriptor.evidence_contract
@@ -144,7 +146,7 @@ function New-TestPostCleanupCase {
         compile_command = if ($hasExecutionEvidence) { [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-command.v1"; id = 578; caption = "Compile VBAProject"; enabled_before = $true; enabled_after = $CompileStatus -eq "no-dialog-unverified" } } else { $null }
         compile_execution = if ($hasExecutionEvidence) { [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-execution.v1"; return_value = $null; exception = $null } } else { $null }
         compile_context = if ($hasExecutionEvidence) { [ordered]@{
-            schema = "oxvba.excel-vba-oracle-compile-context.v1"; injected_project_name = "VBAProject"; injected_project_file_name = "C:\fixture\oracle-bootstrap.xlsx"
+            schema = "oxvba.excel-vba-oracle-compile-context.v1"; injected_project_name = "VBAProject"; injected_project_file_name = (Join-Path $caseDirectory "oracle-bootstrap.xlsx")
             injected_module_name = $descriptor.module_name; selection_before_execute = $null; injected_source = $descriptor.module_source
             injected_source_sha256 = $descriptor.module_sha256; selected_source_sha256 = $descriptor.module_sha256
             authority_before_execute = [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-authority-snapshot.v1"; stage = "immediately-before-execute"; captured_utc = "2026-07-14T00:00:01Z"; active_project_is_injected_project = $true; active_module_is_injected_module = $true; active_code_pane_is_injected_code_pane = $true; active_project_name = "VBAProject"; active_module_name = $descriptor.module_name; injected_source_sha256 = $descriptor.module_sha256; expected_source_sha256 = $descriptor.module_sha256 }
@@ -213,7 +215,7 @@ function New-TestPostCleanupResults {
     $document = [pscustomobject][ordered]@{
         schema = "oxvba.excel-vba-oracle-results.v1"
         run_id = $RunId
-        generated_utc = "2026-07-14T00:00:03Z"
+        generated_utc = "2026-07-14T00:00:06Z"
         worker_pid = $WorkerPid
         containment_token = $ContainmentToken
         containment_authority = [pscustomobject][ordered]@{
@@ -242,9 +244,63 @@ function New-TestPostCleanupLedger {
     )
     $records = [Collections.Generic.List[object]]::new()
     for ($index = 0; $index -lt $CaseIds.Count; $index++) {
-        $records.Add([pscustomobject]@{ case_id = $CaseIds[$index]; pid = if ($Guardian) { 8001 + $index } else { $FirstPid + $index } })
+        if ($Guardian) {
+            $records.Add([pscustomobject]@{
+                case_id = $CaseIds[$index]; pid = 8001 + $index; process_name = "pwsh"
+                process_start_utc = "2026-07-14T00:00:00Z"; executable_path = "C:\Program Files\PowerShell\7\pwsh.exe"
+            })
+        }
+        else { $records.Add([pscustomobject]@{ case_id = $CaseIds[$index]; pid = $FirstPid + $index }) }
     }
     return [pscustomobject]@{ records = @($records); errors = @() }
+}
+
+function New-TestSupervisorGuardianEvidence {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Cases,
+        [string]$OutputDirectory = "C:\fixture\run-post"
+    )
+    $evidence = [Collections.Generic.List[object]]::new()
+    for ($index = 0; $index -lt $Cases.Count; $index++) {
+        $case = $Cases[$index]
+        if (-not [bool]$case.excel_ownership_recorded) { continue }
+        $events = [Collections.Generic.List[object]]::new()
+        foreach ($event in @($case.compile_window_observations) + @($case.run_dialogs)) { $events.Add($event) }
+        $events.Add([pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-final-state.v1"; event_type = "guardian-stopped"; run_id = "run-post"; case_id = [string]$case.id
+            event_sequence = 30; observed_utc = "2026-07-14T00:00:05.5000000Z"; guardian_pid = 8001 + $index; process_name = "pwsh"
+            process_start_utc = "2026-07-14T00:00:00Z"; executable_path = "C:\Program Files\PowerShell\7\pwsh.exe"
+            controlled_stop_observed = $true; excel_identity_live_at_stop = $true; exit_reason = "controlled-stop"
+        })
+        $rawText = (@($events | ForEach-Object { $_ | ConvertTo-Json -Compress -Depth 20 }) -join "`n") + "`n"
+        $bytes = [Text.UTF8Encoding]::new($false).GetBytes($rawText)
+        $evidence.Add([pscustomobject][ordered]@{
+            schema = "oxvba.excel-vba-oracle-supervisor-guardian-ledger.v1"; case_id = [string]$case.id
+            ledger_path = Join-Path (Join-Path $OutputDirectory ([string]$case.id)) "guardian-events.jsonl"
+            ledger_sha256 = Get-ExcelOracleBytesSha256 -Bytes $bytes
+            raw_base64 = [Convert]::ToBase64String($bytes)
+        })
+    }
+    return @($evidence)
+}
+
+function Update-TestSupervisorGuardianEvidence {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Evidence,
+        [Parameter(Mandatory = $true)][string]$CaseId,
+        [Parameter(Mandatory = $true)][scriptblock]$Update
+    )
+    $copy = [object[]]@(Copy-TestJsonObject -Value $Evidence)
+    $target = @($copy | Where-Object { [string]$_.case_id -ceq $CaseId })
+    if ($target.Count -ne 1) { throw "test-excel-vba-oracle: supervisor guardian evidence '$CaseId' not found" }
+    $rawText = [Text.UTF8Encoding]::new($false, $true).GetString([Convert]::FromBase64String([string]$target[0].raw_base64))
+    $events = @($rawText -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { $_ | ConvertFrom-Json -DateKind String })
+    $updatedEvents = @(& $Update $events)
+    $updatedRawText = (@($updatedEvents | ForEach-Object { $_ | ConvertTo-Json -Compress -Depth 20 }) -join "`n") + "`n"
+    $updatedBytes = [Text.UTF8Encoding]::new($false).GetBytes($updatedRawText)
+    $target[0].raw_base64 = [Convert]::ToBase64String($updatedBytes)
+    $target[0].ledger_sha256 = Get-ExcelOracleBytesSha256 -Bytes $updatedBytes
+    return $copy
 }
 
 function Invoke-TestPostCleanupResolution {
@@ -261,11 +317,18 @@ function Invoke-TestPostCleanupResolution {
         [string]$ContainmentToken = "11111111-2222-3333-4444-555555555555",
         [bool]$WorkerQuiesced = $true,
         [bool]$WorkerTimedOut = $false,
-        [AllowNull()][object[]]$SelectedCaseDescriptors = $null
+        [AllowNull()][object[]]$SelectedCaseDescriptors = $null,
+        [AllowNull()][object[]]$SupervisorGuardianEvidence = $null,
+        [string]$OutputDirectory = "C:\fixture\run-post"
     )
     if ($null -eq $SelectedCaseDescriptors) { $SelectedCaseDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds $ExpectedCaseIds) }
+    if ($null -eq $SupervisorGuardianEvidence) {
+        if ($null -eq $Results) { $SupervisorGuardianEvidence = [object[]]::new(0) }
+        else { $SupervisorGuardianEvidence = [object[]]@(New-TestSupervisorGuardianEvidence -Cases @($Results.cases) -OutputDirectory $OutputDirectory) }
+    }
     return Resolve-ExcelOraclePostCleanupResult -Results $Results -ExcelLedger $ExcelLedger -HelperLedger $HelperLedger `
-        -SelectedCaseDescriptors $SelectedCaseDescriptors -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedWorkerStartUtc $WorkerStartUtc `
+        -SupervisorGuardianEvidence $SupervisorGuardianEvidence -SelectedCaseDescriptors $SelectedCaseDescriptors -ExpectedOutputDirectory $OutputDirectory `
+        -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedWorkerStartUtc $WorkerStartUtc `
         -ExpectedWorkerExecutablePath $WorkerExecutablePath -ExpectedContainmentToken $ContainmentToken `
         -ExpectedDiagnosticOnly $DiagnosticOnly -WorkerExitCode $WorkerExitCode -WorkerQuiesced $WorkerQuiesced -WorkerTimedOut $WorkerTimedOut
 }
@@ -593,7 +656,8 @@ $completeCases = @(
 $completeResults = New-TestPostCleanupResults -Cases $completeCases
 $completeExcelLedger = New-TestPostCleanupLedger -CaseIds $completeIds -FirstPid 7001
 $completeHelperLedger = New-TestPostCleanupLedger -CaseIds $completeIds -Guardian
-$completeResolution = Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds
+$completeGuardianEvidence = @(New-TestSupervisorGuardianEvidence -Cases @($completeResults.cases))
+$completeResolution = Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -SupervisorGuardianEvidence $completeGuardianEvidence
 Assert-True ([bool]$completeResolution.valid -and [string]$completeResolution.disposition -eq "complete-success") "post-cleanup validator complete success envelope: $(@($completeResolution.errors) -join '; ')"
 $failedCompleteCases = @(
     (New-TestPostCleanupCase -Id $completeIds[0] -Passed $false -OwnedPid 7001 -ObservedPid 7001 -TransportError "behavior mismatch"),
@@ -611,8 +675,28 @@ for ($index = 0; $index -lt $fiveSelectedIds.Count; $index++) {
 $fiveCompleteResults = New-TestPostCleanupResults -Cases @($fiveCompleteCases) -SelectedCaseIds $fiveSelectedIds
 $fiveCompleteExcelLedger = New-TestPostCleanupLedger -CaseIds $fiveSelectedIds -FirstPid 7101
 $fiveCompleteHelperLedger = New-TestPostCleanupLedger -CaseIds $fiveSelectedIds -Guardian
-$fiveCompleteResolution = Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds
+$fiveGuardianEvidence = @(New-TestSupervisorGuardianEvidence -Cases @($fiveCompleteResults.cases))
+$fiveCompleteResolution = Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $fiveGuardianEvidence
 Assert-True ([bool]$fiveCompleteResolution.valid -and [string]$fiveCompleteResolution.disposition -eq "complete-success") "all five default descriptors must derive their compile/run outcomes from exact nested evidence"
+
+$embeddedGuardianMutationResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$embeddedGuardianMutationResults.cases[0].compile_window_observations[2].window_handle = "0x999"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $embeddedGuardianMutationResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $fiveGuardianEvidence).valid) "worker-embedded guardian records must match the supervisor-retained exact ledger rather than granting their own authority"
+$wrongGuardianDigestEvidence = [object[]]@(Copy-TestJsonObject -Value $fiveGuardianEvidence)
+$wrongGuardianDigestEvidence[0].ledger_sha256 = "sha256:$('f' * 64)"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $wrongGuardianDigestEvidence).valid) "supervisor guardian ledger bytes must match their exact digest"
+$missingGuardianFinalEvidence = Update-TestSupervisorGuardianEvidence -Evidence $fiveGuardianEvidence -CaseId "success" -Update {
+    param($events) @($events | Where-Object { [string]$_.event_type -cne "guardian-stopped" })
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $missingGuardianFinalEvidence).valid) "operation heartbeats cannot replace the guardian-authored controlled-stop final health record"
+$wrongGuardianFinalIdentityEvidence = Update-TestSupervisorGuardianEvidence -Evidence $fiveGuardianEvidence -CaseId "success" -Update {
+    param($events) $final = @($events | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })[0]; $final.guardian_pid = 9999; $events
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $wrongGuardianFinalIdentityEvidence).valid) "guardian final health must bind to the supervisor-retained per-case helper identity"
+$futureGuardianEvidence = Update-TestSupervisorGuardianEvidence -Evidence $fiveGuardianEvidence -CaseId "success" -Update {
+    param($events) $final = @($events | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })[0]; $final.observed_utc = "2026-07-14T00:00:07Z"; $events
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $futureGuardianEvidence).valid) "results generated_utc must be causally after supervisor-retained guardian evidence"
 
 # Permanent contradictions from fresh-eyes review: no worker-authored outcome
 # label or aggregate Boolean may repair incompatible retained evidence.
@@ -631,6 +715,17 @@ Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $compileNotRu
 $attackerRuntimeErrValueResults = Copy-TestJsonObject -Value $fiveCompleteResults
 $attackerRuntimeErrValueResults.cases[4].run_value = "attacker text"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $attackerRuntimeErrValueResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "runtime-full-err must bind the returned exact Err JSON to the separately parsed runtime_err"
+$caseChangedReturnedErrResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$changedReturnedErr = $caseChangedReturnedErrResults.cases[4].run_value | ConvertFrom-Json -DateKind String
+$changedReturnedErr.source = "oracleruntimesource"
+$caseChangedReturnedErrResults.cases[4].run_value = $changedReturnedErr | ConvertTo-Json -Compress
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $caseChangedReturnedErrResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "returned full-Err JSON text must compare case-sensitively with persisted runtime_err"
+$caseChangedPersistedErrResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$caseChangedPersistedErrResults.cases[4].runtime_err.source = "oracleruntimesource"
+$changedPersistedErr = $caseChangedPersistedErrResults.cases[4].run_value | ConvertFrom-Json -DateKind String
+$changedPersistedErr.source = "oracleruntimesource"
+$caseChangedPersistedErrResults.cases[4].run_value = $changedPersistedErr | ConvertTo-Json -Compress
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $caseChangedPersistedErrResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "persisted full Err must compare case-sensitively with the sealed descriptor expectation"
 $ambiguousWithUnrelatedErrResults = Copy-TestJsonObject -Value $fiveCompleteResults
 $ambiguousWithUnrelatedErrResults.cases[2].runtime_err = [pscustomobject][ordered]@{
     schema = "oxvba.excel-vba-oracle-runtime-err.v1"; number = 5; source = "attacker"; description = "unrelated"
@@ -649,6 +744,18 @@ Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $successWithR
 $wrongInvocationObservationResults = Copy-TestJsonObject -Value $fiveCompleteResults
 $wrongInvocationObservationResults.cases[0].runtime_measurement.invocation_observation = "attacker-observation"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongInvocationObservationResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "runtime outcome derivation must require the exact case-specific invocation observation"
+$successTransportResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$successTransportResults.cases[0].transport_error = "attacker transport"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $successTransportResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "an admitted ordinary success outcome must require transport_error=null"
+$unrelatedBootstrapResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$unrelatedBootstrapResults.cases[0].bootstrap_workbook.path = "C:\fixture\unrelated-valid\oracle-bootstrap.xlsx"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $unrelatedBootstrapResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "a valid-looking bootstrap outside the supervisor-derived run/case path must fail before file validation"
+$unrelatedModuleResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$unrelatedModuleResults.cases[0].module_path = "C:\fixture\unrelated-valid\OracleSelfTest.bas"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $unrelatedModuleResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "module artifacts must bind to the supervisor-derived run/case path"
+$futureMeasurementResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$futureMeasurementResults.cases[0].runtime_measurement.measured_utc = "2026-07-14T00:00:07Z"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $futureMeasurementResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "results generated_utc must be causally after every case measurement timestamp"
 
 $runtimeDiagnosticIds = @("runtime-unhandled-modal")
 $runtimeDiagnosticCase = New-TestPostCleanupCase -Id $runtimeDiagnosticIds[0] -OwnedPid 7199 -ObservedPid 7199
@@ -669,6 +776,9 @@ $preOwnershipResults = New-TestPostCleanupResults -Cases @($preOwnershipCase) -A
 $emptyLedger = New-TestPostCleanupLedger -CaseIds @()
 $preOwnershipResolution = Invoke-TestPostCleanupResolution -Results $preOwnershipResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1
 Assert-True ([bool]$preOwnershipResolution.valid -and [string]$preOwnershipResolution.disposition -eq "pre-ownership-transport" -and [string]$preOwnershipResolution.transport_error -eq "durable ownership write failed") "five-case early stop must surface exactly the first pre-ownership transport after empty-ledger cleanup"
+$forgedPreOwnershipRuntimeResults = Copy-TestJsonObject -Value $preOwnershipResults
+$forgedPreOwnershipRuntimeResults.cases[0].run_value = "forged runtime payload"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $forgedPreOwnershipRuntimeResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "pre-ownership transport must exclude forged runtime payload regardless of ownership state"
 Assert-True (Test-ExcelOracleShouldStopAfterCase -CaseResult $preOwnershipCase) "ownership-write failure with an observed PID but no durable record must stop relaunches"
 $jobDeferredPreOwnershipResults = Copy-TestJsonObject -Value $preOwnershipResults
 $jobDeferredPreOwnershipResults.cases[0].cleanup_status = "job-contained-preownership"
@@ -929,6 +1039,27 @@ try {
     catch { $staleMarkerRejected = $_.Exception.Message -match "claim marker remains after deletion attempt" }
     Assert-True ($staleMarkerRejected -and (Test-Path -LiteralPath $staleMarkerClaim.claim_path)) "a no-op deletion must be detected by exact post-cleanup marker absence verification"
     Remove-Item -LiteralPath $staleMarkerClaim.claim_path -Force -ErrorAction Stop
+
+    [void][IO.Directory]::CreateDirectory((Join-Path $claimCleanupRoot "enter-delete-failure"))
+    $enterDeletionFailureObserved = $false
+    try {
+        [void](Enter-ExcelOracleRunClaim -OutputBase $claimCleanupRoot -RunId "enter-delete-failure" `
+            -RemoveClaim { param($Path) throw "injected enter deletion failure for $Path" })
+    }
+    catch {
+        $enterDeletionFailureObserved = $_.Exception.Message -match "run directory already exists" -and $_.Exception.Message -match "injected enter deletion failure"
+    }
+    $enterDeletionFailureMarker = Join-Path $claimCleanupRoot ".enter-delete-failure.run-claim"
+    Assert-True ($enterDeletionFailureObserved -and (Test-Path -LiteralPath $enterDeletionFailureMarker)) "Enter failure cleanup must preserve its primary error, surface marker deletion failure, and leave the exact marker visible"
+    Remove-Item -LiteralPath $enterDeletionFailureMarker -Force -ErrorAction Stop
+
+    [void][IO.Directory]::CreateDirectory((Join-Path $claimCleanupRoot "enter-stale-marker"))
+    $enterStaleMarkerObserved = $false
+    try { [void](Enter-ExcelOracleRunClaim -OutputBase $claimCleanupRoot -RunId "enter-stale-marker" -RemoveClaim { param($Path) }) }
+    catch { $enterStaleMarkerObserved = $_.Exception.Message -match "claim marker remains after deletion attempt" }
+    $enterStaleMarker = Join-Path $claimCleanupRoot ".enter-stale-marker.run-claim"
+    Assert-True ($enterStaleMarkerObserved -and (Test-Path -LiteralPath $enterStaleMarker)) "Enter failure cleanup must verify exact claim-marker absence after a no-op deletion"
+    Remove-Item -LiteralPath $enterStaleMarker -Force -ErrorAction Stop
 }
 finally {
     if ($deletionFailureClaim -and $deletionFailureClaim.stream) { $deletionFailureClaim.stream.Dispose() }
@@ -1162,6 +1293,8 @@ Assert-True ($guardianSource -match 'Stale top-level UIA children are expected a
 Assert-True ($guardianSource -match 'Microsoft Visual Basic for Applications\*') "selected-token UIA capture must be scoped to the VBE window"
 Assert-True ($guardianSource -match 'ConvertFrom-ExcelOracleGuardianControl' -and $guardianSource -match 'invalid-control' -and $guardianSource -match 'never arms an operation') "invalid controls must be durably reported and never authorize dismissal"
 Assert-True ($guardianSource -match 'operation-armed' -and $guardianSource -match 'guardian-heartbeat') "guardian must acknowledge and heartbeat each operation"
+Assert-True ($guardianSource -match 'oxvba\.excel-vba-oracle-final-state\.v1' -and $guardianSource -match 'controlled_stop_observed' -and
+    $guardianSource -match 'excel_identity_live_at_stop' -and $guardianSource -match 'if \(\$exitReason -ne "controlled-stop"\) \{ exit 2 \}') "guardian must append its own fail-closed final health record after observing the controlled stop"
 
 $workerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-worker.ps1")
 $contractSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "excel-vba-oracle-contract.ps1")
@@ -1233,6 +1366,13 @@ Assert-True (Test-RunnerEmptyLedgerShape -Source $runnerSource) "missing ownersh
 $nullLedgerMutation = $runnerSource.Replace('[string[]]$lines = [string[]]::new(0)', '$lines = if (Test-Path -LiteralPath $Path) { @(Get-Content -LiteralPath $Path) } else { @() }')
 Assert-True (-not (Test-RunnerEmptyLedgerShape -Source $nullLedgerMutation)) "mutation: pipeline-collapsed missing ledger arrays must be rejected"
 Assert-True ($runnerSource -match 'Resolve-ExcelOraclePostCleanupResult' -and $runnerSource -match 'first selected case failed before durable ownership after owned Job cleanup' -and $runnerSource -notmatch 'if \(\$workerFailure\) \{ throw \$workerFailure \}') "runner must use the pure post-cleanup authority result and never let process exit alone bypass ledger binding"
+Assert-True ($runnerSource -match 'function Read-SupervisorGuardianEvidence' -and $runnerSource -match '\[IO\.File\]::Open\(\$ledgerPath' -and
+    $runnerSource -match 'Get-ExcelOracleBytesSha256 -Bytes \$bytes' -and $runnerSource -match '-SupervisorGuardianEvidence \$supervisorGuardianEvidence' -and
+    $runnerSource.IndexOf('$supervisorGuardianEvidence = @(Read-SupervisorGuardianEvidence') -lt $runnerSource.IndexOf('$postCleanup = Resolve-ExcelOraclePostCleanupResult')) "supervisor must independently retain exact per-case guardian ledger bytes/digests before resolution"
+Assert-True ($contractSource -match 'module path is not the exact supervisor-derived case path' -and
+    $contractSource -match 'bootstrap\.path, \$expectedBootstrapPath' -and $contractSource -match 'injected_project_file_name, \$expectedBootstrapPath') "module, bootstrap descriptor, and compile-project paths must bind to supervisor-derived run/case paths"
+Assert-True ($contractSource -match 'Exit-ExcelOracleRunClaim -Claim \$failedClaim -PrimaryFailure \$primaryFailure -RemoveClaim \$RemoveClaim' -and
+    $contractSource -notmatch 'Remove-Item -LiteralPath \$claimPath -Force -ErrorAction SilentlyContinue') "Enter claim failure cleanup must use hardened combined-error deletion and exact absence verification"
 Assert-True ($runnerSource -match 'New-ExcelOracleSelectedCaseDescriptorEnvelope' -and
     $runnerSource.IndexOf('$selectedCaseDescriptorEnvelope | ConvertTo-Json') -lt $runnerSource.IndexOf('$containedWorker = Start-ExcelOracleContainedProcess') -and
     $runnerSource -match '"-SelectedCaseDescriptorFile", \$selectedCaseDescriptorFile' -and
