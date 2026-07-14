@@ -27,9 +27,14 @@ pub mod oracle;
 
 use oxvba_host::{Engine, FinalErr, HostConfig, RuntimeProfileId, SnapshotOutcome, Vm3Snapshot};
 use oxvba_runtime::variant::VarType;
-use oxvba_runtime::{HandleBalance, Variant, live_handle_counts, variant_to_vba_string};
+use oxvba_runtime::{
+    HandleBalance, Variant, current_thread_live_handle_counts, variant_to_vba_string,
+};
 
 fn balance_measurement_lock() -> &'static std::sync::Mutex<()> {
+    // Preserve the harness's established serialized execution around shared
+    // runtime fixtures. Handle-balance isolation no longer depends on this
+    // lock: the samples below are current-runner-thread snapshots.
     static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
 }
@@ -187,7 +192,12 @@ pub struct RunOutcome {
     /// not yet implement. Such a program is SKIPPED by the corpus comparison — out of the
     /// executor's current scope, not a divergence.
     pub unsupported: Option<String>,
-    /// Live-handle delta over this run after snapshot values have been canonicalized and dropped.
+    /// Live-handle delta on the synchronous runner thread after snapshot values have been
+    /// canonicalized and dropped.
+    ///
+    /// VM3 and JIT execution, supported callbacks, and cleanup currently remain on this runner
+    /// thread. This observable does not certify future asynchronous or cross-thread runtime work;
+    /// whole-process/subprocess evidence uses [`oxvba_runtime::live_handle_counts`] instead.
     pub handle_balance: Option<HandleBalance>,
 }
 
@@ -235,8 +245,11 @@ impl RunOutcome {
         }
     }
 
-    fn with_handle_balance(mut self, before: oxvba_runtime::LiveHandleCounts) -> Self {
-        self.handle_balance = Some(before.balance_to(live_handle_counts()));
+    fn with_current_thread_handle_balance(
+        mut self,
+        before: oxvba_runtime::LiveHandleCounts,
+    ) -> Self {
+        self.handle_balance = Some(before.balance_to(current_thread_live_handle_counts()));
         self
     }
 }
@@ -269,7 +282,7 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
     let _balance_guard = balance_measurement_lock()
         .lock()
         .expect("balance measurement lock poisoned");
-    let before = live_handle_counts();
+    let before = current_thread_live_handle_counts();
     let engine = vm3_oracle_engine();
     let outcome = match executor {
         Executor::Vm3 => {
@@ -279,7 +292,7 @@ pub fn run_with_project(executor: Executor, source: &str, project_name: &str) ->
             jit_candidate_engine().execute_manifest_snapshot_with_err_jit(&manifest),
         ),
     };
-    outcome.with_handle_balance(before)
+    outcome.with_current_thread_handle_balance(before)
 }
 
 /// Run a multi-module project under `executor` (e.g. a procedural `Main` plus a class module),
@@ -313,7 +326,7 @@ pub fn run_modules(
     let _balance_guard = balance_measurement_lock()
         .lock()
         .expect("balance measurement lock poisoned");
-    let before = live_handle_counts();
+    let before = current_thread_live_handle_counts();
     let engine = vm3_oracle_engine();
     let outcome = match executor {
         Executor::Vm3 => {
@@ -323,7 +336,7 @@ pub fn run_modules(
             jit_candidate_engine().execute_manifest_snapshot_with_err_jit(&manifest),
         ),
     };
-    outcome.with_handle_balance(before)
+    outcome.with_current_thread_handle_balance(before)
 }
 
 /// Run a fully-specified single-project manifest under `executor`, including references.
@@ -334,7 +347,7 @@ pub fn run_manifest(
     let _balance_guard = balance_measurement_lock()
         .lock()
         .expect("balance measurement lock poisoned");
-    let before = live_handle_counts();
+    let before = current_thread_live_handle_counts();
     let engine = vm3_oracle_engine();
     let outcome = match executor {
         Executor::Vm3 => {
@@ -344,7 +357,7 @@ pub fn run_manifest(
             jit_candidate_engine().execute_manifest_snapshot_with_err_jit(manifest),
         ),
     };
-    outcome.with_handle_balance(before)
+    outcome.with_current_thread_handle_balance(before)
 }
 
 /// Run a leaf-first project closure under `executor` and capture the entry project's globals.
@@ -360,7 +373,7 @@ pub fn run_project_closure(
     let _balance_guard = balance_measurement_lock()
         .lock()
         .expect("balance measurement lock poisoned");
-    let before = live_handle_counts();
+    let before = current_thread_live_handle_counts();
     let engine = vm3_oracle_engine();
     let outcome = match executor {
         Executor::Vm3 => {
@@ -415,7 +428,7 @@ pub fn run_project_closure(
             }
         }
     };
-    outcome.with_handle_balance(before)
+    outcome.with_current_thread_handle_balance(before)
 }
 
 /// Run an already-elaborated OxIR program closure under `executor`.
@@ -429,7 +442,7 @@ pub fn run_ox_programs(executor: Executor, programs: &[oxvba_oxir::OxProgram]) -
     let _balance_guard = balance_measurement_lock()
         .lock()
         .expect("balance measurement lock poisoned");
-    let before = live_handle_counts();
+    let before = current_thread_live_handle_counts();
     let host = vm3_oracle_engine().host_services();
     let outcome = match executor {
         Executor::Vm3 => {
@@ -537,7 +550,7 @@ pub fn run_ox_programs(executor: Executor, programs: &[oxvba_oxir::OxProgram]) -
             }
         }
     };
-    outcome.with_handle_balance(before)
+    outcome.with_current_thread_handle_balance(before)
 }
 
 /// Run `source` under `executor` (as project `project_name`) on a worker thread with a
@@ -565,6 +578,60 @@ pub fn run_with_timeout(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn differential_balance_detects_an_outstanding_same_thread_handle() {
+        let before = current_thread_live_handle_counts();
+        let value = oxvba_runtime::bstr::BStr::from("same-thread differential");
+
+        let outcome =
+            RunOutcome::unsupported("counter probe").with_current_thread_handle_balance(before);
+        assert_eq!(
+            outcome.handle_balance,
+            Some(HandleBalance {
+                bstrs: 1,
+                ..HandleBalance::default()
+            }),
+            "the differential observable must detect a same-thread outstanding handle"
+        );
+
+        drop(value);
+        assert_eq!(current_thread_live_handle_counts(), before);
+    }
+
+    #[test]
+    fn differential_balance_ignores_a_live_sibling_thread_handle() {
+        let before = current_thread_live_handle_counts();
+        let (allocated_tx, allocated_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let child = std::thread::spawn(move || {
+            let value = oxvba_runtime::bstr::BStr::from("sibling differential");
+            allocated_tx
+                .send(())
+                .expect("parent must observe the child allocation");
+            release_rx
+                .recv()
+                .expect("parent must release the child allocation");
+            drop(value);
+        });
+
+        allocated_rx
+            .recv()
+            .expect("child must publish the live allocation");
+        let outcome =
+            RunOutcome::unsupported("counter probe").with_current_thread_handle_balance(before);
+        assert_eq!(
+            outcome.handle_balance,
+            Some(HandleBalance::default()),
+            "a live sibling-thread handle must not contaminate the differential run sample"
+        );
+
+        release_tx
+            .send(())
+            .expect("child must remain available for release");
+        child.join().expect("counter-isolation child must finish");
+        assert_eq!(current_thread_live_handle_counts(), before);
+    }
 
     const JIT_STRAIGHT_LINE_LONG: &str = "\
 Public g As Long

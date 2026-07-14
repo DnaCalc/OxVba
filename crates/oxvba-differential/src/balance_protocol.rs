@@ -159,18 +159,32 @@ pub struct BalanceFixtureReport {
     pub executor: String,
     pub result: FixtureResultObservation,
     pub full_err: FullErrObservation,
+    /// Process-global carrier deltas for the dedicated fixture child.
     pub carrier_deltas: CarrierDeltas,
 }
 
 impl BalanceFixtureReport {
-    pub fn from_run_outcome(
+    /// Build a fixture report from a synchronous run and the dedicated child's
+    /// independently sampled process-global carrier balance.
+    ///
+    /// `RunOutcome::handle_balance` remains the current-runner-thread
+    /// observable. It must exist and be clean so a future cross-thread runtime
+    /// path cannot silently weaken this synchronous fixture contract. The
+    /// serialized `carrier_deltas` come only from `process_handle_balance`.
+    pub fn from_process_balanced_outcome(
         fixture: impl Into<String>,
         outcome: RunOutcome,
+        process_handle_balance: HandleBalance,
     ) -> Result<Self, String> {
-        let carrier_deltas = outcome
-            .handle_balance
-            .ok_or_else(|| "fixture outcome has no carrier-balance measurement".to_string())?
-            .try_into()?;
+        let runner_thread_balance = outcome.handle_balance.ok_or_else(|| {
+            "fixture outcome has no runner-thread balance measurement".to_string()
+        })?;
+        if !runner_thread_balance.is_zero() {
+            return Err(format!(
+                "fixture outcome has a runner-thread carrier imbalance: {runner_thread_balance:?}"
+            ));
+        }
+        let carrier_deltas = process_handle_balance.try_into()?;
         let result = if let Some(what) = outcome.unsupported {
             FixtureResultObservation {
                 completion: FixtureCompletion::Unsupported,
@@ -319,8 +333,36 @@ mod tests {
             unsupported: None,
             handle_balance: None,
         };
-        let err = BalanceFixtureReport::from_run_outcome("fixture-a", outcome)
-            .expect_err("missing measurement must fail closed");
-        assert!(err.contains("no carrier-balance measurement"), "{err}");
+        let err = BalanceFixtureReport::from_process_balanced_outcome(
+            "fixture-a",
+            outcome,
+            HandleBalance::default(),
+        )
+        .expect_err("missing measurement must fail closed");
+        assert!(
+            err.contains("no runner-thread balance measurement"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn report_construction_rejects_a_runner_thread_imbalance() {
+        let outcome = RunOutcome {
+            result: Ok(Vec::new()),
+            err: oxvba_host::FinalErr::default(),
+            raised: false,
+            unsupported: None,
+            handle_balance: Some(HandleBalance {
+                bstrs: 1,
+                ..HandleBalance::default()
+            }),
+        };
+        let err = BalanceFixtureReport::from_process_balanced_outcome(
+            "fixture-a",
+            outcome,
+            HandleBalance::default(),
+        )
+        .expect_err("runner-thread imbalance must fail closed");
+        assert!(err.contains("runner-thread carrier imbalance"), "{err}");
     }
 }
