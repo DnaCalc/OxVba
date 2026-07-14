@@ -19,7 +19,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
 
 ## Tier 1 — Robustness / host-crash (a guest VBA program must never abort the host)
 
-- ☐ **B1 lexer-nonascii-panic** (syntax, HIGH) — `crates/oxvba-syntax/src/lexer.rs`
+- ☑ **B1 lexer-nonascii-panic** (syntax, HIGH) — `crates/oxvba-syntax/src/lexer.rs`
   fallthrough byte-slices non-ASCII chars → `i += 1` splits a UTF-8 char → `&source[start..i]`
   panics ("byte index not a char boundary"). Any non-ASCII char outside a string/comment/
   bracket — incl. **legal VBA Unicode identifiers** — crashes the compiler/host. Fix: accept

@@ -159,10 +159,51 @@ pub fn tokenize(source: &str) -> Vec<(SyntaxKind, &str)> {
         }
 
         // ── Identifier / keyword ────────────────────────────
-        if b.is_ascii_alphabetic() || b == b'_' {
-            i += 1;
-            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+        // ASCII letters/`_` start an identifier; VBA also permits non-ASCII
+        // Unicode letters in identifiers (common in non-English locales). We
+        // keep the ASCII byte fast path and decode whole chars for bytes
+        // >= 0x80 so `i` always stays on a UTF-8 char boundary — otherwise the
+        // token slices below (here and in the operator arms) would split a
+        // multibyte character and panic the host on ordinary VBA source.
+        if b.is_ascii_alphabetic() || b == b'_' || b >= 0x80 {
+            if b < 0x80 {
                 i += 1;
+            } else {
+                match source[i..].chars().next() {
+                    Some(ch) if is_unicode_ident_start(ch) => i += ch.len_utf8(),
+                    Some(ch) => {
+                        // Non-ASCII, non-letter (symbol/emoji/currency sign):
+                        // emit one lossless error token for the whole char so
+                        // the stream never splits a multibyte character.
+                        i += ch.len_utf8();
+                        tokens.push((SyntaxKind::ErrorNode, &source[start..i]));
+                        continue;
+                    }
+                    // Unreachable: a byte >= 0x80 at a boundary always yields a
+                    // char. Drain to EOF rather than risk a split slice.
+                    None => {
+                        i = bytes.len();
+                        continue;
+                    }
+                }
+            }
+            while i < bytes.len() {
+                let cb = bytes[i];
+                if cb < 0x80 {
+                    if cb.is_ascii_alphanumeric() || cb == b'_' {
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                } else if let Some(ch) = source[i..].chars().next() {
+                    if is_unicode_ident_continue(ch) {
+                        i += ch.len_utf8();
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
             }
             let text = &source[start..i];
             let lower = text.to_ascii_lowercase();
@@ -184,13 +225,16 @@ pub fn tokenize(source: &str) -> Vec<(SyntaxKind, &str)> {
         }
 
         // ── Multi-character operators ───────────────────────
+        // Match on the raw byte pair rather than slicing `&source[start..start+2]`:
+        // the following byte may be a non-ASCII lead byte, and slicing across it
+        // would split a multibyte char and panic. All operator bytes are ASCII,
+        // so once matched the `start..i` slice lands on char boundaries.
         if i + 1 < bytes.len() {
-            let two = &source[start..start + 2];
-            let kind2 = match two {
-                "<=" => Some(SyntaxKind::LtEq),
-                ">=" => Some(SyntaxKind::GtEq),
-                "<>" => Some(SyntaxKind::LtGt),
-                ":=" => Some(SyntaxKind::ColonEq),
+            let kind2 = match (b, bytes[i + 1]) {
+                (b'<', b'=') => Some(SyntaxKind::LtEq),
+                (b'>', b'=') => Some(SyntaxKind::GtEq),
+                (b'<', b'>') => Some(SyntaxKind::LtGt),
+                (b':', b'=') => Some(SyntaxKind::ColonEq),
                 _ => None,
             };
             if let Some(k) = kind2 {
@@ -288,6 +332,21 @@ fn is_bang_member_operator(bytes: &[u8], i: usize) -> bool {
 
 fn is_identifier_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
+}
+
+/// A non-ASCII character that may begin a VBA identifier. VBA/VB permit Unicode
+/// letters in identifiers, so any Unicode alphabetic char qualifies. (ASCII
+/// starts are handled by the byte fast path; this is only consulted for
+/// `char >= 0x80`.)
+fn is_unicode_ident_start(ch: char) -> bool {
+    ch.is_alphabetic()
+}
+
+/// A non-ASCII character that may continue a VBA identifier (letters or Unicode
+/// digits). ASCII alphanumerics/`_` are handled by the byte fast path; this is
+/// only consulted for `char >= 0x80`.
+fn is_unicode_ident_continue(ch: char) -> bool {
+    ch.is_alphanumeric()
 }
 
 fn is_integer_type_suffix(b: u8) -> bool {
@@ -588,6 +647,51 @@ mod tests {
                 .iter()
                 .any(|(kind, text)| { *kind == SyntaxKind::Comment && *text == "' apostrophe" })
         );
+    }
+
+    #[test]
+    fn non_ascii_identifier_is_lexed_as_ident() {
+        // VBA permits Unicode-letter identifiers (common in non-English locales).
+        let toks = tokenize("Dim café As String");
+        assert!(
+            toks.iter()
+                .any(|(kind, text)| *kind == SyntaxKind::Ident && *text == "café"),
+            "accented identifier must lex as a single Ident, got {toks:?}"
+        );
+        // A 2-byte (é), 3-byte (λ, 日) and mixed identifier all stay atomic.
+        assert_eq!(tokenize("λ")[0], (SyntaxKind::Ident, "λ"));
+        assert_eq!(tokenize("변수")[0], (SyntaxKind::Ident, "변수"));
+        assert_eq!(tokenize("xÄ1")[0], (SyntaxKind::Ident, "xÄ1"));
+    }
+
+    #[test]
+    fn non_ascii_input_never_panics_and_round_trips() {
+        // Regression: the lexer used to byte-slice multibyte chars in the
+        // operator/identifier fallthrough and panic ("byte index not a char
+        // boundary") on ordinary non-ASCII VBA source. Every one of these must
+        // tokenize without panicking and reconstruct exactly.
+        let sources = [
+            "é",            // bare 2-byte
+            "€",            // 3-byte non-letter symbol
+            "😀",           // 4-byte non-letter (emoji)
+            "+😀",          // operator immediately followed by a 4-byte char
+            "<€",           // 2-char-operator lookahead across a 3-byte lead byte
+            "x = \"café\" ' αβγ comment", // multibyte in string + comment
+            "Sub Naïve()\r\n    Dim π As Double\r\nEnd Sub",
+            "变量 = 42 : Debug.Print 变量",
+        ];
+        for src in sources {
+            let tokens = tokenize(src);
+            let reconstructed: String = tokens.iter().map(|(_, t)| *t).collect();
+            assert_eq!(reconstructed, src, "round-trip failed for {src:?}");
+        }
+    }
+
+    #[test]
+    fn non_ascii_symbol_becomes_error_token() {
+        // A non-ASCII, non-letter char is a single lossless ErrorNode, not a split.
+        assert_eq!(tokenize("€")[0], (SyntaxKind::ErrorNode, "€"));
+        assert_eq!(tokenize("😀")[0], (SyntaxKind::ErrorNode, "😀"));
     }
 
     #[test]
