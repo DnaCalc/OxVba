@@ -48,7 +48,8 @@ Legend: ☐ open · ◐ in progress · ☑ done
 
 ## Tier 2 — Correctness bugs (mostly SilentWrong)
 
-- ☐ **B6 dateadd-clamp** (lib, HIGH, S — #8) — `crates/oxvba-lib/src/pure.rs:1363` DateAdd
+- ☑ **B6 dateadd-clamp** (lib, HIGH, S — #8) — `crates/oxvba-lib/src/pure.rs:1363` DateAdd
+  (also fixed the adjacent time-of-day drop in the same branch)
   "m"/"yyyy"/"q" reuses original day, no clamp → `DateAdd("m",1,#1/31/2021#)`→3/3/2021 (VBA
   2/28). Fix: clamp day to days-in-month before `ymd_to_serial`.
 - ☐ **B7 single-string-precision** (runtime, HIGH, S — #6) — `crates/oxvba-runtime/src/coerce.rs:314`

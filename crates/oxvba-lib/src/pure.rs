@@ -17,7 +17,7 @@ use oxvba_runtime::{
 // The VBA serial ↔ civil calendar math is canonical in `oxvba_runtime::vba_date`; re-export it
 // at `crate::pure::*` so this module's date functions (and `format.rs`) keep their call sites.
 pub(crate) use oxvba_runtime::{
-    civil_from_days, days_from_civil, serial_to_hms, serial_to_ymd, ymd_to_serial,
+    civil_from_days, days_from_civil, days_in_month, serial_to_hms, serial_to_ymd, ymd_to_serial,
 };
 
 const VBA_DATE_MIN_SERIAL: f64 = -657_434.0; // 0100-01-01
@@ -1344,7 +1344,8 @@ fn month_from_name(tok: &str) -> Option<i64> {
 }
 
 /// FIDELITY: supports day/week/hour/minute/second additions exactly; month/year
-/// additions are calendar-correct but do not clamp end-of-month edge cases.
+/// additions are calendar-correct, clamp the day to the target month's length
+/// (VBA never rolls `1/31` past February), and preserve the time of day.
 pub fn date_add(args: &[Variant]) -> LibResult<Variant> {
     let interval = as_str(need(args, 0)?)?.to_lowercase();
     let number = as_f64(need(args, 1)?)?;
@@ -1360,7 +1361,19 @@ pub fn date_add(args: &[Variant]) -> LibResult<Variant> {
                 };
             let ny = y + months.div_euclid(12);
             let nm = months.rem_euclid(12) + 1;
-            ymd_to_serial(ny, nm, d)
+            // Clamp the day to the target month (DateAdd("m",1,#1/31#) -> end of Feb,
+            // not a roll into March), and re-attach the source time of day. A VBA
+            // serial carries the time as the fraction |serial - trunc|, applied away
+            // from zero, so negative-date serials subtract it.
+            let clamped_day = d.min(days_in_month(ny, nm));
+            let (h, mi, s) = serial_to_hms(serial);
+            let time_frac = (h * 3600 + mi * 60 + s) as f64 / 86_400.0;
+            let date_serial = ymd_to_serial(ny, nm, clamped_day);
+            if date_serial < 0.0 {
+                date_serial - time_frac
+            } else {
+                date_serial + time_frac
+            }
         }
         "d" | "y" | "w" => serial + number,
         "ww" => serial + number * 7.0,

@@ -58,8 +58,8 @@ pub use object_ref::{
 pub use value_types::{BindingHandle, CurrencyValue, DynLinkSymbol, F64Subtype, F64Value};
 pub use variant::{VarType, Variant, VariantCore, VariantData};
 pub use vba_date::{
-    VBA_EPOCH_DAYS_FROM_UNIX, civil_from_days, days_from_civil, format_general_date,
-    format_write_date, serial_to_hms, serial_to_ymd, ymd_to_serial,
+    VBA_EPOCH_DAYS_FROM_UNIX, civil_from_days, days_from_civil, days_in_month, format_general_date,
+    format_write_date, is_leap_year, serial_to_hms, serial_to_ymd, ymd_to_serial,
 };
 pub use vba_error::default_error_message;
 pub use vba_radix::{

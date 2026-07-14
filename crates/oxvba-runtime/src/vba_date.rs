@@ -40,6 +40,22 @@ pub fn ymd_to_serial(y: i64, m: i64, d: i64) -> f64 {
     (days_from_civil(y, m, d) - VBA_EPOCH_DAYS_FROM_UNIX) as f64
 }
 
+/// Proleptic-Gregorian leap year (divisible by 4, except centuries not divisible by 400).
+pub fn is_leap_year(y: i64) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+/// The number of days in month `m` (1-12) of proleptic-Gregorian year `y`.
+pub fn days_in_month(y: i64, m: i64) -> i64 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(y) => 29,
+        2 => 28,
+        _ => 30,
+    }
+}
+
 fn serial_day_and_seconds(serial: f64) -> (i64, i64) {
     let mut day = serial.trunc() as i64;
     let frac = (serial - serial.trunc()).abs();
