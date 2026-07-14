@@ -1,0 +1,157 @@
+{
+  "schema_id": "oxvba-core-profile-gate-plan-v1",
+  "plan_id": "core-profile-portable-gates-v1",
+  "version": 1,
+  "profile": "core",
+  "supported_platforms": [
+    "windows-x64",
+    "linux-x64"
+  ],
+  "evidence": {
+    "no_artifact_root": "temp/no-artifacts/core-profile-gates",
+    "plan_path": "plan.json",
+    "run_manifest_path": "run-manifest.json",
+    "run_manifest_digest_path": "run-manifest.sha256",
+    "summary_path": "summary.txt"
+  },
+  "cargo_lock": {
+    "name_prefix": "oxvba-core-profile-cargo-v1",
+    "acquire_timeout_seconds": 600
+  },
+  "supervision": {
+    "cleanup_reserve_ms": 500,
+    "native_source_path": "scripts/core-gate-process-supervisor.cs",
+    "windows_transport": "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr",
+    "linux_launcher_path": "/usr/bin/setsid",
+    "linux_bash_path": "/usr/bin/bash",
+    "linux_supervisor_path": "scripts/core-gate-linux-supervisor.sh",
+    "linux_transport": "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
+  },
+  "gates": [
+    {
+      "order": 1,
+      "id": "linux-runtime-environment",
+      "description": "Verify the digest-pinned GitHub-hosted Linux x64 execution environment before repository gates",
+      "platforms": [
+        "linux-x64"
+      ],
+      "kind": "powershell",
+      "command": "scripts/validate-linux-ci-environment.ps1",
+      "arguments": [
+        "-Runtime"
+      ],
+      "environment": [],
+      "timeout_seconds": 180,
+      "cargo_workspace": false,
+      "evidence_path": "commands/001-linux-runtime-environment"
+    },
+    {
+      "order": 2,
+      "id": "windows-environment-ledger",
+      "description": "Verify the Windows x64 development and certification environment ledger before repository gates",
+      "platforms": [
+        "windows-x64"
+      ],
+      "kind": "powershell",
+      "command": "scripts/validate-environment-manifest.ps1",
+      "arguments": [],
+      "environment": [],
+      "timeout_seconds": 180,
+      "cargo_workspace": false,
+      "evidence_path": "commands/002-windows-environment-ledger"
+    },
+    {
+      "order": 3,
+      "id": "meta-fast-no-artifacts",
+      "description": "Run governance, format, strict workspace Clippy and ordinary workspace tests without tracked artifacts",
+      "platforms": [
+        "windows-x64",
+        "linux-x64"
+      ],
+      "kind": "powershell",
+      "command": "scripts/meta-check.ps1",
+      "arguments": [
+        "-Fast",
+        "-NoArtifacts"
+      ],
+      "environment": [],
+      "timeout_seconds": 7200,
+      "cargo_workspace": true,
+      "evidence_path": "commands/003-meta-fast-no-artifacts"
+    },
+    {
+      "order": 4,
+      "id": "differential-default-parallel",
+      "description": "Run the differential crate with its default parallel Rust test scheduler",
+      "platforms": [
+        "windows-x64",
+        "linux-x64"
+      ],
+      "kind": "cargo",
+      "command": "cargo",
+      "arguments": [
+        "test",
+        "-p",
+        "oxvba-differential",
+        "--all-targets",
+        "--",
+        "--nocapture"
+      ],
+      "environment": [
+        {
+          "name": "RUST_TEST_THREADS",
+          "action": "remove",
+          "value": ""
+        }
+      ],
+      "timeout_seconds": 3600,
+      "cargo_workspace": true,
+      "evidence_path": "commands/004-differential-default-parallel"
+    },
+    {
+      "order": 5,
+      "id": "differential-single-thread",
+      "description": "Run the differential crate with one Rust test thread",
+      "platforms": [
+        "windows-x64",
+        "linux-x64"
+      ],
+      "kind": "cargo",
+      "command": "cargo",
+      "arguments": [
+        "test",
+        "-p",
+        "oxvba-differential",
+        "--all-targets",
+        "--",
+        "--nocapture"
+      ],
+      "environment": [
+        {
+          "name": "RUST_TEST_THREADS",
+          "action": "set",
+          "value": "1"
+        }
+      ],
+      "timeout_seconds": 3600,
+      "cargo_workspace": true,
+      "evidence_path": "commands/005-differential-single-thread"
+    },
+    {
+      "order": 6,
+      "id": "truth-reconciliation",
+      "description": "Reconcile authoritative program, matrix, workset and derived-summary truth without refreshing it",
+      "platforms": [
+        "windows-x64",
+        "linux-x64"
+      ],
+      "kind": "powershell",
+      "command": "scripts/run-truth-reconciliation.ps1",
+      "arguments": [],
+      "environment": [],
+      "timeout_seconds": 600,
+      "cargo_workspace": false,
+      "evidence_path": "commands/006-truth-reconciliation"
+    }
+  ]
+}
