@@ -1,9 +1,10 @@
 //! Real-world acceptance test: the SQLiteForExcel VBA project driving the real
 //! `sqlite3.dll` through `Declare Lib` on the clean stack (closure → bind →
-//! linearize → vm2 → HAL native FFI). The bounded demo opens an in-memory
+//! OxIR → VM3 → HAL native FFI). The bounded demo opens an in-memory
 //! database, runs statements, and closes — completing only if native Declare
 //! execution (lane routing, ByVal/ByRef marshalling, StrPtr/VarPtr buffers +
-//! write-back, RtlMoveMemory) all work end to end. Windows-only; uses the
+//! write-back, RtlMoveMemory) all work end to end. The JIT path explicitly
+//! declines this external-call shape without VM3 fallback. Windows-only; uses the
 //! fixtures + x64 sqlite3.dll vendored under `.external/sqliteforexcel`.
 #![cfg(target_os = "windows")]
 
@@ -60,10 +61,11 @@ fn bounded_demo_completes_on_vm_via_native_sqlite() {
 
 #[test]
 fn bounded_demo_rejects_jit_without_falling_back() {
-    let err = run_bounded_demo(true)
-        .expect_err("JIT execution is not implemented; it must not silently fall back to the VM");
+    let err = run_bounded_demo(true).expect_err(
+        "JIT native/COM lowering is not implemented; it must not silently fall back to VM3",
+    );
     assert!(
-        err.contains("JIT execution"),
+        err.contains("native/COM calls start in M4-9"),
         "unexpected diagnostic: {err}"
     );
 }
