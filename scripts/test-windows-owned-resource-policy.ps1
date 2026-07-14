@@ -1291,17 +1291,28 @@ exit 0
                 '-WriterGatePath', $writerGatePath, '-WriterGateTimeoutSeconds', '600',
                 '-TargetPath', $writerTarget, '-Payload', "writer-$writerIndex")))
     }
+    # Every writer is still inert behind the absent gate here. Capture its
+    # exact durable process identity before any child can publish the journal;
+    # the live-writer poll must not bypass the transaction lease with path reads.
+    $writerRaceJournal = Read-WindowsOwnedResourceJournal -JournalPath $writerRaceJournalPath
+    $writerProcessIdentities = @($writerProcessIds | ForEach-Object {
+        $resource = Get-WindowsOwnedRecordedResource -Journal $writerRaceJournal -ResourceId $_ -Kind process -RequireActive
+        [pscustomobject][ordered]@{
+            resource_id = [string]$resource.resource_id
+            pid = [int]$resource.descriptor.pid
+            start_utc = [string]$resource.descriptor.process_start_utc
+        }
+    })
     [void](New-WindowsOwnedFile -JournalPath $writerRaceJournalPath -Path $writerGatePath -Bytes ([byte[]](1)))
     $writerDeadline = [DateTime]::UtcNow.AddSeconds(600)
     do {
-        $writerRaceJournal = Read-WindowsOwnedResourceJournal -JournalPath $writerRaceJournalPath
-        $liveWriters = @($writerProcessIds | ForEach-Object {
-            $resource = Get-WindowsOwnedRecordedResource -Journal $writerRaceJournal -ResourceId $_ -Kind process
-            if (Test-WindowsOwnedProcessIdentity -ProcessId ([int]$resource.descriptor.pid) -StartUtc ([string]$resource.descriptor.process_start_utc)) { $_ }
+        $liveWriters = @($writerProcessIdentities | Where-Object {
+            Test-WindowsOwnedProcessIdentity -ProcessId ([int]$_.pid) -StartUtc ([string]$_.start_utc)
         })
         if ($liveWriters.Count -gt 0) { Start-Sleep -Milliseconds 50 }
     } while ($liveWriters.Count -gt 0 -and [DateTime]::UtcNow -lt $writerDeadline)
-    Assert-PolicyTrue -Condition ($liveWriters.Count -eq 0) -Message "all $writerCount exact recorded writer children exit within their bounded contract"
+    Assert-PolicyTrue -Condition ($writerProcessIdentities.Count -eq $writerCount -and $liveWriters.Count -eq 0) `
+        -Message "all $writerCount exact pre-gate recorded writer identities exit within their bounded contract"
     $writerRaceJournal = Read-WindowsOwnedResourceJournal -JournalPath $writerRaceJournalPath
     $writerFileResources = @($writerRaceJournal.resources | Where-Object {
         if ([string]$_.kind -cne 'file') { return $false }
