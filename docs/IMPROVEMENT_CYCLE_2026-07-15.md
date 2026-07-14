@@ -35,7 +35,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
   `default_array_element` `expect()`s record layout/alloc for a Record element; guest UDTs
   (>64 KiB, zero-sized field) `Err` → `ReDim arr(..) As BigUDT` aborts host. Sibling `NewRecord`
   maps identical failures to Fault(13). Fix: return `Result`, propagate `?` at resize_with sites.
-- ☐ **B4 oxir-verify-loadpath** (oxir, MED — survey #13) — `crates/oxvba-oxir/src/image.rs:88`,
+- ☑ **B4 oxir-verify-loadpath** (oxir, MED — survey #13) — `crates/oxvba-oxir/src/image.rs:88`,
   `verify.rs:697` `verify_program` is dead outside tests; `from_bytes` runs only `validate()`,
   `link` only `validate_links()`; verifier omits `program.entry`/`global_initializer` bounds →
   a header-valid `.oxi` with an OOB entry/proc FuncId panics (OOB) at `new_frame_in`

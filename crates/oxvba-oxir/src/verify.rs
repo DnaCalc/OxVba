@@ -33,6 +33,10 @@ pub enum VerifyError {
         entry: usize,
         blocks: usize,
     },
+    /// The program's entry `FuncId` is out of range.
+    BadProgramEntry { entry: usize, funcs: usize },
+    /// The program's `global_initializer` `FuncId` is out of range.
+    BadGlobalInitializer { initializer: usize, funcs: usize },
     /// A terminator names a successor block that does not exist.
     BadSuccessor {
         func: usize,
@@ -341,6 +345,14 @@ impl std::fmt::Display for VerifyError {
                     "func {func}: entry block {entry} out of range ({blocks} blocks)"
                 )
             }
+            VerifyError::BadProgramEntry { entry, funcs } => write!(
+                f,
+                "program entry func {entry} out of range ({funcs} funcs)"
+            ),
+            VerifyError::BadGlobalInitializer { initializer, funcs } => write!(
+                f,
+                "program global_initializer func {initializer} out of range ({funcs} funcs)"
+            ),
             VerifyError::BadSuccessor {
                 func,
                 block,
@@ -696,6 +708,26 @@ impl std::error::Error for VerifyError {}
 /// Verify an entire program. Returns every structural defect found (empty ⇒ valid).
 pub fn verify_program(program: &OxProgram) -> Result<(), Vec<VerifyError>> {
     let mut errors = Vec::new();
+    let funcs = program.funcs.len();
+    // The program-level entry and global-initializer `FuncId`s are dereferenced
+    // directly when a frame is built (`Vm3::new_frame_in` indexes `funcs[..]`),
+    // so an out-of-range one from a corrupt image would panic the host; reject it.
+    if let Some(entry) = program.entry
+        && entry.0 >= funcs
+    {
+        errors.push(VerifyError::BadProgramEntry {
+            entry: entry.0,
+            funcs,
+        });
+    }
+    if let Some(initializer) = program.global_initializer
+        && initializer.0 >= funcs
+    {
+        errors.push(VerifyError::BadGlobalInitializer {
+            initializer: initializer.0,
+            funcs,
+        });
+    }
     verify_classes(program, &mut errors);
     for (fi, func) in program.funcs.iter().enumerate() {
         verify_func(program, fi, func, &mut errors);

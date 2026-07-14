@@ -154,6 +154,38 @@ mod tests {
     }
 
     #[test]
+    fn verifier_catches_out_of_range_program_entry() {
+        // A program `entry` FuncId out of range is dereferenced directly when a
+        // frame is built (Vm3::new_frame_in), so it must be rejected, not panic.
+        let mut p = sample_program();
+        p.entry = Some(FuncId(99));
+        let errs = verify_program(&p).expect_err("out-of-range program entry must be rejected");
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, VerifyError::BadProgramEntry { entry: 99, funcs: 1 })),
+            "expected BadProgramEntry, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_catches_out_of_range_global_initializer() {
+        let mut p = sample_program();
+        p.global_initializer = Some(FuncId(42));
+        let errs =
+            verify_program(&p).expect_err("out-of-range global_initializer must be rejected");
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadGlobalInitializer {
+                    initializer: 42,
+                    funcs: 1
+                }
+            )),
+            "expected BadGlobalInitializer, got {errs:?}"
+        );
+    }
+
+    #[test]
     fn verifier_catches_missing_fault_target() {
         let mut p = sample_program();
         // Drop the landing pad on the entry block; its checked-arith ops are fallible.

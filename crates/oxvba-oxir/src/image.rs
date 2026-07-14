@@ -35,6 +35,12 @@ pub enum OxImageError {
     UnsupportedVersion { version: u32 },
     Empty,
     EntryOutOfRange { entry: usize, count: usize },
+    /// A contained program failed structural verification (e.g. an out-of-range
+    /// entry/func/block reference in a corrupt or foreign `.oxi`).
+    VerificationFailed {
+        program: usize,
+        errors: Vec<crate::verify::VerifyError>,
+    },
 }
 
 impl std::fmt::Display for OxImageError {
@@ -51,6 +57,13 @@ impl std::fmt::Display for OxImageError {
             OxImageError::Empty => write!(f, "OxImage has no programs"),
             OxImageError::EntryOutOfRange { entry, count } => {
                 write!(f, "OxImage entry {entry} out of range ({count} programs)")
+            }
+            OxImageError::VerificationFailed { program, errors } => {
+                write!(f, "OxImage program {program} failed verification:")?;
+                for e in errors {
+                    write!(f, " {e};")?;
+                }
+                Ok(())
             }
         }
     }
@@ -77,10 +90,22 @@ impl OxImage {
         serde_json::to_vec_pretty(self).map_err(OxImageError::Serialize)
     }
 
-    /// Deserialize + validate an `.oxi` blob.
+    /// Deserialize + validate + structurally verify an `.oxi` blob. Verification
+    /// is a trust boundary: a corrupt or foreign `.oxi` with a valid header but
+    /// out-of-range entry/func/block references would otherwise panic the host
+    /// (an OOB index) when a frame is built, so every contained program is run
+    /// through [`verify_program`](crate::verify::verify_program) here.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, OxImageError> {
         let image: Self = serde_json::from_slice(bytes).map_err(OxImageError::Deserialize)?;
         image.validate()?;
+        for (index, program) in image.programs.iter().enumerate() {
+            crate::verify::verify_program(program).map_err(|errors| {
+                OxImageError::VerificationFailed {
+                    program: index,
+                    errors,
+                }
+            })?;
+        }
         Ok(image)
     }
 
@@ -126,6 +151,25 @@ mod tests {
         let back = OxImage::from_bytes(&bytes).expect("deserialize");
         assert_eq!(image, back);
         assert_eq!(back.program_refs().len(), 2);
+    }
+
+    #[test]
+    fn from_bytes_rejects_out_of_range_program_entry() {
+        // A .oxi with a valid header but a program whose `entry` FuncId is out of
+        // range used to pass load (only header/count/entry were checked) and then
+        // panic when a frame was built. It must now be rejected at load.
+        let program = OxProgram {
+            entry: Some(crate::FuncId(5)), // no funcs -> out of range
+            ..OxProgram::default()
+        };
+        let bytes = OxImage::new(vec![program]).to_bytes().expect("serialize");
+        assert!(
+            matches!(
+                OxImage::from_bytes(&bytes),
+                Err(OxImageError::VerificationFailed { program: 0, .. })
+            ),
+            "a corrupt program.entry must be rejected at load, not reach the runtime"
+        );
     }
 
     #[test]
