@@ -18,17 +18,17 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Matrix | Profile | Role | Owner epic | Rows | Verified | Open | Trace relationships |
 |---|---|---|---|---:|---:|---:|---:|
-| CORE-READINESS | core | primary | bd-59co.2.1 | 24 | 1 | 23 | 79 |
+| CORE-READINESS | core | primary | bd-59co.2.1 | 24 | 1 | 23 | 89 |
 | VBA-LIBRARY | core | primary | bd-59co.2.5 | 7 | 0 | 7 | 7 |
 | OXIR-BACKENDS | core | primary | bd-59co.2.6 | 12 | 0 | 12 | 12 |
 | OXIMAGE-CONTRACT | core | primary | bd-59co.2.6 | 8 | 0 | 8 | 8 |
 | EXCEL-ORACLE | core | evidence | bd-59co.2.11 | 8 | 0 | 8 | 10 |
-| WIN-COM-CLIENT | windows-x64 | primary | bd-59co.3.4 | 9 | 0 | 9 | 27 |
+| WIN-COM-CLIENT | windows-x64 | primary | bd-59co.3.4 | 9 | 0 | 9 | 29 |
 | WIN-COM-EVENTS | windows-x64 | primary | bd-59co.3.6 | 7 | 0 | 7 | 25 |
 | WIN-COM-SERVER | windows-x64 | primary | bd-59co.3.7 | 7 | 0 | 7 | 20 |
 | WIN-NATIVE-IMPORT | windows-x64 | primary | bd-59co.3.10 | 8 | 0 | 8 | 27 |
 | WIN-NATIVE-EXPORT | windows-x64 | primary | bd-59co.3.13 | 8 | 0 | 8 | 21 |
-| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 0 | 18 | 73 |
+| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 0 | 18 | 75 |
 | LS-BASELINE | ide | primary | bd-59co.4.1 | 29 | 0 | 29 | 31 |
 | LS-REFERENCES | ide | primary | bd-59co.4.7 | 10 | 0 | 10 | 12 |
 | LSP-METHODS | ide | projection | bd-59co.4.11 | 30 | 0 | 30 | 33 |
