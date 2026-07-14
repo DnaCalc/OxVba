@@ -1,8 +1,8 @@
 #!/usr/bin/bash
 set -euo pipefail
 
-if [[ "$#" -lt 6 ]]; then
-  echo "core-gate-linux-supervisor: expected ready ack nonce stdout stderr executable [args...]" >&2
+if [[ "$#" -lt 8 ]]; then
+  echo "core-gate-linux-supervisor: expected ready-fd ack-fd nonce stdout-fd stderr-fd working-directory-fd executable-fd argv0 [args...]" >&2
   exit 64
 fi
 
@@ -11,9 +11,13 @@ ack_path="$2"
 nonce="$3"
 stdout_path="$4"
 stderr_path="$5"
-shift 5
+working_directory="$6"
+executable_fd="$7"
+executable_argv0="$8"
+shift 8
 
 exec >>"${stdout_path}" 2>>"${stderr_path}"
+cd -- "${working_directory}"
 
 # setsid execs this exact Bash process as both process-group and session leader.
 # Publish its stable /proc start-time identity, then wait for the parent
@@ -38,7 +42,7 @@ while (( 10#${EPOCHREALTIME/./} < deadline_us )); do
     ack_nonce=""
     IFS= read -r ack_nonce <"${ack_path}" || true
     if [[ "${ack_nonce}" == "${nonce}" ]]; then
-      exec "$@"
+      exec -a "${executable_argv0}" "${executable_fd}" "$@"
     fi
   fi
 done

@@ -20,9 +20,13 @@ function Get-Sha256Hex {
 }
 
 function Get-CanonicalTextBytes {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [AllowNull()][byte[]]$Bytes = $null
+    )
 
-    $text = $utf8.GetString([IO.File]::ReadAllBytes($Path)).Replace("`r`n", "`n")
+    [byte[]]$sourceBytes = if ($null -eq $Bytes) { [IO.File]::ReadAllBytes($Path) } else { $Bytes }
+    $text = $utf8.GetString($sourceBytes).Replace("`r`n", "`n")
     if ($text.Contains("`r", [StringComparison]::Ordinal)) {
         throw "core-profile-gates: controlled text contains a bare carriage return: $Path"
     }
@@ -58,15 +62,16 @@ function Assert-NoDuplicateJsonProperties {
 function Read-StrictJson {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Owner
+        [Parameter(Mandatory = $true)][string]$Owner,
+        [AllowNull()][byte[]]$Bytes = $null
     )
 
-    [byte[]]$bytes = [IO.File]::ReadAllBytes($Path)
-    [void]$utf8.GetString($bytes)
+    [byte[]]$sourceBytes = if ($null -eq $Bytes) { [IO.File]::ReadAllBytes($Path) } else { $Bytes }
+    [void]$utf8.GetString($sourceBytes)
     $options = [Text.Json.JsonDocumentOptions]::new()
     $options.AllowTrailingCommas = $false
     $options.CommentHandling = [Text.Json.JsonCommentHandling]::Disallow
-    $stream = [IO.MemoryStream]::new($bytes, $false)
+    $stream = [IO.MemoryStream]::new($sourceBytes, $false)
     try {
         $document = [Text.Json.JsonDocument]::Parse($stream, $options)
     }
@@ -83,7 +88,7 @@ function Read-StrictJson {
         $document.Dispose()
     }
     try {
-        return $utf8.GetString($bytes) | ConvertFrom-Json -Depth 100
+        return $utf8.GetString($sourceBytes) | ConvertFrom-Json -Depth 100
     }
     catch {
         throw "core-profile-gates: $Owner cannot be decoded: $($_.Exception.Message)"
@@ -91,13 +96,16 @@ function Read-StrictJson {
 }
 
 function Assert-ManifestJsonArrayShapes {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [AllowNull()][byte[]]$Bytes = $null
+    )
 
-    [byte[]]$bytes = [IO.File]::ReadAllBytes($Path)
+    [byte[]]$sourceBytes = if ($null -eq $Bytes) { [IO.File]::ReadAllBytes($Path) } else { $Bytes }
     $options = [Text.Json.JsonDocumentOptions]::new()
     $options.AllowTrailingCommas = $false
     $options.CommentHandling = [Text.Json.JsonCommentHandling]::Disallow
-    $document = [Text.Json.JsonDocument]::Parse([ReadOnlyMemory[byte]]$bytes, $options)
+    $document = [Text.Json.JsonDocument]::Parse([ReadOnlyMemory[byte]]$sourceBytes, $options)
     try {
         $root = $document.RootElement
         foreach ($propertyName in @("supported_platforms", "gates")) {
@@ -445,6 +453,32 @@ function Assert-ExactFileIdentity {
     }
 }
 
+function Get-UniqueBoundInputs {
+    param([Parameter(Mandatory = $true)][object[]]$Identities)
+
+    $comparison = if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }
+    $byPath = [Collections.Generic.Dictionary[string, object]]::new($comparison)
+    foreach ($identity in $Identities) {
+        $candidatePath = if ($null -ne $identity.PSObject.Properties["absolute_path"]) {
+            [string]$identity.absolute_path
+        }
+        else { [string]$identity.path }
+        $path = [IO.Path]::GetFullPath($candidatePath)
+        $digest = [string]$identity.sha256
+        if ([string]::IsNullOrWhiteSpace($path) -or $digest -cnotmatch '^[0-9a-f]{64}$') {
+            throw "core-profile-gates: bound input identity is incomplete"
+        }
+        if ($byPath.ContainsKey($path)) {
+            if ([string]$byPath[$path].sha256 -cne $digest) {
+                throw "core-profile-gates: bound input has conflicting admitted digests: $path"
+            }
+            continue
+        }
+        $byPath.Add($path, [pscustomobject][ordered]@{ path = $path; sha256 = $digest })
+    }
+    return @($byPath.Values)
+}
+
 function Invoke-BoundedCapture {
     param(
         [Parameter(Mandatory = $true)][string]$Executable,
@@ -481,25 +515,40 @@ function Invoke-BoundedCapture {
     }
     $execution = $null
     try {
+        $boundCandidates = @($matchingTools[0], $ProbeContext.native_source)
+        $setsid = $null
+        $bash = $null
+        if ($IsLinux) {
+            $setsid = Get-ToolIdentityById -Tools $ProbeContext.tools -Id "setsid"
+            $bash = Get-ToolIdentityById -Tools $ProbeContext.tools -Id "bash"
+            $boundCandidates += @($setsid, $bash, $ProbeContext.linux_supervisor)
+        }
+        $boundInputs = Get-UniqueBoundInputs -Identities $boundCandidates
         if ($IsWindows) {
             $execution = Invoke-WindowsOwnedProcess -ProcessShape $processShape -WorkingDirectory $WorkingDirectory `
                 -EvidenceRoot ([string]$ProbeContext.evidence_root) -Environment $environment `
                 -StdoutPath $stdoutPath -StderrPath $stderrPath -TimeoutSeconds $TimeoutSeconds `
-                -CleanupReserveMs ([int]$ProbeContext.cleanup_reserve_ms)
+                -CleanupReserveMs ([int]$ProbeContext.cleanup_reserve_ms) -BoundInputs $boundInputs
         }
         else {
-            $setsid = Get-ToolIdentityById -Tools $ProbeContext.tools -Id "setsid"
-            $bash = Get-ToolIdentityById -Tools $ProbeContext.tools -Id "bash"
             $execution = Invoke-LinuxOwnedProcess -ProcessShape $processShape -WorkingDirectory $WorkingDirectory `
                 -EvidenceRoot ([string]$ProbeContext.evidence_root) -Environment $environment `
                 -StdoutPath $stdoutPath -StderrPath $stderrPath -TimeoutSeconds $TimeoutSeconds `
-                -CleanupReserveMs ([int]$ProbeContext.cleanup_reserve_ms) -SetsidPath ([string]$setsid.path) `
-                -BashPath ([string]$bash.path) -SupervisorPath ([string]$ProbeContext.linux_supervisor.path)
+                -CleanupReserveMs ([int]$ProbeContext.cleanup_reserve_ms) -SetsidIdentity $setsid `
+                -BashIdentity $bash -SupervisorIdentity $ProbeContext.linux_supervisor -BoundInputs $boundInputs
         }
-        $stdout = $utf8.GetString((Read-EvidenceBytes -RepoRoot $WorkingDirectory `
-                    -EvidenceRoot ([string]$ProbeContext.evidence_root) -Path $stdoutPath -Owner "tool probe stdout"))
-        $stderr = $utf8.GetString((Read-EvidenceBytes -RepoRoot $WorkingDirectory `
-                    -EvidenceRoot ([string]$ProbeContext.evidence_root) -Path $stderrPath -Owner "tool probe stderr"))
+        [byte[]]$stdoutBytes = Read-EvidenceBytes -RepoRoot $WorkingDirectory `
+            -EvidenceRoot ([string]$ProbeContext.evidence_root) -Path $stdoutPath -Owner "tool probe stdout"
+        [byte[]]$stderrBytes = Read-EvidenceBytes -RepoRoot $WorkingDirectory `
+            -EvidenceRoot ([string]$ProbeContext.evidence_root) -Path $stderrPath -Owner "tool probe stderr"
+        if ($IsLinux) {
+            if (-not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($stdoutBytes, [byte[]]$execution.stdout_bytes) -or
+                -not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($stderrBytes, [byte[]]$execution.stderr_bytes)) {
+                throw "core-profile-gates: fd-bound tool-probe output no longer matches its admitted evidence path"
+            }
+        }
+        $stdout = $utf8.GetString($stdoutBytes)
+        $stderr = $utf8.GetString($stderrBytes)
         if ([string]$execution.tree_cleanup -cne "complete") {
             throw "tool probe containment cleanup was incomplete ($($execution.reason)): $Executable"
         }
@@ -827,11 +876,11 @@ function Assert-Manifest {
         throw "core-profile-gates: manifest.supervision.cleanup_reserve_ms must be an integer from 100 through 2000"
     }
     Assert-ExactString $Manifest.supervision.native_source_path "scripts/core-gate-process-supervisor.cs" "manifest.supervision.native_source_path"
-    Assert-ExactString $Manifest.supervision.windows_transport "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr" "manifest.supervision.windows_transport"
+    Assert-ExactString $Manifest.supervision.windows_transport "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr" "manifest.supervision.windows_transport"
     Assert-ExactString $Manifest.supervision.linux_launcher_path "/usr/bin/setsid" "manifest.supervision.linux_launcher_path"
     Assert-ExactString $Manifest.supervision.linux_bash_path "/usr/bin/bash" "manifest.supervision.linux_bash_path"
     Assert-ExactString $Manifest.supervision.linux_supervisor_path "scripts/core-gate-linux-supervisor.sh" "manifest.supervision.linux_supervisor_path"
-    Assert-ExactString $Manifest.supervision.linux_transport "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr" "manifest.supervision.linux_transport"
+    Assert-ExactString $Manifest.supervision.linux_transport "setsid-fd-posix-spawn-pidfd-subreaper-v6:child-dup2-bound-inputs;no-ambient-parent-inheritance;pinned-glibc-x64-abi;direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr" "manifest.supervision.linux_transport"
     foreach ($supervisorPath in @($Manifest.supervision.native_source_path, $Manifest.supervision.linux_supervisor_path)) {
         $supervisorAbsolute = Resolve-RepoRelativePath -Root $RepoRoot -Path ([string]$supervisorPath) -Owner "manifest.supervision path"
         if (-not (Test-Path -LiteralPath $supervisorAbsolute -PathType Leaf)) {
@@ -1133,7 +1182,8 @@ function Invoke-WindowsOwnedProcess {
         [Parameter(Mandatory = $true)][string]$StdoutPath,
         [Parameter(Mandatory = $true)][string]$StderrPath,
         [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
-        [Parameter(Mandatory = $true)][int]$CleanupReserveMs
+        [Parameter(Mandatory = $true)][int]$CleanupReserveMs,
+        [Parameter(Mandatory = $true)][object[]]$BoundInputs
     )
 
     $totalMs = $TimeoutSeconds * 1000
@@ -1154,7 +1204,9 @@ function Invoke-WindowsOwnedProcess {
             $WorkingDirectory,
             $Environment,
             $StdoutPath,
-            $StderrPath)
+            $StderrPath,
+            [string[]]@($BoundInputs | ForEach-Object { [string]$_.path }),
+            [string[]]@($BoundInputs | ForEach-Object { [string]$_.sha256 }))
         $ownershipRootPid = [int]$job.ProcessId
         $directExitObservedMs = $null
         while ($timer.ElapsedMilliseconds -lt $executionCutoffMs) {
@@ -1210,8 +1262,11 @@ function Invoke-WindowsOwnedProcess {
         exit_code = $exitCode
         duration_ms = [int64]$timer.ElapsedMilliseconds
         tree_cleanup = $treeCleanup
-        transport = "job-object-v2:startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
+        transport = "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
         containment = "windows-job-object-v2"
+        libc_identity = "not-applicable"
+        input_binding = "windows-retained-file-and-ancestor-handles"
+        bound_input_count = @($BoundInputs).Count
         supervisor_ready = $true
         ownership_root_pid = $ownershipRootPid
         ownership_root_start_ticks = $null
@@ -1230,9 +1285,10 @@ function Invoke-LinuxOwnedProcess {
         [Parameter(Mandatory = $true)][string]$StderrPath,
         [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
         [Parameter(Mandatory = $true)][int]$CleanupReserveMs,
-        [Parameter(Mandatory = $true)][string]$SetsidPath,
-        [Parameter(Mandatory = $true)][string]$BashPath,
-        [Parameter(Mandatory = $true)][string]$SupervisorPath
+        [Parameter(Mandatory = $true)]$SetsidIdentity,
+        [Parameter(Mandatory = $true)]$BashIdentity,
+        [Parameter(Mandatory = $true)]$SupervisorIdentity,
+        [Parameter(Mandatory = $true)][object[]]$BoundInputs
     )
 
     Write-EvidenceBytes -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $StdoutPath `
@@ -1249,7 +1305,7 @@ function Invoke-LinuxOwnedProcess {
     $reserveMs = [Math]::Min($CleanupReserveMs, [Math]::Max(100, [int]($totalMs / 2)))
     $executionCutoffMs = $totalMs - $reserveMs
     $timer = [Diagnostics.Stopwatch]::StartNew()
-    $process = [Diagnostics.Process]::new()
+    $process = $null
     $ownedTree = [OxVbaCoreGatePosixOwnedTree]::new()
     $processStarted = $false
     $processGroup = 0
@@ -1260,29 +1316,42 @@ function Invoke-LinuxOwnedProcess {
     $ownershipRootPid = $null
     $ownershipRootStartTicks = $null
     $escapedDescendantsObserved = $false
+    [byte[]]$capturedStdout = [byte[]]::new(0)
+    [byte[]]$capturedStderr = [byte[]]::new(0)
+    $libcIdentity = [string][OxVbaCoreGatePosixChild]::RuntimeLibcIdentity
     try {
-        $startInfo = [Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = $SetsidPath
-        $startInfo.WorkingDirectory = $WorkingDirectory
-        $startInfo.UseShellExecute = $false
-        foreach ($argument in @($BashPath, $SupervisorPath, $readyPath, $ackPath, $nonce,
-                $StdoutPath, $StderrPath, [string]$ProcessShape.executable) + @($ProcessShape.arguments)) {
-            [void]$startInfo.ArgumentList.Add([string]$argument)
+        if (Test-EvidencePath -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $readyPath -Owner "Linux ownership readiness precondition") {
+            throw "Linux ownership readiness path existed before fd-bound creation"
         }
-        $startInfo.Environment.Clear()
-        foreach ($entry in $Environment.GetEnumerator()) { $startInfo.Environment[[string]$entry.Key] = [string]$entry.Value }
-        $process.StartInfo = $startInfo
-        if (-not $process.Start()) { throw "could not start Linux gate supervisor" }
+        if (Test-EvidencePath -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $ackPath -Owner "Linux ownership acknowledgement precondition") {
+            throw "Linux ownership acknowledgement path existed before fd-bound creation"
+        }
+        $process = [OxVbaCoreGatePosixChild]::Start(
+            [string]$SetsidIdentity.path,
+            [string]$BashIdentity.path,
+            [string]$SupervisorIdentity.path,
+            [string]$ProcessShape.executable,
+            [string[]]@($ProcessShape.arguments),
+            $WorkingDirectory,
+            $Environment,
+            $readyPath,
+            $ackPath,
+            $nonce,
+            $StdoutPath,
+            $StderrPath,
+            [string[]]@($BoundInputs | ForEach-Object { [string]$_.path }),
+            [string[]]@($BoundInputs | ForEach-Object { [string]$_.sha256 }))
         $processStarted = $true
-        $ownershipRootPid = [int]$process.Id
+        if (-not ([string]$process.LibcIdentity -ceq $libcIdentity)) {
+            throw "Linux pinned glibc identity changed across fd-bound launch"
+        }
+        $ownershipRootPid = [int]$process.ProcessId
         $ownershipRootStartTicks = [uint64]$ownedTree.ArmRoot($ownershipRootPid)
         $readyDeadlineMs = [Math]::Min(1500, $executionCutoffMs)
         $readyRecord = $null
         while ($timer.ElapsedMilliseconds -lt $readyDeadlineMs) {
-            if (Test-EvidencePath -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $readyPath -Owner "Linux ownership readiness") {
-                [byte[]]$candidateBytes = Read-EvidenceBytes -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot `
-                    -Path $readyPath -Owner "Linux ownership readiness"
-                if ($candidateBytes.Length -gt 0 -and $candidateBytes[$candidateBytes.Length - 1] -eq 10) {
+            [byte[]]$candidateBytes = $process.ReadReadyBytes()
+            if ($candidateBytes.Length -gt 0 -and $candidateBytes[$candidateBytes.Length - 1] -eq 10) {
                     $candidateText = $utf8.GetString($candidateBytes).TrimEnd("`r", "`n")
                     $candidateParts = @($candidateText -split '\|', -1)
                     $candidatePid = 0; $candidateGroup = 0; $candidateSession = 0; [uint64]$candidateTicks = 0
@@ -1297,7 +1366,6 @@ function Invoke-LinuxOwnedProcess {
                         }
                         break
                     }
-                }
             }
             if ($process.HasExited) { break }
             Start-Sleep -Milliseconds 5
@@ -1316,8 +1384,7 @@ function Invoke-LinuxOwnedProcess {
         if ($ownershipRootStartTicks -ne $publishedStartTicks) {
             throw "Linux gate supervisor /proc start-time identity changed before containment acknowledgement"
         }
-        Write-EvidenceText -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $ackPath `
-            -Text "$nonce`n" -Owner "Linux ownership acknowledgement"
+        $process.WriteAcknowledgement($utf8.GetBytes("$nonce`n"))
         $supervisorReady = $true
 
         $directExitObservedMs = $null
@@ -1347,7 +1414,6 @@ function Invoke-LinuxOwnedProcess {
             [void]$process.WaitForExit([Math]::Max(0, $totalMs - [int]$timer.ElapsedMilliseconds))
         }
         if ($process.HasExited) {
-            $process.WaitForExit()
             [void]$ownedTree.LiveProcessCount
         }
         if (-not $process.HasExited -or $ownedTree.LiveProcessCount -ne 0 -or $ownedTree.RetainedPidFdCount -ne 0) {
@@ -1366,7 +1432,6 @@ function Invoke-LinuxOwnedProcess {
                     [void]$process.WaitForExit([Math]::Max(0, $totalMs - [int]$timer.ElapsedMilliseconds))
                 }
                 if ($process.HasExited) {
-                    $process.WaitForExit()
                     [void]$ownedTree.LiveProcessCount
                 }
                 if (-not $process.HasExited -or $ownedTree.LiveProcessCount -ne 0 -or $ownedTree.RetainedPidFdCount -ne 0) {
@@ -1374,13 +1439,15 @@ function Invoke-LinuxOwnedProcess {
                 }
             }
             $escapedDescendantsObserved = [bool]$ownedTree.EscapedSessionObserved
+            if ($null -ne $process) {
+                [byte[]]$capturedStdout = $process.ReadStdoutBytes()
+                [byte[]]$capturedStderr = $process.ReadStderrBytes()
+            }
         }
         finally {
             $ownedTree.Dispose()
-            $process.Dispose()
+            if ($null -ne $process) { $process.Dispose() }
             $timer.Stop()
-            Remove-EvidenceFile -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $readyPath -Owner "Linux ownership readiness cleanup"
-            Remove-EvidenceFile -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $ackPath -Owner "Linux ownership acknowledgement cleanup"
         }
     }
     $status = if (-not [string]::IsNullOrEmpty($terminationReason)) {
@@ -1394,8 +1461,13 @@ function Invoke-LinuxOwnedProcess {
         exit_code = $exitCode
         duration_ms = [int64]$timer.ElapsedMilliseconds
         tree_cleanup = $treeCleanup
-        transport = "setsid-bash-pidfd-subreaper-v4:direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
+        transport = "setsid-fd-posix-spawn-pidfd-subreaper-v6:child-dup2-bound-inputs;no-ambient-parent-inheritance;pinned-glibc-x64-abi;direct-ready;builtin-ack-poll;parent-freeze;pidfd-kill;owned-file-stdout-stderr"
         containment = "linux-pidfd-subreaper-v1"
+        libc_identity = $libcIdentity
+        input_binding = "linux-retained-directory-and-file-descriptors"
+        bound_input_count = @($BoundInputs).Count
+        stdout_bytes = $capturedStdout
+        stderr_bytes = $capturedStderr
         supervisor_ready = $supervisorReady
         ownership_root_pid = $ownershipRootPid
         ownership_root_start_ticks = $ownershipRootStartTicks
@@ -1417,7 +1489,8 @@ function Invoke-GateProcess {
         [Parameter(Mandatory = $true)][string]$MutexName,
         [Parameter(Mandatory = $true)][int]$MutexTimeoutSeconds,
         [Parameter(Mandatory = $true)][object[]]$Tools,
-        [Parameter(Mandatory = $true)]$Supervision
+        [Parameter(Mandatory = $true)]$Supervision,
+        [Parameter(Mandatory = $true)][object[]]$CommandIdentities
     )
 
     $gateRoot = Resolve-RepoRelativePath -Root $EvidenceRoot -Path ([string]$Gate.evidence_path) -Owner "gate $($Gate.id) evidence_path"
@@ -1445,6 +1518,23 @@ function Invoke-GateProcess {
         }
         $lockWait.Stop()
         $processShape = Resolve-GateProcess -Gate $Gate -RepoRoot $RepoRoot -Tools $Tools
+        $executorIdentity = Get-ToolIdentityById -Tools $Tools -Id ([string]$processShape.tool_id)
+        $manifestRelative = [IO.Path]::GetRelativePath($RepoRoot, $ManifestPath).Replace('\', '/')
+        $manifestIdentity = Get-CommandFileIdentityByPath -Commands $CommandIdentities -Path $manifestRelative
+        $boundCandidates = @($executorIdentity, $manifestIdentity)
+        if ([string]$Gate.kind -ceq "powershell") {
+            $boundCandidates += Get-CommandFileIdentityByPath -Commands $CommandIdentities -Path ([string]$Gate.command)
+        }
+        $setsid = $null
+        $bash = $null
+        $supervisorIdentity = $null
+        if ($IsLinux) {
+            $setsid = Get-ToolIdentityById -Tools $Tools -Id "setsid"
+            $bash = Get-ToolIdentityById -Tools $Tools -Id "bash"
+            $supervisorIdentity = Get-CommandFileIdentityByPath -Commands $CommandIdentities -Path ([string]$Supervision.linux_supervisor_path)
+            $boundCandidates += @($setsid, $bash, $supervisorIdentity)
+        }
+        $boundInputs = Get-UniqueBoundInputs -Identities $boundCandidates
         $childEnvironment = New-ChildEnvironment -Gate $Gate -Tools $Tools -EvidenceRoot $EvidenceRoot `
             -PlanPath $PlanPath -PlanSha256 $PlanSha256 -ManifestSha256 $ManifestSha256 `
             -ManifestPath $ManifestPath -RunId $RunId
@@ -1452,21 +1542,24 @@ function Invoke-GateProcess {
         if ($IsWindows) {
             $execution = Invoke-WindowsOwnedProcess -ProcessShape $processShape -WorkingDirectory $RepoRoot -EvidenceRoot $EvidenceRoot `
                 -Environment $childEnvironment -StdoutPath $stdoutPath -StderrPath $stderrPath `
-                -TimeoutSeconds ([int]$Gate.timeout_seconds) -CleanupReserveMs ([int]$Supervision.cleanup_reserve_ms)
+                -TimeoutSeconds ([int]$Gate.timeout_seconds) -CleanupReserveMs ([int]$Supervision.cleanup_reserve_ms) `
+                -BoundInputs $boundInputs
         }
         else {
-            $setsid = Get-ToolIdentityById -Tools $Tools -Id "setsid"
-            $bash = Get-ToolIdentityById -Tools $Tools -Id "bash"
             $execution = Invoke-LinuxOwnedProcess -ProcessShape $processShape -WorkingDirectory $RepoRoot -EvidenceRoot $EvidenceRoot `
                 -Environment $childEnvironment -StdoutPath $stdoutPath -StderrPath $stderrPath `
                 -TimeoutSeconds ([int]$Gate.timeout_seconds) -CleanupReserveMs ([int]$Supervision.cleanup_reserve_ms) `
-                -SetsidPath ([string]$setsid.path) `
-                -BashPath ([string]$bash.path) `
-                -SupervisorPath (Resolve-RepoRelativePath -Root $RepoRoot -Path ([string]$Supervision.linux_supervisor_path) -Owner "Linux supervisor")
+                -SetsidIdentity $setsid -BashIdentity $bash -SupervisorIdentity $supervisorIdentity -BoundInputs $boundInputs
         }
         $finish = [DateTimeOffset]::UtcNow
         [byte[]]$stdoutBytes = Read-EvidenceBytes -RepoRoot $RepoRoot -EvidenceRoot $EvidenceRoot -Path $stdoutPath -Owner "gate $($Gate.id) stdout"
         [byte[]]$stderrBytes = Read-EvidenceBytes -RepoRoot $RepoRoot -EvidenceRoot $EvidenceRoot -Path $stderrPath -Owner "gate $($Gate.id) stderr"
+        if ($IsLinux) {
+            if (-not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($stdoutBytes, [byte[]]$execution.stdout_bytes) -or
+                -not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($stderrBytes, [byte[]]$execution.stderr_bytes)) {
+                throw "core-profile-gates: fd-bound gate output no longer matches its admitted evidence path"
+            }
+        }
         $gateEvidence = [ordered]@{
             order = [int]$Gate.order
             id = [string]$Gate.id
@@ -1482,6 +1575,9 @@ function Invoke-GateProcess {
             tree_cleanup = [string]$execution.tree_cleanup
             transport = [string]$execution.transport
             containment = [string]$execution.containment
+            libc_identity = [string]$execution.libc_identity
+            input_binding = [string]$execution.input_binding
+            bound_input_count = [int]$execution.bound_input_count
             supervisor_ready = [bool]$execution.supervisor_ready
             ownership_root_pid = $execution.ownership_root_pid
             ownership_root_start_ticks = $execution.ownership_root_start_ticks
@@ -1529,6 +1625,7 @@ function New-NonExecutedResult {
         tree_cleanup = "not-started"
         transport = "none"
         containment = "none"
+        libc_identity = "not-started"
         supervisor_ready = $false
         ownership_root_pid = $null
         ownership_root_start_ticks = $null
@@ -1727,10 +1824,12 @@ Assert-NoReparsePath -Root $repoRoot -Target $runnerAbs -Owner "gate runner"
 $manifestAbs = Resolve-RepoRelativePath -Root $repoRoot -Path $ManifestPath -Owner "ManifestPath"
 if (-not (Test-Path -LiteralPath $manifestAbs -PathType Leaf)) { throw "core-profile-gates: manifest is missing: $ManifestPath" }
 Assert-NoReparsePath -Root $repoRoot -Target $manifestAbs -Owner "versioned manifest"
-$manifest = Read-StrictJson -Path $manifestAbs -Owner "manifest"
-Assert-ManifestJsonArrayShapes -Path $manifestAbs
+[byte[]]$manifestAdmissionBytes = [IO.File]::ReadAllBytes($manifestAbs)
+$manifestAdmissionRawSha256 = Get-Sha256Hex -Bytes $manifestAdmissionBytes
+$manifest = Read-StrictJson -Path $manifestAbs -Owner "manifest" -Bytes $manifestAdmissionBytes
+Assert-ManifestJsonArrayShapes -Path $manifestAbs -Bytes $manifestAdmissionBytes
 Assert-Manifest -Manifest $manifest -RepoRoot $repoRoot -Platform $platform
-$manifestSha256 = Get-Sha256Hex -Bytes (Get-CanonicalTextBytes -Path $manifestAbs)
+$manifestSha256 = Get-Sha256Hex -Bytes (Get-CanonicalTextBytes -Path $manifestAbs -Bytes $manifestAdmissionBytes)
 Assert-ManifestUnchanged -Path $manifestAbs -ExpectedSha256 $manifestSha256
 
 if ($List -or $DryRun) { Write-DeterministicPlan -Manifest $manifest -Platform $platform; return }
@@ -1747,8 +1846,17 @@ $commandIdentities = Get-CommandFileIdentities -Manifest $manifest -RepoRoot $re
 $requiredTrackedPaths = @($commandIdentities | ForEach-Object { [string]$_.path })
 $nativeSource = Get-CommandFileIdentityByPath -Commands $commandIdentities -Path ([string]$manifest.supervision.native_source_path)
 $linuxSupervisor = Get-CommandFileIdentityByPath -Commands $commandIdentities -Path ([string]$manifest.supervision.linux_supervisor_path)
+$manifestRelative = [IO.Path]::GetRelativePath($repoRoot, $manifestAbs).Replace('\', '/')
+$manifestIdentity = Get-CommandFileIdentityByPath -Commands $commandIdentities -Path $manifestRelative
+if ([string]$manifestIdentity.sha256 -cne $manifestAdmissionRawSha256) {
+    throw "core-profile-gates: versioned manifest path changed after its admitted bytes were decoded"
+}
 $toolCandidates = Get-ToolCandidates -RepoRoot $repoRoot -Manifest $manifest -Platform $platform
-Add-Type -Path ([string]$nativeSource.absolute_path)
+[byte[]]$nativeSourceAdmissionBytes = [IO.File]::ReadAllBytes([string]$nativeSource.absolute_path)
+if ((Get-Sha256Hex -Bytes $nativeSourceAdmissionBytes) -cne [string]$nativeSource.sha256) {
+    throw "core-profile-gates: native process supervisor changed before its admitted bytes could be compiled"
+}
+Add-Type -TypeDefinition ($utf8.GetString($nativeSourceAdmissionBytes))
 
 $evidenceBase = Resolve-RepoRelativePath -Root $repoRoot -Path ([string]$manifest.evidence.no_artifact_root) -Owner "manifest.evidence.no_artifact_root"
 $evidenceRoot = [IO.Path]::GetFullPath((Join-Path $evidenceBase $RunId))
@@ -1796,6 +1904,7 @@ $supervisionEvidence = [ordered]@{
     native_source_sha256 = [string]$nativeSource.sha256
     linux_launcher_path = if ($IsLinux) { [string](Get-ToolIdentityById -Tools $tools -Id "setsid").path } else { "not-applicable" }
     linux_bash_path = if ($IsLinux) { [string](Get-ToolIdentityById -Tools $tools -Id "bash").path } else { "not-applicable" }
+    linux_libc_identity = if ($IsLinux) { [string][OxVbaCoreGatePosixChild]::RuntimeLibcIdentity } else { "not-applicable" }
     linux_supervisor_path = [string]$manifest.supervision.linux_supervisor_path
 }
 $planRows = @()
@@ -1868,7 +1977,7 @@ foreach ($gate in @($manifest.gates)) {
         $result = Invoke-GateProcess -Gate $gate -RepoRoot $repoRoot -EvidenceRoot $evidenceRoot `
             -PlanPath $planPath -PlanSha256 $planSha256 -ManifestSha256 $manifestSha256 -RunId $RunId `
             -ManifestPath $manifestAbs -MutexName $mutexName -MutexTimeoutSeconds ([int]$manifest.cargo_lock.acquire_timeout_seconds) `
-            -Tools $tools -Supervision $manifest.supervision
+            -Tools $tools -Supervision $manifest.supervision -CommandIdentities $commandIdentities
         $results += $result
         Assert-ExecutionInputs -Source $sourceIdentity -Git $gitTool -Tools $tools -Commands $commandIdentities `
             -RepoRoot $repoRoot -RequiredTrackedPaths $requiredTrackedPaths -ManifestPath $manifestAbs `
