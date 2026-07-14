@@ -179,8 +179,9 @@ pub(crate) fn numeric_mode_with(ctx: TypeContext, ty: &VarTypeRef) -> NumericMod
 /// Coerce a value being **stored** into a declared scalar target to that target's
 /// type — unconditionally (unlike [`coerce`], which trusts the source's static type
 /// and skips identity conversions). A declared variable must hold its declared type
-/// at run time regardless of the value's static-vs-runtime tag (the VM ops are
-/// Double-biased and integer literals carry a `Long` payload). No-op for
+/// at run time regardless of the value's runtime tag (for example, a small
+/// unsuffixed literal carries `Integer`, while a declared `Long` target stores
+/// `Long`). No-op for
 /// `Object`/`Variant`/array targets (their store needs no scalar coercion). Skips
 /// re-wrapping a value already coerced to the same target.
 pub(crate) fn coerce_store_with(ctx: TypeContext, value: CoreValue, to: &VarTypeRef) -> CoreValue {

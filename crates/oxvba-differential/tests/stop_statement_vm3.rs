@@ -16,10 +16,17 @@ fn value(body: &str) -> Canon {
 }
 
 #[test]
-fn stop_statement_does_not_prevent_subsequent_execution() {
+fn stop_statement_matches_no_stop_control_exactly() {
+    let control = value("    r = 1\n    r = r + 1\n");
+    assert_eq!(
+        control,
+        canon(&Variant::from_i16(2)),
+        "the control must complete both assignments with VBA's Integer carrier"
+    );
     assert_eq!(
         value("    r = 1\n    Stop\n    r = r + 1\n"),
-        canon(&Variant::from_i32(2))
+        control,
+        "headless Stop must not change the exact result value or carrier"
     );
 }
 
