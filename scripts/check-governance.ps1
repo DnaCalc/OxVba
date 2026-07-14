@@ -45,6 +45,12 @@ try {
     Write-Host "[governance] windows-x64-control-surfaces"
     & "$PSScriptRoot/validate-windows-x64-control-surfaces.ps1"
 
+    Write-Host "[governance] windows-current-stack-residuals"
+    & "$PSScriptRoot/validate-windows-current-stack-residuals.ps1"
+
+    Write-Host "[governance] windows-current-stack-residual-mutations"
+    & "$PSScriptRoot/test-windows-current-stack-residuals.ps1"
+
     Write-Host "[governance] windows-x64-fixture-manifest-sync"
     & "$PSScriptRoot/sync-windows-fixture-manifest.ps1" -Check
 
