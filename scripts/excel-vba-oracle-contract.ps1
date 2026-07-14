@@ -269,6 +269,10 @@ function Test-ExcelOracleOwnedProcessRecord {
     if ([string]$Record.run_id -ne $RunId -or [string]$Record.ownership -ne "owned-new-instance") {
         return $false
     }
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.process_name, "EXCEL") -or
+        -not [StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFileName([string]$Record.executable_path), "EXCEL.EXE")) {
+        return $false
+    }
     try { $pidValue = [int]$Record.pid }
     catch { return $false }
     return $pidValue -gt 0 -and $pidValue -notin $BaselineExcelPids
@@ -282,16 +286,26 @@ function Test-ExcelOracleProcessIdentity {
         [Parameter(Mandatory = $true)][string]$RunId
     )
 
+    return (Get-ExcelOracleProcessIdentityState -Record $Record -Process $Process -ExpectedProcessName $ExpectedProcessName -RunId $RunId) -eq "exact"
+}
+
+function Get-ExcelOracleProcessIdentityState {
+    param(
+        [Parameter(Mandatory = $true)]$Record,
+        [Parameter(Mandatory = $true)][AllowNull()][Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)][string]$ExpectedProcessName,
+        [Parameter(Mandatory = $true)][string]$RunId
+    )
+
+    if ($null -eq $Process) { return "missing" }
     foreach ($field in @("run_id", "pid", "process_name", "process_start_utc", "executable_path")) {
         if ($Record.PSObject.Properties.Name -notcontains $field -or [string]::IsNullOrWhiteSpace([string]$Record.$field)) {
-            return $false
+            return "same-instance-conflict"
         }
     }
     try { $recordedPid = [int]$Record.pid }
-    catch { return $false }
-    if ([string]$Record.run_id -ne $RunId -or $recordedPid -ne $Process.Id) { return $false }
-    if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.process_name, $ExpectedProcessName)) { return $false }
-    if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Process.ProcessName, $ExpectedProcessName)) { return $false }
+    catch { return "same-instance-conflict" }
+    if ([string]$Record.run_id -ne $RunId -or $recordedPid -ne $Process.Id) { return "same-instance-conflict" }
     try {
         $recordedStart = [DateTime]::Parse(
             [string]$Record.process_start_utc,
@@ -301,10 +315,15 @@ function Test-ExcelOracleProcessIdentity {
         $actualStart = $Process.StartTime.ToUniversalTime()
         $actualPath = [IO.Path]::GetFullPath([string]$Process.Path)
         $recordedPath = [IO.Path]::GetFullPath([string]$Record.executable_path)
-        return $recordedStart.Ticks -eq $actualStart.Ticks -and
-            [StringComparer]::OrdinalIgnoreCase.Equals($recordedPath, $actualPath)
+        if ($recordedStart.Ticks -ne $actualStart.Ticks) { return "pid-reused" }
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Record.process_name, $ExpectedProcessName) -or
+            -not [StringComparer]::OrdinalIgnoreCase.Equals([string]$Process.ProcessName, $ExpectedProcessName) -or
+            -not [StringComparer]::OrdinalIgnoreCase.Equals($recordedPath, $actualPath)) {
+            return "same-instance-conflict"
+        }
+        return "exact"
     }
-    catch { return $false }
+    catch { return "same-instance-conflict" }
 }
 
 function Test-ExcelOracleHelperProcessRecord {
@@ -323,6 +342,10 @@ function Test-ExcelOracleHelperProcessRecord {
         [string]$Record.ownership -eq "owned-helper-process" -and
         [string]$Record.role -eq "guardian" -and
         [string]$Record.process_name -in @("pwsh", "powershell") -and
+        [StringComparer]::OrdinalIgnoreCase.Equals(
+            [IO.Path]::GetFileName([string]$Record.executable_path),
+            "$(if ([string]$Record.process_name -eq 'pwsh') { 'pwsh' } else { 'powershell' }).exe"
+        ) -and
         $recordedPid -gt 0
 }
 
@@ -407,10 +430,43 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
             continue
         }
         if ([string]$event.schema -eq "oxvba.excel-vba-oracle-window-observation.v1" -and [string]$event.event_type -in @("dialog-observation", "ignored-top-level-window")) {
-            $required = @("observation_id", "operation_id", "phase", "excel_pid", "observed_process_id", "observed_utc", "window_handle", "classification", "disposition", "considered_dialog")
+            $required = @("observation_id", "operation_id", "phase", "excel_pid", "observed_process_id", "observed_utc", "window_handle", "classification", "disposition", "considered_dialog", "is_modal")
             $missing = @($required | Where-Object { $event.PSObject.Properties.Name -notcontains $_ -or [string]::IsNullOrWhiteSpace([string]$event.$_) })
             if ($missing.Count -gt 0) {
                 $errors.Add("line $($index + 1): incomplete guardian observation ($($missing -join ','))")
+                continue
+            }
+            if ($event.considered_dialog -isnot [bool] -or $event.is_modal -isnot [bool]) {
+                $errors.Add("line $($index + 1): guardian observation Boolean fields are not JSON booleans")
+                continue
+            }
+            if ([string]$event.phase -notin @("compile", "run", "cleanup")) {
+                $errors.Add("line $($index + 1): invalid guardian observation phase")
+                continue
+            }
+            try { $excelPid = [int]$event.excel_pid; $observedPid = [int]$event.observed_process_id }
+            catch { $errors.Add("line $($index + 1): guardian observation PID is not an integer"); continue }
+            if ($excelPid -le 0 -or $observedPid -ne $excelPid) {
+                $errors.Add("line $($index + 1): guardian observation escaped its Excel PID boundary")
+                continue
+            }
+            $classification = [string]$event.classification
+            $expectedDisposition = switch ($classification) {
+                { $_ -in @("compile-error", "runtime-error", "ambiguous-macro-failure") } { "capture-then-dismiss"; break }
+                { $_ -in @("security-or-trust", "unrecognized-modal") } { "block-no-dismiss"; break }
+                default { $null; break }
+            }
+            if ($null -eq $expectedDisposition -or [string]$event.disposition -ne $expectedDisposition) {
+                $errors.Add("line $($index + 1): guardian classification/disposition mismatch")
+                continue
+            }
+            if ([string]$event.event_type -eq "dialog-observation" -and -not [bool]$event.considered_dialog) {
+                $errors.Add("line $($index + 1): dialog observation is not marked considered")
+                continue
+            }
+            if ([string]$event.event_type -eq "ignored-top-level-window" -and
+                ([bool]$event.considered_dialog -or $classification -ne "unrecognized-modal")) {
+                $errors.Add("line $($index + 1): ignored window violates considered/classification constraints")
                 continue
             }
             $observationId = [string]$event.observation_id
@@ -427,6 +483,14 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
             $missing = @($required | Where-Object { $event.PSObject.Properties.Name -notcontains $_ -or [string]::IsNullOrWhiteSpace([string]$event.$_) })
             if ($missing.Count -gt 0) {
                 $errors.Add("line $($index + 1): incomplete guardian dismissal ($($missing -join ','))")
+                continue
+            }
+            if ($event.succeeded -isnot [bool]) {
+                $errors.Add("line $($index + 1): dismissal succeeded is not a JSON boolean")
+                continue
+            }
+            if (@($event.requested_buttons).Count -eq 0) {
+                $errors.Add("line $($index + 1): dismissal has no requested buttons")
                 continue
             }
             if ([bool]$event.succeeded -and

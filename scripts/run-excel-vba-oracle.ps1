@@ -12,6 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "excel-vba-oracle-contract.ps1")
+. (Join-Path $PSScriptRoot "excel-vba-oracle-job.ps1")
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $environmentPath = Join-Path $repoRoot "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv"
@@ -48,7 +49,7 @@ $plan = [ordered]@{
     release_credit = $false
     capability_credit = $false
     diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
-    ownership_policy = "record PID+process-start+name+executable for new Excel HWND and guardian processes; validate the complete identity before fallback cleanup; never touch baseline unrecorded or reused PIDs"
+    ownership_policy = "assign the waiting worker to a kill-on-close job before publishing mutation authority; launch Excel directly inside that containment; record PID+process-start+name+executable for Excel and guardian processes; validate classified identity before fallback cleanup"
     modal_policy = "start PID-scoped UIA guardian before command-ID-578 compile and runtime invocation; capture first; never auto-enable security/trust prompts"
     compile_policy = "VBE Debug -> Compile VBAProject command ID 578; Application.Run is never a compile check"
     cases = @($cases | ForEach-Object {
@@ -92,19 +93,31 @@ function Stop-RecordedOwnedResources {
     )
     $excelLedger = Read-OwnershipLedger -Path $OwnershipPath -Kind excel -BaselineExcelPids $BaselineExcelPids
     $helperLedger = Read-OwnershipLedger -Path $HelperOwnershipPath -Kind guardian -BaselineExcelPids $BaselineExcelPids
+    $authorityErrors = [Collections.Generic.List[string]]::new()
+    foreach ($errorText in @($excelLedger.errors) + @($helperLedger.errors)) { $authorityErrors.Add([string]$errorText) }
     foreach ($record in @($excelLedger.records)) {
         $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-        if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId)) {
-            try { $process.Kill(); [void]$process.WaitForExit(5000) } catch { }
+        $identityState = Get-ExcelOracleProcessIdentityState -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId
+        if ($identityState -eq "exact") {
+            try { $process.Kill(); [void]$process.WaitForExit(5000) }
+            catch { $authorityErrors.Add("exact Excel identity could not be terminated: $($_.Exception.Message)") }
+        }
+        elseif ($identityState -eq "same-instance-conflict") {
+            $authorityErrors.Add("Excel PID $($record.pid) has the recorded start but conflicting name/executable identity")
         }
     }
     foreach ($record in @($helperLedger.records)) {
         $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-        if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId)) {
-            try { $process.Kill(); [void]$process.WaitForExit(5000) } catch { }
+        $identityState = Get-ExcelOracleProcessIdentityState -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId
+        if ($identityState -eq "exact") {
+            try { $process.Kill(); [void]$process.WaitForExit(5000) }
+            catch { $authorityErrors.Add("exact guardian identity could not be terminated: $($_.Exception.Message)") }
+        }
+        elseif ($identityState -eq "same-instance-conflict") {
+            $authorityErrors.Add("guardian PID $($record.pid) has the recorded start but conflicting name/executable identity")
         }
     }
-    return @($excelLedger.errors) + @($helperLedger.errors)
+    return @($authorityErrors)
 }
 
 $outputBase = if ([IO.Path]::IsPathRooted($OutputRoot)) { $OutputRoot } else { Join-Path $repoRoot $OutputRoot }
@@ -117,6 +130,8 @@ $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDir
 
 $ownershipFile = Join-Path $outputDirectory "owned-processes.jsonl"
 $helperOwnershipFile = Join-Path $outputDirectory "owned-helper-processes.jsonl"
+$containmentReadyFile = Join-Path $outputDirectory "containment-ready.json"
+$containmentToken = [Guid]::NewGuid().ToString("D")
 $workerStdout = Join-Path $outputDirectory "worker.stdout.txt"
 $workerStderr = Join-Path $outputDirectory "worker.stderr.txt"
 $baselineExcelPids = @(Get-ExcelProcessIds)
@@ -126,17 +141,39 @@ $workerArguments = @(
     "-OutputDirectory", $outputDirectory,
     "-OwnershipFile", $ownershipFile,
     "-HelperOwnershipFile", $helperOwnershipFile,
+    "-ContainmentReadyFile", $containmentReadyFile,
+    "-ContainmentToken", $containmentToken,
     "-CaseTimeoutSeconds", [string][Math]::Min(120, $TimeoutSeconds)
 )
 if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
     $workerArguments += @("-DiagnosticCaseId", $DiagnosticCaseId)
 }
 $startedUtc = [DateTime]::UtcNow
+$job = [ExcelOracleJob]::new("OxVbaExcelOracle-$PID-$containmentToken")
 $worker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList $workerArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
+try {
+    $job.AssignProcess($worker.Handle)
+    [ordered]@{
+        schema = "oxvba.excel-vba-oracle-containment-ready.v1"
+        run_id = $RunId
+        containment_token = $containmentToken
+        worker_pid = $worker.Id
+        worker_process_start_utc = $worker.StartTime.ToUniversalTime().ToString("o")
+        worker_executable_path = [string]$worker.Path
+        published_utc = [DateTime]::UtcNow.ToString("o")
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $containmentReadyFile -Encoding utf8NoBOM
+}
+catch {
+    $containmentError = $_.Exception.Message
+    try { $worker.Kill(); [void]$worker.WaitForExit(10000) } catch { }
+    $job.Dispose()
+    throw "run-excel-vba-oracle: worker containment could not be established before mutation authority: $containmentError"
+}
 $timedOut = $false
 $workerFailure = $null
 $cleanupAuthorityErrors = @()
 $workerQuiesced = $false
+$terminationFailure = $null
 try {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while (-not $worker.HasExited -and [DateTime]::UtcNow -lt $deadline) {
@@ -145,9 +182,9 @@ try {
     if (-not $worker.HasExited) {
         $timedOut = $true
         try { $worker.Kill() }
-        catch { $workerFailure = "worker termination failed: $($_.Exception.Message)" }
+        catch { $terminationFailure = "worker termination failed: $($_.Exception.Message)" }
         $workerQuiesced = $worker.WaitForExit(10000)
-        $workerFailure = "run-excel-vba-oracle: worker timed out after $TimeoutSeconds seconds"
+        $workerFailure = "run-excel-vba-oracle: worker timed out after $TimeoutSeconds seconds$(if ($terminationFailure) { "; $terminationFailure" })"
     }
     else {
         $workerQuiesced = $true
@@ -158,8 +195,12 @@ try {
     }
 }
 finally {
+    try { $job.Terminate() }
+    catch { $cleanupAuthorityErrors += "job termination failed: $($_.Exception.Message)" }
+    finally { $job.Dispose() }
+    if (-not $workerQuiesced) { $workerQuiesced = $worker.WaitForExit(10000) }
     if ($workerQuiesced) {
-        $cleanupAuthorityErrors = @(Stop-RecordedOwnedResources -OwnershipPath $ownershipFile -HelperOwnershipPath $helperOwnershipFile -BaselineExcelPids $baselineExcelPids)
+        $cleanupAuthorityErrors += @(Stop-RecordedOwnedResources -OwnershipPath $ownershipFile -HelperOwnershipPath $helperOwnershipFile -BaselineExcelPids $baselineExcelPids)
     }
     else {
         $cleanupAuthorityErrors = @("exact worker process did not quiesce; ownership ledgers remain mutable and cleanup is unsafe")
@@ -176,18 +217,22 @@ if (@($excelLedger.errors).Count -gt 0 -or @($helperLedger.errors).Count -gt 0) 
 $remainingOwned = [Collections.Generic.List[int]]::new()
 foreach ($record in @($excelLedger.records)) {
     $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId)) {
+    $identityState = Get-ExcelOracleProcessIdentityState -Record $record -Process $process -ExpectedProcessName "EXCEL" -RunId $RunId
+    if ($identityState -eq "exact") {
         $remainingOwned.Add([int]$record.pid)
     }
+    elseif ($identityState -eq "same-instance-conflict") { throw "run-excel-vba-oracle: Excel residual identity conflict for PID $($record.pid)" }
 }
 if ($remainingOwned.Count -ne 0) { throw "run-excel-vba-oracle: owned Excel PIDs remain: $($remainingOwned -join ', ')" }
 
 $remainingHelpers = [Collections.Generic.List[int]]::new()
 foreach ($record in @($helperLedger.records)) {
     $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-    if ($process -and (Test-ExcelOracleProcessIdentity -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId)) {
+    $identityState = Get-ExcelOracleProcessIdentityState -Record $record -Process $process -ExpectedProcessName ([string]$record.process_name) -RunId $RunId
+    if ($identityState -eq "exact") {
         $remainingHelpers.Add([int]$record.pid)
     }
+    elseif ($identityState -eq "same-instance-conflict") { throw "run-excel-vba-oracle: guardian residual identity conflict for PID $($record.pid)" }
 }
 if ($remainingHelpers.Count -ne 0) { throw "run-excel-vba-oracle: owned guardian PIDs remain: $($remainingHelpers -join ', ')" }
 if ($workerFailure) { throw $workerFailure }
@@ -212,6 +257,8 @@ $transcript = [ordered]@{
     duration_seconds = [Math]::Round(($completedUtc - $startedUtc).TotalSeconds, 3)
     supervisor_pid = $PID
     worker_pid = $worker.Id
+    containment_token = $containmentToken
+    job_terminated_before_residual_audit = $true
     baseline_excel_pids = $baselineExcelPids
     timeout = $timedOut
     no_matrix_update = [bool]$NoMatrixUpdate

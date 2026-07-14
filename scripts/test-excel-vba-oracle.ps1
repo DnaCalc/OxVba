@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "excel-vba-oracle-contract.ps1")
+. (Join-Path $PSScriptRoot "excel-vba-oracle-job.ps1")
 
 function Assert-True {
     param([Parameter(Mandatory = $true)][bool]$Condition, [Parameter(Mandatory = $true)][string]$Message)
@@ -44,7 +45,7 @@ function Test-RunnerIdentityCheckedCleanupShape {
     )
     if (-not $match.Success) { return $false }
     $body = $match.Groups['body'].Value
-    return $body -match 'Test-ExcelOracleProcessIdentity' -and
+    return $body -match 'Get-ExcelOracleProcessIdentityState' -and
         $body -match '\.Kill\(\)' -and
         $body -notmatch 'Stop-Process'
 }
@@ -57,8 +58,52 @@ function Test-WorkerEvidenceGatedAcceptanceShape {
         $Source -match 'Test-LinkedSuccessfulDismissal'
 }
 
+function Test-JobContainsPreLedgerChild {
+    param([Parameter(Mandatory = $true)][string]$Label)
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "oxvba-oracle-job-$Label-$([Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    $readyFile = Join-Path $directory "ready"
+    $childPidFile = Join-Path $directory "child.pid"
+    $env:OXVBA_ORACLE_JOB_TEST_READY = $readyFile
+    $env:OXVBA_ORACLE_JOB_TEST_CHILD_PID = $childPidFile
+    $payload = @'
+while (-not (Test-Path -LiteralPath $env:OXVBA_ORACLE_JOB_TEST_READY)) { Start-Sleep -Milliseconds 10 }
+$child = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList @("-NoLogo", "-NoProfile", "-Command", "Start-Sleep -Seconds 120") -PassThru
+Set-Content -LiteralPath $env:OXVBA_ORACLE_JOB_TEST_CHILD_PID -Value $child.Id -Encoding ascii
+Start-Sleep -Seconds 120
+'@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($payload))
+    $job = [ExcelOracleJob]::new("OxVbaOracleTest-$Label-$([Guid]::NewGuid().ToString('N'))")
+    $worker = $null
+    $childProcess = $null
+    try {
+        $worker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList @("-NoLogo", "-NoProfile", "-EncodedCommand", $encoded) -PassThru -WindowStyle Hidden
+        $job.AssignProcess($worker.Handle)
+        New-Item -ItemType File -Force -Path $readyFile | Out-Null
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $childPidFile)) { Start-Sleep -Milliseconds 20 }
+        Assert-True (Test-Path -LiteralPath $childPidFile) "$Label contained child must start before simulated ledger write"
+        $childPid = [int](Get-Content -Raw -LiteralPath $childPidFile)
+        $childProcess = Get-Process -Id $childPid -ErrorAction Stop
+        $job.Terminate()
+        [void]$worker.WaitForExit(10000)
+        [void]$childProcess.WaitForExit(10000)
+        Assert-True $worker.HasExited "$Label worker must be terminated by its job"
+        Assert-True $childProcess.HasExited "$Label unrecorded child must be terminated by its job"
+    }
+    finally {
+        if ($worker -and -not $worker.HasExited) { try { $worker.Kill() } catch { } }
+        if ($childProcess -and -not $childProcess.HasExited) { try { $childProcess.Kill() } catch { } }
+        $job.Dispose()
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item Env:\OXVBA_ORACLE_JOB_TEST_READY -ErrorAction SilentlyContinue
+        Remove-Item Env:\OXVBA_ORACLE_JOB_TEST_CHILD_PID -ErrorAction SilentlyContinue
+    }
+}
+
 foreach ($fileName in @(
     "excel-vba-oracle-contract.ps1",
+    "excel-vba-oracle-job.ps1",
     "excel-vba-oracle-guardian.ps1",
     "excel-vba-oracle-worker.ps1",
     "run-excel-vba-oracle.ps1",
@@ -69,6 +114,9 @@ foreach ($fileName in @(
     [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $fileName), [ref]$tokens, [ref]$parseErrors)
     Assert-Equal 0 @($parseErrors).Count "$fileName must parse"
 }
+
+Test-JobContainsPreLedgerChild -Label "excel-before-ledger"
+Test-JobContainsPreLedgerChild -Label "guardian-before-ledger"
 
 $cases = @(Get-ExcelOracleHarnessCases)
 Assert-Equal 5 $cases.Count "self-test case count"
@@ -142,12 +190,15 @@ $selfRecord = [pscustomobject]@{
     executable_path = [string]$selfProcess.Path
 }
 Assert-True (Test-ExcelOracleProcessIdentity -Record $selfRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self") "exact PID/start/name/path process identity must match"
+Assert-Equal "missing" (Get-ExcelOracleProcessIdentityState -Record $selfRecord -Process $null -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self") "missing process identity state"
 $wrongStartRecord = $selfRecord | Select-Object *
 $wrongStartRecord.process_start_utc = $selfProcess.StartTime.ToUniversalTime().AddTicks(1).ToString("o")
 Assert-True (-not (Test-ExcelOracleProcessIdentity -Record $wrongStartRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self")) "mutation: reused PID with a different start time must fail closed"
+Assert-Equal "pid-reused" (Get-ExcelOracleProcessIdentityState -Record $wrongStartRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self") "different start time must classify as PID reuse"
 $wrongPathRecord = $selfRecord | Select-Object *
-$wrongPathRecord.executable_path = Join-Path ([IO.Path]::GetDirectoryName($selfProcess.Path)) "different.exe"
+$wrongPathRecord.executable_path = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetFileName($selfProcess.Path))
 Assert-True (-not (Test-ExcelOracleProcessIdentity -Record $wrongPathRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self")) "mutation: matching PID/start with different executable must fail closed"
+Assert-Equal "same-instance-conflict" (Get-ExcelOracleProcessIdentityState -Record $wrongPathRecord -Process $selfProcess -ExpectedProcessName $selfProcess.ProcessName -RunId "run-self") "same PID/start with conflicting path must not be treated as gone/reused"
 $helperRecord = [pscustomobject]@{
     schema = "oxvba.excel-vba-oracle-owned-helper.v1"
     run_id = "run-self"
@@ -161,6 +212,9 @@ $helperRecord = [pscustomobject]@{
 Assert-True (Test-ExcelOracleHelperProcessRecord -Record $helperRecord -RunId "run-self") "complete guardian ownership record must pass structural validation"
 $pidOnlyHelperRecord = [pscustomobject]@{ run_id = "run-self"; ownership = "owned-helper-process"; role = "guardian"; pid = $selfProcess.Id; process_name = $selfProcess.ProcessName }
 Assert-True (-not (Test-ExcelOracleHelperProcessRecord -Record $pidOnlyHelperRecord -RunId "run-self")) "mutation: PID/name-only guardian ownership must fail closed"
+$wrongHelperLeafRecord = $helperRecord | Select-Object *
+$wrongHelperLeafRecord.executable_path = Join-Path ([IO.Path]::GetDirectoryName($selfProcess.Path)) "not-the-declared-helper.exe"
+Assert-True (-not (Test-ExcelOracleHelperProcessRecord -Record $wrongHelperLeafRecord -RunId "run-self")) "mutation: guardian executable leaf must match its declared process name"
 
 $validExcelLedgerLine = $ownedRecord | ConvertTo-Json -Compress
 $validExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
@@ -172,13 +226,15 @@ $nullExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @('null') -Kind
 Assert-Equal 1 @($nullExcelLedger.errors).Count "mutation: null ownership JSON must make authority uncertain"
 $wrongSchemaExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine.Replace('owned-process.v1', 'attacker.v1')) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
 Assert-Equal 1 @($wrongSchemaExcelLedger.errors).Count "mutation: wrong ownership schema must make authority uncertain"
+$wrongExcelLeafLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine.Replace('EXCEL.EXE', 'NOTEPAD.EXE')) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
+Assert-Equal 1 @($wrongExcelLeafLedger.errors).Count "mutation: Excel ownership executable leaf must be EXCEL.EXE"
 $duplicateExcelLedger = ConvertFrom-ExcelOracleOwnershipLedger -Lines @($validExcelLedgerLine, $validExcelLedgerLine) -Kind excel -RunId "run-a" -BaselineExcelPids @(101, 202)
 Assert-Equal 1 @($duplicateExcelLedger.errors).Count "mutation: duplicate ownership identity must make authority uncertain"
 
 $observation = [ordered]@{
     schema = "oxvba.excel-vba-oracle-window-observation.v1"; event_type = "dialog-observation"; observation_id = "obs-1"; run_id = "run-a"
     operation_id = "compile"; phase = "compile"; excel_pid = 303; observed_process_id = 303; observed_utc = "2026-07-14T00:00:01Z"
-    window_handle = "123"; classification = "compile-error"; disposition = "capture-then-dismiss"; considered_dialog = $true
+    window_handle = "123"; classification = "compile-error"; disposition = "capture-then-dismiss"; considered_dialog = $true; is_modal = $true
     dialog_text = @("Compile error", "Sub or Function not defined"); selected_token = "MissingOracleSymbol"; expanded_line = "RunProbe = MissingOracleSymbol(1)"
 }
 $dismissal = [ordered]@{
@@ -198,6 +254,14 @@ $orphanDismissalLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($di
 Assert-Equal 1 @($orphanDismissalLedger.errors).Count "mutation: dismissal without a prior observation must fail capture authority"
 $duplicateObservationLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine, $observationLine) -RunId "run-a"
 Assert-Equal 1 @($duplicateObservationLedger.errors).Count "mutation: duplicate guardian observation must fail capture authority"
+$stringBooleanObservationLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine.Replace('"considered_dialog":true', '"considered_dialog":"false"')) -RunId "run-a"
+Assert-Equal 1 @($stringBooleanObservationLedger.errors).Count "mutation: string considered_dialog impostor must fail capture authority"
+$numericBooleanObservationLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine.Replace('"considered_dialog":true', '"considered_dialog":1')) -RunId "run-a"
+Assert-Equal 1 @($numericBooleanObservationLedger.errors).Count "mutation: numeric considered_dialog impostor must fail capture authority"
+$stringBooleanDismissalLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine, $dismissalLine.Replace('"succeeded":true', '"succeeded":"false"')) -RunId "run-a"
+Assert-Equal 1 @($stringBooleanDismissalLedger.errors).Count "mutation: string succeeded impostor must fail capture authority"
+$numericBooleanDismissalLedger = ConvertFrom-ExcelOracleGuardianEventLedger -Lines @($observationLine, $dismissalLine.Replace('"succeeded":true', '"succeeded":1')) -RunId "run-a"
+Assert-Equal 1 @($numericBooleanDismissalLedger.errors).Count "mutation: numeric succeeded impostor must fail capture authority"
 
 $guardianOutput = & (Join-Path $PSScriptRoot "excel-vba-oracle-guardian.ps1") -PolicySelfTest
 Assert-True (($guardianOutput -join "`n") -match "passed") "guardian policy self-test"
@@ -211,7 +275,7 @@ Assert-Equal $false ([bool]$plan.certifying) "dev/oracle plan cannot certify"
 Assert-Equal $false ([bool]$plan.matrix_update) "dev/oracle plan cannot update matrices"
 Assert-Equal $false ([bool]$plan.release_credit) "dev/oracle plan cannot claim release credit"
 Assert-Equal $false ([bool]$plan.capability_credit) "dev/oracle plan cannot claim capability credit"
-Assert-True ([string]$plan.ownership_policy -match "process-start" -and [string]$plan.ownership_policy -match "reused PIDs") "plan must require complete process identity and reject PID reuse"
+Assert-True ([string]$plan.ownership_policy -match "kill-on-close job" -and [string]$plan.ownership_policy -match "process-start") "plan must require prepared job containment plus complete process identity"
 Assert-True ([string]$plan.compile_policy -match "command ID 578") "plan must require forced VBE compile command ID 578"
 Assert-True ([string]$plan.modal_policy -match "guardian before") "plan must start the guardian before invocation"
 
@@ -268,12 +332,22 @@ $statusOnlyAcceptanceMutation = $workerSource.Replace('$passed = $behaviorPassed
 Assert-True (-not (Test-WorkerEvidenceGatedAcceptanceShape -Source $statusOnlyAcceptanceMutation)) "mutation: status-only case acceptance must be rejected"
 Assert-True ($workerSource -match 'invalid guardian event ledger' -and $workerSource -notmatch 'catch \{ \}\s*\r?\n\s*return @\(\$events\)') "guardian event parsing must fail closed"
 Assert-True ($workerSource -match 'Assert-GuardianLive.+forced VBE compile' -and $workerSource -match 'Assert-GuardianLive.+runtime invocation') "guardian exact liveness must be checked immediately before compile and runtime"
+Assert-True ($workerSource -notmatch 'New-Object\s+-ComObject\s+Excel\.Application' -and $workerSource -match 'Start-OwnedExcelApplication') "Excel must be directly launched inside prepared job containment, not activated through an uncontained COM launch"
+Assert-True ($workerSource.IndexOf('$containmentAuthority = Wait-ContainmentAuthority') -lt $workerSource.IndexOf('$selectedCases = @(Get-ExcelOracleHarnessCases)')) "worker must wait for containment authority before any case mutation"
+$compileControlPublish = $workerSource.IndexOf('Set-GuardianControl -Path $controlFile -OperationId $compileOperation')
+$compileLiveCheck = $workerSource.IndexOf('Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "forced VBE compile after control publication"')
+$runControlPublish = $workerSource.IndexOf('Set-GuardianControl -Path $controlFile -OperationId $runOperation')
+$runLiveCheck = $workerSource.IndexOf('Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "runtime invocation after control publication"')
+Assert-True ($compileControlPublish -ge 0 -and $compileLiveCheck -gt $compileControlPublish -and $runControlPublish -ge 0 -and $runLiveCheck -gt $runControlPublish) "control publication must precede the immediate guardian liveness check for both phases"
 
 $runnerSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "run-excel-vba-oracle.ps1")
 Assert-True (Test-RunnerIdentityCheckedCleanupShape -Source $runnerSource) "supervisor fallback cleanup must check PID/start/name/path identity before Process.Kill"
-$pidOnlyCleanupMutation = $runnerSource.Replace('Test-ExcelOracleProcessIdentity', 'Test-PidOnlyIdentity')
+$pidOnlyCleanupMutation = $runnerSource.Replace('Get-ExcelOracleProcessIdentityState', 'Get-PidOnlyIdentityState')
 Assert-True (-not (Test-RunnerIdentityCheckedCleanupShape -Source $pidOnlyCleanupMutation)) "mutation: PID-only fallback cleanup must be rejected"
 Assert-True ($runnerSource -match 'run directory already exists; refusing stale ready/control/event state') "runner must reject reused run directories"
 Assert-True ($runnerSource -match '\$worker\.WaitForExit\(10000\)' -and $runnerSource.IndexOf('$worker.WaitForExit(10000)') -lt $runnerSource.LastIndexOf('Stop-RecordedOwnedResources')) "timeout cleanup must wait for the exact worker before reading ledgers"
+Assert-True ($runnerSource.IndexOf('$job.AssignProcess($worker.Handle)') -lt $runnerSource.IndexOf('oxvba.excel-vba-oracle-containment-ready.v1')) "supervisor must assign the waiting worker to the job before publishing mutation authority"
+Assert-True ($runnerSource -match 'same-instance-conflict' -and $runnerSource -match 'identity conflict') "supervisor must fail cleanup and residual audits on same-instance identity conflicts"
+Assert-True ($runnerSource -match 'worker timed out.+\$terminationFailure') "timeout evidence must preserve worker termination failure detail"
 
 Write-Output "test-excel-vba-oracle: PASS"

@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [Parameter(Mandatory = $true)][string]$OwnershipFile,
     [Parameter(Mandatory = $true)][string]$HelperOwnershipFile,
+    [Parameter(Mandatory = $true)][string]$ContainmentReadyFile,
+    [Parameter(Mandatory = $true)][string]$ContainmentToken,
     [ValidateRange(5, 600)][int]$CaseTimeoutSeconds = 90,
     [string]$DiagnosticCaseId = ""
 )
@@ -20,8 +22,86 @@ public static class ExcelOracleNativeMethods
 {
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("oleacc.dll")]
+    private static extern int AccessibleObjectFromWindow(
+        IntPtr hwnd,
+        uint objectId,
+        ref Guid interfaceId,
+        [MarshalAs(UnmanagedType.Interface)] out object nativeObject);
+
+    public static object GetNativeObjectFromWindow(IntPtr hwnd)
+    {
+        const uint OBJID_NATIVEOM = 0xFFFFFFF0;
+        Guid dispatch = new Guid("00020400-0000-0000-C000-000000000046");
+        object nativeObject;
+        int hr = AccessibleObjectFromWindow(hwnd, OBJID_NATIVEOM, ref dispatch, out nativeObject);
+        if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+        return nativeObject;
+    }
 }
 '@
+}
+
+function Wait-ContainmentAuthority {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (Test-Path -LiteralPath $ContainmentReadyFile) {
+            try {
+                $ready = Get-Content -Raw -LiteralPath $ContainmentReadyFile | ConvertFrom-Json
+                if ([string]$ready.schema -ne "oxvba.excel-vba-oracle-containment-ready.v1" -or
+                    [string]$ready.run_id -ne $RunId -or
+                    [string]$ready.containment_token -ne $ContainmentToken -or
+                    [int]$ready.worker_pid -ne $PID) {
+                    throw "containment ready identity mismatch"
+                }
+                return $ready
+            }
+            catch { throw "excel-vba-oracle-worker: invalid containment authority: $($_.Exception.Message)" }
+        }
+        Start-Sleep -Milliseconds 25
+    }
+    throw "excel-vba-oracle-worker: containment authority was not published before mutation"
+}
+
+function Get-ExcelExecutablePath {
+    foreach ($keyPath in @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\excel.exe",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\excel.exe"
+    )) {
+        if (-not (Test-Path -LiteralPath $keyPath)) { continue }
+        $candidate = [string](Get-Item -LiteralPath $keyPath).GetValue("")
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    $command = Get-Command excel.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($command -and (Test-Path -LiteralPath $command.Source)) { return (Resolve-Path -LiteralPath $command.Source).Path }
+    throw "excel-vba-oracle-worker: Excel executable was not found"
+}
+
+function Start-OwnedExcelApplication {
+    param([Parameter(Mandatory = $true)][string]$ExcelExecutable)
+    $process = Start-Process -FilePath $ExcelExecutable -ArgumentList "/x" -PassThru
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    $nativeWindow = $null
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if ($process.HasExited) { throw "excel-vba-oracle-worker: directly launched Excel exited before automation attachment" }
+        $process.Refresh()
+        $hwnd = $process.MainWindowHandle
+        if ($hwnd -ne [IntPtr]::Zero) {
+            try {
+                $nativeWindow = [ExcelOracleNativeMethods]::GetNativeObjectFromWindow($hwnd)
+                $application = $nativeWindow.Application
+                if ($null -ne $application) {
+                    return [pscustomobject]@{ process = $process; application = $application; native_window = $nativeWindow }
+                }
+            }
+            catch { }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "excel-vba-oracle-worker: directly launched Excel did not expose OBJID_NATIVEOM"
 }
 
 function Get-ExcelProcessIds {
@@ -314,6 +394,7 @@ function Invoke-HarnessCase {
 
     $beforePids = @(Get-ExcelProcessIds)
     $excel = $null
+    $excelNativeWindow = $null
     $workbook = $null
     $project = $null
     $component = $null
@@ -346,15 +427,20 @@ function Invoke-HarnessCase {
     $cleanupStatus = "not-run"
 
     try {
-        $excel = New-Object -ComObject Excel.Application
+        $launchedExcel = Start-OwnedExcelApplication -ExcelExecutable $script:ExcelExecutablePath
+        $ownedExcelProcess = $launchedExcel.process
+        $excel = $launchedExcel.application
+        $excelNativeWindow = $launchedExcel.native_window
         $excel.Visible = $true
         $excel.DisplayAlerts = $false
         $excel.AutomationSecurity = 1
         $excelPid = Get-ExcelPidFromApplication -Application $excel
+        if ($excelPid -ne $ownedExcelProcess.Id) {
+            throw "excel-vba-oracle-worker: OBJID_NATIVEOM application PID does not match the directly launched contained Excel process"
+        }
         if ($excelPid -in $beforePids) {
             throw "excel-vba-oracle-worker: Excel PID $excelPid existed before this case; refusing ownership"
         }
-        $ownedExcelProcess = Get-Process -Id $excelPid -ErrorAction Stop
         $excelOwnershipRecord = Add-OwnershipRecord -Process $ownedExcelProcess -BeforePids $beforePids -CaseId $Case.id
         $excelOwnershipRecord | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $excelIdentityFile -Encoding utf8NoBOM
 
@@ -415,8 +501,8 @@ function Invoke-HarnessCase {
         }
         if (-not $compileCommand.enabled_before) { throw "excel-vba-oracle-worker: VBE compile command ID 578 is disabled for the active code pane" }
         $compileOperation = "$($Case.id)-compile"
-        Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "forced VBE compile"
         Set-GuardianControl -Path $controlFile -OperationId $compileOperation -Phase compile -AllowDismiss $true
+        Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "forced VBE compile after control publication"
         $executeException = $null
         $executeReturn = $null
         try { $executeReturn = $compileControl.Execute() }
@@ -462,8 +548,8 @@ function Invoke-HarnessCase {
 
         if ($compileStatus -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$Case.run_procedure)) {
             $runOperation = "$($Case.id)-run"
-            Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "runtime invocation"
             Set-GuardianControl -Path $controlFile -OperationId $runOperation -Phase run -AllowDismiss $true
+            Assert-GuardianLive -Process $guardian -ReadyRecord $guardianReady -Phase "runtime invocation after control publication"
             try {
                 $qualifiedName = "'$($workbook.Name)'!$($Case.run_procedure)"
                 $runValue = $excel.Run($qualifiedName)
@@ -549,6 +635,7 @@ function Invoke-HarnessCase {
         Release-ComObject $project
         Release-ComObject $workbook
         Release-ComObject $excel
+        Release-ComObject $excelNativeWindow
         [GC]::Collect()
         [GC]::WaitForPendingFinalizers()
         if ($ownedExcelProcess) {
@@ -595,6 +682,9 @@ if ($ownershipParent) { New-Item -ItemType Directory -Force -Path $ownershipPare
 $helperOwnershipParent = Split-Path -Parent $HelperOwnershipFile
 if ($helperOwnershipParent) { New-Item -ItemType Directory -Force -Path $helperOwnershipParent | Out-Null }
 
+$containmentAuthority = Wait-ContainmentAuthority
+$script:ExcelExecutablePath = Get-ExcelExecutablePath
+
 $selectedCases = @(Get-ExcelOracleHarnessCases)
 if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
     $selectedCases = @($selectedCases | Where-Object { $_.id -eq $DiagnosticCaseId })
@@ -610,6 +700,8 @@ $document = [ordered]@{
     run_id = $RunId
     generated_utc = [DateTime]::UtcNow.ToString("o")
     worker_pid = $PID
+    containment_token = $ContainmentToken
+    containment_authority = $containmentAuthority
     diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
     cases = @($results)
     passed = @($results | Where-Object { -not $_.passed }).Count -eq 0
