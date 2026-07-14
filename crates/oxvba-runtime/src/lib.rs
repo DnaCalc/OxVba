@@ -34,6 +34,8 @@ pub use callback_thunks::{
 pub use coerce::{print_display_text, variant_to_vba_string, write_display_text};
 pub use com_record::{ComRecord, ComRecordCloneFn, ComRecordDestroyFn};
 pub use decimal::Decimal96;
+#[cfg(any(test, feature = "live-counters"))]
+pub use live_counters::current_thread_live_handle_counts;
 pub use live_counters::{HandleBalance, LiveHandleCounts, live_handle_counts};
 pub use object_ref::{
     ObjectRef, RUNTIME_CLASS_LIFECYCLE_NONE, RUNTIME_GUID_ICONNECTIONPOINT,
