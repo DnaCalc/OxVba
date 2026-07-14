@@ -26,7 +26,11 @@ oxvba-hal.workspace = true
 oxvba-project.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+] }
 
 [[bench]]
 name = "jit_m4_baseline"
