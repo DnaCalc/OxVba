@@ -126,7 +126,8 @@ $allowedGapKinds = @(
     "missing-controlled-fixture",
     "missing-current-evidence",
     "environment-pending",
-    "aggregate-pending"
+    "aggregate-pending",
+    "control-satisfied"
 )
 $activeStatuses = @("open", "in_progress", "blocked")
 $legacyRouteByKey = @{
@@ -138,7 +139,6 @@ $legacyOwnerAndRolloutById = @{
     "bd-9sed.17" = @("bd-59co.3.11", "bd-59co.3.11.1")
 }
 $supportOwnerByKey = @{
-    "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV" = "bd-59co.3.1.2"
     "WIN-ABI-CARRIER|WAC-CLEAN-CERT-ENV" = "bd-59co.3.15.3"
     "WIN-NATIVE-EXPORT|WNE-PROFILE-TOOL-TERMINAL" = "bd-59co.3.16.1"
     "WIN-ABI-CARRIER|WAC-PROFILE-TERMINAL" = "bd-59co.3.16.1"
@@ -176,7 +176,6 @@ $expectedHistoricalTestKeys = @(
     "WIN-ABI-CARRIER|WAC-EXCEL-NATIVE-CERT"
 )
 $expectedAbsentTestKeys = @(
-    "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV",
     "WIN-ABI-CARRIER|WAC-VERIFIED-INTEROP-PLAN",
     "WIN-ABI-CARRIER|WAC-CLEAN-CERT-ENV"
 )
@@ -223,7 +222,6 @@ $missingEvidenceKeys = @(
     "WIN-ABI-CARRIER|WAC-EXCEL-NATIVE-CERT"
 )
 $environmentPendingKeys = @(
-    "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV",
     "WIN-ABI-CARRIER|WAC-CLEAN-CERT-ENV"
 )
 $aggregatePendingKeys = @(
@@ -285,8 +283,9 @@ try {
             throw "validate-windows-current-stack-residuals: ledger row '$key' is not canonical"
         }
         $canonical = $canonicalByKey[$key]
-        if ([string]$canonical.truth_state -ne "planned" -or [string]$row.canonical_truth_state -ne "planned") {
-            throw "validate-windows-current-stack-residuals: '$key' must remain planned; current-stack characterization is not capability credit"
+        $expectedCanonicalTruth = if ($key -eq "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV") { "verified" } else { "planned" }
+        if ([string]$canonical.truth_state -ne $expectedCanonicalTruth -or [string]$row.canonical_truth_state -ne $expectedCanonicalTruth) {
+            throw "validate-windows-current-stack-residuals: '$key' canonical truth must be '$expectedCanonicalTruth'; support characterization cannot credit another row"
         }
         if ([string]$row.claim_key -ne [string]$canonical.claim_key -or
             [string]$row.canonical_owner_epic -ne [string]$canonical.owner_epic) {
@@ -302,12 +301,14 @@ try {
             elseif ($key -in $expectedAbsentCodeKeys) { "absent" }
             elseif ($key -in $expectedNotApplicableCodeKeys) { "n/a" }
             else { "current-subset" }
-        $expectedTestState = if ($key -in $expectedHistoricalTestKeys) { "historical-only" }
+        $expectedTestState = if ($key -eq "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV") { "current-subset" }
+            elseif ($key -in $expectedHistoricalTestKeys) { "historical-only" }
             elseif ($key -in $expectedAbsentTestKeys) { "absent" }
             elseif ($key -in $expectedNotApplicableTestKeys) { "n/a" }
             else { "current-subset" }
         $expectedHistoricalState = if ($key -in $expectedNoHistoricalEvidenceKeys) { "none" } else { "provenance-only" }
-        $expectedGapKind = if ($key -in $backendDivergenceKeys) { "backend-divergence" }
+        $expectedGapKind = if ($key -eq "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV") { "control-satisfied" }
+            elseif ($key -in $backendDivergenceKeys) { "backend-divergence" }
             elseif ($key -eq "WIN-COM-EVENTS|WCE-PLAN-INCOMING") { "known-blocker" }
             elseif ($key -in $missingFixtureKeys) { "missing-controlled-fixture" }
             elseif ($key -in $missingEvidenceKeys) { "missing-current-evidence" }
@@ -342,8 +343,9 @@ try {
         if (@($codePaths | Where-Object { $_.Replace('\', '/') -notlike 'crates/*' }).Count -gt 0) {
             throw "validate-windows-current-stack-residuals: '$key' current code anchors must resolve under crates/"
         }
-        if (@($testPaths | Where-Object { $_.Replace('\', '/') -notlike 'crates/*' }).Count -gt 0) {
-            throw "validate-windows-current-stack-residuals: '$key' current test anchors must resolve under crates/"
+        $allowedTestRoot = if ($key -eq "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV") { "scripts/*" } else { "crates/*" }
+        if (@($testPaths | Where-Object { $_.Replace('\', '/') -notlike $allowedTestRoot }).Count -gt 0) {
+            throw "validate-windows-current-stack-residuals: '$key' current test anchors must resolve under '$allowedTestRoot'"
         }
         if (@($historicalPaths | Where-Object { $_.Replace('\', '/') -notlike 'docs/evidence/*' }).Count -gt 0) {
             throw "validate-windows-current-stack-residuals: '$key' historical references must stay under docs/evidence"
@@ -376,6 +378,20 @@ try {
                     throw "validate-windows-current-stack-residuals: '$key' aggregate gap has premature implementation or evidence credit"
                 }
             }
+            "control-satisfied" {
+                $expectedAnchors = @(
+                    "scripts/sync-windows-dev-environment.ps1",
+                    "scripts/test-windows-dev-environment.ps1",
+                    "scripts/validate-environment-manifest.ps1",
+                    "scripts/validate-windows-fixture-manifest.ps1"
+                )
+                if ($key -ne "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV" -or
+                    [string]$row.current_code_state -ne "n/a" -or
+                    [string]$row.current_test_state -ne "current-subset" -or
+                    (@($testPaths) -join '|') -cne ($expectedAnchors -join '|')) {
+                    throw "validate-windows-current-stack-residuals: '$key' is not the exact development-environment control handoff"
+                }
+            }
         }
 
         $expectedLegacy = if ($legacyRouteByKey.ContainsKey($key)) { $legacyRouteByKey[$key] } else { "none" }
@@ -385,6 +401,12 @@ try {
 
         $ownerId = [string]$row.live_residual_owner_bead
         $epicId = [string]$row.canonical_owner_epic
+        if ($key -eq "WIN-ABI-CARRIER|WAC-TARGET-DEV-ENV") {
+            if ($ownerId -ne "n/a") {
+                throw "validate-windows-current-stack-residuals: verified '$key' must not retain a live residual owner"
+            }
+            continue
+        }
         if (-not $issueById.ContainsKey($ownerId) -or [string]$issueById[$ownerId].status -notin $activeStatuses) {
             throw "validate-windows-current-stack-residuals: '$key' has no active live residual owner '$ownerId'"
         }

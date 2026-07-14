@@ -56,6 +56,13 @@ try {
     }
     Assert-ValidatorFailure -Name "characterization advances capability truth" -Arguments @{ LedgerPath = $truthCredit }
 
+    $targetResidual = Write-MutatedLedger -Name "target-residual" -Mutation {
+        param($rows)
+        ($rows | Where-Object row_id -eq "WAC-TARGET-DEV-ENV").live_residual_owner_bead = "bd-59co.3.1.7"
+        $rows
+    }
+    Assert-ValidatorFailure -Name "verified development environment retains residual" -Arguments @{ LedgerPath = $targetResidual }
+
     $jitCredit = Write-MutatedLedger -Name "jit-credit-from-vm-history" -Mutation {
         param($rows)
         $row = $rows | Where-Object row_id -eq "WNE-PLAN-NATIVE"
@@ -118,7 +125,7 @@ try {
     $migrationRows | Export-Csv -LiteralPath $migrationPath -NoTypeInformation -UseQuotes Always
     Assert-ValidatorFailure -Name "imported callback route closed" -Arguments @{ LegacyMigrationPath = $migrationPath }
 
-    Write-Host "test-windows-current-stack-residuals: ok (positive case plus 10 fail-closed mutations)"
+    Write-Host "test-windows-current-stack-residuals: ok (positive case plus 11 fail-closed mutations)"
 }
 finally {
     if (Test-Path -LiteralPath $tempDirectory) {

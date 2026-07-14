@@ -167,6 +167,9 @@ try {
         -Environment $dev `
         -ExpectedSchema "oxvba-windows-x64-environment-capture-v1" `
         -Owner "dev-oracle capture"
+    & (Join-Path $PSScriptRoot "sync-windows-dev-environment.ps1") -Check -RepositoryRoot $repoRoot
+    $devControlledRelative = "artifacts/windows-x64/controlled-environments/v1/$([string]$dev.environment_id)/environment-capture.json"
+    $devControlledHash = Get-WindowsFixtureCanonicalSourceFileHash -RepositoryRoot $repoRoot -RelativePath $devControlledRelative
     $devReportRelative = "docs/evidence/programs/$($manifest.program_id)/windows-x64/WIN-0/dev-oracle-environment.md"
     $devReportPath = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path $devReportRelative
     if (-not (Test-Path -LiteralPath $devReportPath -PathType Leaf)) {
@@ -242,6 +245,7 @@ try {
 
     $ownershipRows = @(Import-Csv -LiteralPath (Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$manifest.matrix_ownership)))
     $certId = [string]$cert.environment_id
+    $devConsumerRows = [Collections.Generic.List[object]]::new()
     foreach ($owner in $ownershipRows) {
         $matrixId = [string]$owner.matrix_id
         $isTerminalMatrix = ConvertFrom-IdealBoolean -Value ([string]$owner.required_for_terminal) -Owner "$matrixId required_for_terminal"
@@ -254,6 +258,9 @@ try {
                     -not $environmentById.ContainsKey($rowEnvironmentId)) {
                     throw "validate-environment-manifest: $matrixId/$($matrixRow.row_id) environment_id references unknown environment '$rowEnvironmentId'"
                 }
+                if ($rowEnvironmentId -ceq [string]$dev.environment_id) {
+                    $devConsumerRows.Add([pscustomobject]@{ MatrixId = $matrixId; Row = $matrixRow })
+                }
             }
             foreach ($match in @(Get-IdealTypedReferenceMatches -Text ([string]$matrixRow.evidence_refs) -Prefixes @("environment"))) {
                 $environmentId = $match.Groups['value'].Value.Trim().Trim('`')
@@ -263,6 +270,12 @@ try {
             }
             $required = ConvertFrom-IdealBoolean -Value ([string]$matrixRow.required) -Owner "$matrixId/$($matrixRow.row_id) required"
             if (-not $isTerminalMatrix -or -not $required -or [string]$matrixRow.truth_state -ne "verified") {
+                continue
+            }
+            if ($matrixId -ceq "WIN-ABI-CARRIER" -and [string]$matrixRow.row_id -ceq "WAC-TARGET-DEV-ENV") {
+                # This is the noncertifying development-host control row. Its
+                # exact authority is checked below; it must never be rewritten
+                # to claim the clean certification environment.
                 continue
             }
             $context = @(
@@ -293,7 +306,51 @@ try {
         }
     }
 
-    Write-Host "validate-environment-manifest: ok (program=$($manifest.program_id) roles=3 cert=$certId linux=$($linux.environment_id))"
+    if ($devConsumerRows.Count -ne 12) {
+        throw "validate-environment-manifest: expected exactly 12 development-environment consumers, found $($devConsumerRows.Count)"
+    }
+    foreach ($consumer in $devConsumerRows) {
+        $key = "$([string]$consumer.MatrixId)/$([string]$consumer.Row.row_id)"
+        if ([string]$consumer.Row.environment_hash -cne $devControlledHash) {
+            throw "validate-environment-manifest: $key does not bind the controlled development-environment hash"
+        }
+    }
+    $targetConsumers = @($devConsumerRows | Where-Object { [string]$_.MatrixId -ceq "WIN-ABI-CARRIER" -and [string]$_.Row.row_id -ceq "WAC-TARGET-DEV-ENV" })
+    if ($targetConsumers.Count -ne 1) {
+        throw "validate-environment-manifest: missing unique WAC-TARGET-DEV-ENV handoff row"
+    }
+    $target = $targetConsumers[0].Row
+    if ([string]$target.metadata_revision -cne "win-x64-dev-oracle-2026-07-capture-v1" -or
+        [string]$target.fixture_hash -cne "pending" -or
+        [string]$target.truth_state -cne "verified" -or
+        [string]$target.evidence_state -cne "verified" -or
+        [string]$target.evidence_owner_bead -cne "bd-59co.3.1.2" -or
+        [string]$target.residual_disposition -cne "none" -or
+        -not [string]::IsNullOrWhiteSpace([string]$target.residual_owner_bead)) {
+        throw "validate-environment-manifest: WAC-TARGET-DEV-ENV is not the verified residual-free noncertifying handoff"
+    }
+    foreach ($backendState in @("compiler_state", "package_state", "vm3_state", "jit_state", "build_state")) {
+        if ([string]$target.$backendState -cne "n/a") {
+            throw "validate-environment-manifest: WAC-TARGET-DEV-ENV cannot credit backend state '$backendState'"
+        }
+    }
+    $expectedTargetAnchors = "scripts/sync-windows-dev-environment.ps1|scripts/test-windows-dev-environment.ps1|scripts/validate-environment-manifest.ps1|scripts/validate-windows-fixture-manifest.ps1"
+    if ([string]$target.test_anchors -cne $expectedTargetAnchors) {
+        throw "validate-environment-manifest: WAC-TARGET-DEV-ENV test anchors drifted"
+    }
+    $targetEvidence = @(([string]$target.evidence_refs -split '[;|]') | ForEach-Object { $_.Trim().Replace('\', '/') } | Where-Object { $_ })
+    foreach ($requiredEvidence in @(
+        "environment:$([string]$dev.environment_id)",
+        $devControlledRelative,
+        $devCaptureRelative,
+        "docs/evidence/programs/$($manifest.program_id)/windows-x64/WIN-0/environment-and-owner-handoff.md"
+    )) {
+        if ($targetEvidence -notcontains $requiredEvidence) {
+            throw "validate-environment-manifest: WAC-TARGET-DEV-ENV lacks evidence '$requiredEvidence'"
+        }
+    }
+
+    Write-Host "validate-environment-manifest: ok (program=$($manifest.program_id) roles=3 dev_consumers=12 dev_hash=$devControlledHash cert=$certId linux=$($linux.environment_id))"
 }
 finally {
     Pop-Location
