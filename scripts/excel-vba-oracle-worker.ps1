@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ContainmentReadyFile,
     [Parameter(Mandatory = $true)][string]$ContainmentToken,
     [Parameter(Mandatory = $true)][string]$SelectedCaseDescriptorFile,
-    [Parameter(Mandatory = $true)][string]$SelectedCaseDescriptorDigest,
+    [Parameter(Mandatory = $true)][string]$SelectedCaseSelectionDigest,
     [ValidateRange(5, 600)][int]$CaseTimeoutSeconds = 90
 )
 
@@ -1055,13 +1055,10 @@ if ($ownershipParent) { New-Item -ItemType Directory -Force -Path $ownershipPare
 $helperOwnershipParent = Split-Path -Parent $HelperOwnershipFile
 if ($helperOwnershipParent) { New-Item -ItemType Directory -Force -Path $helperOwnershipParent | Out-Null }
 
-$descriptorEnvelope = Read-ExcelOracleSelectedCaseDescriptorEnvelope -Path $SelectedCaseDescriptorFile -ExpectedAggregateSha256 $SelectedCaseDescriptorDigest
+$descriptorEnvelope = Read-ExcelOracleSelectedCaseDescriptorEnvelope -Path $SelectedCaseDescriptorFile -ExpectedSelectionSha256 $SelectedCaseSelectionDigest
 $selectedCaseDescriptors = @($descriptorEnvelope.descriptors)
-$diagnosticOnly = $selectedCaseDescriptors.Count -eq 1 -and [bool]$selectedCaseDescriptors[0].diagnostic_only
-if (($diagnosticOnly -and @($selectedCaseDescriptors | Where-Object { -not [bool]$_.diagnostic_only }).Count -gt 0) -or
-    (-not $diagnosticOnly -and @($selectedCaseDescriptors | Where-Object { [bool]$_.diagnostic_only }).Count -gt 0)) {
-    throw "excel-vba-oracle-worker: selected descriptor sequence mixes diagnostic and ordinary cases"
-}
+$targetedProbe = [bool]$descriptorEnvelope.targeted_probe
+$containsDiagnosticCase = [bool]$descriptorEnvelope.contains_diagnostic_case
 $script:SelectedCaseIds = @($selectedCaseDescriptors | ForEach-Object { [string]$_.id })
 $containmentAuthority = Wait-ContainmentAuthority
 $script:ExcelExecutablePath = Get-ExcelExecutablePath
@@ -1079,14 +1076,15 @@ foreach ($descriptor in $selectedCaseDescriptors) {
 }
 
 $document = [ordered]@{
-    schema = "oxvba.excel-vba-oracle-results.v1"
+    schema = "oxvba.excel-vba-oracle-results.v2"
     run_id = $RunId
     generated_utc = [DateTime]::UtcNow.ToString("o")
     worker_pid = $PID
     containment_token = $ContainmentToken
     containment_authority = $containmentAuthority
-    selected_case_descriptor_digest = [string]$descriptorEnvelope.aggregate_sha256
-    diagnostic_only = $diagnosticOnly
+    selected_case_selection_digest = [string]$descriptorEnvelope.selection_sha256
+    targeted_probe = $targetedProbe
+    contains_diagnostic_case = $containsDiagnosticCase
     cases = @($results)
     passed = @($results | Where-Object { -not $_.passed }).Count -eq 0
 }

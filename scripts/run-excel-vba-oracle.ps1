@@ -33,10 +33,11 @@ if ([string]$environment.evidence_state -ne "characterized-noncertifying") {
     throw "run-excel-vba-oracle: environment '$EnvironmentId' is '$($environment.evidence_state)' and is not runnable by this development/oracle supervisor"
 }
 
+$targetedProbe = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
 $cases = @(Get-ExcelOracleHarnessCases | Where-Object { -not [bool]$_.diagnostic_only })
-if (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
+if ($targetedProbe) {
     $cases = @(Get-ExcelOracleHarnessCases | Where-Object { $_.id -eq $DiagnosticCaseId })
-    if ($cases.Count -ne 1) { throw "run-excel-vba-oracle: unknown diagnostic case '$DiagnosticCaseId'" }
+    if ($cases.Count -ne 1) { throw "run-excel-vba-oracle: unknown targeted case '$DiagnosticCaseId'" }
 }
 if (@($cases.id | Select-Object -Unique).Count -ne $cases.Count -or @($cases | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.id) }).Count -gt 0) {
     throw "run-excel-vba-oracle: selected case identities must be nonempty and unique"
@@ -46,9 +47,10 @@ if ($selectedCaseDescriptors.Count -ne $cases.Count -or
     @($selectedCaseDescriptors | Where-Object { -not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $_) }).Count -gt 0) {
     throw "run-excel-vba-oracle: selected case descriptor sealing failed"
 }
-$selectedCaseDescriptorEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $selectedCaseDescriptors
+$selectedCaseDescriptorEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $selectedCaseDescriptors -TargetedProbe $targetedProbe
+$containsDiagnosticCase = [bool]$selectedCaseDescriptorEnvelope.contains_diagnostic_case
 $plan = [ordered]@{
-    schema = "oxvba.excel-vba-oracle-plan.v1"
+    schema = "oxvba.excel-vba-oracle-plan.v2"
     suite = $Suite
     run_id = $RunId
     environment_id = $EnvironmentId
@@ -58,7 +60,8 @@ $plan = [ordered]@{
     matrix_update = $false
     release_credit = $false
     capability_credit = $false
-    diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
+    targeted_probe = $targetedProbe
+    contains_diagnostic_case = $containsDiagnosticCase
     ownership_policy = "assign the waiting worker to a kill-on-close job before publishing mutation authority; launch Excel directly inside that containment; record PID+process-start+name+executable for Excel and guardian processes; validate classified identity before fallback cleanup"
     modal_policy = "start PID-scoped UIA guardian before command-ID-578 compile and runtime invocation; capture first; never auto-enable security/trust prompts"
     compile_policy = "VBE Debug -> Compile VBAProject command ID 578; Application.Run is never a compile check"
@@ -69,11 +72,12 @@ $plan = [ordered]@{
             expected_run_status = $_.expected_run_status
             module_sha256 = $_.module_sha256
             descriptor_sha256 = $_.descriptor_sha256
+            intrinsic_diagnostic_case = [bool]$_.diagnostic_only
         }
     })
     selected_case_count = $cases.Count
     selected_case_ids = @($cases | ForEach-Object { [string]$_.id })
-    selected_case_descriptor_digest = [string]$selectedCaseDescriptorEnvelope.aggregate_sha256
+    selected_case_selection_digest = [string]$selectedCaseDescriptorEnvelope.selection_sha256
 }
 if ($PlanOnly) {
     Write-Output ($plan | ConvertTo-Json -Depth 8)
@@ -180,7 +184,7 @@ $workerArguments = @(
     "-ContainmentReadyFile", $containmentReadyFile,
     "-ContainmentToken", $containmentToken,
     "-SelectedCaseDescriptorFile", $selectedCaseDescriptorFile,
-    "-SelectedCaseDescriptorDigest", [string]$selectedCaseDescriptorEnvelope.aggregate_sha256,
+    "-SelectedCaseSelectionDigest", [string]$selectedCaseDescriptorEnvelope.selection_sha256,
     "-CaseTimeoutSeconds", [string][Math]::Min(120, $TimeoutSeconds)
 )
 $startedUtc = [DateTime]::UtcNow
@@ -300,7 +304,8 @@ $postCleanup = Resolve-ExcelOraclePostCleanupResult `
     -ExpectedWorkerStartUtc $workerStartUtc `
     -ExpectedWorkerExecutablePath $workerExecutablePath `
     -ExpectedContainmentToken $containmentToken `
-    -ExpectedDiagnosticOnly (-not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)) `
+    -ExpectedTargetedProbe $targetedProbe `
+    -ExpectedContainsDiagnosticCase $containsDiagnosticCase `
     -WorkerExitCode $workerExitCode `
     -WorkerQuiesced $workerQuiesced `
     -WorkerTimedOut $timedOut
@@ -333,7 +338,7 @@ if ([string]$postCleanup.disposition -eq "complete-case-failure") {
 
 $completedUtc = [DateTime]::UtcNow
 $transcript = [ordered]@{
-    schema = "oxvba.excel-vba-oracle-transcript.v1"
+    schema = "oxvba.excel-vba-oracle-transcript.v2"
     run_id = $RunId
     environment_id = $EnvironmentId
     started_utc = $startedUtc.ToString("o")
@@ -347,16 +352,27 @@ $transcript = [ordered]@{
     timeout = $timedOut
     no_matrix_update = [bool]$NoMatrixUpdate
     certifying = $false
-    diagnostic_only = -not [string]::IsNullOrWhiteSpace($DiagnosticCaseId)
+    targeted_probe = $targetedProbe
+    contains_diagnostic_case = $containsDiagnosticCase
+    selected_case_selection_digest = [string]$selectedCaseDescriptorEnvelope.selection_sha256
+    selected_case_ids = @($selectedCaseDescriptors | ForEach-Object { [string]$_.id })
     passed = [bool]$results.passed
     case_count = @($results.cases).Count
 }
-$transcript | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputDirectory "transcript.json") -Encoding utf8NoBOM
+$transcriptJson = $transcript | ConvertTo-Json -Depth 8
+try { $decodedTranscript = $transcriptJson | ConvertFrom-Json -DateKind String }
+catch { throw "run-excel-vba-oracle: transcript transport cannot be decoded: $($_.Exception.Message)" }
+if (-not (Test-ExcelOracleTranscriptSelection -Transcript $decodedTranscript -SelectedCaseDescriptors $selectedCaseDescriptors `
+    -ExpectedTargetedProbe $targetedProbe -ExpectedContainsDiagnosticCase $containsDiagnosticCase `
+    -ExpectedSelectionSha256 ([string]$selectedCaseDescriptorEnvelope.selection_sha256))) {
+    throw "run-excel-vba-oracle: transcript selection projection is invalid"
+}
+$transcriptJson | Set-Content -LiteralPath (Join-Path $outputDirectory "transcript.json") -Encoding utf8NoBOM
 
 $caseLines = @($results.cases | ForEach-Object {
     "| $($_.id) | $($_.compile_status) | $($_.run_status) | $($_.passed) |"
 })
-$displayResult = if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId)) { "PASS ($(@($results.cases).Count)/5 cases)" } else { "DIAGNOSTIC CAPTURED (case ``$DiagnosticCaseId``; expectation pass=$([bool]$results.passed))" }
+$displayResult = if (-not $targetedProbe) { "PASS ($(@($results.cases).Count)/5 cases)" } else { "TARGETED PROBE CAPTURED (case ``$DiagnosticCaseId``; intrinsic diagnostic=$containsDiagnosticCase; expectation pass=$([bool]$results.passed))" }
 $summary = @"
 # Excel/VBA Oracle Harness Self-Test
 
@@ -377,11 +393,11 @@ Raw evidence: ``results.json``, ``transcript.json``, ``owned-processes.jsonl``, 
 "@
 Set-Content -LiteralPath (Join-Path $outputDirectory "summary.md") -Value $summary -Encoding utf8NoBOM
 
-if ([string]::IsNullOrWhiteSpace($DiagnosticCaseId)) {
+if (-not $targetedProbe) {
     Write-Output "excel-vba-oracle: PASS 5/5 (development/oracle, noncertifying, no matrix update)"
 }
 else {
-    Write-Output "excel-vba-oracle: DIAGNOSTIC $DiagnosticCaseId captured (development/oracle, noncertifying, no matrix update)"
+    Write-Output "excel-vba-oracle: TARGETED PROBE $DiagnosticCaseId captured (intrinsic diagnostic=$containsDiagnosticCase; development/oracle, noncertifying, no matrix update)"
 }
 Write-Output "excel-vba-oracle: $outputDirectory"
 }

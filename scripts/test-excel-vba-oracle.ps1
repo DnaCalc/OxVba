@@ -223,15 +223,17 @@ function New-TestPostCleanupResults {
         [string]$RunId = "run-post",
         [int]$WorkerPid = 43210,
         [string]$ContainmentToken = "11111111-2222-3333-4444-555555555555",
-        [bool]$DiagnosticOnly = $false,
+        [bool]$TargetedProbe = $false,
+        [AllowNull()]$ContainsDiagnosticCase = $null,
         [AllowNull()]$AggregatePassed = $null,
         [AllowNull()][string[]]$SelectedCaseIds = $null
     )
     $passed = if ($null -eq $AggregatePassed) { @($Cases | Where-Object { -not [bool]$_.passed }).Count -eq 0 } else { [bool]$AggregatePassed }
     if ($null -eq $SelectedCaseIds) { $SelectedCaseIds = @($Cases | ForEach-Object { [string]$_.id }) }
     $descriptors = @(Get-TestSelectedCaseDescriptors -CaseIds $SelectedCaseIds)
+    if ($null -eq $ContainsDiagnosticCase) { $ContainsDiagnosticCase = @($descriptors | Where-Object { [bool]$_.diagnostic_only }).Count -gt 0 }
     $document = [pscustomobject][ordered]@{
-        schema = "oxvba.excel-vba-oracle-results.v1"
+        schema = "oxvba.excel-vba-oracle-results.v2"
         run_id = $RunId
         generated_utc = "2026-07-14T00:00:15Z"
         worker_pid = $WorkerPid
@@ -246,8 +248,9 @@ function New-TestPostCleanupResults {
             worker_job_membership_verified = $true
             published_utc = "2026-07-14T00:00:02Z"
         }
-        selected_case_descriptor_digest = Get-ExcelOracleSelectedCaseDescriptorSequenceDigest -Descriptors $descriptors
-        diagnostic_only = $DiagnosticOnly
+        selected_case_selection_digest = Get-ExcelOracleSelectedCaseSelectionDigest -Descriptors $descriptors -TargetedProbe $TargetedProbe -ContainsDiagnosticCase ([bool]$ContainsDiagnosticCase)
+        targeted_probe = $TargetedProbe
+        contains_diagnostic_case = [bool]$ContainsDiagnosticCase
         cases = @($Cases)
         passed = $passed
     }
@@ -337,7 +340,8 @@ function Invoke-TestPostCleanupResolution {
         [Parameter(Mandatory = $true)]$HelperLedger,
         [Parameter(Mandatory = $true)][string[]]$ExpectedCaseIds,
         [int]$WorkerExitCode = 0,
-        [bool]$DiagnosticOnly = $false,
+        [bool]$TargetedProbe = $false,
+        [AllowNull()]$ContainsDiagnosticCase = $null,
         [int]$WorkerPid = 43210,
         [string]$WorkerStartUtc = "2026-07-14T00:00:01Z",
         [string]$WorkerExecutablePath = "C:\Program Files\PowerShell\7\pwsh.exe",
@@ -349,6 +353,7 @@ function Invoke-TestPostCleanupResolution {
         [string]$OutputDirectory = "C:\fixture\run-post"
     )
     if ($null -eq $SelectedCaseDescriptors) { $SelectedCaseDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds $ExpectedCaseIds) }
+    if ($null -eq $ContainsDiagnosticCase) { $ContainsDiagnosticCase = @($SelectedCaseDescriptors | Where-Object { [bool]$_.diagnostic_only }).Count -gt 0 }
     if ($null -eq $SupervisorGuardianEvidence) {
         if ($null -eq $Results) { $SupervisorGuardianEvidence = [object[]]::new(0) }
         else { $SupervisorGuardianEvidence = [object[]]@(New-TestSupervisorGuardianEvidence -Cases @($Results.cases) -OutputDirectory $OutputDirectory) }
@@ -357,7 +362,8 @@ function Invoke-TestPostCleanupResolution {
         -SupervisorGuardianEvidence $SupervisorGuardianEvidence -SelectedCaseDescriptors $SelectedCaseDescriptors -ExpectedOutputDirectory $OutputDirectory `
         -RunId "run-post" -ExpectedWorkerPid $WorkerPid -ExpectedWorkerStartUtc $WorkerStartUtc `
         -ExpectedWorkerExecutablePath $WorkerExecutablePath -ExpectedContainmentToken $ContainmentToken `
-        -ExpectedDiagnosticOnly $DiagnosticOnly -WorkerExitCode $WorkerExitCode -WorkerQuiesced $WorkerQuiesced -WorkerTimedOut $WorkerTimedOut
+        -ExpectedTargetedProbe $TargetedProbe -ExpectedContainsDiagnosticCase ([bool]$ContainsDiagnosticCase) `
+        -WorkerExitCode $WorkerExitCode -WorkerQuiesced $WorkerQuiesced -WorkerTimedOut $WorkerTimedOut
 }
 
 function Test-GuardianOwnedWindowEnumerationShape {
@@ -675,11 +681,11 @@ Assert-True ($membershipFailure -and $null -ne $script:membershipFailureChild -a
     $null -eq (Get-Process -Id $script:membershipFailureChild.Id -ErrorAction SilentlyContinue)) "injected Job membership failure must terminate the real assigned waiting child with zero residue"
 $script:membershipFailureChild.Dispose()
 
-$completeIds = @("success", "compile-failure")
-$completeCases = @(
-    (New-TestPostCleanupCase -Id $completeIds[0] -OwnedPid 7001 -ObservedPid 7001),
-    (New-TestPostCleanupCase -Id $completeIds[1] -OwnedPid 7002 -ObservedPid 7002)
-)
+$completeIds = @("success", "compile-failure", "ambiguous-macro-failure", "intrinsic-shadow", "runtime-full-err")
+$completeCases = [Collections.Generic.List[object]]::new()
+for ($index = 0; $index -lt $completeIds.Count; $index++) {
+    $completeCases.Add((New-TestPostCleanupCase -Id $completeIds[$index] -OwnedPid (7001 + $index) -ObservedPid (7001 + $index)))
+}
 $completeResults = New-TestPostCleanupResults -Cases $completeCases
 $completeExcelLedger = New-TestPostCleanupLedger -CaseIds $completeIds -FirstPid 7001
 $completeHelperLedger = New-TestPostCleanupLedger -CaseIds $completeIds -Guardian
@@ -708,10 +714,10 @@ $preContainmentHelperEvidence = Update-TestSupervisorGuardianEvidence -Evidence 
     param($events) $final = @($events | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })[0]; $final.process_start_utc = "2026-07-14T00:00:01Z"; $events
 }
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $completeResults -ExcelLedger $completeExcelLedger -HelperLedger $preContainmentHelperLedger -ExpectedCaseIds $completeIds -SupervisorGuardianEvidence $preContainmentHelperEvidence).valid) "helper ownership start/acquire timestamps before containment publication must fail while preserving exact final identity and local order"
-$failedCompleteCases = @(
-    (New-TestPostCleanupCase -Id $completeIds[0] -Passed $false -OwnedPid 7001 -ObservedPid 7001 -TransportError "behavior mismatch"),
-    (New-TestPostCleanupCase -Id $completeIds[1] -OwnedPid 7002 -ObservedPid 7002)
-)
+$failedCompleteCases = [Collections.Generic.List[object]]::new()
+for ($index = 0; $index -lt $completeIds.Count; $index++) {
+    $failedCompleteCases.Add((New-TestPostCleanupCase -Id $completeIds[$index] -Passed ($index -ne 0) -OwnedPid (7001 + $index) -ObservedPid (7001 + $index) -TransportError $(if ($index -eq 0) { "behavior mismatch" } else { $null })))
+}
 $failedCompleteResults = New-TestPostCleanupResults -Cases $failedCompleteCases -AggregatePassed $false
 $failedCompleteResolution = Invoke-TestPostCleanupResolution -Results $failedCompleteResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -WorkerExitCode 1
 Assert-True ([bool]$failedCompleteResolution.valid -and [string]$failedCompleteResolution.disposition -eq "complete-case-failure") "fully owned failed cases must surface only through the failed aggregate exit envelope"
@@ -730,7 +736,7 @@ $wrongTokenEvidence = @(New-TestSupervisorGuardianEvidence -Cases @($wrongTokenE
 $wrongTokenEvidenceResolution = Invoke-TestPostCleanupResolution -Results $wrongTokenEvidenceResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -SupervisorGuardianEvidence $wrongTokenEvidence -WorkerExitCode 1
 Assert-True ([bool]$wrongTokenEvidenceResolution.valid -and [string]$wrongTokenEvidenceResolution.disposition -ceq "complete-case-failure") "behavior-correct but wrong-token guardian evidence must form a bounded complete-case-failure with a specific nonempty transport"
 
-$fiveSelectedIds = @("success", "compile-failure", "ambiguous-macro-failure", "intrinsic-shadow", "runtime-full-err")
+$fiveSelectedIds = @($completeIds)
 $fiveCompleteCases = [Collections.Generic.List[object]]::new()
 for ($index = 0; $index -lt $fiveSelectedIds.Count; $index++) {
     $fiveCompleteCases.Add((New-TestPostCleanupCase -Id $fiveSelectedIds[$index] -OwnedPid (7101 + $index) -ObservedPid (7101 + $index)))
@@ -866,20 +872,39 @@ $preContainmentMeasurementResults = Copy-TestJsonObject -Value $fiveCompleteResu
 $preContainmentMeasurementResults.cases[0].runtime_measurement.measured_utc = "2026-07-14T00:00:01.5000000Z"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $preContainmentMeasurementResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "case measurements must not predate containment publication"
 
+$targetedOrdinaryIds = @("success")
+$targetedOrdinaryCase = New-TestPostCleanupCase -Id "success" -OwnedPid 7198 -ObservedPid 7198
+$targetedOrdinaryResults = New-TestPostCleanupResults -Cases @($targetedOrdinaryCase) -SelectedCaseIds $targetedOrdinaryIds -TargetedProbe $true
+$targetedOrdinaryExcelLedger = New-TestPostCleanupLedger -CaseIds $targetedOrdinaryIds -FirstPid 7198
+$targetedOrdinaryHelperLedger = New-TestPostCleanupLedger -CaseIds $targetedOrdinaryIds -Guardian
+$targetedOrdinaryResolution = Invoke-TestPostCleanupResolution -Results $targetedOrdinaryResults -ExcelLedger $targetedOrdinaryExcelLedger `
+    -HelperLedger $targetedOrdinaryHelperLedger -ExpectedCaseIds $targetedOrdinaryIds -TargetedProbe $true
+Assert-True ([bool]$targetedOrdinaryResolution.valid -and [string]$targetedOrdinaryResolution.disposition -ceq "complete-success" -and
+    [bool]$targetedOrdinaryResults.targeted_probe -and -not [bool]$targetedOrdinaryResults.contains_diagnostic_case -and
+    -not [bool]$targetedOrdinaryResults.cases[0].case_diagnostic_only) "targeted ordinary success must remain distinct from intrinsic diagnostic membership end to end"
+$targetedOrdinaryMembershipConflict = Copy-TestJsonObject -Value $targetedOrdinaryResults
+$targetedOrdinaryMembershipConflict.contains_diagnostic_case = $true
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $targetedOrdinaryMembershipConflict -ExcelLedger $targetedOrdinaryExcelLedger `
+    -HelperLedger $targetedOrdinaryHelperLedger -ExpectedCaseIds $targetedOrdinaryIds -TargetedProbe $true).valid) "mutation: targeted ordinary results cannot claim intrinsic diagnostic membership"
+$targetedOrdinaryIntentConflict = Copy-TestJsonObject -Value $targetedOrdinaryResults
+$targetedOrdinaryIntentConflict.targeted_probe = $false
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $targetedOrdinaryIntentConflict -ExcelLedger $targetedOrdinaryExcelLedger `
+    -HelperLedger $targetedOrdinaryHelperLedger -ExpectedCaseIds $targetedOrdinaryIds -TargetedProbe $true).valid) "mutation: targeted ordinary results cannot deny targeted selection intent"
+
 $runtimeDiagnosticIds = @("runtime-unhandled-modal")
 $runtimeDiagnosticCase = New-TestPostCleanupCase -Id $runtimeDiagnosticIds[0] -OwnedPid 7199 -ObservedPid 7199
-$runtimeDiagnosticResults = New-TestPostCleanupResults -Cases @($runtimeDiagnosticCase) -SelectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true
+$runtimeDiagnosticResults = New-TestPostCleanupResults -Cases @($runtimeDiagnosticCase) -SelectedCaseIds $runtimeDiagnosticIds -TargetedProbe $true
 $runtimeDiagnosticResolution = Invoke-TestPostCleanupResolution -Results $runtimeDiagnosticResults -ExcelLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -FirstPid 7199) `
-    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true
+    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -TargetedProbe $true
 Assert-True ([bool]$runtimeDiagnosticResolution.valid -and [string]$runtimeDiagnosticResolution.disposition -eq "complete-success") "bounded unhandled-runtime diagnostic must derive its modal outcome from exact nested evidence"
 $runtimeDiagnosticWithErrResults = Copy-TestJsonObject -Value $runtimeDiagnosticResults
 $runtimeDiagnosticWithErrResults.cases[0].runtime_err = Copy-TestJsonObject -Value $ambiguousWithUnrelatedErrResults.cases[2].runtime_err
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $runtimeDiagnosticWithErrResults -ExcelLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -FirstPid 7199) `
-    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true).valid) "runtime diagnostic modal shape must exclude a runtime_err payload"
+    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -TargetedProbe $true).valid) "runtime diagnostic modal shape must exclude a runtime_err payload"
 $runtimeDiagnosticWithValueResults = Copy-TestJsonObject -Value $runtimeDiagnosticResults
 $runtimeDiagnosticWithValueResults.cases[0].run_value = "attacker value"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $runtimeDiagnosticWithValueResults -ExcelLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -FirstPid 7199) `
-    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true).valid) "runtime diagnostic modal shape must exclude a return value"
+    -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -TargetedProbe $true).valid) "runtime diagnostic modal shape must exclude a return value"
 $preOwnershipCase = New-TestPostCleanupCase -Id $fiveSelectedIds[0] -Passed $false -OwnershipRecorded $false -OwnedPid $null -ObservedPid $null -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "directly launched Excel did not expose an EXCEL7 native object before the attachment deadline"
 $preOwnershipResults = New-TestPostCleanupResults -Cases @($preOwnershipCase) -AggregatePassed $false -SelectedCaseIds $fiveSelectedIds
 $emptyLedger = New-TestPostCleanupLedger -CaseIds @()
@@ -945,9 +970,15 @@ Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $missingWorke
 $wrongTokenResults = Copy-TestJsonObject -Value $completeResults
 $wrongTokenResults.containment_token = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongTokenResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "foreign results containment token must fail"
-$stringDiagnosticResults = Copy-TestJsonObject -Value $completeResults
-$stringDiagnosticResults.diagnostic_only = "false"
-Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $stringDiagnosticResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "string diagnostic_only impostor must fail"
+$wrongSelectionDigestResults = Copy-TestJsonObject -Value $completeResults
+$wrongSelectionDigestResults.selected_case_selection_digest = "sha256:$('9' * 64)"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongSelectionDigestResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "wrong results selection digest must fail independently of matching selection Booleans and descriptors"
+$stringTargetedResults = Copy-TestJsonObject -Value $completeResults
+$stringTargetedResults.targeted_probe = "false"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $stringTargetedResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "string targeted_probe impostor must fail"
+$stringMembershipResults = Copy-TestJsonObject -Value $completeResults
+$stringMembershipResults.contains_diagnostic_case = "false"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $stringMembershipResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "string contains_diagnostic_case impostor must fail"
 $wrongCaseSchemaResults = Copy-TestJsonObject -Value $completeResults
 $wrongCaseSchemaResults.cases[0].schema = "attacker.v1"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongCaseSchemaResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "wrong case-result schema must fail"
@@ -960,7 +991,7 @@ Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $missingFailu
 $stringCasePassedResults = Copy-TestJsonObject -Value $completeResults
 $stringCasePassedResults.cases[0].passed = "true"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $stringCasePassedResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "string case passed impostor must fail"
-$wrongOrderResults = New-TestPostCleanupResults -Cases @($completeCases[1], $completeCases[0])
+$wrongOrderResults = New-TestPostCleanupResults -Cases @($completeCases[1], $completeCases[0]) -SelectedCaseIds $completeIds
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongOrderResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds).valid) "case-result order drift must fail"
 $wrongAggregateResults = New-TestPostCleanupResults -Cases $completeCases -AggregatePassed $false
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $wrongAggregateResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -WorkerExitCode 1).valid) "aggregate/case disagreement must fail"
@@ -1016,8 +1047,24 @@ $descriptorTransportDirectory = Join-Path $env:TEMP ("oxvba-oracle-descriptor-tr
 [void][IO.Directory]::CreateDirectory($descriptorTransportDirectory)
 try {
     $transportDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds $completeIds)
-    $transportEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $transportDescriptors
+    $transportEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $transportDescriptors -TargetedProbe $false
     $transportPath = Join-Path $descriptorTransportDirectory "selected-case-descriptors.json"
+    $transportEnvelope | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $transportPath -Encoding utf8NoBOM
+    $staleDeclarationRejected = $false
+    try { [void](Read-ExcelOracleSelectedCaseDescriptorEnvelope -Path $transportPath -ExpectedSelectionSha256 "sha256:$('8' * 64)") }
+    catch { $staleDeclarationRejected = $_.Exception.Message -match "shape/digest declaration is invalid" }
+    Assert-True $staleDeclarationRejected "mutation: an envelope selection digest that disagrees with the separately transported seal must fail before worker containment"
+
+    $staleSelectionTransport = Copy-TestJsonObject -Value $transportEnvelope
+    $staleSelectionTransport.descriptors[0].purpose = "valid-looking mutated purpose"
+    $staleDescriptorPayload = Get-ExcelOracleSelectedCaseDescriptorPayload -Descriptor $staleSelectionTransport.descriptors[0]
+    $staleSelectionTransport.descriptors[0].descriptor_sha256 = Get-ExcelOracleSha256 -Text ($staleDescriptorPayload | ConvertTo-Json -Compress -Depth 8)
+    $staleSelectionTransport | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $transportPath -Encoding utf8NoBOM
+    $staleSelectionRejected = $false
+    try { [void](Read-ExcelOracleSelectedCaseDescriptorEnvelope -Path $transportPath -ExpectedSelectionSha256 ([string]$transportEnvelope.selection_sha256)) }
+    catch { $staleSelectionRejected = $_.Exception.Message -match "selected descriptor selection changed" }
+    Assert-True $staleSelectionRejected "mutation: recomputing one descriptor seal without recomputing the aggregate selection digest must fail"
+
     $transportEnvelope | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $transportPath -Encoding utf8NoBOM
     $mutatedTransport = Get-Content -Raw -LiteralPath $transportPath | ConvertFrom-Json -DateKind String
     $firstTransportDescriptor = $mutatedTransport.descriptors[0]
@@ -1032,15 +1079,38 @@ try {
         "-RunId", "run-mutated-descriptor", "-OutputDirectory", (Join-Path $descriptorTransportDirectory "output"),
         "-OwnershipFile", (Join-Path $descriptorTransportDirectory "owned.jsonl"), "-HelperOwnershipFile", (Join-Path $descriptorTransportDirectory "helpers.jsonl"),
         "-ContainmentReadyFile", (Join-Path $descriptorTransportDirectory "never-published.json"), "-ContainmentToken", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        "-SelectedCaseDescriptorFile", $transportPath, "-SelectedCaseDescriptorDigest", [string]$transportEnvelope.aggregate_sha256,
+        "-SelectedCaseDescriptorFile", $transportPath, "-SelectedCaseSelectionDigest", [string]$transportEnvelope.selection_sha256,
         "-CaseTimeoutSeconds", "5"
     ) -PassThru -WindowStyle Hidden -RedirectStandardOutput $workerStdout -RedirectStandardError $workerStderr
     Assert-True ($mutatedWorker.WaitForExit(10000)) "mutated descriptor worker must fail before waiting for containment or launching Excel"
     $mutatedWorker.Refresh()
     $mutatedWorkerError = if (Test-Path -LiteralPath $workerStderr) { Get-Content -Raw -LiteralPath $workerStderr } else { "" }
-    Assert-True ($mutatedWorker.ExitCode -ne 0 -and $mutatedWorkerError -match "selected descriptor sequence changed" -and
-        @(Get-Process -Name EXCEL -ErrorAction SilentlyContinue).Count -eq $excelBeforeDescriptorMutation) "descriptor-order mutation after supervisor sealing must fail its aggregate digest at worker consumption before any Excel launch"
+    Assert-True ($mutatedWorker.ExitCode -ne 0 -and $mutatedWorkerError -match "contradictory selection facts" -and
+        @(Get-Process -Name EXCEL -ErrorAction SilentlyContinue).Count -eq $excelBeforeDescriptorMutation) "descriptor-order mutation after supervisor sealing must fail selection authority at worker consumption before any Excel launch"
     $mutatedWorker.Dispose()
+
+    $targetedTransportDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds @("success"))
+    $targetedTransportEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $targetedTransportDescriptors -TargetedProbe $true
+    $contradictoryTransport = Copy-TestJsonObject -Value $targetedTransportEnvelope
+    $contradictoryTransport.contains_diagnostic_case = $true
+    $contradictoryTransport | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $transportPath -Encoding utf8NoBOM
+    $conflictStdout = Join-Path $descriptorTransportDirectory "conflict.stdout.txt"
+    $conflictStderr = Join-Path $descriptorTransportDirectory "conflict.stderr.txt"
+    $excelBeforeSelectionConflict = @(Get-Process -Name EXCEL -ErrorAction SilentlyContinue).Count
+    $conflictWorker = Start-Process -FilePath (Join-Path $PSHOME "pwsh.exe") -ArgumentList @(
+        "-NoLogo", "-NoProfile", "-NonInteractive", "-File", (Join-Path $PSScriptRoot "excel-vba-oracle-worker.ps1"),
+        "-RunId", "run-contradictory-selection", "-OutputDirectory", (Join-Path $descriptorTransportDirectory "conflict-output"),
+        "-OwnershipFile", (Join-Path $descriptorTransportDirectory "conflict-owned.jsonl"), "-HelperOwnershipFile", (Join-Path $descriptorTransportDirectory "conflict-helpers.jsonl"),
+        "-ContainmentReadyFile", (Join-Path $descriptorTransportDirectory "conflict-never-published.json"), "-ContainmentToken", "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+        "-SelectedCaseDescriptorFile", $transportPath, "-SelectedCaseSelectionDigest", [string]$targetedTransportEnvelope.selection_sha256,
+        "-CaseTimeoutSeconds", "5"
+    ) -PassThru -WindowStyle Hidden -RedirectStandardOutput $conflictStdout -RedirectStandardError $conflictStderr
+    Assert-True ($conflictWorker.WaitForExit(10000)) "contradictory selection worker must fail before waiting for containment or launching Excel"
+    $conflictWorker.Refresh()
+    $conflictError = if (Test-Path -LiteralPath $conflictStderr) { Get-Content -Raw -LiteralPath $conflictStderr } else { "" }
+    Assert-True ($conflictWorker.ExitCode -ne 0 -and $conflictError -match "contradictory selection facts" -and
+        @(Get-Process -Name EXCEL -ErrorAction SilentlyContinue).Count -eq $excelBeforeSelectionConflict) "targeted ordinary/intrinsic-diagnostic contradiction must fail at envelope consumption before containment wait or Excel launch"
+    $conflictWorker.Dispose()
 }
 finally { Remove-Item -LiteralPath $descriptorTransportDirectory -Recurse -Force -ErrorAction SilentlyContinue }
 
@@ -1097,6 +1167,42 @@ Assert-Equal "OracleSelfTest.RunProbe" $cases[2].run_procedure "ambiguous case m
 Assert-True ($cases[2].module_source -match 'oracle-ambiguous-entry-observed:' -and $cases[2].invocation_observation_prefix -eq 'oracle-ambiguous-entry-observed:') "ambiguous case must emit a case-bound observed-entry sentinel"
 Assert-True ($cases[5].module_source -match 'Err\.Raise 13' -and [bool]$cases[5].diagnostic_only) "unhandled runtime modal must have a real live diagnostic fixture"
 Assert-Equal 6 @($cases.id | Select-Object -Unique).Count "case identities must be unique"
+
+$defaultSelectionDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds @($cases | Where-Object { -not [bool]$_.diagnostic_only } | ForEach-Object { [string]$_.id }))
+$targetedOrdinaryDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds @("success"))
+$targetedDiagnosticDescriptors = @(Get-TestSelectedCaseDescriptors -CaseIds @("runtime-unhandled-modal"))
+Assert-True (Test-ExcelOracleSelectedCaseSelection -Descriptors $defaultSelectionDescriptors -TargetedProbe $false -ContainsDiagnosticCase $false) "default five ordinary selection must be exact"
+Assert-True (Test-ExcelOracleSelectedCaseSelection -Descriptors $targetedOrdinaryDescriptors -TargetedProbe $true -ContainsDiagnosticCase $false) "targeted ordinary selection must be exact"
+Assert-True (Test-ExcelOracleSelectedCaseSelection -Descriptors $targetedDiagnosticDescriptors -TargetedProbe $true -ContainsDiagnosticCase $true) "targeted intrinsic diagnostic selection must be exact"
+Assert-True (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $defaultSelectionDescriptors -TargetedProbe $true -ContainsDiagnosticCase $false)) "mutation: a five-case default selection cannot claim targeted intent"
+Assert-True (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $targetedOrdinaryDescriptors -TargetedProbe $true -ContainsDiagnosticCase $true)) "mutation: targeted ordinary success cannot claim intrinsic diagnostic membership"
+Assert-True (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $targetedDiagnosticDescriptors -TargetedProbe $true -ContainsDiagnosticCase $false)) "mutation: targeted runtime diagnostic cannot deny intrinsic diagnostic membership"
+Assert-True (-not (Test-ExcelOracleSelectedCaseSelection -Descriptors $targetedOrdinaryDescriptors -TargetedProbe $false -ContainsDiagnosticCase $false)) "mutation: a one-case ordinary subset cannot masquerade as the default selection"
+$mutatedDiagnosticMembership = Copy-TestJsonObject -Value $targetedDiagnosticDescriptors[0]
+$mutatedDiagnosticMembership.diagnostic_only = $false
+$mutatedDiagnosticPayload = Get-ExcelOracleSelectedCaseDescriptorPayload -Descriptor $mutatedDiagnosticMembership
+$mutatedDiagnosticMembership.descriptor_sha256 = Get-ExcelOracleSha256 -Text ($mutatedDiagnosticPayload | ConvertTo-Json -Compress -Depth 8)
+Assert-True (-not (Test-ExcelOracleSelectedCaseDescriptor -Descriptor $mutatedDiagnosticMembership)) "mutation: recomputing a descriptor hash cannot rewrite intrinsic diagnostic membership"
+
+$defaultSelectionEnvelope = New-ExcelOracleSelectedCaseDescriptorEnvelope -Descriptors $defaultSelectionDescriptors -TargetedProbe $false
+$selectionTranscript = [pscustomobject][ordered]@{
+    schema = "oxvba.excel-vba-oracle-transcript.v2"
+    targeted_probe = $false
+    contains_diagnostic_case = $false
+    selected_case_selection_digest = [string]$defaultSelectionEnvelope.selection_sha256
+    selected_case_ids = @($defaultSelectionDescriptors.id)
+    case_count = $defaultSelectionDescriptors.Count
+}
+Assert-True (Test-ExcelOracleTranscriptSelection -Transcript $selectionTranscript -SelectedCaseDescriptors $defaultSelectionDescriptors -ExpectedTargetedProbe $false -ExpectedContainsDiagnosticCase $false -ExpectedSelectionSha256 ([string]$defaultSelectionEnvelope.selection_sha256)) "transcript must preserve the default selection seal"
+$contradictorySelectionTranscript = Copy-TestJsonObject -Value $selectionTranscript
+$contradictorySelectionTranscript.targeted_probe = $true
+Assert-True (-not (Test-ExcelOracleTranscriptSelection -Transcript $contradictorySelectionTranscript -SelectedCaseDescriptors $defaultSelectionDescriptors -ExpectedTargetedProbe $false -ExpectedContainsDiagnosticCase $false -ExpectedSelectionSha256 ([string]$defaultSelectionEnvelope.selection_sha256))) "mutation: transcript targeted intent must not contradict the sealed selection"
+$diagnosticMembershipTranscript = Copy-TestJsonObject -Value $selectionTranscript
+$diagnosticMembershipTranscript.contains_diagnostic_case = $true
+Assert-True (-not (Test-ExcelOracleTranscriptSelection -Transcript $diagnosticMembershipTranscript -SelectedCaseDescriptors $defaultSelectionDescriptors -ExpectedTargetedProbe $false -ExpectedContainsDiagnosticCase $false -ExpectedSelectionSha256 ([string]$defaultSelectionEnvelope.selection_sha256))) "mutation: transcript intrinsic membership must not contradict the sealed selection"
+$wrongDigestTranscript = Copy-TestJsonObject -Value $selectionTranscript
+$wrongDigestTranscript.selected_case_selection_digest = "sha256:$('7' * 64)"
+Assert-True (-not (Test-ExcelOracleTranscriptSelection -Transcript $wrongDigestTranscript -SelectedCaseDescriptors $defaultSelectionDescriptors -ExpectedTargetedProbe $false -ExpectedContainsDiagnosticCase $false -ExpectedSelectionSha256 ([string]$defaultSelectionEnvelope.selection_sha256))) "mutation: transcript selection digest must independently match the supervisor seal"
 
 $intrinsics = @(Get-ExcelOracleIntrinsicShadowNames)
 Assert-Equal 10 $intrinsics.Count "intrinsic-shadow catalog count"
@@ -1428,8 +1534,11 @@ Assert-True (($guardianOutput -join "`n") -match "passed") "guardian policy self
 $runnerPath = Join-Path $PSScriptRoot "run-excel-vba-oracle.ps1"
 $planJson = & $runnerPath -Suite HarnessSelfTest -EnvironmentId win-x64-dev-oracle-2026-07 -NoMatrixUpdate -PlanOnly -RunId offline-contract-test
 $plan = ($planJson -join "`n") | ConvertFrom-Json
-Assert-Equal "oxvba.excel-vba-oracle-plan.v1" $plan.schema "plan schema"
+Assert-Equal "oxvba.excel-vba-oracle-plan.v2" $plan.schema "plan schema"
 Assert-Equal 5 @($plan.cases).Count "plan case count"
+Assert-True ($plan.targeted_probe -is [bool] -and -not [bool]$plan.targeted_probe -and
+    $plan.contains_diagnostic_case -is [bool] -and -not [bool]$plan.contains_diagnostic_case) "default plan must be a nontargeted selection containing only ordinary cases"
+Assert-True (@($plan.cases | Where-Object { [bool]$_.intrinsic_diagnostic_case }).Count -eq 0) "default plan descriptors must retain ordinary intrinsic membership"
 Assert-Equal $false ([bool]$plan.certifying) "dev/oracle plan cannot certify"
 Assert-Equal $false ([bool]$plan.matrix_update) "dev/oracle plan cannot update matrices"
 Assert-Equal $false ([bool]$plan.release_credit) "dev/oracle plan cannot claim release credit"
@@ -1440,6 +1549,14 @@ Assert-True ([string]$plan.modal_policy -match "guardian before") "plan must sta
 $runtimeModalPlan = ((& $runnerPath -Suite HarnessSelfTest -EnvironmentId win-x64-dev-oracle-2026-07 -NoMatrixUpdate -PlanOnly -DiagnosticCaseId runtime-unhandled-modal -RunId offline-runtime-modal-test) -join "`n") | ConvertFrom-Json
 Assert-Equal 1 @($runtimeModalPlan.cases).Count "unhandled runtime modal diagnostic plan count"
 Assert-Equal "runtime-unhandled-modal" $runtimeModalPlan.cases[0].id "unhandled runtime modal diagnostic plan identity"
+Assert-True ([bool]$runtimeModalPlan.targeted_probe -and [bool]$runtimeModalPlan.contains_diagnostic_case -and
+    [bool]$runtimeModalPlan.cases[0].intrinsic_diagnostic_case) "targeted intrinsic diagnostic plan must seal selection intent and diagnostic membership separately"
+$targetedSuccessPlan = ((& $runnerPath -Suite HarnessSelfTest -EnvironmentId win-x64-dev-oracle-2026-07 -NoMatrixUpdate -PlanOnly -DiagnosticCaseId success -RunId offline-targeted-success-test) -join "`n") | ConvertFrom-Json
+Assert-True (@($targetedSuccessPlan.cases).Count -eq 1 -and [string]$targetedSuccessPlan.cases[0].id -ceq "success" -and
+    [bool]$targetedSuccessPlan.targeted_probe -and -not [bool]$targetedSuccessPlan.contains_diagnostic_case -and
+    -not [bool]$targetedSuccessPlan.cases[0].intrinsic_diagnostic_case) "targeted ordinary success must not be mislabeled as intrinsic diagnostic membership"
+Assert-True ([string]$plan.selected_case_selection_digest -cne [string]$targetedSuccessPlan.selected_case_selection_digest -and
+    [string]$targetedSuccessPlan.selected_case_selection_digest -cne [string]$runtimeModalPlan.selected_case_selection_digest) "default, targeted ordinary, and targeted diagnostic selections must have distinct sealed digests"
 
 $missingNoMatrixRejected = $false
 try { [void](& $runnerPath -Suite HarnessSelfTest -EnvironmentId win-x64-dev-oracle-2026-07 -PlanOnly -RunId offline-contract-test) }
@@ -1589,8 +1706,10 @@ Assert-True ($contractSource -match 'Exit-ExcelOracleRunClaim -Claim \$failedCla
 Assert-True ($runnerSource -match 'New-ExcelOracleSelectedCaseDescriptorEnvelope' -and
     $runnerSource.IndexOf('$selectedCaseDescriptorEnvelope | ConvertTo-Json') -lt $runnerSource.IndexOf('$containedWorker = Start-ExcelOracleContainedProcess') -and
     $runnerSource -match '"-SelectedCaseDescriptorFile", \$selectedCaseDescriptorFile' -and
-    $runnerSource -match '"-SelectedCaseDescriptorDigest", \[string\]\$selectedCaseDescriptorEnvelope\.aggregate_sha256' -and
-    $runnerSource -match '-SelectedCaseDescriptors \$selectedCaseDescriptors') "supervisor must serialize and pass its exact sealed descriptor sequence/digest, then reuse the same descriptors for post-cleanup authority"
+    $runnerSource -match '"-SelectedCaseSelectionDigest", \[string\]\$selectedCaseDescriptorEnvelope\.selection_sha256' -and
+    $runnerSource -match '-ExpectedTargetedProbe \$targetedProbe' -and
+    $runnerSource -match '-ExpectedContainsDiagnosticCase \$containsDiagnosticCase' -and
+    $runnerSource -match 'Test-ExcelOracleTranscriptSelection') "supervisor must serialize selection intent and intrinsic membership into one sealed digest, then validate the same facts through results and transcript authority"
 Assert-True ($runnerSource -match 'Test-ExcelOracleBootstrapWorkbook -Descriptor \$caseResult\.bootstrap_workbook' -and $runnerSource -match 'selected oracle case expectations failed after owned cleanup') "runner must validate persisted bootstrap bytes before surfacing complete success or case failure"
 Assert-True ($runnerSource -match 'Test-ExcelOracleBootstrapWorkbook -Descriptor \$partialBootstrap' -and
     $runnerSource -match '\$bootstrapConstructionFailed = \[string\]\$partialCase\.preownership_failure_phase -ceq "bootstrap-construction"' -and
