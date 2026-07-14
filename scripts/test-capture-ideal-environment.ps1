@@ -81,6 +81,10 @@ foreach ($forbidden in @("Start-Process", "Stop-Process", "New-TemporaryFile", "
         throw "capture test: read-only capture tool contains forbidden mutation/automation surface '$forbidden'"
     }
 }
+if (([regex]::Matches($toolText, '(?m)^function New-IdealEnvironmentCaptureValue\s*\{')).Count -ne 1 -or
+    $toolText -match 'certification_authority\s*=\s*\$true') {
+    throw "capture test: capture producer authority was duplicated or certification was enabled"
+}
 $positive++
 
 foreach ($requiredImplementation in @("ReadToEndAsync", "WaitForExit(`$TimeoutMilliseconds)", "Kill(`$true)")) {
@@ -139,6 +143,20 @@ $positive++
 
 $captureWriteTime = (Get-Item -LiteralPath $capturePath).LastWriteTimeUtc
 $reportWriteTime = (Get-Item -LiteralPath $reportPath).LastWriteTimeUtc
+$dryRunOutput = (& (Join-Path $PSScriptRoot "capture-ideal-environment.ps1") `
+    -RepositoryRoot $repoRoot `
+    -EnvironmentId $EnvironmentId `
+    -DryRun 6>&1 | Out-String)
+if ($dryRunOutput -notmatch 'release=false certification_authority=false noncertifying=true dry_run=true' -or
+    $dryRunOutput -notmatch [regex]::Escape((Get-IdealCaptureSha256Text -Text $capturedText))) {
+    throw "capture test: dev-host dry run did not report the exact noncertifying capture hash"
+}
+if ((Get-Item -LiteralPath $capturePath).LastWriteTimeUtc -ne $captureWriteTime -or
+    (Get-Item -LiteralPath $reportPath).LastWriteTimeUtc -ne $reportWriteTime) {
+    throw "capture test: dev-host dry run rewrote immutable evidence"
+}
+$positive++
+
 & (Join-Path $PSScriptRoot "capture-ideal-environment.ps1") `
     -RepositoryRoot $repoRoot `
     -EnvironmentId $EnvironmentId
@@ -217,10 +235,25 @@ Invoke-ExpectedCaptureFailure -Name "path-escape" -Pattern "dev capture output m
         -Check
 }
 
+Invoke-ExpectedCaptureFailure -Name "check-dry-run-mutual-exclusion" -Pattern "mutually exclusive" -Action {
+    & (Join-Path $PSScriptRoot "capture-ideal-environment.ps1") `
+        -RepositoryRoot $repoRoot `
+        -EnvironmentId $EnvironmentId `
+        -Check `
+        -DryRun
+}
+
 Invoke-ExpectedCaptureFailure -Name "certification-requires-attestation" -Pattern "trusted pinned-image restore/session attestation" -Action {
     & (Join-Path $PSScriptRoot "capture-ideal-environment.ps1") `
         -RepositoryRoot $repoRoot `
         -CaseId "WIN14-WAC-CLEAN-CERT-ENV"
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-dry-run-cannot-bypass-attestation" -Pattern "trusted pinned-image restore/session attestation" -Action {
+    & (Join-Path $PSScriptRoot "capture-ideal-environment.ps1") `
+        -RepositoryRoot $repoRoot `
+        -CaseId "WIN14-WAC-CLEAN-CERT-ENV" `
+        -DryRun
 }
 
 Invoke-ExpectedCaptureFailure -Name "certification-case-id-is-exact" -Pattern "expected one certification case.*found 0" -Action {
@@ -249,6 +282,106 @@ if ($expectedCertPath -cne "$($certContract.Root)/$($certContract.Name)") {
 }
 $positive++
 
+$resolvedEnvironment = Copy-CaptureValue -Value $certEnvironment
+$resolvedEnvironment.environment_id = "win-x64-cert-vm-2026-07-v1"
+$resolvedEnvironment.os_build = "10.0.26200.8655"
+$resolvedEnvironment.office_version = "16.0"
+$resolvedEnvironment.office_build = "16.0.20131.20112"
+$resolvedEnvironment.office_channel = "Current Channel"
+$resolvedEnvironment.locale = "de-DE"
+$resolvedEnvironment.snapshot_or_image = "pinned-win-x64-cert-vm-v1@sha256:" + ("a" * 64)
+$resolvedEnvironment.reset_policy = "revert-to-pinned-clean-snapshot-before-each-certification-run"
+$resolvedEnvironment.fixture_manifest = $script:IdealWindowsFixtureManifestPath
+$resolvedEnvironment.fixture_hash = [string](Get-IdealCaptureFixtureFacts `
+    -RepositoryRoot $repoRoot `
+    -EnvironmentId ([string]$certEnvironment.environment_id)).controlled_artifact_root_contract_sha256
+$resolvedEnvironment.owned_process_policy = "record-and-clean-owned-PIDs-only;kill-owned-processes-only"
+$resolvedEnvironment.uia_modal_policy = "Excel-VBE-UIA-modal-intercept;capture-dialog-token-line;dismiss-owned-dialogs-only"
+$resolvedEnvironment.evidence_state = "in-progress"
+
+$resolvedContract = Get-WindowsFixtureEnvironmentCaptureContract -Environment $resolvedEnvironment
+$resolvedCase = Copy-CaptureValue -Value $certificationCase
+$resolvedCase.fixture.source_environment_id = [string]$resolvedEnvironment.environment_id
+$resolvedCase.fixture.source_environment_state = "in-progress"
+$resolvedCase.environment_gate.environment_id = [string]$resolvedEnvironment.environment_id
+$resolvedCase.environment_gate.current_evidence_state = [string]$resolvedEnvironment.evidence_state
+$resolvedCase.environment_gate.state = "pending"
+@($resolvedCase.artifacts | Where-Object kind -ceq "environment-capture")[0].path = "$($resolvedContract.Root)/$($resolvedContract.Name)"
+
+$resolvedFixtureRow = Copy-CaptureValue -Value $certFixtureRow
+$resolvedFixtureRow.environment_id = [string]$resolvedEnvironment.environment_id
+$resolvedFixtureRow.environment_role = [string]$resolvedEnvironment.role
+$resolvedFixtureRow.environment_evidence_state = [string]$resolvedEnvironment.evidence_state
+$resolvedFixtureRow.environment_capture_root = [string]$resolvedContract.Root
+$resolvedFixtureRow.environment_capture_name = [string]$resolvedContract.Name
+$resolvedFixtureRow.environment_capture_schema = [string]$resolvedContract.Schema
+$resolvedFixtureRow.source_recipe_hash = "sha256:" + ("b" * 64)
+$resolvedFixtureRow.built_artifact_hash = "sha256:" + ("c" * 64)
+
+$resolvedFixtureFacts = [pscustomobject]@{
+    manifest_path = [string]$resolvedEnvironment.fixture_manifest
+    controlled_artifact_root_contract_sha256 = [string]$resolvedEnvironment.fixture_hash
+}
+$certificationPlan = New-IdealCertificationEnvironmentPlanValue `
+    -Environment $resolvedEnvironment `
+    -Case $resolvedCase `
+    -FixtureRow $resolvedFixtureRow `
+    -Contract $resolvedContract `
+    -FixtureFacts $resolvedFixtureFacts `
+    -DefaultLocale "en-US" `
+    -AnsiCodepage 1252 `
+    -OemCodepage 850
+$certificationPlanHash = Assert-IdealCertificationEnvironmentPlanValue `
+    -Plan $certificationPlan `
+    -Environment $resolvedEnvironment `
+    -Case $resolvedCase `
+    -FixtureRow $resolvedFixtureRow `
+    -Contract $resolvedContract `
+    -FixtureFacts $resolvedFixtureFacts `
+    -Owner "capture plan test"
+$certificationPlanSeal = New-IdealCertificationEnvironmentPlanSealValue `
+    -Plan $certificationPlan `
+    -Environment $resolvedEnvironment `
+    -Case $resolvedCase `
+    -FixtureRow $resolvedFixtureRow `
+    -Contract $resolvedContract `
+    -FixtureFacts $resolvedFixtureFacts
+$verifiedPlanHash = Assert-IdealCertificationEnvironmentPlanSealValue `
+    -Seal $certificationPlanSeal `
+    -Plan $certificationPlan `
+    -Environment $resolvedEnvironment `
+    -Case $resolvedCase `
+    -FixtureRow $resolvedFixtureRow `
+    -Contract $resolvedContract `
+    -FixtureFacts $resolvedFixtureFacts `
+    -Owner "capture plan-seal test"
+$secondPlanSeal = New-IdealCertificationEnvironmentPlanSealValue `
+    -Plan $certificationPlan `
+    -Environment $resolvedEnvironment `
+    -Case $resolvedCase `
+    -FixtureRow $resolvedFixtureRow `
+    -Contract $resolvedContract `
+    -FixtureFacts $resolvedFixtureFacts
+$alternateCodepagePlan = Copy-CaptureValue -Value $certificationPlan
+$alternateCodepagePlan.ansi_codepage = 1250
+$alternateCodepageHash = Assert-IdealCertificationEnvironmentPlanValue `
+    -Plan $alternateCodepagePlan `
+    -Environment $resolvedEnvironment `
+    -Case $resolvedCase `
+    -FixtureRow $resolvedFixtureRow `
+    -Contract $resolvedContract `
+    -FixtureFacts $resolvedFixtureFacts `
+    -Owner "alternate-codepage-plan"
+if ($verifiedPlanHash -cne $certificationPlanHash -or
+    [string]$certificationPlanSeal.plan_sha256 -cne $certificationPlanHash -or
+    $alternateCodepageHash -ceq $certificationPlanHash -or
+    (ConvertTo-IdealCaptureCanonicalJson -Value $certificationPlanSeal) -cne (ConvertTo-IdealCaptureCanonicalJson -Value $secondPlanSeal) -or
+    [bool]$certificationPlanSeal.certification_authority -or
+    -not [bool]$certificationPlanSeal.noncertifying) {
+    throw "capture test: certification plan seal is not deterministic and explicitly noncertifying"
+}
+$positive++
+
 Invoke-ExpectedCaptureFailure -Name "certification-case-artifact-binding" -Pattern "exact controlled environment-capture path" -Action {
     $mutatedCase = Copy-CaptureValue -Value $certificationCase
     @($mutatedCase.artifacts | Where-Object kind -ceq "environment-capture")[0].path = "artifacts/windows-x64/controlled-environments/v1/wrong/environment-capture.json"
@@ -259,6 +392,106 @@ Invoke-ExpectedCaptureFailure -Name "certification-case-fixture-binding" -Patter
     $mutatedRow = Copy-CaptureValue -Value $certFixtureRow
     $mutatedRow.environment_capture_schema = "wrong-schema-v1"
     [void](Assert-IdealCaptureCertificationCaseContract -Case $certificationCase -Environment $certEnvironment -FixtureRow $mutatedRow -Contract $certContract -Owner "certification-case-fixture-binding")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-placeholder-environment" -Pattern "retains placeholder 'os_build" -Action {
+    $mutatedEnvironment = Copy-CaptureValue -Value $resolvedEnvironment
+    $mutatedEnvironment.os_build = "planned-pinned-windows-build"
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.os_build = [string]$mutatedEnvironment.os_build
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $mutatedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "placeholder-environment")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-mutable-image" -Pattern "retains placeholder 'snapshot_or_image" -Action {
+    $mutatedEnvironment = Copy-CaptureValue -Value $resolvedEnvironment
+    $mutatedEnvironment.snapshot_or_image = "pinned-current-image"
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.snapshot_or_image = [string]$mutatedEnvironment.snapshot_or_image
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $mutatedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "mutable-image-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-codepage" -Pattern "field types are invalid" -Action {
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.ansi_codepage = 0
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "codepage-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-unsupported-positive-codepage" -Pattern "not a supported Windows code page" -Action {
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.ansi_codepage = 65535
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "unsupported-codepage-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-default-locale" -Pattern "locale must differ from the declared default_locale" -Action {
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.default_locale = [string]$mutatedPlan.locale
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "default-locale-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-neutral-locale" -Pattern "not a canonical supported locale identity" -Action {
+    $mutatedEnvironment = Copy-CaptureValue -Value $resolvedEnvironment
+    $mutatedEnvironment.locale = "de"
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.locale = [string]$mutatedEnvironment.locale
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $mutatedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "neutral-locale-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-fixture-root" -Pattern "fixture manifest/root hash differs" -Action {
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedFacts = Copy-CaptureValue -Value $resolvedFixtureFacts
+    $mutatedPlan.fixture_root_contract_sha256 = "sha256:" + ("d" * 64)
+    $mutatedFacts.controlled_artifact_root_contract_sha256 = [string]$mutatedPlan.fixture_root_contract_sha256
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $mutatedFacts -Owner "fixture-root-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-fixture-artifact" -Pattern "fixture_artifact_sha256 lacks an immutable SHA-256" -Action {
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedRow = Copy-CaptureValue -Value $resolvedFixtureRow
+    $mutatedPlan.fixture_artifact_sha256 = "pending"
+    $mutatedRow.built_artifact_hash = "pending"
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $mutatedRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "fixture-artifact-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-reset-policy" -Pattern "reset policy does not require" -Action {
+    $mutatedEnvironment = Copy-CaptureValue -Value $resolvedEnvironment
+    $mutatedEnvironment.reset_policy = "manual-recovery"
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.reset_policy = [string]$mutatedEnvironment.reset_policy
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $mutatedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "reset-policy-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-owned-process-policy" -Pattern "does not confine cleanup" -Action {
+    $mutatedEnvironment = Copy-CaptureValue -Value $resolvedEnvironment
+    $mutatedEnvironment.owned_process_policy = "global-process-cleanup"
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.owned_process_policy = [string]$mutatedEnvironment.owned_process_policy
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $mutatedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "owned-policy-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-uia-policy" -Pattern "does not require owned Excel/VBE modal interception" -Action {
+    $mutatedEnvironment = Copy-CaptureValue -Value $resolvedEnvironment
+    $mutatedEnvironment.uia_modal_policy = "no-automation"
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.uia_modal_policy = [string]$mutatedEnvironment.uia_modal_policy
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $mutatedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "uia-policy-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-authority" -Pattern "must remain noncertifying" -Action {
+    $mutatedPlan = Copy-CaptureValue -Value $certificationPlan
+    $mutatedPlan.certification_authority = $true
+    [void](Assert-IdealCertificationEnvironmentPlanValue -Plan $mutatedPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "authority-plan")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-seal-digest" -Pattern "plan_sha256.*differs" -Action {
+    $mutatedSeal = Copy-CaptureValue -Value $certificationPlanSeal
+    $mutatedSeal.plan_sha256 = "sha256:" + ("e" * 64)
+    [void](Assert-IdealCertificationEnvironmentPlanSealValue -Seal $mutatedSeal -Plan $certificationPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "digest-seal")
+}
+
+Invoke-ExpectedCaptureFailure -Name "certification-plan-seal-attestation-state" -Pattern "attestation_state.*differs" -Action {
+    $mutatedSeal = Copy-CaptureValue -Value $certificationPlanSeal
+    $mutatedSeal.attestation_state = "verified"
+    [void](Assert-IdealCertificationEnvironmentPlanSealValue -Seal $mutatedSeal -Plan $certificationPlan -Environment $resolvedEnvironment -Case $resolvedCase -FixtureRow $resolvedFixtureRow -Contract $resolvedContract -FixtureFacts $resolvedFixtureFacts -Owner "attestation-state-seal")
 }
 
 Write-Host "test-capture-ideal-environment: ok (positive=$positive negative=$negative release=false residual_mutation=none owned_timeout_cleanup=proved)"

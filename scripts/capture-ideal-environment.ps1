@@ -4,6 +4,7 @@ param(
     [string]$OutputPath = "",
     [string]$ReportPath = "",
     [switch]$Check,
+    [switch]$DryRun,
     [string]$RepositoryRoot = ""
 )
 
@@ -48,6 +49,9 @@ function Resolve-CaptureOutputPath {
 
 if ([string]::IsNullOrWhiteSpace($EnvironmentId) -eq [string]::IsNullOrWhiteSpace($CaseId)) {
     throw "capture-ideal-environment: specify exactly one of -EnvironmentId or -CaseId"
+}
+if ($Check -and $DryRun) {
+    throw "capture-ideal-environment: -Check and -DryRun are mutually exclusive"
 }
 
 $case = $null
@@ -161,7 +165,10 @@ else {
         -OutputPath $OutputPath
 }
 
-if ($Check) {
+if ($DryRun) {
+    Write-Host "capture-ideal-environment: ok (environment=$EnvironmentId release=false certification_authority=false noncertifying=true dry_run=true hash=$captureHash)"
+}
+elseif ($Check) {
     if (-not (Test-Path -LiteralPath $outputAbsolute -PathType Leaf) -or
         [IO.File]::ReadAllText($outputAbsolute).Replace("`r`n", "`n").Replace("`r", "`n") -cne $json) {
         throw "capture-ideal-environment: capture output is stale: $OutputPath"
@@ -193,4 +200,6 @@ else {
     }
 }
 
-Write-Host "capture-ideal-environment: ok (environment=$EnvironmentId release=$([string]$environment.role -eq 'certification-vm') hash=$captureHash check=$([bool]$Check))"
+if (-not $DryRun) {
+    Write-Host "capture-ideal-environment: ok (environment=$EnvironmentId release=$([string]$environment.role -eq 'certification-vm') hash=$captureHash check=$([bool]$Check) dry_run=false)"
+}
