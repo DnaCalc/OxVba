@@ -16,6 +16,8 @@ else {
     (Resolve-Path $RepositoryRoot).Path
 }
 . (Join-Path $PSScriptRoot "lib-ideal-program-validation.ps1")
+. (Join-Path $PSScriptRoot "lib-windows-fixture-manifest.ps1")
+. (Join-Path $PSScriptRoot "lib-ideal-environment-capture.ps1")
 
 function Test-PlaceholderValue {
     param([AllowEmptyString()][string]$Value)
@@ -137,6 +139,56 @@ try {
     }
     if ([string]$dev.evidence_state -ne "characterized-noncertifying") {
         throw "validate-environment-manifest: dev-oracle must remain characterized-noncertifying"
+    }
+    if ([string]$dev.snapshot_or_image -notmatch '^(?:[A-Za-z0-9._-]+@)?sha256:[0-9a-f]{64}$' -or (Test-PlaceholderValue -Value ([string]$dev.snapshot_or_image))) {
+        throw "validate-environment-manifest: dev-oracle must bind an immutable characterized host fingerprint"
+    }
+    Assert-IdealRelativePath -Path ([string]$dev.fixture_manifest) -Owner "dev-oracle fixture_manifest"
+    $devFixturePath = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path ([string]$dev.fixture_manifest)
+    if (-not (Test-Path -LiteralPath $devFixturePath -PathType Leaf)) {
+        throw "validate-environment-manifest: dev-oracle fixture manifest does not resolve"
+    }
+    $devFixtureFacts = Get-IdealCaptureFixtureFacts -RepositoryRoot $repoRoot -EnvironmentId ([string]$dev.environment_id) -FixtureManifestPath ([string]$dev.fixture_manifest)
+    $devFixtureHash = [string]$devFixtureFacts.controlled_artifact_root_contract_sha256
+    if ([string]$dev.fixture_hash -cne $devFixtureHash) {
+        throw "validate-environment-manifest: dev-oracle fixture hash is forged or stale"
+    }
+    $devCaptureRelative = "docs/evidence/programs/$($manifest.program_id)/windows-x64/WIN-0/dev-oracle-environment.json"
+    $devCapturePath = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path $devCaptureRelative
+    if (-not (Test-Path -LiteralPath $devCapturePath -PathType Leaf)) {
+        throw "validate-environment-manifest: dev-oracle capture does not resolve at '$devCaptureRelative'"
+    }
+    $devCapture = ConvertFrom-WindowsFixtureAuditedJson `
+        -Bytes ([IO.File]::ReadAllBytes($devCapturePath)) `
+        -Owner "dev-oracle capture" `
+        -FormatName "environment-capture"
+    Assert-WindowsFixtureEnvironmentCaptureValue `
+        -Capture $devCapture `
+        -Environment $dev `
+        -ExpectedSchema "oxvba-windows-x64-environment-capture-v1" `
+        -Owner "dev-oracle capture"
+    $devReportRelative = "docs/evidence/programs/$($manifest.program_id)/windows-x64/WIN-0/dev-oracle-environment.md"
+    $devReportPath = Resolve-IdealRepoPath -RepoRoot $repoRoot -Path $devReportRelative
+    if (-not (Test-Path -LiteralPath $devReportPath -PathType Leaf)) {
+        throw "validate-environment-manifest: dev-oracle report does not resolve at '$devReportRelative'"
+    }
+    $devReportText = [IO.File]::ReadAllText($devReportPath).Replace("`r`n", "`n").Replace("`r", "`n")
+    $preimagePattern = '(?s)<!-- oxvba-dev-host-fingerprint-preimage-v1-begin -->\s*```json\n(?<json>.*?)\n```\s*<!-- oxvba-dev-host-fingerprint-preimage-v1-end -->'
+    $preimageMatches = @([regex]::Matches($devReportText, $preimagePattern))
+    if ($preimageMatches.Count -ne 1 -or -not $devReportText.Contains('release=false', [StringComparison]::Ordinal)) {
+        throw "validate-environment-manifest: dev-oracle report lacks one fingerprint preimage or release=false authority boundary"
+    }
+    $preimageJson = $preimageMatches[0].Groups['json'].Value
+    $preimage = ConvertFrom-WindowsFixtureAuditedJson `
+        -Bytes ([Text.UTF8Encoding]::new($false).GetBytes($preimageJson)) `
+        -Owner "dev-oracle fingerprint preimage" `
+        -FormatName "host-fingerprint"
+    $preimageHash = Assert-IdealDevHostFingerprintPreimage `
+        -Preimage $preimage `
+        -Environment $dev `
+        -Owner "dev-oracle fingerprint preimage"
+    if ([string]$dev.snapshot_or_image -cne "dev-host-fingerprint-v1@$preimageHash") {
+        throw "validate-environment-manifest: dev-oracle fingerprint preimage does not reproduce snapshot_or_image"
     }
     if ([string]$dev.snapshot_or_image -eq [string]$cert.snapshot_or_image) {
         throw "validate-environment-manifest: dev-oracle and certification-vm must be distinct hosts/images"

@@ -40,6 +40,9 @@ function New-IdealValidatorFixture {
         "docs/validation/IDEAL_MATRIX_OWNERSHIP_V1.csv",
         "docs/validation/IDEAL_MATRIX_BEAD_TRACEABILITY_V1.csv",
         "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv",
+        "docs/validation/IDEAL_WINDOWS_X64_FIXTURE_MANIFEST_V1.csv",
+        "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-0/dev-oracle-environment.json",
+        "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-0/dev-oracle-environment.md",
         "docs/validation/IDEAL_CONTRACT_CLAUSE_DISPOSITION_V1.csv"
     )) {
         Copy-FixtureFile -FixtureRoot $fixtureRoot -RelativePath $path

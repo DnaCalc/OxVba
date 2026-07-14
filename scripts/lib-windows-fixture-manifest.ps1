@@ -1922,6 +1922,22 @@ function Assert-WindowsFixtureEnvironmentCapture {
         -Bytes $bytes `
         -Owner $Owner `
         -FormatName "environment-capture"
+    Assert-WindowsFixtureEnvironmentCaptureValue `
+        -Capture $capture `
+        -Environment $Environment `
+        -ExpectedSchema $ExpectedSchema `
+        -Owner $Owner
+}
+
+function Assert-WindowsFixtureEnvironmentCaptureValue {
+    param(
+        [Parameter(Mandatory = $true)]$Capture,
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)][string]$ExpectedSchema,
+        [Parameter(Mandatory = $true)][string]$Owner
+    )
+
+    $capture = $Capture
     Assert-WindowsFixtureExactJsonProperties -Value $capture -Expected @(
         "schema_id", "schema_version", "capture_id", "environment_id", "role",
         "profile", "target_arch", "os_build", "office_product", "office_version",
