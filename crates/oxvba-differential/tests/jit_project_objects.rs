@@ -828,7 +828,7 @@ fn jit_predeclared_default_instance_matches_vm3_without_fallback() {
         ),
     ]);
 
-    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    let vm3 = run_project_closure(Executor::Vm3, std::slice::from_ref(&app));
     assert_completed_prefix_i32("VM3", vm3, &[1, 1]);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
@@ -848,7 +848,7 @@ fn jit_predeclared_statement_method_uses_default_instance_without_fallback() {
         ),
     ]);
 
-    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    let vm3 = run_project_closure(Executor::Vm3, std::slice::from_ref(&app));
     assert_completed_prefix_i32("VM3", vm3, &[1, 1, 20]);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
@@ -868,7 +868,7 @@ fn jit_predeclared_set_nothing_resets_default_instance_without_fallback() {
         ),
     ]);
 
-    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    let vm3 = run_project_closure(Executor::Vm3, std::slice::from_ref(&app));
     assert_completed_prefix_i32("VM3", vm3, &[2, 2]);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
@@ -888,7 +888,7 @@ fn jit_predeclared_set_new_replaces_default_without_fallback() {
         ),
     ]);
 
-    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    let vm3 = run_project_closure(Executor::Vm3, std::slice::from_ref(&app));
     assert_completed_prefix_i32("VM3", vm3, &[2, 2]);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
@@ -908,7 +908,7 @@ fn jit_predeclared_held_reference_survives_reset_without_fallback() {
         ),
     ]);
 
-    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    let vm3 = run_project_closure(Executor::Vm3, std::slice::from_ref(&app));
     assert_completed_prefix_i32("VM3", vm3, &[1, 2, 2]);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
@@ -928,7 +928,7 @@ fn jit_predeclared_failed_initialize_clears_slot_for_retry_without_fallback() {
         ),
     ]);
 
-    let vm3 = run_project_closure(Executor::Vm3, &[app.clone()]);
+    let vm3 = run_project_closure(Executor::Vm3, std::slice::from_ref(&app));
     assert_completed_prefix_i32("VM3", vm3, &[2, 2, 5]);
 
     let jit = run_project_closure(Executor::Jit, &[app]);
