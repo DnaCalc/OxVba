@@ -499,16 +499,16 @@ fn elaborate_proc(
 
     // The binding types are recovered up front (the `locals` above, via the resolver);
     // the lowerer carries the COM interner so early-bound calls intern their members.
-    let mut lo = Lowerer::new(
+    let mut lo = Lowerer::new(LowererInputs {
         locals,
-        proc.params.len(),
-        proc.label_lines.clone(),
+        param_count: proc.params.len(),
+        label_lines: proc.label_lines.clone(),
         long_ptr_width,
         proc_return_types,
         com,
         global_tys,
-        &resolver.records,
-    );
+        record_ids: &resolver.records,
+    });
     // Pre-assign a block to every source label so forward references resolve.
     lo.assign_labels(&proc.body)?;
     lo.lower_block(&proc.body)?;
@@ -573,17 +573,19 @@ struct Lowerer<'a> {
     proc_return_types: &'a [Option<OxTy>],
 }
 
+struct LowererInputs<'a> {
+    locals: Vec<OxLocal>,
+    param_count: usize,
+    label_lines: Vec<Option<i32>>,
+    long_ptr_width: CoreLongPtrWidth,
+    proc_return_types: &'a [Option<OxTy>],
+    com: &'a mut ComInterner,
+    global_tys: &'a [OxTy],
+    record_ids: &'a HashMap<String, RecordLayoutId>,
+}
+
 impl<'a> Lowerer<'a> {
-    fn new(
-        locals: Vec<OxLocal>,
-        param_count: usize,
-        label_lines: Vec<Option<i32>>,
-        long_ptr_width: CoreLongPtrWidth,
-        proc_return_types: &'a [Option<OxTy>],
-        com: &'a mut ComInterner,
-        global_tys: &'a [OxTy],
-        record_ids: &'a HashMap<String, RecordLayoutId>,
-    ) -> Self {
+    fn new(inputs: LowererInputs<'a>) -> Self {
         // Entry = block 0, epilogue = block 1; both reserved up front.
         let blocks = vec![None, None];
         Self {
@@ -594,19 +596,19 @@ impl<'a> Lowerer<'a> {
             // epilogue; the prologue emits no fallible instruction, so this is unused.
             cur_fault: BlockId(1),
             epilogue: BlockId(1),
-            locals,
+            locals: inputs.locals,
             temps: Vec::new(),
-            param_count,
+            param_count: inputs.param_count,
             next_temp: 0,
             loops: Vec::new(),
             labels: HashMap::new(),
-            label_lines,
+            label_lines: inputs.label_lines,
             with_temps: HashMap::new(),
-            com,
-            global_tys,
-            record_ids,
-            long_ptr_width,
-            proc_return_types,
+            com: inputs.com,
+            global_tys: inputs.global_tys,
+            record_ids: inputs.record_ids,
+            long_ptr_width: inputs.long_ptr_width,
+            proc_return_types: inputs.proc_return_types,
         }
     }
 

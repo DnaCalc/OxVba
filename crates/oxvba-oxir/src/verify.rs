@@ -1209,7 +1209,18 @@ fn verify_func(program: &OxProgram, fi: usize, func: &OxFunc, errors: &mut Vec<V
                 errors,
             );
             verify_inst_places(fi, bi, ii, inst, locals, globals, temps, errors);
-            verify_assign_representation(fi, bi, ii, inst, &local_tys, &global_tys, func, errors);
+            verify_assign_representation(
+                VerifyAssignContext {
+                    func_index: fi,
+                    block_index: bi,
+                    inst_index: ii,
+                    local_tys: &local_tys,
+                    global_tys: &global_tys,
+                    func,
+                },
+                inst,
+                errors,
+            );
         }
         for op in terminator_operands(&block.terminator) {
             check_operand(fi, bi, None, op, locals, globals, temps, errors);
@@ -1310,14 +1321,18 @@ fn verify_inst_refs(
     }
 }
 
+struct VerifyAssignContext<'a> {
+    func_index: usize,
+    block_index: usize,
+    inst_index: usize,
+    local_tys: &'a [OxTy],
+    global_tys: &'a [OxTy],
+    func: &'a OxFunc,
+}
+
 fn verify_assign_representation(
-    fi: usize,
-    bi: usize,
-    ii: usize,
+    context: VerifyAssignContext<'_>,
     inst: &OxInst,
-    locals: &[OxTy],
-    globals: &[OxTy],
-    func: &OxFunc,
     errors: &mut Vec<VerifyError>,
 ) {
     let OxInst::Assign { dst, value } = inst else {
@@ -1326,17 +1341,27 @@ fn verify_assign_representation(
     if matches!(value, OxOperand::Const(crate::value::OxConst::Empty)) {
         return;
     }
-    let Some(dst_ty) = place_ty(dst, locals, globals, &func.temps) else {
+    let Some(dst_ty) = place_ty(
+        dst,
+        context.local_tys,
+        context.global_tys,
+        &context.func.temps,
+    ) else {
         return;
     };
-    let Some(src_ty) = operand_ty(value, locals, globals, &func.temps) else {
+    let Some(src_ty) = operand_ty(
+        value,
+        context.local_tys,
+        context.global_tys,
+        &context.func.temps,
+    ) else {
         return;
     };
     if !assign_repr_preserving(&dst_ty, &src_ty) {
         errors.push(VerifyError::BadAssignRepresentation {
-            func: fi,
-            block: bi,
-            inst: ii,
+            func: context.func_index,
+            block: context.block_index,
+            inst: context.inst_index,
             dst: dst_ty,
             src: src_ty,
         });

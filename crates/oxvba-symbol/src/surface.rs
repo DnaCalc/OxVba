@@ -288,7 +288,7 @@ fn surface_member_from_proc(
         .return_local
         .and_then(|local| proc.locals.get(local.0))
         .map(|local| param_type(&local.ty, false))
-        .or_else(|| match proc.kind {
+        .or(match proc.kind {
             ProcedureKind::Function | ProcedureKind::PropertyGet => Some(TypeLibParamType::Variant),
             _ => None,
         });
@@ -427,14 +427,17 @@ pub fn synthesize_export_surface(
                 }
                 SymbolKind::Property => {
                     let dispid = take_dispid(member, &mut next_dispid);
+                    let sources = PropertySurfaceSources {
+                        symbols,
+                        signatures,
+                        optional_defaults,
+                    };
                     property_members(
                         member,
                         dispid,
                         is_class,
                         &mut next_vtable,
-                        symbols,
-                        signatures,
-                        optional_defaults,
+                        &sources,
                         &mut members,
                     );
                 }
@@ -570,18 +573,23 @@ fn method_member(
     }
 }
 
+struct PropertySurfaceSources<'a> {
+    symbols: &'a SymbolTable,
+    signatures: &'a SignatureTable,
+    optional_defaults: Option<&'a FoldedOptionalDefaults>,
+}
+
 fn property_members(
     member: &ScannedMember,
     dispid: i32,
     is_class: bool,
     next_vtable: &mut u16,
-    symbols: &SymbolTable,
-    signatures: &SignatureTable,
-    optional_defaults: Option<&FoldedOptionalDefaults>,
+    sources: &PropertySurfaceSources<'_>,
     out: &mut Vec<SurfaceMember>,
 ) {
-    let name = member_name(symbols, member);
-    let Some(SymbolImpl::Property(group)) = symbols.symbol(member.symbol).map(|s| &s.imp) else {
+    let name = member_name(sources.symbols, member);
+    let Some(SymbolImpl::Property(group)) = sources.symbols.symbol(member.symbol).map(|s| &s.imp)
+    else {
         return;
     };
     // Each present accessor is a member sharing the property's dispid.
@@ -604,9 +612,9 @@ fn property_members(
     ];
     for (sig_id, invoke_kind, member_kind) in accessors {
         let Some(sig_id) = sig_id else { continue };
-        let sig = signatures.get(sig_id);
+        let sig = sources.signatures.get(sig_id);
         let (names, types, optional, defaults, variadic) = sig
-            .map(|sig| param_lists(sig_id, sig, Some(member.symbol), optional_defaults))
+            .map(|sig| param_lists(sig_id, sig, Some(member.symbol), sources.optional_defaults))
             .unwrap_or_default();
         let return_type = sig
             .and_then(|s| s.return_type.as_ref())

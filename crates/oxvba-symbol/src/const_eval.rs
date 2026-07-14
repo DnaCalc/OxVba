@@ -209,87 +209,90 @@ pub fn fold_optional_defaults(
     let mut out = FoldedOptionalDefaults::default();
     for (module_scope, root) in module_roots {
         let mode = mode_for_scope(symbols, *module_scope, &module_modes);
-        collect_proc_defaults(
+        OptionalDefaultFoldContext {
             symbols,
-            *module_scope,
-            *root,
+            module_scope: *module_scope,
             values,
             external_projects,
             mode,
             target,
-            &mut out,
-        )?;
+        }
+        .collect(*root, &mut out)?;
     }
     Ok(out)
 }
 
-fn collect_proc_defaults(
-    symbols: &SymbolTable,
+struct OptionalDefaultFoldContext<'a> {
+    symbols: &'a SymbolTable,
     module_scope: ScopeId,
-    node: SyntaxNode<'_>,
-    values: &HashMap<SymbolId, CoreConst>,
-    external_projects: &[ExternalConstProject],
+    values: &'a HashMap<SymbolId, CoreConst>,
+    external_projects: &'a [ExternalConstProject],
     mode: StringCompareMode,
     target: ConditionalCompilationTarget,
-    out: &mut FoldedOptionalDefaults,
-) -> Result<(), SymbolModelError> {
-    if matches!(
-        node.kind(),
-        SyntaxKind::SubDecl | SyntaxKind::FunctionDecl | SyntaxKind::PropertyDecl
-    ) && let Some(name) = node.proc_name_token()
-        && let Ok(Some(proc_sym)) =
-            symbols.find_in_scope(module_scope, SymbolNamespace::Procedure, name.text)
-        && let Some(param_list) = node.param_list()
-    {
-        let proc_scope = proc_scope_under(symbols, module_scope, name.text);
-        let signature_id = node_signature_id(symbols, proc_sym, node);
-        for (i, param) in param_list.params().iter().enumerate() {
-            if let Some(def) = param.param_default().and_then(|d| d.first_expr_child()) {
-                let parameter = parameter_name_token(*param)
-                    .map(|t| t.text.to_string())
-                    .unwrap_or_else(|| format!("arg{}", i + 1));
-                let default = match eval_const_expr(
-                    symbols,
-                    module_scope,
-                    def,
-                    values,
-                    external_projects,
-                    mode,
-                ) {
-                    ConstEval::Value(c) => {
-                        coerce_param_default_value(symbols, proc_scope, *param, c, target)
-                            .ok_or_else(|| SymbolModelError::InvalidOptionalDefault {
+}
+
+impl OptionalDefaultFoldContext<'_> {
+    fn collect(
+        &self,
+        node: SyntaxNode<'_>,
+        out: &mut FoldedOptionalDefaults,
+    ) -> Result<(), SymbolModelError> {
+        if matches!(
+            node.kind(),
+            SyntaxKind::SubDecl | SyntaxKind::FunctionDecl | SyntaxKind::PropertyDecl
+        ) && let Some(name) = node.proc_name_token()
+            && let Ok(Some(proc_sym)) =
+                self.symbols
+                    .find_in_scope(self.module_scope, SymbolNamespace::Procedure, name.text)
+            && let Some(param_list) = node.param_list()
+        {
+            let proc_scope = proc_scope_under(self.symbols, self.module_scope, name.text);
+            let signature_id = node_signature_id(self.symbols, proc_sym, node);
+            for (i, param) in param_list.params().iter().enumerate() {
+                if let Some(def) = param.param_default().and_then(|d| d.first_expr_child()) {
+                    let parameter = parameter_name_token(*param)
+                        .map(|t| t.text.to_string())
+                        .unwrap_or_else(|| format!("arg{}", i + 1));
+                    let default = match eval_const_expr(
+                        self.symbols,
+                        self.module_scope,
+                        def,
+                        self.values,
+                        self.external_projects,
+                        self.mode,
+                    ) {
+                        ConstEval::Value(c) => coerce_param_default_value(
+                            self.symbols,
+                            proc_scope,
+                            *param,
+                            c,
+                            self.target,
+                        )
+                        .ok_or_else(|| {
+                            SymbolModelError::InvalidOptionalDefault {
                                 procedure: name.text.to_string(),
                                 parameter: parameter.clone(),
-                            })?
+                            }
+                        })?,
+                        ConstEval::Pending | ConstEval::Unresolvable => {
+                            return Err(SymbolModelError::InvalidOptionalDefault {
+                                procedure: name.text.to_string(),
+                                parameter,
+                            });
+                        }
+                    };
+                    out.by_proc.insert((proc_sym, i), default.clone());
+                    if let Some(signature_id) = signature_id {
+                        out.by_signature.insert((signature_id, i), default);
                     }
-                    ConstEval::Pending | ConstEval::Unresolvable => {
-                        return Err(SymbolModelError::InvalidOptionalDefault {
-                            procedure: name.text.to_string(),
-                            parameter,
-                        });
-                    }
-                };
-                out.by_proc.insert((proc_sym, i), default.clone());
-                if let Some(signature_id) = signature_id {
-                    out.by_signature.insert((signature_id, i), default);
                 }
             }
         }
+        for child in node.child_nodes() {
+            self.collect(child, out)?;
+        }
+        Ok(())
     }
-    for child in node.child_nodes() {
-        collect_proc_defaults(
-            symbols,
-            module_scope,
-            child,
-            values,
-            external_projects,
-            mode,
-            target,
-            out,
-        )?;
-    }
-    Ok(())
 }
 
 fn node_signature_id(
@@ -597,7 +600,7 @@ fn resolve_const_worklist(
                 symbols,
                 scope,
                 init,
-                &values,
+                values,
                 const_syms,
                 external_projects,
                 mode,

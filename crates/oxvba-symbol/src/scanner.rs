@@ -279,15 +279,13 @@ impl ScanCtx<'_> {
                     if module_level
                         && self.module_kind != ModuleKind::Procedural
                         && vis == Visibility::Public
-                    {
-                        if let Some(member) =
+                        && let Some(member) =
                             public_object_module_data_member_kind(is_const, &declared_type)
-                        {
-                            return Err(SymbolModelError::PublicObjectModuleDataMemberNotValid {
-                                name: name.to_string(),
-                                member,
-                            });
-                        }
+                    {
+                        return Err(SymbolModelError::PublicObjectModuleDataMemberNotValid {
+                            name: name.to_string(),
+                            member,
+                        });
                     }
                     if is_const && declarator.is_with_events() {
                         return Err(SymbolModelError::InvalidWithEventsConstDeclaration {
