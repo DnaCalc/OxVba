@@ -234,6 +234,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
                     schema = "oxvba.excel-vba-oracle-control-status.v1"
                     event_type = "invalid-control"
                     run_id = $RunId
+                    excel_pid = $ExcelPid
                     event_sequence = 0L
                     observed_utc = [DateTime]::UtcNow.ToString("o")
                     control_sha256 = $controlHash
@@ -256,6 +257,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
         if ($invalidControls.Add("stale:$controlKey")) {
             Add-GuardianEvent -Event ([ordered]@{
                 schema = "oxvba.excel-vba-oracle-control-status.v1"; event_type = "invalid-control"; run_id = $RunId
+                excel_pid = $ExcelPid
                 event_sequence = 0L; observed_utc = [DateTime]::UtcNow.ToString("o"); control_sha256 = Get-ExcelOracleSha256 -Text ($control | ConvertTo-Json -Compress)
                 errors = @("control sequence regressed"); valid = $false
             })
@@ -267,6 +269,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
         if ([long]$control.sequence -le $lastControlSequence) {
             Add-GuardianEvent -Event ([ordered]@{
                 schema = "oxvba.excel-vba-oracle-control-status.v1"; event_type = "invalid-control"; run_id = $RunId
+                excel_pid = $ExcelPid
                 event_sequence = 0L; observed_utc = [DateTime]::UtcNow.ToString("o"); control_sha256 = Get-ExcelOracleSha256 -Text ($control | ConvertTo-Json -Compress)
                 errors = @("control sequence was reused"); valid = $false
             })
@@ -279,6 +282,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
             event_type = "operation-armed"
             run_id = $RunId
             case_id = [string]$control.case_id
+            excel_pid = $ExcelPid
             operation_id = [string]$control.operation_id
             phase = [string]$control.phase
             control_sequence = [long]$control.sequence
@@ -291,6 +295,7 @@ while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $StopF
         event_type = "guardian-heartbeat"
         run_id = $RunId
         case_id = [string]$control.case_id
+        excel_pid = $ExcelPid
         operation_id = [string]$control.operation_id
         phase = [string]$control.phase
         control_sequence = [long]$control.sequence
@@ -397,6 +402,7 @@ Add-GuardianEvent -Event ([ordered]@{
     event_type = "guardian-stopped"
     run_id = $RunId
     case_id = $CaseId
+    excel_pid = $ExcelPid
     event_sequence = 0L
     observed_utc = [DateTime]::UtcNow.ToString("o")
     guardian_pid = $PID

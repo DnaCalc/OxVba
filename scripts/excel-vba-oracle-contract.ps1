@@ -331,6 +331,23 @@ function Get-ExcelOracleObjectSequenceDigest {
     return Get-ExcelOracleExactTextSha256 -Text $json
 }
 
+function Test-ExcelOracleBootstrapResultEvidence {
+    param(
+        [AllowNull()]$Bootstrap,
+        [Parameter(Mandatory = $true)][string]$ExpectedPath
+    )
+
+    if ($null -eq $Bootstrap) { return $false }
+    $requiredFields = @("schema", "path", "sha256", "sha256_after", "package_parts", "macro_free")
+    return (@($Bootstrap.PSObject.Properties.Name | Sort-Object) -join "`n") -ceq (@($requiredFields | Sort-Object) -join "`n") -and
+        $Bootstrap.schema -is [string] -and [string]$Bootstrap.schema -ceq "oxvba.excel-vba-oracle-bootstrap-workbook.v1" -and
+        $Bootstrap.path -is [string] -and [StringComparer]::OrdinalIgnoreCase.Equals([string]$Bootstrap.path, $ExpectedPath) -and
+        $Bootstrap.sha256 -is [string] -and [string]$Bootstrap.sha256 -match '^sha256:[0-9a-f]{64}$' -and
+        $Bootstrap.sha256_after -is [string] -and [string]$Bootstrap.sha256_after -ceq [string]$Bootstrap.sha256 -and
+        $Bootstrap.macro_free -is [bool] -and [bool]$Bootstrap.macro_free -and $Bootstrap.package_parts -is [array] -and
+        (@($Bootstrap.package_parts) -join "`n") -ceq (@("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml") -join "`n")
+}
+
 function Get-ExcelOracleEvidenceUtcValues {
     param([AllowNull()]$Value, [string]$Path = "evidence")
 
@@ -1081,6 +1098,7 @@ function Resolve-ExcelOraclePostCleanupResult {
         $errors.Add("results schema or run identity is invalid")
     }
     $generatedUtc = $null
+    $authorityPublished = $null
     try {
         if ($Results.generated_utc -isnot [string]) { throw "not a string" }
         $generatedUtc = [DateTime]::Parse([string]$Results.generated_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
@@ -1178,23 +1196,15 @@ function Resolve-ExcelOraclePostCleanupResult {
             $errors.Add("case result $index collection type is invalid")
         }
         if (@($case.cleanup_authority_errors).Count -gt 0) { $errors.Add("case result $index reports cleanup authority errors") }
+        $bootstrapEvidenceValid = Test-ExcelOracleBootstrapResultEvidence -Bootstrap $case.bootstrap_workbook -ExpectedPath $expectedBootstrapPath
+        if ($null -ne $case.bootstrap_workbook -and -not $bootstrapEvidenceValid) {
+            $errors.Add("case result $index bootstrap evidence is not the exact supervisor-derived immutable workbook")
+        }
         if ([bool]$case.excel_ownership_recorded) {
             if (($case.owned_excel_pid -isnot [long] -and $case.owned_excel_pid -isnot [int]) -or [int]$case.owned_excel_pid -le 0) {
                 $errors.Add("case result $index durable Excel PID is invalid")
             }
-            $bootstrap = $case.bootstrap_workbook
-            $requiredBootstrapFields = @("schema", "path", "sha256", "sha256_after", "package_parts", "macro_free")
-            if ($null -eq $bootstrap -or
-                (@($bootstrap.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($requiredBootstrapFields | Sort-Object) -join "`n") -or
-                $bootstrap.schema -isnot [string] -or $bootstrap.path -isnot [string] -or $bootstrap.sha256 -isnot [string] -or $bootstrap.sha256_after -isnot [string] -or
-                [string]$bootstrap.schema -cne "oxvba.excel-vba-oracle-bootstrap-workbook.v1" -or
-                [string]::IsNullOrWhiteSpace([string]$bootstrap.path) -or
-                -not [StringComparer]::OrdinalIgnoreCase.Equals([string]$bootstrap.path, $expectedBootstrapPath) -or
-                [string]$bootstrap.sha256 -notmatch '^sha256:[0-9a-f]{64}$' -or
-                [string]$bootstrap.sha256_after -cne [string]$bootstrap.sha256 -or
-                $bootstrap.macro_free -isnot [bool] -or -not [bool]$bootstrap.macro_free -or $bootstrap.package_parts -isnot [array] -or
-                (@($bootstrap.package_parts) -join "`n") -cne (@("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml") -join "`n") -or
-                [string]$case.cleanup_status -cne "owned-process-zero") {
+            if (-not $bootstrapEvidenceValid -or [string]$case.cleanup_status -cne "owned-process-zero") {
                 $errors.Add("case result $index bootstrap persistence or cleanup status is invalid")
             }
         }
@@ -1346,9 +1356,38 @@ function Resolve-ExcelOraclePostCleanupResult {
         }
         $guardianFinalEvents = @($supervisorGuardianRecords | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })
         $caseHelperRecords = @($helperRecords | Where-Object { [string]$_.case_id -ceq [string]$case.id })
-        $guardianFinalHealthy = $guardianFinalEvents.Count -eq 1 -and $caseHelperRecords.Count -eq 1 -and
+        $caseExcelRecords = @($excelRecords | Where-Object { [string]$_.case_id -ceq [string]$case.id })
+        $guardianExcelPidBound = [bool]$case.excel_ownership_recorded -and $caseExcelRecords.Count -eq 1 -and $supervisorGuardianRecords.Count -gt 0 -and
+            @($supervisorGuardianRecords | Where-Object { [int]$_.excel_pid -ne [int]$caseExcelRecords[0].pid }).Count -eq 0
+        if ([bool]$case.excel_ownership_recorded -and -not $guardianExcelPidBound) {
+            $errors.Add("case result $index guardian event Excel PIDs do not bind to the exact supervisor-retained Excel ownership record")
+        }
+        $guardianFinalTerminal = $false
+        if ($guardianFinalEvents.Count -eq 1 -and $supervisorGuardianRecords.Count -gt 0 -and
+            [string]$supervisorGuardianRecords[-1].event_type -ceq "guardian-stopped" -and
+            [long]$supervisorGuardianRecords[-1].event_sequence -eq [long]$guardianFinalEvents[0].event_sequence) {
+            try {
+                $guardianFinalUtc = [DateTime]::Parse([string]$guardianFinalEvents[0].observed_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+                $guardianFinalTerminal = $true
+                if ($supervisorGuardianRecords.Count -gt 1) {
+                    foreach ($priorTimestamp in @(Get-ExcelOracleEvidenceUtcValues -Value @($supervisorGuardianRecords[0..($supervisorGuardianRecords.Count - 2)]) -Path "guardian_prior")) {
+                        if ($priorTimestamp.value -isnot [string] -or
+                            [DateTime]::Parse([string]$priorTimestamp.value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() -gt $guardianFinalUtc) {
+                            $guardianFinalTerminal = $false
+                            break
+                        }
+                    }
+                }
+            }
+            catch { $guardianFinalTerminal = $false }
+        }
+        if ([bool]$case.excel_ownership_recorded -and -not $guardianFinalTerminal) {
+            $errors.Add("case result $index guardian-stopped is not the final, causally latest guardian event")
+        }
+        $guardianFinalHealthy = $guardianFinalEvents.Count -eq 1 -and $caseHelperRecords.Count -eq 1 -and $guardianExcelPidBound -and $guardianFinalTerminal -and
             [bool]$guardianFinalEvents[0].controlled_stop_observed -and [bool]$guardianFinalEvents[0].excel_identity_live_at_stop -and
             [string]$guardianFinalEvents[0].exit_reason -ceq "controlled-stop" -and
+            [int]$guardianFinalEvents[0].excel_pid -eq [int]$caseExcelRecords[0].pid -and
             [int]$guardianFinalEvents[0].guardian_pid -eq [int]$caseHelperRecords[0].pid -and
             [string]$guardianFinalEvents[0].process_name -ceq [string]$caseHelperRecords[0].process_name -and
             [string]$guardianFinalEvents[0].process_start_utc -ceq [string]$caseHelperRecords[0].process_start_utc -and
@@ -1363,9 +1402,10 @@ function Resolve-ExcelOraclePostCleanupResult {
             try {
                 if ($timestamp.value -isnot [string]) { throw "not a JSON string" }
                 $evidenceUtc = [DateTime]::Parse([string]$timestamp.value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
-                if ($null -eq $generatedUtc -or $evidenceUtc -ge $generatedUtc) { throw "not earlier than results generation" }
+                if ($null -eq $authorityPublished -or $evidenceUtc -lt $authorityPublished) { throw "before containment publication" }
+                if ($null -eq $generatedUtc -or $evidenceUtc -gt $generatedUtc) { throw "later than results generation" }
             }
-            catch { $errors.Add("case result $index evidence timestamp '$([string]$timestamp.path)' is invalid or later than generated_utc") }
+            catch { $errors.Add("case result $index evidence timestamp '$([string]$timestamp.path)' is outside containment-publication/results-generation bounds") }
         }
         $compileHealthy = Test-GuardianOperationHealthy -Events $compileEvents
         $runHealthy = Test-GuardianOperationHealthy -Events $runEvents
@@ -1523,12 +1563,18 @@ function Resolve-ExcelOraclePostCleanupResult {
         return [pscustomobject]@{ valid = $false; disposition = $disposition; transport_error = $transport; errors = @($errors) }
     }
     $caseIds = @($cases | ForEach-Object { [string]$_.id })
+    $preOwnershipBootstrapPath = if ($expectedCaseIds.Count -gt 0) {
+        [IO.Path]::GetFullPath((Join-Path (Join-Path $expectedOutputFullPath ([string]$expectedCaseIds[0])) "oracle-bootstrap.xlsx"))
+    } else { $null }
+    $preOwnershipBootstrapAdmitted = $cases.Count -eq 1 -and $expectedCaseIds.Count -gt 0 -and
+        ($null -eq $cases[0].bootstrap_workbook -or
+         (Test-ExcelOracleBootstrapResultEvidence -Bootstrap $cases[0].bootstrap_workbook -ExpectedPath $preOwnershipBootstrapPath))
     $preOwnershipEvidenceEmpty = $cases.Count -eq 1 -and
         $null -eq $cases[0].compile_command -and $null -eq $cases[0].compile_execution -and $null -eq $cases[0].compile_context -and
         $null -eq $cases[0].post_dismiss_selection_diagnostic_only -and @($cases[0].compile_dialogs).Count -eq 0 -and
         @($cases[0].compile_window_observations).Count -eq 0 -and $null -eq $cases[0].run_value -and $null -eq $cases[0].runtime_err -and
         $null -eq $cases[0].macro_failure_disposition -and $null -eq $cases[0].runtime_measurement -and @($cases[0].run_dialogs).Count -eq 0 -and
-        $null -eq $cases[0].evidence_status -and $null -eq $cases[0].bootstrap_workbook -and @($cases[0].cleanup_authority_errors).Count -eq 0 -and
+        $null -eq $cases[0].evidence_status -and $preOwnershipBootstrapAdmitted -and @($cases[0].cleanup_authority_errors).Count -eq 0 -and
         $supervisorGuardianByCase.Count -eq 0
     $specialTransport = $cases.Count -eq 1 -and $expectedCaseIds.Count -gt 0 -and
         [string]$cases[0].id -ceq [string]$expectedCaseIds[0] -and
@@ -1618,6 +1664,11 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
             $errors.Add("line $($index + 1): foreign guardian run_id")
             continue
         }
+        if ($event.PSObject.Properties.Name -notcontains "excel_pid" -or
+            ($event.excel_pid -isnot [long] -and $event.excel_pid -isnot [int]) -or [int]$event.excel_pid -le 0) {
+            $errors.Add("line $($index + 1): guardian event lacks a positive Excel PID")
+            continue
+        }
         foreach ($timestampField in @("observed_utc", "capture_completed_utc", "attempted_utc")) {
             if ($event.PSObject.Properties.Name -notcontains $timestampField) { continue }
             try { [void][DateTime]::Parse([string]$event.$timestampField, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) }
@@ -1632,7 +1683,7 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
         $lifecycleRecognized = $false
         if ([string]$event.event_type -eq "invalid-control" -and [string]$event.schema -eq "oxvba.excel-vba-oracle-control-status.v1") {
             $lifecycleRecognized = $true
-            $required = @("event_sequence", "observed_utc", "control_sha256", "errors", "valid")
+            $required = @("excel_pid", "event_sequence", "observed_utc", "control_sha256", "errors", "valid")
             $missing = @($required | Where-Object { $event.PSObject.Properties.Name -notcontains $_ })
             if ($missing.Count -gt 0 -or $event.valid -isnot [bool] -or [bool]$event.valid -or @($event.errors).Count -eq 0) {
                 $errors.Add("line $($index + 1): invalid control report is incomplete or not fail-closed")
@@ -1641,7 +1692,7 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
         }
         elseif ([string]$event.event_type -in @("operation-armed", "guardian-heartbeat") -and [string]$event.schema -eq "oxvba.excel-vba-oracle-operation-state.v1") {
             $lifecycleRecognized = $true
-            $required = @("case_id", "operation_id", "phase", "control_sequence", "event_sequence", "observed_utc")
+            $required = @("case_id", "excel_pid", "operation_id", "phase", "control_sequence", "event_sequence", "observed_utc")
             $missing = @($required | Where-Object { $event.PSObject.Properties.Name -notcontains $_ -or [string]::IsNullOrWhiteSpace([string]$event.$_) })
             if ($missing.Count -gt 0 -or [string]$event.phase -notin @("compile", "run", "cleanup")) {
                 $errors.Add("line $($index + 1): invalid guardian operation state")
@@ -1658,7 +1709,7 @@ function ConvertFrom-ExcelOracleGuardianEventLedger {
         }
         elseif ([string]$event.event_type -ceq "guardian-stopped" -and [string]$event.schema -ceq "oxvba.excel-vba-oracle-final-state.v1") {
             $lifecycleRecognized = $true
-            $required = @("schema", "event_type", "run_id", "case_id", "event_sequence", "observed_utc", "guardian_pid", "process_name", "process_start_utc", "executable_path", "controlled_stop_observed", "excel_identity_live_at_stop", "exit_reason")
+            $required = @("schema", "event_type", "run_id", "case_id", "excel_pid", "event_sequence", "observed_utc", "guardian_pid", "process_name", "process_start_utc", "executable_path", "controlled_stop_observed", "excel_identity_live_at_stop", "exit_reason")
             if ((@($event.PSObject.Properties.Name | Sort-Object) -join "`n") -cne (@($required | Sort-Object) -join "`n") -or
                 $event.case_id -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$event.case_id) -or
                 ($ExpectedCaseIds.Count -gt 0 -and @($ExpectedCaseIds | Where-Object { [string]$_ -ceq [string]$event.case_id }).Count -ne 1) -or

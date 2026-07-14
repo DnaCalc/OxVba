@@ -310,6 +310,10 @@ if (-not [bool]$postCleanup.valid) {
     throw "run-excel-vba-oracle: post-cleanup result/ledger authority is invalid: $($postCleanup.errors -join '; ')$parseContext$workerContext"
 }
 if ([string]$postCleanup.disposition -eq "pre-ownership-transport") {
+    $partialBootstrap = @($results.cases)[0].bootstrap_workbook
+    if ($null -ne $partialBootstrap -and -not (Test-ExcelOracleBootstrapWorkbook -Descriptor $partialBootstrap)) {
+        throw "run-excel-vba-oracle: pre-ownership bootstrap evidence is missing, modified, or has invalid OPC relationship closure; evidence '$outputDirectory'"
+    }
     throw "run-excel-vba-oracle: first selected case failed before durable ownership after owned Job cleanup: $($postCleanup.transport_error); evidence '$outputDirectory'"
 }
 foreach ($caseResult in @($results.cases)) {

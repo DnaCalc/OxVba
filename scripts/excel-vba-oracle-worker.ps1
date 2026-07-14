@@ -638,6 +638,22 @@ function Release-ComObject {
     }
 }
 
+function Get-ExcelOracleEvidenceFailureTransport {
+    param(
+        [Parameter(Mandatory = $true)]$Descriptor,
+        [Parameter(Mandatory = $true)][bool]$GuardianHealthy,
+        [Parameter(Mandatory = $true)][bool]$AuthoritativeEvidencePassed
+    )
+
+    if (-not $GuardianHealthy -and -not $AuthoritativeEvidencePassed) {
+        return "observed VBA behavior matched the sealed case, but the final guardian authority was unhealthy and authoritative evidence did not satisfy '$([string]$Descriptor.evidence_contract)'"
+    }
+    if (-not $GuardianHealthy) {
+        return "observed VBA behavior matched the sealed case, but the final guardian authority was not healthy and exact"
+    }
+    return "observed VBA behavior matched the sealed case, but authoritative guardian evidence did not satisfy '$([string]$Descriptor.evidence_contract)'"
+}
+
 function Invoke-HarnessCase {
     param([Parameter(Mandatory = $true)]$Descriptor)
 
@@ -946,6 +962,7 @@ function Invoke-HarnessCase {
                     $finalState = @($finalGuardianEvents | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })
                     $guardianHealthy = $finalState.Count -eq 1 -and [bool]$finalState[0].controlled_stop_observed -and
                         [bool]$finalState[0].excel_identity_live_at_stop -and [string]$finalState[0].exit_reason -ceq "controlled-stop" -and
+                        [int]$finalState[0].excel_pid -eq [int]$excelOwnershipRecord.pid -and
                         [int]$finalState[0].guardian_pid -eq [int]$guardianOwnershipRecord.pid -and
                         [string]$finalState[0].process_name -ceq [string]$guardianOwnershipRecord.process_name -and
                         [string]$finalState[0].process_start_utc -ceq [string]$guardianOwnershipRecord.process_start_utc -and
@@ -965,7 +982,11 @@ function Invoke-HarnessCase {
                             "runtime-unhandled-modal" { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and $runtimeErrorEvidence; break }
                             default { $compileOperationHealthy -and (Test-NoDialogObservations -Events $compileEvents) -and $runOperationHealthy -and (Test-NoDialogObservations -Events $runEvents); break }
                         }
-                        $passed = $behaviorPassed -and $guardianHealthy -and $authoritativeEvidencePassed -and [string]::IsNullOrWhiteSpace($errorMessage)
+                        $finalAuthorityPassed = $guardianHealthy -and $authoritativeEvidencePassed
+                        if ($behaviorPassed -and -not $finalAuthorityPassed -and [string]::IsNullOrWhiteSpace($errorMessage)) {
+                            $errorMessage = Get-ExcelOracleEvidenceFailureTransport -Descriptor $Descriptor -GuardianHealthy $guardianHealthy -AuthoritativeEvidencePassed $authoritativeEvidencePassed
+                        }
+                        $passed = $behaviorPassed -and $finalAuthorityPassed -and [string]::IsNullOrWhiteSpace($errorMessage)
                         $evidenceStatus = [pscustomobject]@{
                             schema = "oxvba.excel-vba-oracle-evidence-status.v1"; guardian_healthy_before_cleanup = $guardianHealthy
                             compile_operation_healthy = $compileOperationHealthy; run_operation_healthy = $runOperationHealthy

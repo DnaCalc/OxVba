@@ -43,22 +43,27 @@ function New-TestGuardianOperationEvents {
         [AllowNull()][string]$ExpandedLine = $null
     )
     $base = if ($Phase -eq "compile") { 10 } else { 20 }
+    $armedUtc = if ($Phase -eq "compile") { "2026-07-14T00:00:03Z" } else { "2026-07-14T00:00:08Z" }
+    $heartbeatUtc = if ($Phase -eq "compile") { "2026-07-14T00:00:04Z" } else { "2026-07-14T00:00:09Z" }
+    $observedUtc = if ($Phase -eq "compile") { "2026-07-14T00:00:05Z" } else { "2026-07-14T00:00:10Z" }
+    $capturedUtc = if ($Phase -eq "compile") { "2026-07-14T00:00:06Z" } else { "2026-07-14T00:00:11Z" }
+    $dismissedUtc = if ($Phase -eq "compile") { "2026-07-14T00:00:07Z" } else { "2026-07-14T00:00:12Z" }
     $operationId = "$CaseId-$Phase"
     $events = [Collections.Generic.List[object]]::new()
     $events.Add([pscustomobject][ordered]@{
         schema = "oxvba.excel-vba-oracle-operation-state.v1"; event_type = "operation-armed"; run_id = "run-post"
-        case_id = $CaseId; operation_id = $operationId; phase = $Phase; control_sequence = 1; event_sequence = $base + 1; observed_utc = "2026-07-14T00:00:01Z"
+        case_id = $CaseId; excel_pid = $ExcelPid; operation_id = $operationId; phase = $Phase; control_sequence = 1; event_sequence = $base + 1; observed_utc = $armedUtc
     })
     $events.Add([pscustomobject][ordered]@{
         schema = "oxvba.excel-vba-oracle-operation-state.v1"; event_type = "guardian-heartbeat"; run_id = "run-post"
-        case_id = $CaseId; operation_id = $operationId; phase = $Phase; control_sequence = 1; event_sequence = $base + 2; observed_utc = "2026-07-14T00:00:02Z"
+        case_id = $CaseId; excel_pid = $ExcelPid; operation_id = $operationId; phase = $Phase; control_sequence = 1; event_sequence = $base + 2; observed_utc = $heartbeatUtc
     })
     $observationId = "$operationId-observation"
     if ($DialogKind -eq "none") {
         $events.Add([pscustomobject][ordered]@{
             schema = "oxvba.excel-vba-oracle-window-observation.v1"; event_type = "ignored-top-level-window"; run_id = "run-post"
             observation_id = $observationId; case_id = $CaseId; operation_id = $operationId; control_sequence = 1; event_sequence = $base + 3
-            phase = $Phase; excel_pid = $ExcelPid; observed_process_id = $ExcelPid; observed_utc = "2026-07-14T00:00:03Z"; capture_completed_utc = "2026-07-14T00:00:04Z"
+            phase = $Phase; excel_pid = $ExcelPid; observed_process_id = $ExcelPid; observed_utc = $observedUtc; capture_completed_utc = $capturedUtc
             window_handle = "0x100"; classification = "unrecognized-modal"; disposition = "block-no-dismiss"; considered_dialog = $false; is_modal = $false
         })
     }
@@ -66,7 +71,7 @@ function New-TestGuardianOperationEvents {
         $observation = [pscustomobject][ordered]@{
             schema = "oxvba.excel-vba-oracle-window-observation.v1"; event_type = "dialog-observation"; run_id = "run-post"
             observation_id = $observationId; case_id = $CaseId; operation_id = $operationId; control_sequence = 1; event_sequence = $base + 3
-            phase = $Phase; excel_pid = $ExcelPid; observed_process_id = $ExcelPid; observed_utc = "2026-07-14T00:00:03Z"; capture_completed_utc = "2026-07-14T00:00:04Z"
+            phase = $Phase; excel_pid = $ExcelPid; observed_process_id = $ExcelPid; observed_utc = $observedUtc; capture_completed_utc = $capturedUtc
             window_handle = "0x100"; classification = $DialogKind; disposition = "capture-then-dismiss"; considered_dialog = $true; is_modal = $true
             dialog_text = @("owned $DialogKind dialog"); selected_token = $SelectedToken; expanded_line = $ExpandedLine
         }
@@ -74,7 +79,7 @@ function New-TestGuardianOperationEvents {
         $events.Add([pscustomobject][ordered]@{
             schema = "oxvba.excel-vba-oracle-dismissal-result.v1"; event_type = "dismissal-result"; run_id = "run-post"
             observation_id = $observationId; case_id = $CaseId; operation_id = $operationId; control_sequence = 1; event_sequence = $base + 4
-            phase = $Phase; excel_pid = $ExcelPid; window_handle = "0x100"; attempted_utc = "2026-07-14T00:00:05Z"
+            phase = $Phase; excel_pid = $ExcelPid; window_handle = "0x100"; attempted_utc = $dismissedUtc
             requested_buttons = @("OK"); succeeded = $true; dismissed_button = "OK"
         })
     }
@@ -117,16 +122,17 @@ function New-TestPostCleanupCase {
         "clean-compile-runtime-error-dismissal-v1" { $compileHealthy -and $runHealthy -and $runtimeErrorComplete; break }
         default { $compileHealthy -and $runHealthy; break }
     }
-    $bootstrap = if ($OwnershipRecorded) {
-        [ordered]@{
-            schema = "oxvba.excel-vba-oracle-bootstrap-workbook.v1"
-            path = Join-Path $caseDirectory "oracle-bootstrap.xlsx"
-            sha256 = "sha256:$('a' * 64)"
-            sha256_after = "sha256:$('a' * 64)"
-            package_parts = @("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml")
-            macro_free = $true
-        }
-    } else { $null }
+    # Production materializes and verifies the bootstrap before attempting the
+    # exact EXCEL7/native-object attachment, so attachment failures retain it
+    # even though no durable Excel ownership record was reached.
+    $bootstrap = [ordered]@{
+        schema = "oxvba.excel-vba-oracle-bootstrap-workbook.v1"
+        path = Join-Path $caseDirectory "oracle-bootstrap.xlsx"
+        sha256 = "sha256:$('a' * 64)"
+        sha256_after = "sha256:$('a' * 64)"
+        package_parts = @("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml")
+        macro_free = $true
+    }
     $document = [pscustomobject][ordered]@{
         schema = "oxvba.excel-vba-oracle-case-result.v1"
         id = $Id
@@ -149,8 +155,8 @@ function New-TestPostCleanupCase {
             schema = "oxvba.excel-vba-oracle-compile-context.v1"; injected_project_name = "VBAProject"; injected_project_file_name = (Join-Path $caseDirectory "oracle-bootstrap.xlsx")
             injected_module_name = $descriptor.module_name; selection_before_execute = $null; injected_source = $descriptor.module_source
             injected_source_sha256 = $descriptor.module_sha256; selected_source_sha256 = $descriptor.module_sha256
-            authority_before_execute = [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-authority-snapshot.v1"; stage = "immediately-before-execute"; captured_utc = "2026-07-14T00:00:01Z"; active_project_is_injected_project = $true; active_module_is_injected_module = $true; active_code_pane_is_injected_code_pane = $true; active_project_name = "VBAProject"; active_module_name = $descriptor.module_name; injected_source_sha256 = $descriptor.module_sha256; expected_source_sha256 = $descriptor.module_sha256 }
-            authority_after_execute = [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-authority-snapshot.v1"; stage = "immediately-after-execute"; captured_utc = "2026-07-14T00:00:02Z"; active_project_is_injected_project = $true; active_module_is_injected_module = $true; active_code_pane_is_injected_code_pane = $true; active_project_name = "VBAProject"; active_module_name = $descriptor.module_name; injected_source_sha256 = $descriptor.module_sha256; expected_source_sha256 = $descriptor.module_sha256 }
+            authority_before_execute = [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-authority-snapshot.v1"; stage = "immediately-before-execute"; captured_utc = "2026-07-14T00:00:04.5000000Z"; active_project_is_injected_project = $true; active_module_is_injected_module = $true; active_code_pane_is_injected_code_pane = $true; active_project_name = "VBAProject"; active_module_name = $descriptor.module_name; injected_source_sha256 = $descriptor.module_sha256; expected_source_sha256 = $descriptor.module_sha256 }
+            authority_after_execute = [ordered]@{ schema = "oxvba.excel-vba-oracle-compile-authority-snapshot.v1"; stage = "immediately-after-execute"; captured_utc = "2026-07-14T00:00:07.5000000Z"; active_project_is_injected_project = $true; active_module_is_injected_module = $true; active_code_pane_is_injected_code_pane = $true; active_project_name = "VBAProject"; active_module_name = $descriptor.module_name; injected_source_sha256 = $descriptor.module_sha256; expected_source_sha256 = $descriptor.module_sha256 }
             selection_after_execute_diagnostic_only = $null
         } } else { $null }
         post_dismiss_selection_diagnostic_only = $null
@@ -173,7 +179,7 @@ function New-TestPostCleanupCase {
             elseif ([string]$descriptor.id -eq "runtime-unhandled-modal") { "non-macro-runtime-failure" }
             else { $null }
         runtime_measurement = if ($hasExecutionEvidence) { [ordered]@{
-            schema = "oxvba.excel-vba-oracle-runtime-measurement.v1"; measured_utc = "2026-07-14T00:00:05Z"; access_vbom = $true
+            schema = "oxvba.excel-vba-oracle-runtime-measurement.v1"; measured_utc = "2026-07-14T00:00:13Z"; access_vbom = $true
             invocation_entry = $descriptor.run_procedure; invocation_entry_exists = $null -ne $descriptor.run_procedure
             macro_probe_target = $descriptor.macro_probe_target; macro_probe_target_exists = $null -ne $descriptor.macro_probe_target -and $null -ne $descriptor.run_procedure -and [string]$descriptor.macro_probe_target -ceq [string]$descriptor.run_procedure; automation_security = 1
             macros_configured_for_automation = $true; invocation_entry_observed = $runHealthy
@@ -215,7 +221,7 @@ function New-TestPostCleanupResults {
     $document = [pscustomobject][ordered]@{
         schema = "oxvba.excel-vba-oracle-results.v1"
         run_id = $RunId
-        generated_utc = "2026-07-14T00:00:06Z"
+        generated_utc = "2026-07-14T00:00:15Z"
         worker_pid = $WorkerPid
         containment_token = $ContainmentToken
         containment_authority = [pscustomobject][ordered]@{
@@ -247,7 +253,7 @@ function New-TestPostCleanupLedger {
         if ($Guardian) {
             $records.Add([pscustomobject]@{
                 case_id = $CaseIds[$index]; pid = 8001 + $index; process_name = "pwsh"
-                process_start_utc = "2026-07-14T00:00:00Z"; executable_path = "C:\Program Files\PowerShell\7\pwsh.exe"
+                process_start_utc = "2026-07-14T00:00:02.5000000Z"; executable_path = "C:\Program Files\PowerShell\7\pwsh.exe"
             })
         }
         else { $records.Add([pscustomobject]@{ case_id = $CaseIds[$index]; pid = $FirstPid + $index }) }
@@ -268,8 +274,8 @@ function New-TestSupervisorGuardianEvidence {
         foreach ($event in @($case.compile_window_observations) + @($case.run_dialogs)) { $events.Add($event) }
         $events.Add([pscustomobject][ordered]@{
             schema = "oxvba.excel-vba-oracle-final-state.v1"; event_type = "guardian-stopped"; run_id = "run-post"; case_id = [string]$case.id
-            event_sequence = 30; observed_utc = "2026-07-14T00:00:05.5000000Z"; guardian_pid = 8001 + $index; process_name = "pwsh"
-            process_start_utc = "2026-07-14T00:00:00Z"; executable_path = "C:\Program Files\PowerShell\7\pwsh.exe"
+            excel_pid = [int]$case.owned_excel_pid; event_sequence = 30; observed_utc = "2026-07-14T00:00:14Z"; guardian_pid = 8001 + $index; process_name = "pwsh"
+            process_start_utc = "2026-07-14T00:00:02.5000000Z"; executable_path = "C:\Program Files\PowerShell\7\pwsh.exe"
             controlled_stop_observed = $true; excel_identity_live_at_stop = $true; exit_reason = "controlled-stop"
         })
         $rawText = (@($events | ForEach-Object { $_ | ConvertTo-Json -Compress -Depth 20 }) -join "`n") + "`n"
@@ -666,6 +672,20 @@ $failedCompleteCases = @(
 $failedCompleteResults = New-TestPostCleanupResults -Cases $failedCompleteCases -AggregatePassed $false
 $failedCompleteResolution = Invoke-TestPostCleanupResolution -Results $failedCompleteResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -WorkerExitCode 1
 Assert-True ([bool]$failedCompleteResolution.valid -and [string]$failedCompleteResolution.disposition -eq "complete-case-failure") "fully owned failed cases must surface only through the failed aggregate exit envelope"
+$wrongTokenEvidenceResults = Copy-TestJsonObject -Value $completeResults
+foreach ($collectionName in @("compile_window_observations", "compile_dialogs")) {
+    foreach ($event in @($wrongTokenEvidenceResults.cases[1].$collectionName | Where-Object { [string]$_.event_type -ceq "dialog-observation" })) {
+        $event.selected_token = "WrongToken"
+    }
+}
+$wrongTokenEvidenceResults.cases[1].evidence_status.compile_error_modal_complete = $false
+$wrongTokenEvidenceResults.cases[1].evidence_status.authoritative_evidence_passed = $false
+$wrongTokenEvidenceResults.cases[1].transport_error = "observed VBA behavior matched the sealed case, but authoritative guardian evidence did not satisfy 'compile-error-token-line-dismissal-v1'"
+$wrongTokenEvidenceResults.cases[1].passed = $false
+$wrongTokenEvidenceResults.passed = $false
+$wrongTokenEvidence = @(New-TestSupervisorGuardianEvidence -Cases @($wrongTokenEvidenceResults.cases))
+$wrongTokenEvidenceResolution = Invoke-TestPostCleanupResolution -Results $wrongTokenEvidenceResults -ExcelLedger $completeExcelLedger -HelperLedger $completeHelperLedger -ExpectedCaseIds $completeIds -SupervisorGuardianEvidence $wrongTokenEvidence -WorkerExitCode 1
+Assert-True ([bool]$wrongTokenEvidenceResolution.valid -and [string]$wrongTokenEvidenceResolution.disposition -ceq "complete-case-failure") "behavior-correct but wrong-token guardian evidence must form a bounded complete-case-failure with a specific nonempty transport"
 
 $fiveSelectedIds = @("success", "compile-failure", "ambiguous-macro-failure", "intrinsic-shadow", "runtime-full-err")
 $fiveCompleteCases = [Collections.Generic.List[object]]::new()
@@ -693,10 +713,41 @@ $wrongGuardianFinalIdentityEvidence = Update-TestSupervisorGuardianEvidence -Evi
     param($events) $final = @($events | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })[0]; $final.guardian_pid = 9999; $events
 }
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $wrongGuardianFinalIdentityEvidence).valid) "guardian final health must bind to the supervisor-retained per-case helper identity"
-$futureGuardianEvidence = Update-TestSupervisorGuardianEvidence -Evidence $fiveGuardianEvidence -CaseId "success" -Update {
-    param($events) $final = @($events | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })[0]; $final.observed_utc = "2026-07-14T00:00:07Z"; $events
+$foreignGuardianPidResults = Copy-TestJsonObject -Value $fiveCompleteResults
+foreach ($collectionName in @("compile_window_observations", "compile_dialogs", "run_dialogs")) {
+    foreach ($event in @($foreignGuardianPidResults.cases[0].$collectionName)) {
+        $event.excel_pid = 9999
+        if ($event.PSObject.Properties.Name -contains "observed_process_id") { $event.observed_process_id = 9999 }
+    }
 }
-Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $futureGuardianEvidence).valid) "results generated_utc must be causally after supervisor-retained guardian evidence"
+$foreignGuardianPidEvidence = @(New-TestSupervisorGuardianEvidence -Cases @($foreignGuardianPidResults.cases))
+$foreignGuardianPidEvidence = Update-TestSupervisorGuardianEvidence -Evidence $foreignGuardianPidEvidence -CaseId "success" -Update {
+    param($events)
+    foreach ($event in $events) {
+        $event.excel_pid = 9999
+        if ($event.PSObject.Properties.Name -contains "observed_process_id") { $event.observed_process_id = 9999 }
+    }
+    $events
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $foreignGuardianPidResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $foreignGuardianPidEvidence).valid) "internally consistent retained and embedded guardian PIDs must still bind to the exact per-case Excel ownership ledger PID"
+$nonTerminalGuardianEvidence = Update-TestSupervisorGuardianEvidence -Evidence $fiveGuardianEvidence -CaseId "success" -Update {
+    param($events)
+    $final = @($events | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })[0]
+    $final.event_sequence = 1
+    @($final) + @($events | Where-Object { [string]$_.event_type -cne "guardian-stopped" })
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $nonTerminalGuardianEvidence).valid) "guardian-stopped must be the final sequence and causally latest terminal event"
+$futureGuardianEvidence = Update-TestSupervisorGuardianEvidence -Evidence $fiveGuardianEvidence -CaseId "success" -Update {
+    param($events) $final = @($events | Where-Object { [string]$_.event_type -ceq "guardian-stopped" })[0]; $final.observed_utc = "2026-07-14T00:00:16Z"; $events
+}
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $fiveCompleteResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $futureGuardianEvidence).valid) "supervisor-retained guardian evidence must not postdate results generated_utc"
+$preContainmentGuardianResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$preContainmentGuardianResults.cases[0].compile_window_observations[0].observed_utc = "2026-07-14T00:00:01.5000000Z"
+$preContainmentGuardianEvidence = @(New-TestSupervisorGuardianEvidence -Cases @($preContainmentGuardianResults.cases))
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $preContainmentGuardianResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $preContainmentGuardianEvidence).valid) "even matching retained and embedded guardian evidence must not predate containment publication"
+$generationAtFinalResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$generationAtFinalResults.generated_utc = "2026-07-14T00:00:14Z"
+Assert-True ([bool](Invoke-TestPostCleanupResolution -Results $generationAtFinalResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds -SupervisorGuardianEvidence $fiveGuardianEvidence).valid) "authoritative evidence timestamps exactly equal to generated_utc must remain admissible"
 
 # Permanent contradictions from fresh-eyes review: no worker-authored outcome
 # label or aggregate Boolean may repair incompatible retained evidence.
@@ -754,8 +805,11 @@ $unrelatedModuleResults = Copy-TestJsonObject -Value $fiveCompleteResults
 $unrelatedModuleResults.cases[0].module_path = "C:\fixture\unrelated-valid\OracleSelfTest.bas"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $unrelatedModuleResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "module artifacts must bind to the supervisor-derived run/case path"
 $futureMeasurementResults = Copy-TestJsonObject -Value $fiveCompleteResults
-$futureMeasurementResults.cases[0].runtime_measurement.measured_utc = "2026-07-14T00:00:07Z"
-Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $futureMeasurementResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "results generated_utc must be causally after every case measurement timestamp"
+$futureMeasurementResults.cases[0].runtime_measurement.measured_utc = "2026-07-14T00:00:16Z"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $futureMeasurementResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "case measurements must not postdate results generated_utc"
+$preContainmentMeasurementResults = Copy-TestJsonObject -Value $fiveCompleteResults
+$preContainmentMeasurementResults.cases[0].runtime_measurement.measured_utc = "2026-07-14T00:00:01.5000000Z"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $preContainmentMeasurementResults -ExcelLedger $fiveCompleteExcelLedger -HelperLedger $fiveCompleteHelperLedger -ExpectedCaseIds $fiveSelectedIds).valid) "case measurements must not predate containment publication"
 
 $runtimeDiagnosticIds = @("runtime-unhandled-modal")
 $runtimeDiagnosticCase = New-TestPostCleanupCase -Id $runtimeDiagnosticIds[0] -OwnedPid 7199 -ObservedPid 7199
@@ -771,16 +825,26 @@ $runtimeDiagnosticWithValueResults = Copy-TestJsonObject -Value $runtimeDiagnost
 $runtimeDiagnosticWithValueResults.cases[0].run_value = "attacker value"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $runtimeDiagnosticWithValueResults -ExcelLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -FirstPid 7199) `
     -HelperLedger (New-TestPostCleanupLedger -CaseIds $runtimeDiagnosticIds -Guardian) -ExpectedCaseIds $runtimeDiagnosticIds -DiagnosticOnly $true).valid) "runtime diagnostic modal shape must exclude a return value"
-$preOwnershipCase = New-TestPostCleanupCase -Id $fiveSelectedIds[0] -Passed $false -OwnershipRecorded $false -OwnedPid $null -ObservedPid 9123 -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "durable ownership write failed"
+$preOwnershipCase = New-TestPostCleanupCase -Id $fiveSelectedIds[0] -Passed $false -OwnershipRecorded $false -OwnedPid $null -ObservedPid $null -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "directly launched Excel did not expose an EXCEL7 native object before the attachment deadline"
 $preOwnershipResults = New-TestPostCleanupResults -Cases @($preOwnershipCase) -AggregatePassed $false -SelectedCaseIds $fiveSelectedIds
 $emptyLedger = New-TestPostCleanupLedger -CaseIds @()
 $preOwnershipResolution = Invoke-TestPostCleanupResolution -Results $preOwnershipResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1
-Assert-True ([bool]$preOwnershipResolution.valid -and [string]$preOwnershipResolution.disposition -eq "pre-ownership-transport" -and [string]$preOwnershipResolution.transport_error -eq "durable ownership write failed") "five-case early stop must surface exactly the first pre-ownership transport after empty-ledger cleanup"
+Assert-True ($null -ne $preOwnershipResults.cases[0].bootstrap_workbook -and [bool]$preOwnershipResolution.valid -and [string]$preOwnershipResolution.disposition -eq "pre-ownership-transport" -and [string]$preOwnershipResolution.transport_error -eq "directly launched Excel did not expose an EXCEL7 native object before the attachment deadline") "a no-EXCEL7 exact-attachment failure must retain its already-created exact bootstrap while surfacing the first pre-ownership transport after empty-ledger cleanup"
 $forgedPreOwnershipRuntimeResults = Copy-TestJsonObject -Value $preOwnershipResults
 $forgedPreOwnershipRuntimeResults.cases[0].run_value = "forged runtime payload"
 Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $forgedPreOwnershipRuntimeResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "pre-ownership transport must exclude forged runtime payload regardless of ownership state"
-Assert-True (Test-ExcelOracleShouldStopAfterCase -CaseResult $preOwnershipCase) "ownership-write failure with an observed PID but no durable record must stop relaunches"
-$jobDeferredPreOwnershipResults = Copy-TestJsonObject -Value $preOwnershipResults
+$forgedPreOwnershipCompileResults = Copy-TestJsonObject -Value $preOwnershipResults
+$forgedPreOwnershipCompileResults.cases[0].compile_command = [pscustomobject][ordered]@{ schema = "oxvba.excel-vba-oracle-compile-command.v1"; id = 578; caption = "Compile VBAProject"; enabled_before = $true; enabled_after = $null }
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $forgedPreOwnershipCompileResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "bootstrap-bearing pre-ownership transport must still exclude impossible compile evidence"
+$foreignPreOwnershipBootstrapResults = Copy-TestJsonObject -Value $preOwnershipResults
+$foreignPreOwnershipBootstrapResults.cases[0].bootstrap_workbook.path = "C:\fixture\foreign\oracle-bootstrap.xlsx"
+Assert-True (-not [bool](Invoke-TestPostCleanupResolution -Results $foreignPreOwnershipBootstrapResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "pre-ownership bootstrap evidence must remain bound to the supervisor-derived case path and bytes"
+Assert-True (Test-ExcelOracleShouldStopAfterCase -CaseResult $preOwnershipCase) "exact attachment failure before an observed PID or durable record must stop relaunches"
+$ownershipWriteFailureCase = New-TestPostCleanupCase -Id $fiveSelectedIds[0] -Passed $false -OwnershipRecorded $false -OwnedPid $null -ObservedPid 9123 -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "durable ownership write failed"
+$ownershipWriteFailureResults = New-TestPostCleanupResults -Cases @($ownershipWriteFailureCase) -AggregatePassed $false -SelectedCaseIds $fiveSelectedIds
+Assert-True ([bool](Invoke-TestPostCleanupResolution -Results $ownershipWriteFailureResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid -and
+    (Test-ExcelOracleShouldStopAfterCase -CaseResult $ownershipWriteFailureCase)) "an observed PID without a durable record must remain a valid bounded pre-ownership failure and stop relaunches"
+$jobDeferredPreOwnershipResults = Copy-TestJsonObject -Value $ownershipWriteFailureResults
 $jobDeferredPreOwnershipResults.cases[0].cleanup_status = "job-contained-preownership"
 Assert-True ([bool](Invoke-TestPostCleanupResolution -Results $jobDeferredPreOwnershipResults -ExcelLedger $emptyLedger -HelperLedger $emptyLedger -ExpectedCaseIds $fiveSelectedIds -WorkerExitCode 1).valid) "ownership-write failure may surface only after its exact process was deferred to and removed by the supervisor Job"
 $durablyOwnedHarnessFailure = New-TestPostCleanupCase -Id "success" -Passed $false -OwnershipRecorded $true -OwnedPid 7001 -ObservedPid 7001 -CompileStatus "harness-error" -RunStatus "not-run" -TransportError "later failure"
@@ -1338,6 +1402,9 @@ Assert-True ($workerSource -match 'Invoke-ExcelOracleRetainedProcessTermination.
 Assert-True (Test-WorkerEvidenceGatedAcceptanceShape -WorkerSource $workerSource -ContractSource $contractSource) "case acceptance must be gated by healthy guardian and authoritative modal evidence"
 $statusOnlyAcceptanceMutation = $workerSource.Replace('$passed = $behaviorPassed -and $guardianHealthy -and $authoritativeEvidencePassed', '$passed = $behaviorPassed')
 Assert-True (-not (Test-WorkerEvidenceGatedAcceptanceShape -WorkerSource $statusOnlyAcceptanceMutation -ContractSource $contractSource)) "mutation: status-only case acceptance must be rejected"
+Assert-True ($workerSource -match 'function Get-ExcelOracleEvidenceFailureTransport' -and
+    $workerSource -match '\$finalAuthorityPassed = \$guardianHealthy -and \$authoritativeEvidencePassed' -and
+    $workerSource.IndexOf('Get-ExcelOracleEvidenceFailureTransport -Descriptor $Descriptor', $workerSource.IndexOf('$finalAuthorityPassed =')) -gt $workerSource.IndexOf('$finalAuthorityPassed =')) "final behavior/evidence/guardian failure must synthesize a specific nonempty transport before publishing the case result"
 Assert-True ($workerSource -match 'invalid guardian event ledger' -and $workerSource -notmatch 'catch \{ \}\s*\r?\n\s*return @\(\$events\)') "guardian event parsing must fail closed"
 Assert-True ($workerSource -match 'Assert-GuardianLive.+forced VBE compile' -and $workerSource -match 'Assert-GuardianLive.+runtime invocation') "guardian exact liveness must be checked immediately before compile and runtime"
 Assert-True ($workerSource.IndexOf('immediately-before-execute') -lt $compileIndex -and $workerSource.IndexOf('immediately-after-execute') -gt $compileIndex) "compile Execute must be enclosed by exact active project/module/source/code-pane authority snapshots"
@@ -1370,7 +1437,11 @@ Assert-True ($runnerSource -match 'function Read-SupervisorGuardianEvidence' -an
     $runnerSource -match 'Get-ExcelOracleBytesSha256 -Bytes \$bytes' -and $runnerSource -match '-SupervisorGuardianEvidence \$supervisorGuardianEvidence' -and
     $runnerSource.IndexOf('$supervisorGuardianEvidence = @(Read-SupervisorGuardianEvidence') -lt $runnerSource.IndexOf('$postCleanup = Resolve-ExcelOraclePostCleanupResult')) "supervisor must independently retain exact per-case guardian ledger bytes/digests before resolution"
 Assert-True ($contractSource -match 'module path is not the exact supervisor-derived case path' -and
-    $contractSource -match 'bootstrap\.path, \$expectedBootstrapPath' -and $contractSource -match 'injected_project_file_name, \$expectedBootstrapPath') "module, bootstrap descriptor, and compile-project paths must bind to supervisor-derived run/case paths"
+    $contractSource -match 'function Test-ExcelOracleBootstrapResultEvidence' -and
+    $contractSource -match 'Bootstrap\.path, \$ExpectedPath' -and $contractSource -match 'injected_project_file_name, \$expectedBootstrapPath') "module, bootstrap descriptor, and compile-project paths must bind to supervisor-derived run/case paths"
+Assert-True ($contractSource -match 'guardian event Excel PIDs do not bind to the exact supervisor-retained Excel ownership record' -and
+    $contractSource -match 'guardian-stopped is not the final, causally latest guardian event' -and
+    $guardianSource -match 'schema = "oxvba\.excel-vba-oracle-final-state\.v1"(?s).*excel_pid = \$ExcelPid') "guardian events and the terminal final state must bind Excel identity and causal order to supervisor authority"
 Assert-True ($contractSource -match 'Exit-ExcelOracleRunClaim -Claim \$failedClaim -PrimaryFailure \$primaryFailure -RemoveClaim \$RemoveClaim' -and
     $contractSource -notmatch 'Remove-Item -LiteralPath \$claimPath -Force -ErrorAction SilentlyContinue') "Enter claim failure cleanup must use hardened combined-error deletion and exact absence verification"
 Assert-True ($runnerSource -match 'New-ExcelOracleSelectedCaseDescriptorEnvelope' -and
@@ -1379,6 +1450,8 @@ Assert-True ($runnerSource -match 'New-ExcelOracleSelectedCaseDescriptorEnvelope
     $runnerSource -match '"-SelectedCaseDescriptorDigest", \[string\]\$selectedCaseDescriptorEnvelope\.aggregate_sha256' -and
     $runnerSource -match '-SelectedCaseDescriptors \$selectedCaseDescriptors') "supervisor must serialize and pass its exact sealed descriptor sequence/digest, then reuse the same descriptors for post-cleanup authority"
 Assert-True ($runnerSource -match 'Test-ExcelOracleBootstrapWorkbook -Descriptor \$caseResult\.bootstrap_workbook' -and $runnerSource -match 'selected oracle case expectations failed after owned cleanup') "runner must validate persisted bootstrap bytes before surfacing complete success or case failure"
+Assert-True ($runnerSource -match 'Test-ExcelOracleBootstrapWorkbook -Descriptor \$partialBootstrap' -and
+    $runnerSource.IndexOf('Test-ExcelOracleBootstrapWorkbook -Descriptor $partialBootstrap') -lt $runnerSource.IndexOf('first selected case failed before durable ownership')) "supervisor must validate any retained pre-ownership bootstrap bytes before surfacing attachment transport"
 Assert-True (Test-RunnerIdentityCheckedCleanupShape -Source $runnerSource) "supervisor fallback cleanup must query, terminate, and wait through one retained native handle"
 $pidOnlyCleanupMutation = $runnerSource.Replace('Invoke-ExcelOracleRetainedProcessTermination', 'Invoke-PidOnlyTermination')
 Assert-True (-not (Test-RunnerIdentityCheckedCleanupShape -Source $pidOnlyCleanupMutation)) "mutation: PID-only fallback cleanup must be rejected"
