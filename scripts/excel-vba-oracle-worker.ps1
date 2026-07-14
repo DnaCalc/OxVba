@@ -580,56 +580,6 @@ function Get-CompileAuthoritySnapshot {
     return $snapshot
 }
 
-function Test-VbomProcedureExists {
-    param(
-        [Parameter(Mandatory = $true)]$Project,
-        [Parameter(Mandatory = $true)][string]$QualifiedProcedure
-    )
-    $parts = $QualifiedProcedure.Split('.', 2)
-    if ($parts.Count -ne 2) { return $false }
-    try {
-        $component = $Project.VBComponents.Item($parts[0])
-        $line = [int]$component.CodeModule.ProcStartLine($parts[1], 0)
-        return $line -gt 0
-    }
-    catch { return $false }
-}
-
-function Get-VbomRuntimeMeasurement {
-    param(
-        [Parameter(Mandatory = $true)]$Project,
-        [Parameter(Mandatory = $true)]$Excel,
-        [AllowNull()][string]$InvocationEntry,
-        [AllowNull()][string]$MacroProbeTarget,
-        [Parameter(Mandatory = $true)][string]$CompileStatus
-    )
-    $accessVbom = $false
-    $invocationExists = $false
-    $probeExists = $false
-    try {
-        [void]$Project.VBComponents.Count
-        $accessVbom = $true
-        if (-not [string]::IsNullOrWhiteSpace($InvocationEntry)) { $invocationExists = Test-VbomProcedureExists -Project $Project -QualifiedProcedure $InvocationEntry }
-        if (-not [string]::IsNullOrWhiteSpace($MacroProbeTarget)) { $probeExists = Test-VbomProcedureExists -Project $Project -QualifiedProcedure $MacroProbeTarget }
-    }
-    catch { $accessVbom = $false }
-    $automationSecurity = [int]$Excel.AutomationSecurity
-    return [pscustomobject]@{
-        schema = "oxvba.excel-vba-oracle-runtime-measurement.v1"
-        measured_utc = [DateTime]::UtcNow.ToString("o")
-        access_vbom = $accessVbom
-        invocation_entry = $InvocationEntry
-        invocation_entry_exists = $invocationExists
-        macro_probe_target = $MacroProbeTarget
-        macro_probe_target_exists = $probeExists
-        automation_security = $automationSecurity
-        macros_configured_for_automation = $automationSecurity -eq 1
-        invocation_entry_observed = $false
-        invocation_observation = $null
-        macros_runnable_entry = $false
-    }
-}
-
 function Release-ComObject {
     param($Value)
     if ($null -ne $Value -and [Runtime.InteropServices.Marshal]::IsComObject($Value)) {
@@ -710,13 +660,16 @@ function Invoke-HarnessCase {
     $cleanupAuthorityErrors = [Collections.Generic.List[string]]::new()
     $bootstrapWorkbook = $null
     $bootstrapSha256After = $null
+    $preOwnershipFailurePhase = "bootstrap-construction"
 
     try {
         $bootstrapWorkbook = New-ExcelOracleBootstrapWorkbook -Path $bootstrapWorkbookPath
         if (-not (Test-ExcelOracleBootstrapWorkbook -Descriptor $bootstrapWorkbook)) {
             throw "excel-vba-oracle-worker: controlled bootstrap workbook is missing, modified, or has invalid OPC relationship closure before launch"
         }
+        $preOwnershipFailurePhase = "excel-attachment"
         $launchedExcel = Start-OwnedExcelApplication -ExcelExecutable $script:ExcelExecutablePath -BootstrapWorkbook $bootstrapWorkbook -DiagnosticPath $excelAttachmentDiagnosticFile
+        $preOwnershipFailurePhase = "excel-ownership"
         $ownedExcelProcess = $launchedExcel.process
         $excel = $launchedExcel.application
         $excelNativeWindow = $launchedExcel.native_window
@@ -731,6 +684,7 @@ function Invoke-HarnessCase {
             throw "excel-vba-oracle-worker: Excel PID $excelPid existed before this case; refusing ownership"
         }
         $excelOwnershipRecord = Add-OwnershipRecord -Process $ownedExcelProcess -BeforePids $beforePids -CaseId $Descriptor.id
+        $preOwnershipFailurePhase = $null
         $excelOwnershipRecord | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $excelIdentityFile -Encoding utf8NoBOM
 
         $guardianArguments = @(
@@ -835,7 +789,7 @@ function Invoke-HarnessCase {
         elseif (-not [bool]$compileCommand.enabled_after) { $compileStatus = "ok" }
         else { $compileStatus = "no-dialog-unverified" }
 
-        $runtimeMeasurement = Get-VbomRuntimeMeasurement -Project $project -Excel $excel -InvocationEntry ([string]$Descriptor.run_procedure) -MacroProbeTarget ([string]$Descriptor.macro_probe_target) -CompileStatus $compileStatus
+        $runtimeMeasurement = Get-VbomRuntimeMeasurement -Project $project -Excel $excel -InvocationEntry $Descriptor.run_procedure -MacroProbeTarget $Descriptor.macro_probe_target -CompileStatus $compileStatus
         if ($compileStatus -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$Descriptor.run_procedure)) {
             $runOperation = "$($Descriptor.id)-run"
             $runControlRecord = Set-GuardianControl -Path $controlFile -CaseId $Descriptor.id -OperationId $runOperation -Phase run -AllowDismiss $true
@@ -1052,6 +1006,7 @@ function Invoke-HarnessCase {
         owned_excel_pid = if ($excelOwnershipRecord) { [int]$excelOwnershipRecord.pid } else { $null }
         observed_excel_pid = $excelPid
         excel_ownership_recorded = $null -ne $excelOwnershipRecord
+        preownership_failure_phase = if ($null -eq $excelOwnershipRecord) { $preOwnershipFailurePhase } else { $null }
         selected_case_descriptor_sha256 = [string]$Descriptor.descriptor_sha256
         module_name = [string]$Descriptor.module_name
         module_path = $modulePath

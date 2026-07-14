@@ -348,6 +348,79 @@ function Test-ExcelOracleBootstrapResultEvidence {
         (@($Bootstrap.package_parts) -join "`n") -ceq (@("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml") -join "`n")
 }
 
+function New-ExcelOracleRuntimeMeasurementEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$MeasuredUtc,
+        [Parameter(Mandatory = $true)][bool]$AccessVbom,
+        [AllowNull()]$InvocationEntry,
+        [Parameter(Mandatory = $true)][bool]$InvocationEntryExists,
+        [AllowNull()]$MacroProbeTarget,
+        [Parameter(Mandatory = $true)][bool]$MacroProbeTargetExists,
+        [Parameter(Mandatory = $true)][int]$AutomationSecurity
+    )
+
+    return [pscustomobject][ordered]@{
+        schema = "oxvba.excel-vba-oracle-runtime-measurement.v1"
+        measured_utc = $MeasuredUtc
+        access_vbom = $AccessVbom
+        invocation_entry = $InvocationEntry
+        invocation_entry_exists = $InvocationEntryExists
+        macro_probe_target = $MacroProbeTarget
+        macro_probe_target_exists = $MacroProbeTargetExists
+        automation_security = $AutomationSecurity
+        macros_configured_for_automation = $AutomationSecurity -eq 1
+        invocation_entry_observed = $false
+        invocation_observation = $null
+        macros_runnable_entry = $false
+    }
+}
+
+function Test-VbomProcedureExists {
+    param(
+        [Parameter(Mandatory = $true)]$Project,
+        [Parameter(Mandatory = $true)][string]$QualifiedProcedure
+    )
+
+    $parts = $QualifiedProcedure.Split('.', 2)
+    if ($parts.Count -ne 2) { return $false }
+    try {
+        $component = $Project.VBComponents.Item($parts[0])
+        $line = [int]$component.CodeModule.ProcStartLine($parts[1], 0)
+        return $line -gt 0
+    }
+    catch { return $false }
+}
+
+function Get-VbomRuntimeMeasurement {
+    param(
+        [Parameter(Mandatory = $true)]$Project,
+        [Parameter(Mandatory = $true)]$Excel,
+        [AllowNull()]$InvocationEntry,
+        [AllowNull()]$MacroProbeTarget,
+        [Parameter(Mandatory = $true)][string]$CompileStatus
+    )
+
+    $accessVbom = $false
+    $invocationExists = $false
+    $probeExists = $false
+    try {
+        [void]$Project.VBComponents.Count
+        $accessVbom = $true
+        if (-not [string]::IsNullOrWhiteSpace($InvocationEntry)) { $invocationExists = Test-VbomProcedureExists -Project $Project -QualifiedProcedure $InvocationEntry }
+        if (-not [string]::IsNullOrWhiteSpace($MacroProbeTarget)) { $probeExists = Test-VbomProcedureExists -Project $Project -QualifiedProcedure $MacroProbeTarget }
+    }
+    catch { $accessVbom = $false }
+    $automationSecurity = [int]$Excel.AutomationSecurity
+    return New-ExcelOracleRuntimeMeasurementEvidence `
+        -MeasuredUtc ([DateTime]::UtcNow.ToString("o")) `
+        -AccessVbom $accessVbom `
+        -InvocationEntry $InvocationEntry `
+        -InvocationEntryExists $invocationExists `
+        -MacroProbeTarget $MacroProbeTarget `
+        -MacroProbeTargetExists $probeExists `
+        -AutomationSecurity $automationSecurity
+}
+
 function Get-ExcelOracleEvidenceUtcValues {
     param([AllowNull()]$Value, [string]$Path = "evidence")
 
@@ -767,6 +840,25 @@ function Test-ExcelOracleHelperProcessRecord {
         $recordedPid -gt 0
 }
 
+function Test-ExcelOracleOwnershipRecordCausalBounds {
+    param(
+        [Parameter(Mandatory = $true)]$Record,
+        [Parameter(Mandatory = $true)][DateTime]$ContainmentPublishedUtc,
+        [Parameter(Mandatory = $true)][DateTime]$ResultsGeneratedUtc
+    )
+
+    if ($null -eq $Record -or $Record.process_start_utc -isnot [string] -or $Record.acquired_utc -isnot [string]) { return $false }
+    try {
+        $started = [DateTime]::Parse([string]$Record.process_start_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        $acquired = [DateTime]::Parse([string]$Record.acquired_utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        return $started -ge $ContainmentPublishedUtc.ToUniversalTime() -and
+            $acquired -ge $started -and
+            $started -le $ResultsGeneratedUtc.ToUniversalTime() -and
+            $acquired -le $ResultsGeneratedUtc.ToUniversalTime()
+    }
+    catch { return $false }
+}
+
 function ConvertFrom-ExcelOracleOwnershipLedger {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Lines,
@@ -782,7 +874,7 @@ function ConvertFrom-ExcelOracleOwnershipLedger {
     for ($index = 0; $index -lt $Lines.Count; $index++) {
         $line = [string]$Lines[$index]
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try { $record = $line | ConvertFrom-Json }
+        try { $record = $line | ConvertFrom-Json -DateKind String }
         catch {
             $errors.Add("line $($index + 1): malformed JSON")
             continue
@@ -1146,9 +1238,21 @@ function Resolve-ExcelOraclePostCleanupResult {
         }
         catch { $errors.Add("results containment authority timestamps are invalid") }
     }
+    if ($null -ne $authorityPublished -and $null -ne $generatedUtc) {
+        foreach ($ledgerBinding in @(
+                [pscustomobject]@{ name = "excel"; records = @($excelRecords) },
+                [pscustomobject]@{ name = "guardian helper"; records = @($helperRecords) }
+            )) {
+            for ($recordIndex = 0; $recordIndex -lt $ledgerBinding.records.Count; $recordIndex++) {
+                if (-not (Test-ExcelOracleOwnershipRecordCausalBounds -Record $ledgerBinding.records[$recordIndex] -ContainmentPublishedUtc $authorityPublished -ResultsGeneratedUtc $generatedUtc)) {
+                    $errors.Add("$($ledgerBinding.name) ownership record $recordIndex timestamps are outside containment-publication/results-generation bounds or violate start-before-acquire")
+                }
+            }
+        }
+    }
 
     $requiredCaseFields = @(
-        "schema", "id", "purpose", "passed", "owned_excel_pid", "observed_excel_pid", "excel_ownership_recorded",
+        "schema", "id", "purpose", "passed", "owned_excel_pid", "observed_excel_pid", "excel_ownership_recorded", "preownership_failure_phase",
         "selected_case_descriptor_sha256", "module_name", "module_path", "module_sha256", "case_diagnostic_only", "evidence_contract",
         "compile_status", "expected_compile_status", "compile_command", "compile_execution", "compile_context", "post_dismiss_selection_diagnostic_only",
         "compile_dialogs", "compile_window_observations", "run_procedure", "run_status", "expected_run_status", "run_value", "runtime_err",
@@ -1213,6 +1317,21 @@ function Resolve-ExcelOraclePostCleanupResult {
         }
         if ($null -ne $case.observed_excel_pid -and (($case.observed_excel_pid -isnot [long] -and $case.observed_excel_pid -isnot [int]) -or [int]$case.observed_excel_pid -le 0)) {
             $errors.Add("case result $index observed Excel PID is invalid")
+        }
+        $preOwnershipPhaseShapeValid = if ([bool]$case.excel_ownership_recorded) {
+            $null -eq $case.preownership_failure_phase
+        }
+        elseif ($case.preownership_failure_phase -isnot [string]) { $false }
+        else {
+            switch ([string]$case.preownership_failure_phase) {
+                "bootstrap-construction" { $null -eq $case.bootstrap_workbook -and $null -eq $case.observed_excel_pid; break }
+                "excel-attachment" { $bootstrapEvidenceValid -and $null -eq $case.observed_excel_pid; break }
+                "excel-ownership" { $bootstrapEvidenceValid; break }
+                default { $false }
+            }
+        }
+        if (-not $preOwnershipPhaseShapeValid) {
+            $errors.Add("case result $index pre-ownership failure phase contradicts bootstrap/attachment/ownership evidence")
         }
         if ($null -ne $case.transport_error -and ($case.transport_error -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$case.transport_error))) { $errors.Add("case result $index transport type is invalid") }
         if ($null -ne $case.run_value -and $case.run_value -isnot [string]) { $errors.Add("case result $index run_value type is invalid") }
@@ -1566,15 +1685,18 @@ function Resolve-ExcelOraclePostCleanupResult {
     $preOwnershipBootstrapPath = if ($expectedCaseIds.Count -gt 0) {
         [IO.Path]::GetFullPath((Join-Path (Join-Path $expectedOutputFullPath ([string]$expectedCaseIds[0])) "oracle-bootstrap.xlsx"))
     } else { $null }
-    $preOwnershipBootstrapAdmitted = $cases.Count -eq 1 -and $expectedCaseIds.Count -gt 0 -and
-        ($null -eq $cases[0].bootstrap_workbook -or
-         (Test-ExcelOracleBootstrapResultEvidence -Bootstrap $cases[0].bootstrap_workbook -ExpectedPath $preOwnershipBootstrapPath))
+    $preOwnershipBootstrapValid = $cases.Count -eq 1 -and $expectedCaseIds.Count -gt 0 -and
+        (Test-ExcelOracleBootstrapResultEvidence -Bootstrap $cases[0].bootstrap_workbook -ExpectedPath $preOwnershipBootstrapPath)
+    $preOwnershipPhaseAdmitted = $cases.Count -eq 1 -and $cases[0].preownership_failure_phase -is [string] -and
+        (([string]$cases[0].preownership_failure_phase -ceq "bootstrap-construction" -and $null -eq $cases[0].bootstrap_workbook -and $null -eq $cases[0].observed_excel_pid) -or
+         ([string]$cases[0].preownership_failure_phase -ceq "excel-attachment" -and $preOwnershipBootstrapValid -and $null -eq $cases[0].observed_excel_pid) -or
+         ([string]$cases[0].preownership_failure_phase -ceq "excel-ownership" -and $preOwnershipBootstrapValid))
     $preOwnershipEvidenceEmpty = $cases.Count -eq 1 -and
         $null -eq $cases[0].compile_command -and $null -eq $cases[0].compile_execution -and $null -eq $cases[0].compile_context -and
         $null -eq $cases[0].post_dismiss_selection_diagnostic_only -and @($cases[0].compile_dialogs).Count -eq 0 -and
         @($cases[0].compile_window_observations).Count -eq 0 -and $null -eq $cases[0].run_value -and $null -eq $cases[0].runtime_err -and
         $null -eq $cases[0].macro_failure_disposition -and $null -eq $cases[0].runtime_measurement -and @($cases[0].run_dialogs).Count -eq 0 -and
-        $null -eq $cases[0].evidence_status -and $preOwnershipBootstrapAdmitted -and @($cases[0].cleanup_authority_errors).Count -eq 0 -and
+        $null -eq $cases[0].evidence_status -and $preOwnershipPhaseAdmitted -and @($cases[0].cleanup_authority_errors).Count -eq 0 -and
         $supervisorGuardianByCase.Count -eq 0
     $specialTransport = $cases.Count -eq 1 -and $expectedCaseIds.Count -gt 0 -and
         [string]$cases[0].id -ceq [string]$expectedCaseIds[0] -and
