@@ -1,31 +1,35 @@
 # Current Blockers
 
-Date: 2026-07-10
+Date: 2026-07-14
 Status: current; no all-path blocker
 Authority: blockers only; ordinary unfinished capability work belongs in the three current worksets and canonical matrices
 
-## BLK-BASELINE-001 — Repository release gates are not green
+## BLK-BASELINE-001 — Required platform baseline transcripts are pending
 
 Status: open, progress available
 Owner: core workset CORE-1
 
 Impact:
 
-- ordinary `cargo test --workspace` is red in `oxvba-differential`;
-- deterministic snapshot line-ending and VM3 policy-error BSTR-balance failures prevent a green baseline;
-- parallel carrier counters interfere across some tests;
-- strict workspace Clippy is red;
-- stale host/JIT assertions fail on current behavior.
+- the aggregate Rust baseline is green: format, strict all-target Clippy,
+  ordinary workspace tests, parallel/serial differentials, isolated carrier
+  balance, current host/JIT diagnostics and governance pass;
+- this support result does not replace the required Windows x64 development
+  transcript or the pinned Linux x64 CI transcript; and
+- the five CORE-1 canonical rows remain planned until terminal reconciliation.
 
 Unblocking outcome:
 
-- cross-platform EOL policy;
-- isolated/fixture-addressable balance harness;
-- minimized/fixed policy-error leak;
-- current stable-code assertions;
-- strict Clippy and ordinary workspace tests green on required hosts.
+- execute and retain the actual Windows x64 development baseline under
+  `bd-59co.2.2.10`;
+- execute and retain the pinned Linux x64 CI baseline under
+  `bd-59co.2.2.11`; and
+- reconcile both platform results and the five canonical rows under
+  `bd-59co.2.2.12`.
 
-This does not block architecture/compiler/package work that does not depend on a green release baseline, but no release/profile closure can pass while it remains open.
+This does not block architecture/compiler/package work, but no Core release or
+profile closure can pass until the platform transcripts and terminal
+reconciliation are complete.
 
 ## BLK-COM-EVENT-BYREF-001 — Native COM event writeback requires synchronous reentry
 

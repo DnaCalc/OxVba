@@ -77,13 +77,17 @@ The review found a red baseline and weak execution truth. The program has since 
 - the three x64-only worksets, contract clauses, fifteen canonical matrices, 42 execution epics, rollout validators, traceability graph, generated summary, and AutoRun control surface are live;
 - legacy open work was reconciled into bounded current owners, and stale queue selection is validator-blocked;
 - the Core baseline repaired line endings, carrier-balance isolation, BSTR ownership, stale host/JIT assertions, HAL/LongPtr/Variant/VM3 fixture issues, and contextual `Explicit` parsing/provenance;
-- the versioned cross-platform Core gate runner now has Windows Job and Linux pidfd/subreaper containment, with exact input-instance binding still active under `.23`;
+- the versioned cross-platform Core gate runner now has Windows Job and Linux pidfd/subreaper containment plus exact retained input-instance binding;
 - the Windows current-stack ledger characterizes all 57 rows without granting JIT credit for VM3 or historical evidence;
 - the Windows certification manifest has one fail-closed case and six observable axes per row, all still blocked pending real producers, fixtures, and the pinned certification VM;
 - the Windows owned-resource policy now proves exact, resumable, nonrecursive teardown for Registry64, files, harmless processes, and logical COM/UIA resources;
-- the first integrated strict-Clippy pass found and closed behavior-preserving symbol/OxIR and project/binder repairs, then exposed 44 higher-risk rt-abi raw-pointer findings under a dedicated Sol-tier successor.
+- the strict-Clippy sequence closed behavior-preserving symbol/OxIR and project/binder repairs, the rt-abi raw-pointer tranche, and the JIT/VM3 follow-on tranches; the aggregate all-target Clippy and ordinary workspace baseline now passes.
 
-The last point is an important stock-take result: the baseline is healthier, but not yet green. The new graph records the remaining unsafe-boundary work instead of suppressing it or allowing the parent support gate to close.
+The aggregate technical baseline is now green. Cross-platform certification is
+still open because the actual Windows development and pinned Linux CI
+transcripts, followed by terminal reconciliation, remain separate required
+gates. This distinction keeps support evidence from prematurely verifying the
+five CORE-1 capability rows.
 
 ## Reading the three worksets now
 
@@ -103,9 +107,9 @@ The correct first IDE slice remains a real two-module Unicode/CRLF project flowi
 
 ## Immediate execution order
 
-1. Finish exact-instance Core gate input consumption and independently review the Windows/Linux adversarial replacement proofs.
-2. Finish the rt-abi unsafe-boundary audit, then rerun the strict workspace baseline; split any further warnings or failures into exact delivery beads.
-3. Finish and live-prove the owned Excel/VBE supervisor with modal capture and zero-owned-resource cleanup; only then characterize the development/oracle host.
+1. Execute the actual Windows x64 development and pinned Linux x64 baseline transcripts, then reconcile CORE-1 terminal truth.
+2. Close WIN-0 terminal control truth and live-prove the owned Excel/VBE supervisor with modal capture and zero-owned-resource cleanup.
+3. Provision, qualify and seal the clean pinned Windows x64/Excel64 certification VM; the characterized development host remains noncertifying.
 4. Resume the permanent producer spine: source/provenance, compiler facts, sealed verification/OxImage identity, helper catalog/session ownership, and lowering-plan/typed-entry skeleton.
 5. Start the first IDE vertical slice once its Core identity/fact inputs are stable; start Windows metadata/type-layout producers in parallel, while serialized Excel/Registry/JIT/VM3 resources remain controlled.
 
