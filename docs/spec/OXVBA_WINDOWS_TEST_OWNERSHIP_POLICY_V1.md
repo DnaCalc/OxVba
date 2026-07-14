@@ -1,6 +1,6 @@
 # OxVba Windows Test Resource Ownership Policy V1
 
-Date: 2026-07-11
+Date: 2026-07-14
 Status: normative support-safety policy
 Owning bead: `bd-59co.3.1.5`
 Owned/advanced clause: `CONF-MATRIX-001`
@@ -43,9 +43,9 @@ Ownership is not inferred from a friendly name. The minimum ownership tuple is:
 | resource | exact ownership tuple |
 |---|---|
 | run | run ID, owner PID, owner process start UTC, journal path |
-| file | canonical absolute path, before snapshot, expected length/SHA-256, creation disposition, and creation-handle volume/file ID |
+| file | canonical absolute path, before snapshot, expected length/SHA-256, creation disposition, and creation-handle 64-bit volume serial/128-bit file ID |
 | registry value | normalized HKCU Registry64 key path, exact value name, kind/bytes, deepest existing ancestor, and per-key Win32 disposition/marker-token records |
-| process | resource ID, PID, process start UTC and executable path |
+| process | resource ID, PID, process start UTC, executable path, and one retained native cleanup handle |
 | dialog/UIA | process resource ID, PID/start, UIA runtime ID and native handle |
 | apartment | owner process, managed thread, model, initialization owner, pump and reentry policy |
 | callback | apartment, session, thunk, owning thread, retention and stale/wrong-thread rules |
@@ -84,11 +84,15 @@ boundary for journal replacement, file creation/deletion, and child launch.
 An existing junction at a caller root or infrastructure component is a
 fail-closed error. Creating or swapping a junction does not enlarge ownership.
 
-Paths are compared canonically and case-insensitively on Windows. A resource
-file MUST be below the declared repository or temporary root, MUST NOT name a
-controlled root, MUST NOT contain wildcard or traversal selectors, and MUST NOT
-cross a reparse point. A parent directory MUST already exist. The reference
-file mutation is create-only and refuses overwrite.
+Paths are compared canonically and case-insensitively on Windows. Every caller,
+infrastructure, journal, and resource path MUST be drive-qualified on a ready
+local fixed NTFS/ReFS volume. Drive-relative paths (`C:foo`), UNC paths,
+extended/device/global-root namespaces, alternate data streams, reserved
+device components, and trailing-dot/space aliases are rejected before any
+mutation. A resource file MUST be below the declared repository or temporary
+root, MUST NOT name a controlled root, MUST NOT contain wildcard or traversal
+selectors, and MUST NOT cross a reparse point. A parent directory MUST already
+exist. The reference file mutation is create-only and refuses overwrite.
 
 ## 4. Durable journal contract
 
@@ -151,6 +155,14 @@ wrong journal, wrong process/thread, released lease, or abandoned lease pending
 revalidation grants no mutation authority. Same-thread nested acquisition is
 permitted only through the same named mutex and balanced release.
 
+Revalidation MUST bind the lease to the exact returned journal object, its
+canonical content digest, and a digest of immutable run identity and
+allowlists. A separately reread object, caller-mutated bound object, allowlist
+expansion, or concurrently replaced signed history is stale and grants no
+mutation authority. Each durable transition MUST begin with an explicit
+single-use mutation ticket tied to that bound object, prior history digest,
+immutable digest, and lease. Publication without that exact ticket is rejected.
+
 An abandoned mutex is acquired as an explicit recovery condition. For an
 existing journal, the full strict schema, identity, digest, dependency, and
 lifecycle validation MUST succeed before the lease becomes mutation-capable.
@@ -160,9 +172,16 @@ condition. No infrastructure or resource mutation may occur first.
 
 ### 4.3 Atomic durability
 
-Each transition MUST be serialized to an adjacent unique file, flushed with
-write-through semantics, and atomically moved over the journal. Resource and
-event sequences are strictly increasing and gap-free.
+Each transition MUST create an adjacent unique file with write and delete
+rights, retain that exact native handle while writing, require nonzero progress
+from every successful `WriteFile`, flush it with write-through semantics,
+repeat the path/reparse validation, and atomically publish that same opened
+object over the journal with `SetFileInformationByHandle`. A path-selected
+temporary-file delete is forbidden. If publication fails, cleanup MUST mark
+that same opened object for deletion before closing it; a cleanup failure MUST
+be surfaced together with any publication failure and preserve recovery
+prerequisites. Resource and event sequences are strictly increasing and
+gap-free.
 
 Before a resource mutation, the journal MUST contain a `prepared` record with:
 
@@ -201,8 +220,10 @@ descriptor MUST record:
   `marker_name`/`marker_token` pair.
 
 Absence is a creation plan, never proof that this run created a key. Each
-planned key MUST be opened/created one at a time with x64 `RegCreateKeyExW`, and
-the returned Win32 disposition is authoritative:
+planned key MUST be opened/created one at a time with x64 `RegCreateKeyExW`.
+The returned `HKEY` MUST remain open while the prejournaled marker is set and
+`RegFlushKey` succeeds; marker publication MUST NOT reopen the path. The
+returned Win32 disposition is authoritative:
 
 - `REG_CREATED_NEW_KEY` permits writing the prejournaled exact `REG_SZ` marker;
   after the marker is flushed, the durable disposition becomes
@@ -228,8 +249,9 @@ The crash outcomes are deliberately asymmetric:
 - before `RegCreateKeyExW`, a pending record with no key causes no mutation;
 - if another actor creates the key first, the Win32 opened-existing disposition
   preserves that actor's key;
-- a crash after key creation but before its marker leaves an unprovable key,
-  which cleanup preserves and reports as a blocking conflict;
+- a process failure after native creation but before the retained-handle marker
+  flush leaves an unprovable key, which cleanup preserves and reports as a
+  blocking conflict; there is no separate path-reopen replacement interval;
 - a crash after the exact marker but before the descriptor update remains
   provable from the prejournaled token, so cleanup may remove the otherwise
   empty key; and
@@ -243,6 +265,8 @@ evidence, not authentication against a malicious same-user actor that reads
 and reproduces the journal token. External mutation racing the final
 proof-to-delete interval is outside this cooperative test boundary; native
 deletion still fails closed when Windows reports a populated/nonempty key.
+A same-path key deleted and recreated without the exact marker is a replacement,
+not the owned key, and MUST be preserved as a conflict.
 
 HKCU-first means a test MUST use this exact user-scoped route whenever the
 behavior can be tested there. Machine registration required by a downstream
@@ -252,13 +276,14 @@ and clean-environment evidence. It may not borrow this bead's acceptance.
 
 ### 5.2 Files
 
-Files use one canonical absolute path and an absent-to-exact create-only
-transition. The journal records expected length and content SHA-256 before
-`FileMode.CreateNew`. Its prepared descriptor starts with
+Files use one canonical absolute path on a ready local fixed NTFS/ReFS volume
+and an absent-to-exact create-only transition. The journal records expected
+length and content SHA-256 before `FileMode.CreateNew`. Its prepared descriptor starts with
 `creation_disposition=pending` and empty identity fields. After the new file is
-written and flushed, the helper captures the local Windows volume serial and
-file ID from that still-open creation handle and durably records those values
-with `creation_disposition=created-owned` before activation.
+written and flushed, the helper captures `FILE_ID_INFO` from that still-open
+creation handle: the full 64-bit volume serial and 128-bit file ID. It durably
+records those values with `creation_disposition=created-owned` before
+activation.
 
 Cleanup opens the exact path with read and delete rights but without sharing
 write or delete, rejects directories and reparse points, and keeps that handle
@@ -269,6 +294,14 @@ a conflict. If the path is already absent, cleanup is idempotent. A pending
 record with an existing file is also a conflict because a crash between
 `CreateNew` and the durable created-owned identity cannot prove who won the
 path.
+
+This identity is a narrow cooperative guarantee for the still-existing local
+file instance. NTFS/ReFS may reuse an ID after deletion, and SHA-256 plus a
+journal checksum is not authentication against a hostile same-user actor. The
+policy therefore does not claim hostile replacement resistance after deletion;
+it does prove non-vacuously that an ordinary same-path, same-content replacement
+with the deleted original retained open has a different modern identity and is
+preserved.
 
 Recursive deletion, directory-root deletion, wildcard paths, traversal,
 reparse traversal, and overwrite are forbidden.
@@ -293,14 +326,16 @@ If recording PID/start fails, the launcher terminates only the local process
 handle it just created. If the parent crashes before PID assignment, the inert
 unknown child self-expires; recovery MUST NOT discover or kill it by name.
 
-Cleanup may stop a process only when the recorded PID is live with the recorded
-start time and the executable path also matches. Creation time is queried
-first. A missing PID or different creation time is treated as the original
-child already gone and does not permit an executable-path query. Only a live
-exact PID/start match proceeds to executable verification and termination; an
-inaccessible creation time or executable is a conflict. Process-name, command
-line search, service-name, executable-name, job-wide, and all-process cleanup
-are forbidden.
+Cleanup may stop a process only through one native handle opened once with
+query, terminate, and synchronize rights. On that same retained handle it MUST
+query and compare creation time first, query and compare executable path
+second, terminate only the exact match, and wait for termination before close.
+A missing PID or different creation time is treated as the original child
+already gone and does not permit an executable-path query. An inaccessible
+creation time or executable is a conflict. Cleanup is deliberately
+nonrecursive: it MUST NOT enumerate, terminate, or otherwise mutate descendants.
+Process-name, command-line search, service-name, executable-name, job-wide,
+process-tree, and all-process cleanup are forbidden.
 
 ### 5.4 Dialog and UI Automation identity
 
@@ -353,7 +388,9 @@ Cleanup MUST:
 
 1. acquire the per-journal transaction lease and validate the complete journal,
    raw schema, identity, digest, dependencies, lifecycle, and path boundary;
-2. write `cleaning` durably while retaining that lease;
+2. if no cleanup cycle is open, write `cleaning` and one `cleanup-started`
+   event durably while retaining that lease; if state is already `cleaning`,
+   resume that exact open cycle without a second start event;
 3. visit resources in strictly descending acquisition sequence;
 4. compare each real resource with its exact `before` and `expected` snapshot;
 5. apply only its resource-specific exact inverse;
@@ -368,6 +405,12 @@ If current state equals `before`, the inverse is already complete. If it equals
 guess or overwrite: it marks `conflict`, preserves the changed resource, and
 requires manual reconciliation. A later retry may proceed if an owner restores
 the exact expected state.
+
+A crash after an inverse but before its `resource-cleaned` publication MUST
+resume idempotently: the `before` snapshot proves the inverse already complete,
+the same open cleanup cycle records the missing terminal outcome, and no second
+inverse or `cleanup-started` event is produced. Resources already durably
+`cleaned` are skipped.
 
 Calling cleanup again on `completed` MUST return without rewriting the journal.
 This byte-idempotence applies to normal and stale cleanup.
@@ -410,20 +453,28 @@ Conformance evidence MUST show:
   behavior;
 - one unforgeable per-journal lease across complete prepare/mutate/activate and
   cleanup transactions, plus abandoned-mutex revalidation;
-- at least 24 deterministic contending recorded writers with gap-free resource
+- at least 12 deterministic contending recorded writers with gap-free resource
   sequences, unique records/targets, no lost atomic-move temporary, and a
   writer-versus-cleanup race with no unjournaled mutation or residue;
+- exact-object/digest/immutable lease binding, mutation-ticket enforcement,
+  stale reread, allowlist expansion, and concurrent signed-history rejection;
+- handle-bound journal temporary write/publication/cleanup, zero-progress
+  rejection, swap resistance, and surfaced handle-cleanup failure;
 - prepared-before-mutation ordering for file, registry, and child process;
 - child PID/start/executable recorded before activation;
 - exact HKCU value, confined file, and hidden harmless child creation/cleanup;
 - exact Registry64 view/disposition/token records and these registry paths:
   crash before create, external empty key, another actor winning creation,
-  create-before-marker ambiguity, marker-before-descriptor recovery, normal
-  rollback, value rollback before key deletion, pre-existing key, and populated
+  marker-before-descriptor recovery, same-path key replacement, normal rollback,
+  value rollback before key deletion, pre-existing key, and populated
   marker-owned ancestor conflict;
 - repository-root, temporary-root, journal-infrastructure, run-root, confined
   traversal, escape, wildcard, controlled-root, and reparse rejection;
 - blanket process/dialog/registry/file selector rejection;
+- a real unrecorded descendant sentinel that survives exact parent cleanup and
+  exits only through its own bounded lifetime;
+- positive local fixed NTFS/ReFS admission plus drive-relative, ADS, UNC,
+  namespace/device, and reserved-component rejection before mutation;
 - explicit apartment/reentry/callback/connection/dialog identities;
 - connection cleanup before callback and apartment cleanup;
 - strictly descending resource cleanup/conflict sequences and exact root/resource
@@ -431,6 +482,8 @@ Conformance evidence MUST show:
 - conflict refusal that leaves changed owned data untouched;
 - live-owner recovery refusal and dead-owner stale recovery;
 - byte-identical repeated normal and stale cleanup; and
+- exact resumption of an open `cleaning` cycle after a partial inverse without a
+  duplicate cleanup-start event; and
 - exact preservation of neighboring registry, file, process, and logical
   sentinels.
 
