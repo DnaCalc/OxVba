@@ -59,20 +59,23 @@ Implementation/test history:
 - `116b34ea77afb0f08fef487a05422a9973d5b0d3`
   (`fix(win0): harden exact Windows ownership transactions`); and
 - `da345b9375b8e59ae4dfffb9cfed907f4395adb2`
-  (`fix(win0): preserve pending mutation authority`).
+  (`fix(win0): preserve pending mutation authority`); and
+- `a01bad98b2e5f48546d60a35070baf746df58560`
+  (`test(win0): avoid unlocked journal reads under contention`).
 
 Prior normative/evidence repairs are
 `1dbb7a7699dd2280eebcb2fb9db6912df36f5bc9` and
 `6eb844b56ec53c29c189187b8fe68852815569f9`. The current normative successor is
 `ac1d272e4c3843b6a0744308066193b38a1ffad3` and
-`5da284ed7354741444167357ce666d6429af3c47`; this evidence update is
-intentionally separate from implementation and specification commits.
+`5da284ed7354741444167357ce666d6429af3c47`, followed by
+`f198c9509fd549e28d545ee4d06b523ad37ff51a`; this evidence update is
+intentionally separate from implementation/test and specification commits.
 
 | artifact | SHA-256 |
 |---|---|
 | `scripts/lib-windows-owned-resource-policy.ps1` | `bf935e7c0afeeabc26a56796a517300104a9cc875b193592a9eec95090c2b46e` |
-| `scripts/test-windows-owned-resource-policy.ps1` | `ca48dab5bdde2a0a3605c0ef03b0052c1249f56dab98a594b55df9a3251e84fa` |
-| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence update | `05a2b09ebd49bc87d75b5a49999d7d2beada4a79475ed475fd6dbdf6432ce9cf` |
+| `scripts/test-windows-owned-resource-policy.ps1` | `6ef41020ba6409b43d81e6031a7e9bb0d8826ff71a8011f238be6bb6fde9a8c0` |
+| `docs/spec/OXVBA_WINDOWS_TEST_OWNERSHIP_POLICY_V1.md` before this evidence update | `f81ce1c6cb50cfa7c1e2ed60c8f39cb801f0291c65c38ac2e24fea33b80c1b22` |
 
 The journal schema remains
 `oxvba-windows-owned-resource-journal-v1`, version `1`. The root now explicitly
@@ -95,10 +98,12 @@ Final result after the fresh-eyes hardening pass:
 PASS: Windows owned-resource policy (81 assertions; 65 fail-closed mutations; real HKCU/file/child; logical COM/UIA only; exact teardown verified)
 ```
 
-The final run completed in 361.251 seconds on the Windows x64 development host.
-An earlier independent controller run of the predecessor revision passed with
-69 assertions and 53 fail-closed probes. That historical pass is retained as
-independent review evidence, not substituted for the final implementation run.
+The final repaired run completed in 292.876 seconds on the Windows x64
+development host. An earlier run of the handle-bound/pending-ticket revision
+completed in 361.251 seconds with the same 81 assertions and 65 fail-closed
+probes. An independent controller run of an older predecessor revision passed
+with 69 assertions and 53 fail-closed probes. Those historical passes are
+retained as review evidence, not substituted for the final repaired run.
 
 During repair, one synthetic resume fixture used a noncanonical cleanup-start
 detail and was correctly rejected. Two diagnostic stress runs then proved that
@@ -113,6 +118,7 @@ and gives only the test-local post-activation gate its own bounded wait.
 | PowerShell AST parse of both scripts | pass |
 | `git diff --check` | pass |
 | full owned-resource acceptance suite | pass, 81 assertions / 65 rejections |
+| contending-writer observation | pass, pre-gate exact PID/start capture; no unlocked journal polling |
 | completed run's exact temporary root | absent after validated teardown |
 | completed run's exact Registry64 namespace/values | absent after validated teardown |
 | completed run's recorded writer/abandon/loop child processes | zero |
@@ -151,6 +157,15 @@ journaled target files. The suite proves:
 - exactly 12 unique target resources and files exist;
 - every resource sequence is gap-free with no overwritten/lost record; and
 - no adjacent `.write-*` journal temporary remains.
+
+Before releasing the gate, the fixture reads the journal once while every
+writer is still inert and captures each exact PID/start identity from its
+durable active process record. While children can publish, the bounded liveness
+poll uses only those captured identities and performs no journal path reads.
+Only after all exact identities have exited does the fixture read the final
+journal. This mirrors the product rule that journal reads participating in a
+transaction occur under the lease; it does not mask sharing violations with a
+path-read retry.
 
 A 13th recorded child waits on a second gate. The owner retains the same
 whole-transaction lease while opening that gate and invoking cleanup. The
@@ -370,6 +385,26 @@ root's unique neighbor sentinel, empty infrastructure, and matching exact
 Registry64 sentinel. It removed the exact value/key and now-empty paths
 nonrecursively and verified no matching temp root/key remained. This paragraph
 is operational cleanup context, not certification evidence.
+
+An independent integration attempt later exposed the former contention-fixture
+bug: its naked journal read raced 12 handle-bound writers and received a sharing
+violation. The run reported that exact root
+`ac6c3fc4916440629dc524c66adacae7` was preserved, but the full temp path was
+already absent when this branch subsequently audited it. No controller cleanup
+had occurred and no explanation is inferred. The matching Registry64 key and
+live command-line references were also absent. This is non-certifying
+operational context; the sharing violation itself motivated the pre-gate
+identity-capture repair above.
+
+A serialization message briefly overlapped a later validation attempt before
+the lane reservation arrived. The run used test ID
+`f8c98980330446fcb63a738403cd4d90`, started no Excel/COM/UIA work, and was
+terminated immediately. Exact audit found 23 strictly valid completed journals,
+zero live recorded PID/start identities, zero nonempty run roots, zero live
+command-line references, and only the exact file/Registry64 neighbor sentinels.
+Those sentinels, journal files, empty infrastructure, and root were removed
+bottom-up and nonrecursively; exact post-check found both root and Registry64
+key absent. This scheduling incident is operational context, not test evidence.
 
 ## Inherited governance gate
 
