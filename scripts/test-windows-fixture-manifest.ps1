@@ -595,15 +595,8 @@ try {
     if ($devEnvironments.Count -ne 1) {
         throw "Windows fixture manifest test expected one development oracle environment"
     }
-    $devEnvironments[0].snapshot_or_image = "dev-oracle-2026-07@sha256:" + ("a" * 64)
-    $environmentRows | Export-Csv -LiteralPath $environmentPath -NoTypeInformation -Encoding UTF8 -UseQuotes Always
-    $environmentRow = Get-ManifestRow -FixtureRoot $environmentFixture -RowId "WAC-BSTR-LAYOUT"
-    $capturePath = "$([string]$environmentRow.environment_capture_root)/$([string]$environmentRow.environment_capture_name)"
-    $capture = New-TestEnvironmentCapture -Environment $devEnvironments[0]
-    [void](Write-TestJson -FixtureRoot $environmentFixture -RelativePath $capturePath -Value $capture)
-    Set-ManifestEnvironmentCurrent -FixtureRoot $environmentFixture -RowId "WAC-BSTR-LAYOUT" -CapturePath $capturePath
     & $validator -RepositoryRoot $environmentFixture
-    Write-Host "windows-fixture-manifest-positive: ok (current-versioned-environment-capture-bound-to-canonical-row)"
+    Write-Host "windows-fixture-manifest-positive: ok (shared-current-versioned-environment-capture-bound-to-12-canonical-rows)"
 
     Invoke-ExpectedFailure -Name "missing-row" -MessagePattern "expected exactly 57 rows, found 56" -Mutation {
         param($fixture)
