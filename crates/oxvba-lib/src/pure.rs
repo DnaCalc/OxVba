@@ -1672,10 +1672,19 @@ pub fn oct(args: &[Variant]) -> LibResult<Variant> {
 pub fn cstr(args: &[Variant]) -> LibResult<Variant> {
     Ok(vstr(as_str(need(args, 0)?)?))
 }
-/// `Str(n)` — leading space for non-negative numbers.
+/// `Str(n)` — leading space for non-negative numbers, and the VB `Str$` quirk
+/// of dropping the leading zero of a magnitude below 1 (`Str(0.5)` = " .5",
+/// `Str(-0.5)` = "-.5"; a plain "0" is unchanged). `CStr` keeps the leading zero.
 pub fn str_fn(args: &[Variant]) -> LibResult<Variant> {
     let n = as_f64(need(args, 0)?)?;
     let body = as_str(need(args, 0)?)?;
+    let body = if let Some(rest) = body.strip_prefix("0.") {
+        format!(".{rest}")
+    } else if let Some(rest) = body.strip_prefix("-0.") {
+        format!("-.{rest}")
+    } else {
+        body
+    };
     Ok(vstr(if n >= 0.0 { format!(" {body}") } else { body }))
 }
 /// FIDELITY: parses a leading numeric prefix.
