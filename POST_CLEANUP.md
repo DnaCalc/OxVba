@@ -1,5 +1,13 @@
 # Post-cleanup backlog
 
+> **Superseded / historical (2026-07-15).** This document dates from the
+> legacy-stack removal, when `oxvba-vm2` was the runtime. **vm2 has since been
+> deleted**: the current stack is `source → oxvba-syntax → oxvba-symbol →
+> oxvba-bind → oxvba-oxir (typed OxIR) → oxvba-vm3 (interpreter) / oxvba-jit
+> (Cranelift)`. Any pipeline or debugger target below that names `oxvba-vm2`
+> should read `oxvba-vm3`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for
+> the current realization; individual items here may also be stale.
+
 Tracking deferred work and decisions after the cross-project epic + the start of the
 legacy-stack removal. Source of truth for "things we chose to defer, on purpose."
 

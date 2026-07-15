@@ -4,7 +4,7 @@
 //! vartype for a declared element type, (b) seed a freshly-`ReDim`-ed element with its typed
 //! default, (c) build a [`SafeArray`] with the right element storage, and (d) project a UDT
 //! field list into a native [`VbaRecordLayout`]. These are pure functions of
-//! [`ArrayElementType`] (no VM state), so vm2, vm3, and the Cranelift backend share one
+//! [`ArrayElementType`] (no VM state), so vm3 and the Cranelift backend share one
 //! definition rather than mirroring it.
 
 use std::sync::Arc;

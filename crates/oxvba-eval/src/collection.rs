@@ -1,7 +1,7 @@
 //! Built-in `VBA.Collection`.
 //!
 //! The data model lives in `oxvba-runtime` (carried on the object box's `native_state`
-//! slot) so vm2, vm3, and the JIT share ONE implementation; this module re-exports it so
+//! slot) so vm3 and the JIT share ONE implementation; this module re-exports it so
 //! the long-standing `oxvba_eval::collection::*` import path keeps resolving. The keyed
 //! method *dispatch* shim ([`dispatch_collection`]) lives here in `oxvba-eval`, beside the
 //! rest of the shared value/builtin kernel — it is the single place that turns a member +
@@ -29,7 +29,7 @@ pub enum CollectionMethod {
 /// box-owned [`CollectionData`], reached via `ObjectRef::with_native_collection`) with the
 /// positional method `args` (omitted optionals arrive as the `MISSING_ARG` sentinel). Returns
 /// the method result, or a [`CollectionError`] the caller maps to a VBA run-time error number
-/// (9 / 457 / 5 / 449). This is the single implementation vm2, vm3, and the JIT all call.
+/// (9 / 457 / 5 / 449). This is the single implementation vm3 and the JIT both call.
 pub fn dispatch_collection(
     method: CollectionMethod,
     data: &mut CollectionData,

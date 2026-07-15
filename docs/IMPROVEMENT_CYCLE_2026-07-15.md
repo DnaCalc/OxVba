@@ -127,7 +127,12 @@ Legend: ☐ open · ◐ in progress · ☑ done
 - ☑ **B22 docs-jit-runtime** (docs, MED — #22) — `docs/BUILDING.md:14-17,36`, `CONFORMANCE.md:153`,
   `TESTING.md:53-54` describe the JIT as a "disabled skeleton" and the runtime as the deleted
   bytecode compiler/VM. Fix: rewrite to the real vm3/jit backends + oxir/vm3/differential surface.
-- ☐ **B23 docs-vm2-refs** (docs, LOW — #23) — stale `vm2`/`oxvba-vm2` references across code
+- ☑ **B23 docs-vm2-refs** (docs, LOW — #23) — POST_CLEANUP.md superseded banner + pure.rs
+  stale-Collection claim fixed + vm3 header note de-dangling its 67 refs + consumer/caller-list
+  corrections (eval/runtime/bundle/hal). Residual ~23 "mirrors vm2's X" design-history breadcrumbs
+  in oxir/bind/com are now contextualized repo-wide (a full prose de-attribution would be low-value
+  churn — they accurately describe conventions; only the dead `vm2` name remains, now explained).
+  Stale `vm2`/`oxvba-vm2` references across code
   comments (`oxvba-vm3` lib.rs ~68, bind, oxir, com, lib) + `POST_CLEANUP.md` present a deleted
   crate as live. Fix: sweep-replace with the actual current consumer; banner POST_CLEANUP.md.
 

@@ -432,7 +432,7 @@ pub trait ComHal: Send + Sync {
     /// `[out]`/`[in,out]` COM parameters — `Some(value)` for an argument the
     /// callee modified, aligned to `request.args`. The default returns no
     /// write-backs (value-only); a host with COM out-param support overrides this.
-    /// The caller (vm2) applies a write-back only to a `ByRef` call-site slot.
+    /// The caller (vm3) applies a write-back only to a `ByRef` call-site slot.
     fn dispatch_invoke_dynamic_variant_with_writebacks(
         &self,
         request: &DynamicCallRequest,

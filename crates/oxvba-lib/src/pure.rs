@@ -1,9 +1,9 @@
 //! Pure (host-free) base-library bodies: strings, math, date/time arithmetic,
 //! conversion, random, financial, information, and a first-cut Collection.
 //!
-//! The `Format` engine lives in [`crate::format`]. The remaining `FIDELITY:`
-//! markers are features absent from the legacy VM too: keyed `Collection`
-//! access (awaits the vm2 object model) and `StrConv`'s CJK/encoding modes.
+//! The `Format` engine lives in [`crate::format`]. Keyed `Collection` access is
+//! implemented (see `oxvba-runtime`/`oxvba-eval` `collection`); the remaining
+//! `FIDELITY:` marker is `StrConv`'s CJK/encoding modes.
 
 use crate::{
     LibContext, LibError, LibResult, alloc_count, as_f64, as_i32, as_i64, as_str, as_usize, need,

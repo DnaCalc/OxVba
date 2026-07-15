@@ -6,6 +6,12 @@
 //! runtime/evaluation/library/host substrates. The retired Op/Bundle VM2 path is
 //! not an execution fallback.
 //!
+//! Historical note: `vm2` (the `oxvba-vm2` crate) was the predecessor Op/Bundle
+//! interpreter and has been **deleted**. Comments below that say "mirrors vm2's
+//! X", "matching vm2", or reference a `vm2` op/method name describe the frame,
+//! call, lifecycle and error conventions vm3 inherited from that design — the
+//! behavior they document is vm3's own; there is no live `vm2` to consult.
+//!
 //! VM3 is broad but remains in progress for the complete verified OxIR and
 //! Windows interop profiles. Its golden snapshot is regression evidence; public
 //! VBA specifications and reproducible Excel/VBA behavior remain semantic

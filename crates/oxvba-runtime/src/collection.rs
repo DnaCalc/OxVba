@@ -1,6 +1,6 @@
 //! Built-in `VBA.Collection` instance state.
 //!
-//! The data model lives here in `oxvba-runtime` so every consumer — vm2, vm3, and the
+//! The data model lives here in `oxvba-runtime` so every consumer — vm3 and the
 //! future JIT — shares ONE implementation. Each `New Collection` instance's ordered,
 //! optionally string-keyed contents ride the refcounted object box itself (the
 //! `native_state` slot on `CompatObjectBase`, reached via
