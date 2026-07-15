@@ -134,20 +134,33 @@ fn run_project(args: Vec<String>) {
     });
 
     // The clean path runs a `.basproj`/`.vbp` and its reference graph as a closure.
-    let Some(project_file) = resolve_project_file(parsed.input_path.as_ref()) else {
-        let location = parsed
-            .input_path
-            .as_deref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| ".".to_string());
-        let diagnostic = OxDiagnostic::error(
-            "PROJ-E-PROJECT-FILE-NOT-FOUND",
-            OxDiagnosticPhase::ProjectLoad,
-            format!("no .basproj or .vbp project file found at {location}"),
-        )
-        .with_help("Pass an explicit .basproj or .vbp path, or run from a directory containing exactly one project file.");
-        emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
-        std::process::exit(1);
+    let project_file = match resolve_project_file(parsed.input_path.as_ref()) {
+        Ok(project_file) => project_file,
+        Err(err) => {
+            let location = parsed
+                .input_path
+                .as_deref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| ".".to_string());
+            let diagnostic = match err {
+                ResolveProjectError::Ambiguous(err) => OxDiagnostic::error(
+                    "PROJ-E-PROJECT-FILE-AMBIGUOUS",
+                    OxDiagnosticPhase::ProjectLoad,
+                    format!("{err}"),
+                )
+                .with_help(
+                    "Pass an explicit .basproj or .vbp path to select which project to run.",
+                ),
+                ResolveProjectError::NotFound => OxDiagnostic::error(
+                    "PROJ-E-PROJECT-FILE-NOT-FOUND",
+                    OxDiagnosticPhase::ProjectLoad,
+                    format!("no .basproj or .vbp project file found at {location}"),
+                )
+                .with_help("Pass an explicit .basproj or .vbp path, or run from a directory containing exactly one project file."),
+            };
+            emit_diagnostic("oxvba run-project", &diagnostic, parsed.diagnostic_format);
+            std::process::exit(1);
+        }
     };
 
     // The single-project view supplies the runner-bootstrap fallbacks (default
@@ -251,25 +264,36 @@ fn run_build(args: Vec<String>) {
     }
 }
 
+/// Why a run-project input could not be resolved to a single project file.
+enum ResolveProjectError {
+    /// No `.basproj`/`.vbp` at the path (or a non-project file argument).
+    NotFound,
+    /// A directory contains more than one candidate project file — reporting
+    /// this as "not found" (the old behavior) hid the real cause.
+    Ambiguous(oxvba_project::BasProjError),
+}
+
 /// Resolve a run-project input to a concrete `.basproj`/`.vbp` file. A directory
-/// is searched for a unique project file; a directory with no project file (or a
-/// non-project file argument) returns `None`.
-fn resolve_project_file(input: Option<&PathBuf>) -> Option<PathBuf> {
+/// is searched for a unique project file; a directory with several candidates is
+/// [`ResolveProjectError::Ambiguous`], and one with none (or a non-project file
+/// argument) is [`ResolveProjectError::NotFound`].
+fn resolve_project_file(input: Option<&PathBuf>) -> Result<PathBuf, ResolveProjectError> {
     let input = input.cloned().unwrap_or_else(|| PathBuf::from("."));
     if input.is_dir() {
-        if let Ok(Some(p)) = oxvba_project::discover_project_file_in_dir(&input, "basproj") {
-            return Some(p);
+        for ext in ["basproj", "vbp"] {
+            match oxvba_project::discover_project_file_in_dir(&input, ext) {
+                Ok(Some(p)) => return Ok(p),
+                Ok(None) => {}
+                Err(err) => return Err(ResolveProjectError::Ambiguous(err)),
+            }
         }
-        if let Ok(Some(p)) = oxvba_project::discover_project_file_in_dir(&input, "vbp") {
-            return Some(p);
-        }
-        return None;
+        return Err(ResolveProjectError::NotFound);
     }
     match input.extension().and_then(|e| e.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("basproj") || ext.eq_ignore_ascii_case("vbp") => {
-            Some(input)
+            Ok(input)
         }
-        _ => None,
+        _ => Err(ResolveProjectError::NotFound),
     }
 }
 
@@ -721,6 +745,53 @@ fn parse_wasm_runtime_class(value: &str) -> Option<WasmRuntimeClass> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unique_temp_dir(tag: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "oxvba_cli_test_{}_{n}_{tag}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn resolve_project_file_reports_ambiguous_dir() {
+        // Two candidate project files must be reported as ambiguous, not as
+        // "no project file found" (the old behavior swallowed the Err).
+        let dir = unique_temp_dir("ambig");
+        std::fs::write(dir.join("a.basproj"), "").unwrap();
+        std::fs::write(dir.join("b.basproj"), "").unwrap();
+        assert!(
+            matches!(
+                resolve_project_file(Some(&dir)),
+                Err(ResolveProjectError::Ambiguous(_))
+            ),
+            "two .basproj files must be Ambiguous"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_project_file_single_and_missing() {
+        let dir = unique_temp_dir("single");
+        std::fs::write(dir.join("only.basproj"), "").unwrap();
+        assert!(
+            matches!(resolve_project_file(Some(&dir)), Ok(p) if p.ends_with("only.basproj")),
+            "a single project file resolves"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+
+        let empty = unique_temp_dir("empty");
+        assert!(matches!(
+            resolve_project_file(Some(&empty)),
+            Err(ResolveProjectError::NotFound)
+        ));
+        std::fs::remove_dir_all(&empty).ok();
+    }
 
     #[test]
     fn parse_run_args_with_flags() {

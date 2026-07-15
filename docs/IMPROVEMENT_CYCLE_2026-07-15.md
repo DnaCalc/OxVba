@@ -144,7 +144,10 @@ Legend: ☐ open · ◐ in progress · ☑ done
 - ☐ **B24 descriptor-dedup** (code-shape, MED — #24) — `oxvba-vm3/src/lib.rs:83-330,531-621` vs
   `oxvba-rt-abi/src/lib.rs:237-614` duplicate ~15 runtime_* descriptor builders (already drifted)
   on the exact vm3-vs-JIT seam. Fix: promote rt-abi's cluster to `pub`, vm3 calls it, reconcile.
-- ☐ **B25 cli-project-diag** (host-cli, LOW — #27) — `oxvba-cli/src/main.rs:257/260/406`,
+- ◐ **B25 cli-project-diag** (host-cli, LOW — #27) — DONE: ambiguous-project-dir now reports a
+  distinct "ambiguous" diagnostic (was swallowed as "not found"), with tests. Residual (lower
+  value, separate features): missing-file usage-banner→I/O diagnostic, convention-dir support via
+  the canonical loader, recursive `<Import>`. `oxvba-cli/src/main.rs:257/260/406`,
   `oxvba-project/src/{load.rs:912,parse.rs:20/78}`: ambiguous dir reported as "no project file";
   missing file → usage banner+exit 2; convention dirs unsupported (dead canonical loader); single-
   level `<Import>`. Fix: propagate ambiguity Err; separate path-parse from load; recursive imports.
