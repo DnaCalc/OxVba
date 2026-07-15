@@ -1794,6 +1794,7 @@ impl<'a> LowerFunc<'a> {
                         ArithOp::Mul => builder.ins().fmul(lhs, rhs),
                         _ => unreachable!("checked Single op above"),
                     };
+                    self.emit_overflow_if_not_finite(builder, module, value, true)?;
                     self.emit_store_f32(builder, module, *dst, value)
                 }
                 OxTy::Double => {
@@ -1834,6 +1835,10 @@ impl<'a> LowerFunc<'a> {
                         ArithOp::Mul => builder.ins().fmul(lhs, rhs),
                         _ => unreachable!("checked Double op above"),
                     };
+                    // NB: unlike Single, vm3 does NOT raise Overflow on a
+                    // non-finite Double result (it yields ±Inf), so the JIT must
+                    // match that for parity — no finite check here. (vm3's Double
+                    // overflow conformance vs VBA is tracked separately.)
                     self.emit_store_f64(builder, module, *dst, value)
                 }
                 ty => Err(JitError::unsupported(format!(
@@ -4605,6 +4610,65 @@ impl<'a> LowerFunc<'a> {
             .ins()
             .call(callee, &[self.state, self.run, lhs, rhs, area, index]);
         let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    /// Seat Overflow (error 6) when a checked Single/Double arithmetic result is
+    /// not finite. The f32/f64 fast paths compute with raw `fadd`/`fsub`/`fmul`,
+    /// so an overflow produced ±Inf silently; vm3 raises error 6 (its Single/Double
+    /// coercion rejects a non-finite result). This restores parity: a finite
+    /// result flows through; a non-finite one seats error 6 and routes to the
+    /// active On Error handler (or returns the fault) via `return_if_not_ok`.
+    fn emit_overflow_if_not_finite(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        value: Value,
+        is_single: bool,
+    ) -> Result<(), JitError> {
+        let abs = builder.ins().fabs(value);
+        // An ordered `|x| <= MAX` is false for both Inf and NaN, so it is exactly
+        // the finiteness test.
+        let max = if is_single {
+            builder.ins().f32const(f32::MAX)
+        } else {
+            builder.ins().f64const(f64::MAX)
+        };
+        let is_finite = builder
+            .ins()
+            .fcmp(ir::condcodes::FloatCC::LessThanOrEqual, abs, max);
+
+        let seat_block = builder.create_block();
+        let merge_block = builder.create_block();
+        builder.append_block_param(merge_block, types::I32);
+        let ok_status = builder.ins().iconst(types::I32, i64::from(ST_OK));
+        builder
+            .ins()
+            .brif(is_finite, merge_block, &[ok_status.into()], seat_block, &[]);
+
+        builder.switch_to_block(seat_block);
+        builder.seal_block(seat_block);
+        let callee = self.import(builder, module, self.imports.raise_error_number);
+        let number = builder.ins().iconst(types::I32, 6);
+        let inherit = builder.ins().iconst(types::I32, 0);
+        let source_ptr_val = i64::try_from(self.program.unit_name.as_ptr() as usize)
+            .map_err(|_| JitError::unsupported("unit name pointer exceeds i64"))?;
+        let source_len_val = i32::try_from(self.program.unit_name.len())
+            .map_err(|_| JitError::unsupported("unit name length exceeds i32"))?;
+        let ptr_ty = module.target_config().pointer_type();
+        let source_ptr = builder.ins().iconst(ptr_ty, source_ptr_val);
+        let source_len = builder.ins().iconst(types::I32, i64::from(source_len_val));
+        let call = builder.ins().call(
+            callee,
+            &[self.state, number, inherit, source_ptr, source_len],
+        );
+        let fault_status = builder.inst_results(call)[0];
+        builder.ins().jump(merge_block, &[fault_status.into()]);
+
+        builder.switch_to_block(merge_block);
+        builder.seal_block(merge_block);
+        let status = builder.block_params(merge_block)[0];
         self.return_if_not_ok(builder, status);
         Ok(())
     }

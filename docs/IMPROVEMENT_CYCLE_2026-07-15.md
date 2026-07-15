@@ -102,10 +102,16 @@ Legend: ☐ open · ◐ in progress · ☑ done
 - ☑ **B17 collection-index-subtypes** (eval, LOW, S — #19) — `crates/oxvba-eval/src/collection.rs:70`
   `variant_selector` tries only i16/i32/i64/f64 then `unwrap_or(0)` → `c.Item(CByte(1))` maps to
   index 0. Fix: extend to u8/i8/u16/u32/u64/f32 (or shared coercion) before defaulting.
-- ☐ **B18 jit-single-overflow** (jit, MED, M — #11) — `crates/oxvba-jit/src/lib.rs:1791` two-Single
+- ☑ **B18 jit-single-overflow** (jit, MED, M — #11) — `crates/oxvba-jit/src/lib.rs:1791` two-Single
+  (finite-check → error 6 via new `emit_overflow_if_not_finite`. Review caught: vm3 does NOT raise
+  on **Double** overflow (yields Inf), so the JIT must match — extending to Double was reverted;
+  the vm3 Double gap is tracked as **B30**.)
   fast path emits raw fadd/fsub/fmul, stores f32 with no finite check → `2E38+2E38`→+Inf silently;
   vm3 raises err 6. Fix: route checked Single through coerce_numeric(Single) / finite check; diff test.
-- ☐ **B19 format-scientific** (runtime, MED, M — #12) — `crates/oxvba-runtime/src/coerce.rs:378`
+- ⊘ **B19 format-scientific** (runtime, MED, M — #12) — **DEFERRED (blocked, needs oracle).**
+  `format_vba_f64` never emits scientific notation, but the exact large/small thresholds and
+  E-format need live-VBA pinning I can't do here; implementing unverified thresholds risks
+  regressing currently-accidentally-correct values. `crates/oxvba-runtime/src/coerce.rs:378`
   `format_vba_f64` never emits exponent form → `CStr(1E20)`→"1000…0" (VBA "1E+20"). Fix: emit E+/E-
   for |x|≥~1E16 and small nonzero <~1E-4 with ~15-sig-digit cap; pin thresholds against live VBA.
 - ☐ **B20 com-variant-subtype** (com, LOW, M — #20) — `crates/oxvba-com/src/windows_variant.rs:2036/2021`
