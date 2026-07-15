@@ -57,8 +57,11 @@ Legend: ☐ open · ◐ in progress · ☑ done
   scientific notation shares the B19 gap)
   Single arm does `format_vba_f64(f64::from(as_f32()))` → `CStr(CSng(0.1))`→"0.10000000149011612".
   Correct sibling `print_display_text:429` uses `as_f32().to_string()`. Fix: format from f32 directly.
-- ☐ **B8 null-propagation** (lib, MED, S — #16) — `crates/oxvba-lib/src/pure.rs:925` (Sgn) & ~1064
-  (Round) raise err 94 on Null; siblings Abs/Int/Fix return `Variant::null()`. Fix: propagate Null.
+- ✗ **B8 null-propagation** (lib, MED, S — #16) — **REFUTED, no change.** Survey #16 over-generalized
+  from Abs/Int/Fix. `Sgn(Null)`=94 is *verified against live Office VBA 7.1* (existing
+  `abs_int_fix_sgn_vm3` test), and `Round`/`Sgn` coerce their argument to a numeric type
+  (Null→94), unlike the Variant-preserving Abs/Int/Fix (Null→Null). Added a documenting
+  regression guard (`round_sgn_null_vm3`) so the false positive isn't re-applied.
 - ☐ **B9 str-leading-zero** (lib, MED, S — #17) — `crates/oxvba-lib/src/pure.rs:1666` `Str(0.5)`→
   " 0.5" (VBA " .5"). Fix: strip a leading "0" before "." in the Str-specific path only (CStr unchanged).
 - ☐ **B10 comhost-errnumber** (comhost, HIGH, M — #9) — `crates/oxvba-comhost/src/lib.rs:4017` &
