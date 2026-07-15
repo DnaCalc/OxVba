@@ -302,18 +302,81 @@ fn is_rem_comment_start(bytes: &[u8], i: usize) -> bool {
     j == 0 || matches!(bytes[j - 1], b'\r' | b'\n' | b':')
 }
 
-/// Heuristic: does `#` at position `i` look like the start of a date literal?
-/// True if there's at least one digit or `/` before the closing `#`.
+/// Heuristic: does `#` at position `i` open a date literal (as opposed to a
+/// file-number sigil that merely has another `#` later on the line)?
+///
+/// A real date/time literal (`#1/1/2000#`, `#12:30:00 PM#`, `#Jan 1, 2000#`) is
+/// built only from date components — digits, the separators `/ : - . ,`, spaces,
+/// and month / AM-PM words — and contains at least one genuine separator. The
+/// naive "any digit before the next `#`" rule mis-paired the two file-number
+/// sigils in `Close #1: Close #2`, `Print #1, #12/31/2020#`, and `Print #1,
+/// amount#`, lexing the span between them as one bogus `DateLiteral` and
+/// corrupting the statements. Requiring the interior to be all date components
+/// (any other identifier, like `Close`/`amount`, disqualifies it) plus a real
+/// separator keeps genuine literals while rejecting file-number pairs.
 fn looks_like_date(bytes: &[u8], i: usize) -> bool {
     let mut j = i + 1;
-    let mut has_date_char = false;
+    let start = j;
     while j < bytes.len() && bytes[j] != b'#' && bytes[j] != b'\n' && bytes[j] != b'\r' {
-        if bytes[j].is_ascii_digit() || bytes[j] == b'/' || bytes[j] == b'-' {
-            has_date_char = true;
-        }
         j += 1;
     }
-    has_date_char && j < bytes.len() && bytes[j] == b'#'
+    if j >= bytes.len() || bytes[j] != b'#' {
+        return false; // no closing '#' on this physical line
+    }
+    let interior = &bytes[start..j];
+    let mut has_digit = false;
+    let mut has_separator = false; // '/', ':', '-', or a month/AM-PM word
+    let mut k = 0;
+    while k < interior.len() {
+        let b = interior[k];
+        if b.is_ascii_digit() {
+            has_digit = true;
+            k += 1;
+        } else if matches!(b, b'/' | b':' | b'-') {
+            has_separator = true;
+            k += 1;
+        } else if matches!(b, b'.' | b' ' | b'\t' | b',') {
+            k += 1;
+        } else if b.is_ascii_alphabetic() {
+            let word_start = k;
+            while k < interior.len() && interior[k].is_ascii_alphabetic() {
+                k += 1;
+            }
+            if is_date_word(&interior[word_start..k]) {
+                has_separator = true;
+            } else {
+                return false; // an identifier (`Close`, `amount`) — not a date
+            }
+        } else {
+            return false; // an operator/paren/etc. — not a date
+        }
+    }
+    has_digit && has_separator
+}
+
+/// A month name (or a prefix of one, so `Jan`/`January` both match) or `AM`/`PM`
+/// — the only alphabetic runs a VBA date/time literal may contain.
+fn is_date_word(word: &[u8]) -> bool {
+    let lower: Vec<u8> = word.iter().map(u8::to_ascii_lowercase).collect();
+    let w = lower.as_slice();
+    if w == b"am" || w == b"pm" {
+        return true;
+    }
+    const MONTHS: [&[u8]; 12] = [
+        b"january",
+        b"february",
+        b"march",
+        b"april",
+        b"may",
+        b"june",
+        b"july",
+        b"august",
+        b"september",
+        b"october",
+        b"november",
+        b"december",
+    ];
+    !w.is_empty() && MONTHS.iter().any(|m| m.starts_with(w))
 }
 
 fn is_type_suffix(b: u8) -> bool {
@@ -517,6 +580,60 @@ mod tests {
         let src = "\"unterminated\n#1/1/2000\n";
         let reconstructed: String = tokenize(src).iter().map(|(_, text)| *text).collect();
         assert_eq!(reconstructed, src);
+    }
+
+    #[test]
+    fn date_literal_recognizes_real_dates() {
+        assert_eq!(tokenize("#1/1/2000#")[0].0, SyntaxKind::DateLiteral);
+        assert_eq!(tokenize("#12/31/2020#")[0].0, SyntaxKind::DateLiteral);
+        assert_eq!(tokenize("#12:30:00 PM#")[0].0, SyntaxKind::DateLiteral);
+        assert_eq!(tokenize("#Jan 1, 2000#")[0].0, SyntaxKind::DateLiteral);
+        assert_eq!(tokenize("#January 1, 2000 3:30:00 PM#")[0].0, SyntaxKind::DateLiteral);
+        assert_eq!(tokenize("#2020-05-01#")[0].0, SyntaxKind::DateLiteral);
+    }
+
+    #[test]
+    fn hash_file_numbers_are_not_mislexed_as_dates() {
+        // `Close #1: Close #2` — the two file-number sigils must stay Hash+IntLiteral,
+        // not be paired into `#1: Close #` as one DateLiteral.
+        let toks = tokenize("Close #1: Close #2");
+        assert!(
+            !toks.iter().any(|(k, _)| *k == SyntaxKind::DateLiteral),
+            "file numbers must not lex as a DateLiteral: {toks:?}"
+        );
+        assert_eq!(toks[2], (SyntaxKind::Hash, "#"));
+        assert_eq!(toks[3], (SyntaxKind::IntLiteral, "1"));
+
+        // `Print #1, amount#` — the trailing `#` is a type suffix on `amount`,
+        // and `#1` is a file number; neither pairs into a DateLiteral.
+        let toks = tokenize("Print #1, amount#");
+        assert!(
+            !toks.iter().any(|(k, _)| *k == SyntaxKind::DateLiteral),
+            "file number + type suffix must not lex as a DateLiteral: {toks:?}"
+        );
+
+        // `Print #1, #12/31/2020#` — the real date literal is still recognized,
+        // and `#1` is not paired with the date's opening `#`.
+        let toks = tokenize("Print #1, #12/31/2020#");
+        assert_eq!(
+            toks.iter()
+                .filter(|(k, _)| *k == SyntaxKind::DateLiteral)
+                .count(),
+            1,
+            "exactly one DateLiteral expected: {toks:?}"
+        );
+        assert!(
+            toks.iter()
+                .any(|(k, t)| *k == SyntaxKind::DateLiteral && *t == "#12/31/2020#")
+        );
+    }
+
+    #[test]
+    fn bare_number_between_hashes_is_not_a_date() {
+        // `#1, #` (no separator) must not be a DateLiteral.
+        assert_ne!(tokenize("#1, #")[0].0, SyntaxKind::DateLiteral);
+        // A lone number `#5#` is not a date either (no separator).
+        assert_ne!(tokenize("#5#")[0].0, SyntaxKind::DateLiteral);
     }
 
     #[test]

@@ -70,7 +70,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
 - ☐ **B11 format-string-operand** (lib, HIGH, M — #5) — `crates/oxvba-lib/src/format.rs:75/82-84`
   `num()`/`serial_of` coerce via Double (no String→numeric arm) → `Format("123.5","0.00")`→"0.00".
   Fix: parse String operands with `parse_vba_numeric_string`/date parser before defaulting to 0.
-- ☐ **B12 lexer-datelit-overscan** (syntax, HIGH, M — #3) — `crates/oxvba-syntax/src/lexer.rs:263`
+- ☑ **B12 lexer-datelit-overscan** (syntax, HIGH, M — #3) — `crates/oxvba-syntax/src/lexer.rs:263`
   `looks_like_date` treats any `#` with a later `#` on the line as a date → `Close #1: Close #2`,
   `Print #1, amount#` mis-lex a span as one DateLiteral. Fix: constrain interior (bail on `,` /
   non-date alpha); add a token-kind regression test.
