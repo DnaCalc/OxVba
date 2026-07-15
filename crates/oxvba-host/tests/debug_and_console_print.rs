@@ -87,6 +87,28 @@ fn debug_print_joins_multiple_args_with_tab() {
 }
 
 #[test]
+fn debug_print_semicolon_items_are_not_dropped() {
+    // Regression: `;` used to end the bare arg list, so `Debug.Print "x="; x`
+    // silently dropped `x` and printed only "x=". Both items must now render.
+    // (The `;` no-space vs `,` tab-zone distinction is still deferred — see
+    // POST_CLEANUP.md — so we assert item presence, not exact spacing.)
+    let callbacks = Arc::new(ConsoleCallbacks::default());
+    run(
+        "Sub Main()\nDim x As Long\nx = 5\nDebug.Print \"x=\"; x\nEnd Sub",
+        false,
+        callbacks.clone(),
+    )
+    .expect("semicolon Debug.Print should execute");
+    let out = callbacks.debug_output();
+    assert_eq!(out.len(), 1, "one Debug.Print line: {out:?}");
+    assert!(out[0].contains("x="), "first item present: {out:?}");
+    assert!(
+        out[0].contains('5'),
+        "the item after ';' must not be dropped: {out:?}"
+    );
+}
+
+#[test]
 fn bare_print_routes_to_host_console_callback() {
     let callbacks = Arc::new(ConsoleCallbacks::default());
     run(

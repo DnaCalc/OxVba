@@ -74,7 +74,9 @@ Legend: ☐ open · ◐ in progress · ☑ done
   `looks_like_date` treats any `#` with a later `#` on the line as a date → `Close #1: Close #2`,
   `Print #1, amount#` mis-lex a span as one DateLiteral. Fix: constrain interior (bail on `,` /
   non-date alpha); add a token-kind regression test.
-- ☐ **B13 debugprint-semicolon** (syntax/bind, HIGH, M — #4) — `crates/oxvba-syntax/src/parser.rs:782`
+- ☑ **B13 debugprint-semicolon** (syntax/bind, HIGH, M — #4) — `crates/oxvba-syntax/src/parser.rs:782`
+  (two layers: `parse_bare_arg_list` dropped post-`;` items AND `arg_items` mis-segmented pre-`;`;
+  residual: `;`-no-space vs `,`-tab rendering still deferred, shared with file Print)
   Debug.Print via `parse_bare_arg_list` only continues across Comma; `;` ends the list →
   `Debug.Print "x="; x` prints only "x=". Fix: accept `;` (and `,`) as print-item separators on
   the Debug.Print path; add a semicolon test.

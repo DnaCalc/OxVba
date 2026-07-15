@@ -760,11 +760,18 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a bare argument list (no parens): `expr, expr, ...`
-    fn parse_bare_arg_list(&mut self) {
+    /// Parse a bare (unparenthesised) argument list. `allow_semicolon` accepts
+    /// `;` as an item separator in addition to `,` — VBA allows it only on the
+    /// `Print`-family path (`Debug.Print a; b`), where `;` otherwise ended the
+    /// list and silently dropped every following item.
+    fn parse_bare_arg_list(&mut self, allow_semicolon: bool) {
         self.eat_expr_whitespace();
         if self.is_expr_stop(self.current()) {
             return;
         }
+        let is_separator = |p: &Self| {
+            p.at(SyntaxKind::Comma) || (allow_semicolon && p.at(SyntaxKind::Semicolon))
+        };
 
         self.start_node(SyntaxKind::ArgList);
 
@@ -779,12 +786,12 @@ impl<'a> Parser<'a> {
 
         loop {
             self.eat_expr_whitespace();
-            if !self.at(SyntaxKind::Comma) {
+            if !is_separator(self) {
                 break;
             }
-            self.bump(); // ,
+            self.bump(); // , or ;
             self.eat_expr_whitespace();
-            if !self.is_expr_stop(self.current()) && !self.at(SyntaxKind::Comma) {
+            if !self.is_expr_stop(self.current()) && !is_separator(self) {
                 self.parse_bare_arg();
             }
         }
@@ -2380,7 +2387,7 @@ impl<'a> Parser<'a> {
         }
         self.eat_whitespace();
         if self.is_expr_start() || self.at(SyntaxKind::Comma) {
-            self.parse_bare_arg_list();
+            self.parse_bare_arg_list(false);
         }
         self.eat_to_statement_end();
         self.finish_node();
@@ -2393,10 +2400,11 @@ impl<'a> Parser<'a> {
         if self.is_expr_start() {
             self.parse_expr();
         }
-        // Bare argument list (e.g. Debug.Print x, y)
+        // Bare argument list (e.g. Debug.Print x, y). `;` is a valid item
+        // separator here (Debug.Print a; b); it used to drop everything after it.
         self.eat_whitespace();
-        if self.is_expr_start() || self.at(SyntaxKind::Comma) {
-            self.parse_bare_arg_list();
+        if self.is_expr_start() || self.at(SyntaxKind::Comma) || self.at(SyntaxKind::Semicolon) {
+            self.parse_bare_arg_list(true);
         }
         self.eat_to_statement_end();
         self.finish_node();
@@ -2625,7 +2633,7 @@ impl<'a> Parser<'a> {
         if self.at(SyntaxKind::LParen) {
             self.parse_arg_list();
         } else if self.is_expr_start() || self.at(SyntaxKind::Comma) {
-            self.parse_bare_arg_list();
+            self.parse_bare_arg_list(false);
         }
         self.eat_to_statement_end();
         self.finish_node();
@@ -3004,7 +3012,7 @@ impl<'a> Parser<'a> {
             // keyword itself is not an expression start.
             self.eat_whitespace();
             if self.at_bare_arg_list_start() {
-                self.parse_bare_arg_list();
+                self.parse_bare_arg_list(false);
             }
             self.eat_to_statement_end();
         }

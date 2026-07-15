@@ -486,7 +486,11 @@ impl<'a> SyntaxNode<'a> {
         }
         let mut segments: Vec<Vec<SyntaxElement<'a>>> = vec![Vec::new()];
         for el in significant {
-            if el.kind() == SyntaxKind::Comma {
+            // `,` always separates arguments; `;` separates print items on the
+            // Debug.Print path (the only place a `;` reaches an ArgList). Without
+            // splitting on `;`, `Debug.Print "x="; x` collapsed to one segment and
+            // the value picker kept only the last node (`x`), dropping "x=".
+            if el.kind() == SyntaxKind::Comma || el.kind() == SyntaxKind::Semicolon {
                 segments.push(Vec::new());
             } else {
                 segments.last_mut().unwrap().push(el);
