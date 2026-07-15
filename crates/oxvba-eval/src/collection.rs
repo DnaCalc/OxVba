@@ -67,12 +67,13 @@ fn variant_selector(v: &Variant) -> Selector {
     if let Some(s) = v.as_bstr() {
         Selector::Key(s.as_str().to_ascii_lowercase())
     } else {
-        let index = v
-            .as_i16()
-            .map(i32::from)
-            .or_else(|| v.as_i32())
-            .or_else(|| v.as_i64().map(|n| n as i32))
-            .or_else(|| v.as_f64().map(|n| n.round() as i32))
+        // Any numeric subtype is a 1-based Long index. Coerce through the shared
+        // integer conversion (VBA banker's rounding) rather than a hand-rolled
+        // as_i16/i32/i64/f64 chain that let Byte/SignedByte/Single/unsigned
+        // subtypes fall through to index 0 (so `c.Item(CByte(1))` raised error 9).
+        let index = crate::arith::int(v)
+            .ok()
+            .and_then(|n| i32::try_from(n).ok())
             .unwrap_or(0);
         Selector::Index(index)
     }

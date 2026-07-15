@@ -99,7 +99,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
   (surgical: gated `is_object` on the actual Object type rather than touching `is_nothing`'s 8 other callers) (is_nothing
   4992-4998) treats numeric 0 as Nothing → `Set o = 0` silently stores scalar (VBA err 424). Fix:
   drop the numeric-zero clause / gate the Set legality check.
-- ☐ **B17 collection-index-subtypes** (eval, LOW, S — #19) — `crates/oxvba-eval/src/collection.rs:70`
+- ☑ **B17 collection-index-subtypes** (eval, LOW, S — #19) — `crates/oxvba-eval/src/collection.rs:70`
   `variant_selector` tries only i16/i32/i64/f64 then `unwrap_or(0)` → `c.Item(CByte(1))` maps to
   index 0. Fix: extend to u8/i8/u16/u32/u64/f32 (or shared coercion) before defaulting.
 - ☐ **B18 jit-single-overflow** (jit, MED, M — #11) — `crates/oxvba-jit/src/lib.rs:1791` two-Single
