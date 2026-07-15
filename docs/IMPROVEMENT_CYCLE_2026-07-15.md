@@ -67,7 +67,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
 - ☐ **B10 comhost-errnumber** (comhost, HIGH, M — #9) — `crates/oxvba-comhost/src/lib.rs:4017` &
   `engine.rs vm3_runtime_diagnostic ~174-185` hardcode EXCEPINFO scode 5; true `fault.code`
   discarded. Fix: thread `fault.code` through the diagnostic → `RuntimeCallError::new(code,…)`.
-- ☐ **B11 format-string-operand** (lib, HIGH, M — #5) — `crates/oxvba-lib/src/format.rs:75/82-84`
+- ☑ **B11 format-string-operand** (lib, HIGH, M — #5) — `crates/oxvba-lib/src/format.rs:75/82-84`
   `num()`/`serial_of` coerce via Double (no String→numeric arm) → `Format("123.5","0.00")`→"0.00".
   Fix: parse String operands with `parse_vba_numeric_string`/date parser before defaulting to 0.
 - ☑ **B12 lexer-datelit-overscan** (syntax, HIGH, M — #3) — `crates/oxvba-syntax/src/lexer.rs:263`

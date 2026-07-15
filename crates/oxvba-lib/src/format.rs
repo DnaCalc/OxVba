@@ -15,7 +15,8 @@
 //! follows Rust's formatter (round-half-to-even), matching VBA's bankers' rule
 //! for the common cases.
 
-use oxvba_runtime::coerce::coerce_to;
+use oxvba_runtime::coerce::{coerce_to, parse_vba_numeric_string};
+use oxvba_runtime::date::parse_date_text_serial_bits;
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{Variant, variant_to_vba_string};
 
@@ -73,6 +74,16 @@ fn general_string(value: &Variant) -> String {
 }
 
 fn num(value: &Variant) -> f64 {
+    // A String operand parses per VBA's lenient numeric rules ("123.5" -> 123.5)
+    // before defaulting to 0 — Format's inputs are pervasively strings (cell text,
+    // control `.Value`, DB fields), and coerce_to(String, Double) has no arm, so a
+    // numeric string used to silently format as 0.
+    if value.vtype() == VarType::String {
+        return value
+            .as_bstr()
+            .and_then(|b| parse_vba_numeric_string(&b.as_str()))
+            .unwrap_or(0.0);
+    }
     coerce_to(value, VarType::Double)
         .ok()
         .and_then(|v| v.as_f64())
@@ -80,7 +91,18 @@ fn num(value: &Variant) -> f64 {
 }
 
 fn serial_of(value: &Variant) -> f64 {
-    value.as_date_f64().unwrap_or_else(|| num(value))
+    if let Some(serial) = value.as_date_f64() {
+        return serial;
+    }
+    // A date-like String under a date mask (Format("2020-05-01", "yyyy")) parses
+    // to a serial; a numeric string falls through to `num`.
+    if value.vtype() == VarType::String
+        && let Some(b) = value.as_bstr()
+        && let Some(bits) = parse_date_text_serial_bits(&b.as_str())
+    {
+        return f64::from_bits(bits);
+    }
+    num(value)
 }
 
 // ── Named formats ─────────────────────────────────────────────────────────────
