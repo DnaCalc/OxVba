@@ -80,7 +80,9 @@ Legend: ☐ open · ◐ in progress · ☑ done
   Debug.Print via `parse_bare_arg_list` only continues across Comma; `;` ends the list →
   `Debug.Print "x="; x` prints only "x=". Fix: accept `;` (and `,`) as print-item separators on
   the Debug.Print path; add a semicolon test.
-- ☐ **B14 exact-carrier-compare** (eval, HIGH, M — #7) — `crates/oxvba-eval/src/arith.rs:640/649`
+- ☑ **B14 exact-carrier-compare** (eval, HIGH, M — #7) — `crates/oxvba-eval/src/arith.rs:640/649`
+  (integer+Currency exact via i128@4dp; Decimal-vs-Decimal exact; residual: Decimal-vs-other-carrier
+  and float mixes stay on f64)
   `cmp_order` compares via `read_f64` → LongLong/Currency/Decimal lose precision >2^53
   (`CLngLng(2^53+1)=CLngLng(2^53)`→True); inconsistent with exact i128 add/sub/mul. Fix: exact
   same-carrier fast paths before the f64 fallback.

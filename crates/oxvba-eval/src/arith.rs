@@ -12,6 +12,7 @@
 
 use crate::typed::{self, CheckedIntBinOp};
 use oxvba_bundle::{NumericCoerceTarget, NumericMode, StringCompareMode};
+use oxvba_runtime::decimal::Decimal96;
 use oxvba_runtime::variant::VarType;
 use oxvba_runtime::{
     Variant, arithmetic as rt,
@@ -637,6 +638,14 @@ fn cmp_order(
         let ru = r.string_units().unwrap_or_default();
         return Ok(norm_units(&lu, mode).cmp(&norm_units(&ru, mode)));
     }
+    // Exact comparison for the wide integer / fixed-point carriers, before the
+    // lossy f64 path below. LongLong/Currency/Decimal hold values that exceed
+    // f64's 53-bit mantissa, and their add/sub/mul are already exact (i128), so
+    // `=`/`<`/`>` must be exact too — otherwise `CLngLng(2^53+1) = CLngLng(2^53)`
+    // wrongly returns True and comparison disagrees with arithmetic.
+    if let Some(ord) = exact_numeric_cmp(l, r) {
+        return Ok(ord);
+    }
     let left_num = num(l);
     let right_num = num(r);
     if left_num.as_ref().is_err_and(|e| e.code == 91) {
@@ -650,6 +659,94 @@ fn cmp_order(
         // A non-numeric operand falls back to a string comparison.
         _ => Ok(norm(as_string(l), mode).cmp(&norm(as_string(r), mode))),
     }
+}
+
+/// An exact ordering for the numeric carriers that lose precision through f64.
+/// Returns `None` for pairs that are already exact via f64 (small ints, Single,
+/// Double) or that mix a float with an exact carrier — those keep the f64 path.
+fn exact_numeric_cmp(l: &Variant, r: &Variant) -> Option<std::cmp::Ordering> {
+    // Decimal vs Decimal: compare the 96-bit value exactly.
+    if l.vtype() == VarType::Decimal && r.vtype() == VarType::Decimal {
+        return decimal_cmp(l.as_decimal96()?, r.as_decimal96()?);
+    }
+    // Any integer/Currency pair (incl. LongLong and mixed widths) compares
+    // exactly in i128 at the Currency 4-dp scale. Only engage when at least one
+    // side genuinely needs it (Currency or a >2^53 integer); an all-small-int
+    // pair is already exact via f64, so leaving it there avoids changing hot-path
+    // behavior for the common case.
+    if (needs_exact_integer(l) || needs_exact_integer(r))
+        && let (Some(a), Some(b)) = (scaled_4dp_i128(l), scaled_4dp_i128(r))
+    {
+        return Some(a.cmp(&b));
+    }
+    None
+}
+
+/// Whether `v` is a numeric carrier whose value can exceed f64's exact integer
+/// range (`Currency`, `LongLong`, `UnsignedLongLong`) — the ones a same-carrier
+/// f64 comparison would round.
+fn needs_exact_integer(v: &Variant) -> bool {
+    matches!(
+        v.vtype(),
+        VarType::Currency | VarType::LongLong | VarType::UnsignedLongLong
+    )
+}
+
+/// The value of an integer or `Currency` carrier as an i128 scaled by 10_000 (the
+/// Currency scale), so integers and Currency compare on one exact axis. `None`
+/// for non-integer/non-Currency carriers (Decimal, Single, Double, String, …).
+fn scaled_4dp_i128(v: &Variant) -> Option<i128> {
+    if v.vtype() == VarType::Currency {
+        return v.as_currency_scaled_i64().map(i128::from);
+    }
+    exact_integer_i128(v).map(|n| n * 10_000)
+}
+
+/// The exact i128 value of any VBA integer carrier (`None` otherwise).
+fn exact_integer_i128(v: &Variant) -> Option<i128> {
+    Some(match v.vtype() {
+        VarType::Byte => i128::from(v.as_u8()?),
+        VarType::SignedByte => i128::from(v.as_i8()?),
+        VarType::Integer => i128::from(v.as_i16()?),
+        VarType::UnsignedInteger => i128::from(v.as_u16()?),
+        VarType::Long => i128::from(v.as_i32()?),
+        VarType::UnsignedLong | VarType::UnsignedInt => i128::from(v.as_u32()?),
+        VarType::LongLong => i128::from(v.as_i64()?),
+        VarType::UnsignedLongLong => i128::from(v.as_u64()?),
+        _ => return None,
+    })
+}
+
+/// Exact ordering of two `Decimal96` values (sign, then scale-aligned magnitude).
+/// Returns `None` only when aligning the scales would overflow u128 (a value near
+/// 2^96 with a large scale difference), leaving that rare case to the f64 path.
+fn decimal_cmp(a: Decimal96, b: Decimal96) -> Option<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+    let (ma, mb) = (a.magnitude_u128(), b.magnitude_u128());
+    let a_zero = ma == 0;
+    let b_zero = mb == 0;
+    if a_zero && b_zero {
+        return Some(Ordering::Equal);
+    }
+    let a_neg = a.is_negative() && !a_zero;
+    let b_neg = b.is_negative() && !b_zero;
+    match (a_neg, b_neg) {
+        (true, false) => return Some(Ordering::Less),
+        (false, true) => return Some(Ordering::Greater),
+        _ => {}
+    }
+    // Same sign: bring the lower-scale magnitude up to the higher scale, then
+    // compare. Scaling only one side by the scale *difference* keeps the u128
+    // product in range for all but pathologically large magnitudes.
+    let (sa, sb) = (u32::from(a.scale()), u32::from(b.scale()));
+    let pow = 10u128.checked_pow(sb.abs_diff(sa))?;
+    let (la, lb) = if sa <= sb {
+        (ma.checked_mul(pow)?, mb)
+    } else {
+        (ma, mb.checked_mul(pow)?)
+    };
+    let ord = la.cmp(&lb);
+    Some(if a_neg { ord.reverse() } else { ord })
 }
 
 pub fn compare(l: &Variant, r: &Variant, mode: StringCompareMode, op: CmpOp) -> R {
@@ -864,6 +961,74 @@ pub fn coerce_fixed_string(v: &Variant, len: usize) -> R {
 mod tests {
     use super::*;
     use oxvba_runtime::safe_array::SafeArray;
+
+    fn cmp_bool(l: &Variant, r: &Variant, op: CmpOp) -> bool {
+        compare(l, r, StringCompareMode::Binary, op)
+            .unwrap()
+            .as_bool()
+            .unwrap()
+    }
+
+    #[test]
+    fn wide_integer_comparison_is_exact_not_via_f64() {
+        // 2^53 and 2^53+1 are distinct LongLongs but the same f64.
+        let big = Variant::from_i64(9_007_199_254_740_993);
+        let smaller = Variant::from_i64(9_007_199_254_740_992);
+        assert!(!cmp_bool(&big, &smaller, CmpOp::Eq), "2^53+1 != 2^53");
+        assert!(cmp_bool(&big, &smaller, CmpOp::Gt), "2^53+1 > 2^53");
+        assert!(cmp_bool(&big, &smaller, CmpOp::Ne));
+        assert!(!cmp_bool(&smaller, &big, CmpOp::Gt));
+        // Comparison agrees with the exact (i128) subtraction: they differ by 1.
+        let diff = sub(&big, &smaller, NumericMode::Widening).unwrap();
+        assert_eq!(diff.as_i64(), Some(1));
+    }
+
+    #[test]
+    fn currency_comparison_is_exact_beyond_f64_precision() {
+        // Two Currency values one 4-dp unit apart at a magnitude where f64 rounds
+        // both to the same value.
+        let a = Variant::from_currency_scaled_i64(9_223_372_036_854_775_806);
+        let b = Variant::from_currency_scaled_i64(9_223_372_036_854_775_807);
+        assert!(!cmp_bool(&a, &b, CmpOp::Eq));
+        assert!(cmp_bool(&a, &b, CmpOp::Lt));
+        assert!(cmp_bool(&b, &a, CmpOp::Gt));
+    }
+
+    #[test]
+    fn decimal_cmp_is_exact_and_scale_aware() {
+        use std::cmp::Ordering;
+        // Differ by 1 in the last of ~29 digits (indistinguishable as f64).
+        let max = Decimal96::from_parts(0xFFFF_FFFF, 0xFFFF_FFFF, 0xFFFF_FFFF, 0, false);
+        let max_minus = Decimal96::from_parts(0xFFFF_FFFE, 0xFFFF_FFFF, 0xFFFF_FFFF, 0, false);
+        assert_eq!(decimal_cmp(max_minus, max), Some(Ordering::Less));
+        assert_eq!(decimal_cmp(max, max), Some(Ordering::Equal));
+        // Scale-aware: 1 (scale 0) == 1.00 (100 at scale 2).
+        let one = Decimal96::from_parts(1, 0, 0, 0, false);
+        let one_hundredths = Decimal96::from_parts(100, 0, 0, 2, false);
+        assert_eq!(decimal_cmp(one, one_hundredths), Some(Ordering::Equal));
+        // Sign and negative-magnitude ordering: -2 < -1 < 1.
+        let neg_one = Decimal96::from_parts(1, 0, 0, 0, true);
+        let neg_two = Decimal96::from_parts(2, 0, 0, 0, true);
+        assert_eq!(decimal_cmp(neg_one, one), Some(Ordering::Less));
+        assert_eq!(decimal_cmp(neg_two, neg_one), Some(Ordering::Less));
+        // Signed zero compares equal to zero.
+        let neg_zero = Decimal96::from_parts(0, 0, 0, 0, true);
+        let pos_zero = Decimal96::from_parts(0, 0, 0, 0, false);
+        assert_eq!(decimal_cmp(neg_zero, pos_zero), Some(Ordering::Equal));
+    }
+
+    #[test]
+    fn small_integers_and_floats_are_unaffected() {
+        // Regression: ordinary comparisons still work (exact path is a no-op or
+        // agrees).
+        assert!(cmp_bool(&Variant::from_i32(3), &Variant::from_i32(2), CmpOp::Gt));
+        assert!(cmp_bool(&Variant::from_f64(2.5), &Variant::from_f64(2.5), CmpOp::Eq));
+        assert!(cmp_bool(
+            &Variant::from_i64(5),
+            &Variant::from_f64(5.0),
+            CmpOp::Eq
+        ));
+    }
 
     /// Widening `+`/`-` re-tag a `Date` result per live VBA: any `Date` operand in a
     /// `+` (incl. `Date + Date`) gives a `Date`; a single `Date` operand in a `-` gives
