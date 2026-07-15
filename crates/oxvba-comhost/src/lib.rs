@@ -1035,6 +1035,10 @@ unsafe extern "system" fn dispatch_invoke(
         return DISP_E_MEMBERNOTFOUND;
     };
 
+    // Captured out of the `Result<_, String>` session closure so a guest fault's
+    // real VBA Err.Number survives to write_runtime_exception (marshalling errors
+    // leave it None -> the default 5).
+    let mut invoke_vba_code: Option<i32> = None;
     let runtime_value = match with_session(|session| {
         let args = if member_has_object_parameters(member) || disp_params_contain_object(params) {
             generated_server_object_aware_args(member, params, session)
@@ -1062,11 +1066,20 @@ unsafe extern "system" fn dispatch_invoke(
                 Some(project_member_kind(member.invoke_kind)),
                 args,
             )
-            .map_err(|err| err.to_string())
+            .map_err(|err| {
+                invoke_vba_code = err.vba_code();
+                err.to_string()
+            })
     }) {
         Ok(value) => value,
         Err(message) => {
-            return write_runtime_exception(message, excep_info, arg_err, arg_count(params));
+            return write_runtime_exception(
+                invoke_vba_code,
+                message,
+                excep_info,
+                arg_err,
+                arg_count(params),
+            );
         }
     };
 
@@ -1083,7 +1096,8 @@ unsafe extern "system" fn dispatch_invoke(
         &mut add_ref_dispatch,
     ) {
         Ok(()) => S_OK,
-        Err(message) => write_runtime_exception(message, excep_info, arg_err, arg_count(params)),
+        // Marshalling the result back to a VARIANT is not a guest VBA fault.
+        Err(message) => write_runtime_exception(None, message, excep_info, arg_err, arg_count(params)),
     }
 }
 
@@ -1751,7 +1765,7 @@ unsafe extern "system" fn imported_invoke(
             trace_line(&format!(
                 "imported Invoke dispid={dispid} argument conversion failed: {message}"
             ));
-            return write_runtime_exception(message, excep_info, arg_err, arg_count(params));
+            return write_runtime_exception(None, message, excep_info, arg_err, arg_count(params));
         }
     };
     let runtime_value = match invoke_imported_member(this, method, args) {
@@ -1768,7 +1782,7 @@ unsafe extern "system" fn imported_invoke(
         trace_line(&format!(
             "imported Invoke dispid={dispid} argument write-back failed: {message}"
         ));
-        return write_runtime_exception(message, excep_info, arg_err, arg_count(params));
+        return write_runtime_exception(None, message, excep_info, arg_err, arg_count(params));
     }
     if result.is_null() {
         return S_OK;
@@ -2409,7 +2423,7 @@ unsafe fn write_runtime_value_to_variant(
         &mut add_ref_dispatch,
     ) {
         Ok(()) => S_OK,
-        Err(message) => write_runtime_exception(message, excep_info, arg_err, arg_count),
+        Err(message) => write_runtime_exception(None, message, excep_info, arg_err, arg_count),
     }
 }
 
@@ -4009,12 +4023,21 @@ unsafe fn invoke_dispatch_sink(
 }
 
 unsafe fn write_runtime_exception(
+    vba_code: Option<i32>,
     message: String,
     excep_info: *mut EXCEPINFO,
     arg_err: *mut u32,
     arg_count: usize,
 ) -> i32 {
-    let error = RuntimeCallError::new(5, message, RuntimeCallSource::ExternalComDispatch);
+    // A guest runtime fault carries its real VBA Err.Number (Err.Raise 457,
+    // subscript 9, overflow 6); surface it on EXCEPINFO so a client's On Error
+    // sees the right code. Non-fault paths (arg marshalling, activation) have no
+    // VBA code and fall back to 5.
+    let error = RuntimeCallError::new(
+        vba_code.unwrap_or(5),
+        message,
+        RuntimeCallSource::ExternalComDispatch,
+    );
     runtime_call_error_to_excepinfo(&error, excep_info, arg_err, arg_count)
 }
 

@@ -64,7 +64,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
   regression guard (`round_sgn_null_vm3`) so the false positive isn't re-applied.
 - ☑ **B9 str-leading-zero** (lib, MED, S — #17) — `crates/oxvba-lib/src/pure.rs:1666` `Str(0.5)`→
   " 0.5" (VBA " .5"). Fix: strip a leading "0" before "." in the Str-specific path only (CStr unchanged).
-- ☐ **B10 comhost-errnumber** (comhost, HIGH, M — #9) — `crates/oxvba-comhost/src/lib.rs:4017` &
+- ☑ **B10 comhost-errnumber** (comhost, HIGH, M — #9) — `crates/oxvba-comhost/src/lib.rs:4017` &
   `engine.rs vm3_runtime_diagnostic ~174-185` hardcode EXCEPINFO scode 5; true `fault.code`
   discarded. Fix: thread `fault.code` through the diagnostic → `RuntimeCallError::new(code,…)`.
 - ☑ **B11 format-string-operand** (lib, HIGH, M — #5) — `crates/oxvba-lib/src/format.rs:75/82-84`

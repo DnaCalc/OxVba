@@ -91,6 +91,10 @@ pub struct PhaseDiagnostic {
     phase: DiagnosticPhase,
     message: String,
     diagnostic: Box<OxDiagnostic>,
+    /// The VBA `Err.Number` this diagnostic carries, when it wraps a runtime
+    /// fault. Consumers that surface the error across a VBA boundary (the COM
+    /// server's `EXCEPINFO`) need the real code, not a flattened default.
+    vba_code: Option<i32>,
 }
 
 impl PhaseDiagnostic {
@@ -105,7 +109,13 @@ impl PhaseDiagnostic {
             phase,
             message,
             diagnostic: Box::new(diagnostic),
+            vba_code: None,
         }
+    }
+
+    pub(crate) fn with_vba_code(mut self, code: i32) -> Self {
+        self.vba_code = Some(code);
+        self
     }
 
     pub fn phase(&self) -> DiagnosticPhase {
@@ -118,6 +128,12 @@ impl PhaseDiagnostic {
 
     pub fn diagnostic(&self) -> &OxDiagnostic {
         &self.diagnostic
+    }
+
+    /// The VBA `Err.Number` for a runtime fault, or `None` for a non-fault
+    /// diagnostic (a host/compile error with no VBA code).
+    pub fn vba_code(&self) -> Option<i32> {
+        self.vba_code
     }
 }
 
@@ -177,11 +193,22 @@ fn vm3_runtime_diagnostic(err: oxvba_vm3::Vm3Error) -> PhaseDiagnostic {
         oxvba_vm3::Vm3Error::Fault(_) => "VM3-E-FAULT",
         oxvba_vm3::Vm3Error::Malformed(_) => "VM3-E-MALFORMED",
     };
-    PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
+    // A runtime fault carries the VBA Err.Number; keep it so consumers that
+    // re-raise across a VBA boundary (the COM server EXCEPINFO) report the real
+    // code (Err.Raise 457, subscript 9, overflow 6) instead of a flat default.
+    let vba_code = match &err {
+        oxvba_vm3::Vm3Error::Fault(fault) => Some(fault.code),
+        _ => None,
+    };
+    let diagnostic = PhaseDiagnostic::from_diagnostic(OxDiagnostic::error(
         code,
         OxDiagnosticPhase::Host,
         err.to_string(),
-    ))
+    ));
+    match vba_code {
+        Some(code) => diagnostic.with_vba_code(code),
+        None => diagnostic,
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1210,6 +1237,42 @@ End Function
             )
             .expect("invoke Add");
         assert_eq!(result.as_i32(), Some(5));
+    }
+
+    #[test]
+    fn invoke_member_error_carries_the_vba_error_number() {
+        // The runtime-fault diagnostic must keep the guest's Err.Number so the
+        // COM server surfaces the real code (not a flattened 5) on EXCEPINFO.
+        let mut attrs = ModuleAttributes::named("Thrower");
+        attrs.vb_exposed = true;
+        attrs.vb_creatable = true;
+        let manifest = SymbolProjectManifest {
+            project_name: "DemoServer".to_string(),
+            project_kind: ProjectKind::Library,
+            modules: vec![ModuleUnit {
+                module_name: "Thrower".to_string(),
+                module_kind: ModuleKind::Class,
+                attributes: attrs,
+                source: "\nPublic Sub Boom()\n    Err.Raise 457\nEnd Sub\n".to_string(),
+            }],
+            references: Vec::new(),
+            reference_projects: Vec::new(),
+            conditional_constants: Default::default(),
+            conditional_compilation_target: Default::default(),
+        };
+        let engine = Engine::new(HostConfig::default());
+        let mut session = vm3_session_for(&engine, &manifest);
+        let object = session
+            .create_class_instance("Thrower")
+            .expect("create instance");
+        let err = session
+            .invoke_member_values(object, "Boom", Some(ProjectMemberKind::Method), vec![])
+            .expect_err("Boom raises");
+        assert_eq!(
+            err.vba_code(),
+            Some(457),
+            "runtime fault must carry Err.Number 457, not a flattened default"
+        );
     }
 
     #[test]
