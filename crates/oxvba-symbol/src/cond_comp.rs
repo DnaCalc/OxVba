@@ -434,6 +434,25 @@ mod tests {
     }
 
     #[test]
+    fn undefined_constant_compares_equal_to_zero() {
+        // An undefined `#If` constant is Empty; `Empty = 0` is True in VBA, so the
+        // True branch is kept. (Previously the comparison folded to None and the
+        // wrong branch was taken.)
+        let out = run("#If NOT_DEFINED = 0 Then\nkept\n#Else\ndropped\n#End If\n");
+        assert!(out.contains("kept"), "{out:?}");
+        assert!(!out.contains("dropped"), "{out:?}");
+    }
+
+    #[test]
+    fn bare_undefined_constant_is_still_falsy() {
+        // A bare `#If Undefined` (no comparison) is Empty -> falsy -> Else branch;
+        // the Empty->0 coercion is only for numeric operators, not truthiness.
+        let out = run("#If NOT_DEFINED Then\nkept\n#Else\nelse_branch\n#End If\n");
+        assert!(!out.contains("kept"), "{out:?}");
+        assert!(out.contains("else_branch"), "{out:?}");
+    }
+
+    #[test]
     fn elseif_chain_picks_first_true() {
         let out = run(
             "#If Mac Then\nx1\n#ElseIf Win64 Then\nx2\n#ElseIf VBA7 Then\nx3\n#Else\nx4\n#End If\n",

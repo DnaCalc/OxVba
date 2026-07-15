@@ -86,7 +86,10 @@ Legend: ☐ open · ◐ in progress · ☑ done
   `cmp_order` compares via `read_f64` → LongLong/Currency/Decimal lose precision >2^53
   (`CLngLng(2^53+1)=CLngLng(2^53)`→True); inconsistent with exact i128 add/sub/mul. Fix: exact
   same-carrier fast paths before the f64 fallback.
-- ☐ **B15 constfold-parity** (symbol, MED, M — #15) — `crates/oxvba-symbol/src/const_eval.rs`
+- ◐ **B15 constfold-parity** (symbol, MED, M — #15) — `crates/oxvba-symbol/src/const_eval.rs`
+  DONE 4/5: banker's rounding, Boolean preservation, Div/Pow non-finite guard, CC-Empty→0.
+  Sub-item 5 (Long*Long overflow-widening) DEFERRED to **B29** — VBA's const-overflow semantics
+  are unverifiable without a live oracle (same caution as B8).
   const folder diverges from runtime: `\`/`Mod`/bitwise round half-away vs `round_ties_even`
   (1596/1600); `True And True`→Long not Boolean (1622-1626); `1#/0#`→+Inf for Variant const (1618);
   overflowing Long*Long silently widens (1612-1614); undefined-CC `=0` folds Empty→false (1592, VBA

@@ -1340,6 +1340,10 @@ enum ConstNum {
 
 fn const_num(c: &CoreConst) -> Option<ConstNum> {
     Some(match c {
+        // Empty coerces to numeric 0 (VBA: `Empty = 0` is True). This matters for
+        // conditional compilation, where an undefined `#If` constant is `Empty`
+        // (`cond_comp`), so `#If UndefinedConst = 0` must take the True branch.
+        CoreConst::Empty => ConstNum::Int(0),
         CoreConst::I16(n) => ConstNum::Int(i64::from(*n)),
         CoreConst::I32(n) => ConstNum::Int(i64::from(*n)),
         CoreConst::I64(n) => ConstNum::Int(*n),
@@ -1589,15 +1593,34 @@ pub(crate) fn fold_const_binary(
     if let Some(value) = fold_mixed_string_scalar_relational(op, lhs, rhs) {
         return Some(value);
     }
+    // Two Boolean operands under a logical operator stay Boolean — VBA's logical
+    // vs bitwise distinction is by operand type (`True And True` is Boolean True,
+    // not Long -1). Mirrors the binder's non-const `result_type_with`.
+    if let (CoreConst::Bool(lb), CoreConst::Bool(rb)) = (lhs, rhs) {
+        let logical = match op {
+            And => Some(*lb && *rb),
+            Or => Some(*lb || *rb),
+            Xor => Some(*lb ^ *rb),
+            Eqv => Some(*lb == *rb),
+            Imp => Some(!*lb || *rb),
+            _ => None,
+        };
+        if let Some(b) = logical {
+            return Some(CoreConst::Bool(b));
+        }
+    }
     let (l, r) = (const_num(lhs)?, const_num(rhs)?);
     let both_int = matches!((&l, &r), (ConstNum::Int(_), ConstNum::Int(_)));
+    // Round non-integer operands to Long with banker's rounding (round-half-to-even),
+    // matching the runtime `arith::int` conversion the `\`/`Mod`/bitwise ops use — a
+    // plain `round()` (half-away-from-zero) folds `4.5 \ 1` to 5 where vm3 gives 4.
     let li = match &l {
         ConstNum::Int(v) => *v,
-        ConstNum::Float(v) => v.round() as i64,
+        ConstNum::Float(v) => v.round_ties_even() as i64,
     };
     let ri = match &r {
         ConstNum::Int(v) => *v,
-        ConstNum::Float(v) => v.round() as i64,
+        ConstNum::Float(v) => v.round_ties_even() as i64,
     };
     let lf = match &l {
         ConstNum::Int(v) => *v as f64,
@@ -1615,10 +1638,27 @@ pub(crate) fn fold_const_binary(
         Add => f64_const(lf + rf),
         Sub => f64_const(lf - rf),
         Mul => f64_const(lf * rf),
-        Div => f64_const(lf / rf),
+        // Division / exponentiation that is not finite (e.g. `1# / 0#` → ±Inf,
+        // an overflowing `Pow`) is not a resolvable constant — drop it rather
+        // than fold to Infinity, matching the typed-Double coercion path.
+        Div => {
+            let q = lf / rf;
+            if q.is_finite() {
+                f64_const(q)
+            } else {
+                return None;
+            }
+        }
         IntDiv => int_const(li.checked_div(ri)?),
         Mod => int_const(li.checked_rem(ri)?),
-        Pow => f64_const(lf.powf(rf)),
+        Pow => {
+            let p = lf.powf(rf);
+            if p.is_finite() {
+                f64_const(p)
+            } else {
+                return None;
+            }
+        }
         And => int_const(li & ri),
         Or => int_const(li | ri),
         Xor => int_const(li ^ ri),
@@ -1765,4 +1805,81 @@ pub(crate) fn core_binop(kind: SyntaxKind) -> Option<CoreBinOp> {
 /// the same deterministic parser.
 pub mod date {
     pub use oxvba_runtime::date::{parse_date_literal_serial_bits, parse_date_text_serial_bits};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn i32c(n: i32) -> CoreConst {
+        CoreConst::I32(n)
+    }
+    fn f64c(v: f64) -> CoreConst {
+        CoreConst::F64(v.to_bits())
+    }
+    fn boolc(b: bool) -> CoreConst {
+        CoreConst::Bool(b)
+    }
+    fn fold(op: CoreBinOp, l: CoreConst, r: CoreConst) -> Option<CoreConst> {
+        fold_const_binary(op, &l, &r, StringCompareMode::Binary)
+    }
+
+    #[test]
+    fn intdiv_mod_use_bankers_rounding_on_float_operands() {
+        // round_ties_even (matching the runtime): 4.5 -> 4, 2.5 -> 2, not 5 / 3.
+        assert_eq!(fold(CoreBinOp::IntDiv, f64c(4.5), i32c(1)), Some(i32c(4)));
+        assert_eq!(fold(CoreBinOp::IntDiv, f64c(2.5), i32c(1)), Some(i32c(2)));
+        assert_eq!(fold(CoreBinOp::Mod, f64c(4.5), i32c(2)), Some(i32c(0)));
+    }
+
+    #[test]
+    fn logical_ops_on_two_booleans_stay_boolean() {
+        assert_eq!(
+            fold(CoreBinOp::And, boolc(true), boolc(true)),
+            Some(boolc(true))
+        );
+        assert_eq!(
+            fold(CoreBinOp::And, boolc(true), boolc(false)),
+            Some(boolc(false))
+        );
+        assert_eq!(
+            fold(CoreBinOp::Or, boolc(false), boolc(true)),
+            Some(boolc(true))
+        );
+        assert_eq!(
+            fold(CoreBinOp::Xor, boolc(true), boolc(true)),
+            Some(boolc(false))
+        );
+        assert_eq!(
+            fold(CoreBinOp::Imp, boolc(true), boolc(false)),
+            Some(boolc(false))
+        );
+        // A bitwise op on non-Boolean operands is still an integer (Long).
+        assert_eq!(fold(CoreBinOp::And, i32c(6), i32c(3)), Some(i32c(2)));
+    }
+
+    #[test]
+    fn division_by_zero_is_unresolvable_not_infinity() {
+        assert_eq!(fold(CoreBinOp::Div, f64c(1.0), f64c(0.0)), None);
+        assert_eq!(fold(CoreBinOp::Div, f64c(-1.0), f64c(0.0)), None);
+        // A finite division still folds.
+        assert_eq!(fold(CoreBinOp::Div, f64c(6.0), f64c(2.0)), Some(f64c(3.0)));
+    }
+
+    #[test]
+    fn empty_coerces_to_zero_for_numeric_comparison() {
+        // `Empty = 0` is True — undefined `#If` constants fold to Empty.
+        assert_eq!(
+            fold(CoreBinOp::Eq, CoreConst::Empty, i32c(0)),
+            Some(boolc(true))
+        );
+        assert_eq!(
+            fold(CoreBinOp::Ne, CoreConst::Empty, i32c(0)),
+            Some(boolc(false))
+        );
+        assert_eq!(
+            fold(CoreBinOp::Gt, i32c(5), CoreConst::Empty),
+            Some(boolc(true))
+        );
+    }
 }
