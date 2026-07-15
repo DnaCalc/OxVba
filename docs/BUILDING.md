@@ -11,7 +11,7 @@ cargo check --workspace
 cargo test --workspace
 ```
 
-## Disabled JIT skeleton check
+## JIT backend check
 ```powershell
 cargo test -p oxvba-jit
 ```
@@ -33,4 +33,8 @@ cargo kani --workspace
 ```
 
 ## Current state
-The repository is in active implementation. The interpreter is the current executable truth, and the old JIT implementation has been replaced by a disabled API skeleton pending a JIT v2 design.
+The repository is in active implementation. `oxvba-vm3` is the typed-OxIR
+interpreter and the product reference runtime; `oxvba-jit` is a real Cranelift
+backend that lowers the same linked `OxProgram` set to native code (no VM
+fallback) and is checked for parity against vm3 by the `oxvba-differential`
+harness. See [ARCHITECTURE.md](ARCHITECTURE.md) for the current stack.

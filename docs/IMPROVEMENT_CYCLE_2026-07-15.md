@@ -124,7 +124,7 @@ Legend: ☐ open · ◐ in progress · ☑ done
 
 ## Tier 3 — Docs accuracy
 
-- ☐ **B22 docs-jit-runtime** (docs, MED — #22) — `docs/BUILDING.md:14-17,36`, `CONFORMANCE.md:153`,
+- ☑ **B22 docs-jit-runtime** (docs, MED — #22) — `docs/BUILDING.md:14-17,36`, `CONFORMANCE.md:153`,
   `TESTING.md:53-54` describe the JIT as a "disabled skeleton" and the runtime as the deleted
   bytecode compiler/VM. Fix: rewrite to the real vm3/jit backends + oxir/vm3/differential surface.
 - ☐ **B23 docs-vm2-refs** (docs, LOW — #23) — stale `vm2`/`oxvba-vm2` references across code

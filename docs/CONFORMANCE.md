@@ -150,7 +150,10 @@ Date-string parsing V0.2 policy:
 ## Declared Profile Scope (Current Gate)
 - Profile id: `mvp-profile-v620` (VBA 7.1 + Windows Office COM compliance ladder terminal gate)
 - Platform: Windows x64
-- Backends: `vm`; `jit` is planned and currently reports an explicit disabled-backend diagnostic.
+- Backends: `vm` is the vm3 typed-OxIR interpreter (the product runtime and the
+  cell required by this gate). `jit` is a real Cranelift backend (not disabled)
+  whose parity with vm3 is exercised by the `oxvba-differential` harness rather
+  than this profile gate.
 - Required matrix cells:
   - `windows/x64/vm`
 

@@ -47,12 +47,16 @@ Deferred formal gate policy:
 - DG register path: `docs/evidence/formal/DEFERRED_GATES.md`
 
 ## Current coverage
-- Syntax: lexer/parser smoke and error tests.
-- Runtime: Variant payload, coercion, arithmetic unit tests.
-- IR: lowering consistency tests.
-- Compiler/Host: compile+execute smoke + control-flow compilation tests.
-- VM: bytecode execution tests for arithmetic, branch/loop execution, and jump validation.
-- Conformance: VM/JIT-toggle profile corpus with slot snapshots (including relational/boolean branches).
+- Syntax: lexer/parser smoke, round-trip, and error-recovery tests (`oxvba-syntax`).
+- Runtime: Variant/BStr/SafeArray payload, coercion, and arithmetic unit tests
+  (`oxvba-runtime`, `oxvba-eval`).
+- IR: Core IR elaboration and OxIR verifier tests (`oxvba-oxir`).
+- Compile/execute: source and project-closure smoke + control-flow tests
+  (`oxvba-bind`, `oxvba-host`).
+- Runtime execution: `oxvba-vm3` (the typed-OxIR interpreter, the product runtime)
+  golden and focused suites, plus vm3/JIT differential parity, all via
+  `oxvba-differential`.
+- Conformance: the vm3 golden corpus and the vm3/JIT/oracle comparison harnesses.
 - Formal: profile-scoped non-blocking obligations via `scripts/run-formal.ps1`.
   - Structured record: `docs/evidence/formal/latest_run.jsonl` (or temp path when `-NoArtifacts`).
 - COM client E2E:
