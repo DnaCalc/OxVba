@@ -3145,6 +3145,15 @@ impl ErrEngine {
             ErrorMode::ResumeNext => {
                 self.pending_fault = None;
                 self.erl_line = current_line;
+                // DISCREPANCY (see docs/OXIR_VM3_ERROR_MODEL.md R4, bd-ivaha.31):
+                // this clears the active-error latch on the implicit skip, but
+                // R4 (citing MS-VBAL §5.4.4) says it should be
+                // `Some((resume, resume_next))`. `On Error Resume Next` does not
+                // establish a handler, so `None` may be correct (an explicit
+                // `Resume Next` under it would then be error 20) — but this is
+                // NOT live-oracle-confirmed either way. Keep code and spec in
+                // sync (they currently disagree) once a probe resolves it; the
+                // Goto arm below latches `Some`.
                 self.active_error = None;
                 Ok(FaultAction::ResumeNext(resume_next))
             }

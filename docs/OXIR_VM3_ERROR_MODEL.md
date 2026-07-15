@@ -93,7 +93,12 @@ Each rule cites its MS-VBAL basis. "R*" ids are referenced from the code.
 - **R4 — `FaultDispatch` dispatch.** With `error_mode`:
   - `None` (Default) → **propagate** the fault to the caller (early unwind).
   - `ResumeNext` → set `active_error = Some((resume, resume_next))`, then continue at
-    `resume_next`.
+    `resume_next`. **⚠ Unverified discrepancy (bd-ivaha.31):** the vm3 code
+    (`oxvba-rt-abi` `FaultDispatch`) currently clears `active_error` (`None`) on the
+    implicit ResumeNext skip, contradicting this rule. `On Error Resume Next` does not
+    establish a handler, so `None` may be correct — but neither behavior is
+    live-oracle-confirmed. Do not rely on `active_error` after an implicit ResumeNext
+    skip until a probe resolves this; the code and this rule must then be reconciled.
   - `Goto(h)` → **demote `error_mode` to `None`** (Rule R9), set `active_error =
     Some((resume, resume_next))`, then transfer to `h`.
 

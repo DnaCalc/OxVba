@@ -117,7 +117,10 @@ Legend: ☐ open · ◐ in progress · ☑ done
 - ☐ **B20 com-variant-subtype** (com, LOW, M — #20) — `crates/oxvba-com/src/windows_variant.rs:2036/2021`
   VT_I2/UI1/I1/UI2 flatten to I32 (TypeName "Long" vs "Integer"); VT_BYREF scalar match misses
   DATE/DECIMAL/UI1/I8/ERROR → spurious COM error. Fix: add small-int carriers; mirror byref arms.
-- ☐ **B21 resumenext-latch** (vm3/rt-abi, MED, doc — #21) — `crates/oxvba-rt-abi/src/lib.rs:3148`
+- ◐ **B21 resumenext-latch** (vm3/rt-abi, MED, doc — #21) — Surfaced + cross-referenced the
+  code(None)-vs-spec-R4(Some) discrepancy in BOTH `oxvba-rt-abi` and `OXIR_VM3_ERROR_MODEL.md`
+  (a JIT author is now warned, not silently diverging). The actual resolution needs a live probe
+  → **B31**. `crates/oxvba-rt-abi/src/lib.rs:3148`
   ResumeNext sets `active_error=None`, opposite to `docs/OXIR_VM3_ERROR_MODEL.md` R3/R4
   (=Some). Neither is test-covered. Resolve from spec+oracle-findings; align code or doc; add test.
   (Live-Excel probe unavailable here — resolve conservatively from existing evidence docs.)
