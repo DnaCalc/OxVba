@@ -95,7 +95,8 @@ Legend: ☐ open · ◐ in progress · ☑ done
   overflowing Long*Long silently widens (1612-1614); undefined-CC `=0` folds Empty→false (1592, VBA
   Empty=0 True). Fix: mirror runtime int() (round_ties_even), preserve Boolean, guard Div/Pow,
   range-check Checked regime, coerce Empty→0 for CC compares.
-- ☐ **B16 set-nonobject-424** (vm3, LOW, S — #18) — `crates/oxvba-vm3/src/lib.rs:2946` (is_nothing
+- ☑ **B16 set-nonobject-424** (vm3, LOW, S — #18) — `crates/oxvba-vm3/src/lib.rs:2946`
+  (surgical: gated `is_object` on the actual Object type rather than touching `is_nothing`'s 8 other callers) (is_nothing
   4992-4998) treats numeric 0 as Nothing → `Set o = 0` silently stores scalar (VBA err 424). Fix:
   drop the numeric-zero clause / gate the Set legality check.
 - ☐ **B17 collection-index-subtypes** (eval, LOW, S — #19) — `crates/oxvba-eval/src/collection.rs:70`

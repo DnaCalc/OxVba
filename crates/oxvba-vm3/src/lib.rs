@@ -2947,7 +2947,12 @@ impl<'h> Vm3<'h> {
         use AssignmentIntent as Intent;
         use AssignmentTargetKind as Kind;
         let value = self.operand(src)?;
-        let is_object = matches!(value.vtype(), VarType::Object) || is_nothing(&value);
+        // `Nothing` is already a null-object `Variant` (VarType::Object), so the
+        // object test is just the type — the old `|| is_nothing(&value)` also
+        // matched Empty/Null and numeric 0 (is_nothing's stale scalar-zero
+        // sentinel), which let `Set o = 0` silently store a scalar instead of
+        // raising "Object required" (424).
+        let is_object = matches!(value.vtype(), VarType::Object);
         match intent {
             Intent::Set if !is_object => Err(Vm3Error::Fault(Fault::new(
                 424,
