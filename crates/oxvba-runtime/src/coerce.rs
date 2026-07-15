@@ -311,7 +311,7 @@ pub fn variant_to_vba_string(value: &Variant) -> Result<BStr, String> {
             BStr::from(format!("{}", value.as_u32().unwrap_or(0)))
         }
         VarType::UnsignedLongLong => BStr::from(format!("{}", value.as_u64().unwrap_or(0))),
-        VarType::Single => BStr::from(format_vba_f64(f64::from(value.as_f32().unwrap_or(0.0)))),
+        VarType::Single => BStr::from(format_vba_single(value.as_f32().unwrap_or(0.0))),
         VarType::Double => BStr::from(format_vba_f64(value.as_f64().unwrap_or(0.0))),
         VarType::Date => BStr::from(crate::vba_date::format_general_date(
             value.as_date_f64().unwrap_or(0.0),
@@ -375,6 +375,28 @@ fn format_vba_currency(scaled: i64) -> String {
 
 /// Format an f64 value the way VBA does: use enough decimal places but
 /// trim trailing zeros. Integers are shown without a decimal point.
+/// Round `v` to `sig` significant decimal digits.
+fn round_to_sig_digits(v: f64, sig: i32) -> f64 {
+    if v == 0.0 || !v.is_finite() {
+        return v;
+    }
+    let magnitude = v.abs().log10().floor() as i32;
+    let decimals = (sig - 1) - magnitude;
+    let factor = 10f64.powi(decimals);
+    (v * factor).round() / factor
+}
+
+/// Format a `Single` the way VBA's `CStr`/`Str`/`Print` does: to the ~7
+/// significant digits of `Single` precision, shortest form. The variant stores a
+/// widened `f64`, and formatting that widened value directly leaks the f32's
+/// imprecision as spurious digits (`CStr(CSng(0.1))` -> "0.10000000149011612").
+/// VBA's `Single`->string conversion (`VarBstrFromR4`) is `%.7g`-style, so
+/// rounding to 7 significant digits before formatting reproduces it
+/// (`CSng(0.1)` -> "0.1", `CSng(1/3)` -> "0.3333333").
+fn format_vba_single(v: f32) -> String {
+    format_vba_f64(round_to_sig_digits(f64::from(v), 7))
+}
+
 fn format_vba_f64(v: f64) -> String {
     if v.is_nan() {
         return "NaN".to_string();
@@ -426,7 +448,7 @@ pub fn print_display_text(value: &Variant) -> String {
         VarType::UnsignedInteger => value.as_u16().unwrap_or(0).to_string(),
         VarType::UnsignedLong | VarType::UnsignedInt => value.as_u32().unwrap_or(0).to_string(),
         VarType::UnsignedLongLong => value.as_u64().unwrap_or(0).to_string(),
-        VarType::Single => value.as_f32().unwrap_or(0.0).to_string(),
+        VarType::Single => format_vba_single(value.as_f32().unwrap_or(0.0)),
         VarType::Double => value.as_f64().unwrap_or(0.0).to_string(),
         VarType::Date => crate::vba_date::format_general_date(value.as_date_f64().unwrap_or(0.0)),
         VarType::Decimal => value

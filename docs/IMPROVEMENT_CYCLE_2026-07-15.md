@@ -52,7 +52,9 @@ Legend: ☐ open · ◐ in progress · ☑ done
   (also fixed the adjacent time-of-day drop in the same branch)
   "m"/"yyyy"/"q" reuses original day, no clamp → `DateAdd("m",1,#1/31/2021#)`→3/3/2021 (VBA
   2/28). Fix: clamp day to days-in-month before `ymd_to_serial`.
-- ☐ **B7 single-string-precision** (runtime, HIGH, S — #6) — `crates/oxvba-runtime/src/coerce.rs:314`
+- ☑ **B7 single-string-precision** (runtime, HIGH, S — #6) — `crates/oxvba-runtime/src/coerce.rs:314`
+  (shared 7-sig-digit `format_vba_single` for CStr + display paths; residual: large-magnitude
+  scientific notation shares the B19 gap)
   Single arm does `format_vba_f64(f64::from(as_f32()))` → `CStr(CSng(0.1))`→"0.10000000149011612".
   Correct sibling `print_display_text:429` uses `as_f32().to_string()`. Fix: format from f32 directly.
 - ☐ **B8 null-propagation** (lib, MED, S — #16) — `crates/oxvba-lib/src/pure.rs:925` (Sgn) & ~1064
