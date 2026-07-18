@@ -63,6 +63,7 @@ public sealed class OxVbaCoreGateWindowsJob : IDisposable
     private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
     private const uint WAIT_OBJECT_0 = 0;
     private const uint WAIT_TIMEOUT = 258;
+    private const int ProcessQueryLimitedInformation = 0x1000;
 
     private IntPtr _job;
     private IntPtr _process;
@@ -270,6 +271,61 @@ public sealed class OxVbaCoreGateWindowsJob : IDisposable
             ThrowLastError("WaitForSingleObject(test sentinel)");
             return false;
         }
+    }
+
+    // Returns "pid:image-path" for every process currently assigned to the job.
+    // Used only after the direct child exits to distinguish manifest-declared
+    // ambient toolchain helpers (for example MSVC vctip.exe) from a genuine
+    // surviving descendant. A member whose image cannot be resolved is recorded
+    // as "pid:?" so it is judged (and fails) rather than silently dropped.
+    public string[] GetMemberImageNames()
+    {
+        EnsureLive();
+        const int headerSize = 8; // JOBOBJECT_BASIC_PROCESS_ID_LIST: two UInt32 counters then ULONG_PTR[]
+        int capacity = 16;
+        while (true)
+        {
+            int size = headerSize + IntPtr.Size * capacity;
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                Marshal.WriteInt32(buffer, 0, 0);
+                Marshal.WriteInt32(buffer, 4, capacity);
+                // JobObjectBasicProcessIdList = 3 (verified empirically on
+                // Windows x64: class 2 is rejected with ERROR_BAD_LENGTH).
+                if (!QueryInformationJobObject(_job, 3, buffer, (uint)size, IntPtr.Zero))
+                    ThrowLastError("QueryInformationJobObject(ProcessIdList)");
+                int assigned = Marshal.ReadInt32(buffer, 0);
+                int returned = Marshal.ReadInt32(buffer, 4);
+                if (assigned > capacity) { capacity = assigned * 2; continue; }
+                var names = new List<string>();
+                for (int index = 0; index < returned; index++)
+                {
+                    long pidValue = Marshal.ReadIntPtr(buffer, headerSize + index * IntPtr.Size).ToInt64();
+                    string image = QueryImageName((int)pidValue);
+                    // An unresolvable member (protected image, exit race) is
+                    // recorded as "pid:?" so it can never vanish from the
+                    // ambient-declaration judgment; "?" matches no declared name.
+                    names.Add(pidValue.ToString(CultureInfo.InvariantCulture) + ":" + (image ?? "?"));
+                }
+                return names.ToArray();
+            }
+            finally { Marshal.FreeHGlobal(buffer); }
+        }
+    }
+
+    private static string QueryImageName(int processId)
+    {
+        IntPtr process = OpenProcess(ProcessQueryLimitedInformation, false, processId);
+        if (process == IntPtr.Zero) return null;
+        try
+        {
+            var builder = new StringBuilder(1024);
+            int length = builder.Capacity;
+            if (!QueryFullProcessImageNameW(process, 0, builder, ref length)) return null;
+            return builder.ToString();
+        }
+        finally { CloseHandle(process); }
     }
 
     public void Terminate(uint exitCode)
@@ -677,6 +733,13 @@ public sealed class OxVbaCoreGateWindowsJob : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(int access, bool inheritHandle, int processId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageNameW(IntPtr process, int flags, StringBuilder name, ref int length);
 }
 
 public static class OxVbaCoreGatePosix
@@ -1817,6 +1880,23 @@ public sealed class OxVbaCoreGatePosixOwnedTree : IDisposable
     public int LiveProcessCount
     {
         get { return Refresh().Count; }
+    }
+
+    // Returns "pid:comm" for every live owned descendant. Used only after the
+    // direct child exits to distinguish manifest-declared ambient toolchain
+    // helpers from a genuine surviving descendant, matching the Windows
+    // GetMemberImageNames surface.
+    public List<string> GetLiveProcessNames()
+    {
+        var names = new List<string>();
+        foreach (ProcRecord record in Refresh())
+        {
+            string comm = null;
+            try { comm = File.ReadAllText("/proc/" + record.Pid.ToString(CultureInfo.InvariantCulture) + "/comm").Trim(); }
+            catch { /* exited between discovery and read */ }
+            names.Add(record.Pid.ToString(CultureInfo.InvariantCulture) + ":" + (comm ?? "?"));
+        }
+        return names;
     }
 
     public bool TerminateAll(int deadlineMilliseconds)

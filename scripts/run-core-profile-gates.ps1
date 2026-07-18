@@ -134,6 +134,15 @@ function Assert-ManifestJsonArrayShapes {
             }
             $gateIndex++
         }
+        try {
+            $ambientProperty = $root.GetProperty("supervision").GetProperty("ambient_descendant_names")
+        }
+        catch {
+            throw "core-profile-gates: manifest.supervision.ambient_descendant_names must be a present JSON array"
+        }
+        if ($ambientProperty.ValueKind -ne [Text.Json.JsonValueKind]::Array) {
+            throw "core-profile-gates: manifest.supervision.ambient_descendant_names must be a JSON array"
+        }
     }
     finally {
         $document.Dispose()
@@ -528,14 +537,16 @@ function Invoke-BoundedCapture {
             $execution = Invoke-WindowsOwnedProcess -ProcessShape $processShape -WorkingDirectory $WorkingDirectory `
                 -EvidenceRoot ([string]$ProbeContext.evidence_root) -Environment $environment `
                 -StdoutPath $stdoutPath -StderrPath $stderrPath -TimeoutSeconds $TimeoutSeconds `
-                -CleanupReserveMs ([int]$ProbeContext.cleanup_reserve_ms) -BoundInputs $boundInputs
+                -CleanupReserveMs ([int]$ProbeContext.cleanup_reserve_ms) -BoundInputs $boundInputs `
+                -AmbientDescendantNames ([string[]]$ProbeContext.ambient_descendant_names)
         }
         else {
             $execution = Invoke-LinuxOwnedProcess -ProcessShape $processShape -WorkingDirectory $WorkingDirectory `
                 -EvidenceRoot ([string]$ProbeContext.evidence_root) -Environment $environment `
                 -StdoutPath $stdoutPath -StderrPath $stderrPath -TimeoutSeconds $TimeoutSeconds `
                 -CleanupReserveMs ([int]$ProbeContext.cleanup_reserve_ms) -SetsidIdentity $setsid `
-                -BashIdentity $bash -SupervisorIdentity $ProbeContext.linux_supervisor -BoundInputs $boundInputs
+                -BashIdentity $bash -SupervisorIdentity $ProbeContext.linux_supervisor -BoundInputs $boundInputs `
+                -AmbientDescendantNames ([string[]]$ProbeContext.ambient_descendant_names)
         }
         [byte[]]$stdoutBytes = Read-EvidenceBytes -RepoRoot $WorkingDirectory `
             -EvidenceRoot ([string]$ProbeContext.evidence_root) -Path $stdoutPath -Owner "tool probe stdout"
@@ -867,13 +878,22 @@ function Assert-Manifest {
 
     Assert-ExactKeys $Manifest.supervision @(
         "cleanup_reserve_ms", "native_source_path", "windows_transport", "linux_launcher_path",
-        "linux_bash_path", "linux_supervisor_path", "linux_transport"
+        "linux_bash_path", "linux_supervisor_path", "linux_transport", "ambient_descendant_names"
     ) "manifest.supervision"
     if (($Manifest.supervision.cleanup_reserve_ms -isnot [int] -and
             $Manifest.supervision.cleanup_reserve_ms -isnot [long]) -or
         [int64]$Manifest.supervision.cleanup_reserve_ms -lt 100 -or
         [int64]$Manifest.supervision.cleanup_reserve_ms -gt 2000) {
         throw "core-profile-gates: manifest.supervision.cleanup_reserve_ms must be an integer from 100 through 2000"
+    }
+    $ambientDescendantNames = @($Manifest.supervision.ambient_descendant_names)
+    if ($ambientDescendantNames.Count -gt 16) {
+        throw "core-profile-gates: manifest.supervision.ambient_descendant_names must contain at most 16 names"
+    }
+    foreach ($ambientName in $ambientDescendantNames) {
+        if ([string]$ambientName -cnotmatch '^[A-Za-z0-9_.-]+\.[A-Za-z0-9]{2,5}$') {
+            throw "core-profile-gates: manifest.supervision.ambient_descendant_names entry '$ambientName' is not a plain executable image name"
+        }
     }
     Assert-ExactString $Manifest.supervision.native_source_path "scripts/core-gate-process-supervisor.cs" "manifest.supervision.native_source_path"
     Assert-ExactString $Manifest.supervision.windows_transport "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr" "manifest.supervision.windows_transport"
@@ -1176,9 +1196,37 @@ function New-ChildEnvironment {
 # Bounded window allowed for ordinary process-tree teardown after the direct
 # child exits (rustup-proxy/toolchain chains exit out of order; job accounting
 # of the final children can lag tens to hundreds of milliseconds on a loaded
-# host). A descendant that survives beyond this window is a genuine leak and
-# still fails closed with descendant-processes-remained-after-direct-exit.
+# host). A descendant that survives beyond this window is judged by identity:
+# a residual set made up only of manifest-declared ambient toolchain helpers
+# (for example MSVC vctip.exe and its console host) is recorded and terminated,
+# while any other surviving descendant fails closed with
+# descendant-processes-remained-after-direct-exit.
 $script:DescendantDrainMs = 3000
+
+function Test-AllAmbientDescendants {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Residuals,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$AmbientNames
+    )
+
+    # Residuals are "pid:image" entries (Windows full image path, Linux comm).
+    # Every residual image leaf must equal a manifest-declared ambient name.
+    if ($Residuals.Count -eq 0 -or $AmbientNames.Count -eq 0) { return $false }
+    foreach ($entry in $Residuals) {
+        $text = [string]$entry
+        $separator = $text.IndexOf(':')
+        if ($separator -lt 0) { return $false }
+        $image = $text.Substring($separator + 1)
+        if ([string]::IsNullOrEmpty($image)) { return $false }
+        $leaf = if ($image.Contains('\')) { $image.Split('\')[-1] } else { $image }
+        $matched = $false
+        foreach ($ambient in $AmbientNames) {
+            if ([string]::Equals($leaf, [string]$ambient, [StringComparison]::OrdinalIgnoreCase)) { $matched = $true; break }
+        }
+        if (-not $matched) { return $false }
+    }
+    return $true
+}
 
 function Invoke-WindowsOwnedProcess {
     param(
@@ -1190,7 +1238,8 @@ function Invoke-WindowsOwnedProcess {
         [Parameter(Mandatory = $true)][string]$StderrPath,
         [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
         [Parameter(Mandatory = $true)][int]$CleanupReserveMs,
-        [Parameter(Mandatory = $true)][object[]]$BoundInputs
+        [Parameter(Mandatory = $true)][object[]]$BoundInputs,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$AmbientDescendantNames
     )
 
     $totalMs = $TimeoutSeconds * 1000
@@ -1201,6 +1250,7 @@ function Invoke-WindowsOwnedProcess {
     $terminationReason = ""
     $treeCleanup = "complete"
     $exitCode = $null
+    $ambientAccepted = @()
     $ownershipRootPid = $null
     try {
         Assert-EvidencePathConfined -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Target $StdoutPath -Owner "Windows gate stdout"
@@ -1226,6 +1276,22 @@ function Invoke-WindowsOwnedProcess {
             if ($directExited) {
                 if ($null -eq $directExitObservedMs) { $directExitObservedMs = $timer.ElapsedMilliseconds }
                 elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge $script:DescendantDrainMs) {
+                    # Ordinary teardown did not drain inside the bounded window.
+                    # Accept only manifest-declared ambient toolchain helpers
+                    # (recorded and then terminated); anything else fails closed.
+                    $residuals = @($job.GetMemberImageNames())
+                    if ($residuals.Count -eq 0) { continue }
+                    if (Test-AllAmbientDescendants -Residuals $residuals -AmbientNames $AmbientDescendantNames) {
+                        $ambientAccepted = $residuals
+                        $exitCode = $job.ExitCode
+                        $job.Terminate(0)
+                        while ($timer.ElapsedMilliseconds -lt $totalMs) {
+                            if ($job.ActiveProcesses -eq 0) { break }
+                            Start-Sleep -Milliseconds 10
+                        }
+                        if ($job.ActiveProcesses -ne 0) { $treeCleanup = "kill-on-close-forced-at-deadline" }
+                        break
+                    }
                     $exitCode = $job.ExitCode
                     $terminationReason = "descendant-processes-remained-after-direct-exit"
                     break
@@ -1246,7 +1312,7 @@ function Invoke-WindowsOwnedProcess {
                 $treeCleanup = "kill-on-close-forced-at-deadline"
             }
         }
-        elseif ($job.ActiveProcesses -ne 0) {
+        elseif ($job.ActiveProcesses -ne 0 -and $ambientAccepted.Count -eq 0) {
             $terminationReason = "owned-process-tree-not-empty"
             $job.Terminate(125)
         }
@@ -1278,6 +1344,7 @@ function Invoke-WindowsOwnedProcess {
         ownership_root_pid = $ownershipRootPid
         ownership_root_start_ticks = $null
         escaped_descendants_observed = $false
+        ambient_descendants = @($ambientAccepted)
         total_deadline_ms = $totalMs
     }
 }
@@ -1295,7 +1362,8 @@ function Invoke-LinuxOwnedProcess {
         [Parameter(Mandatory = $true)]$SetsidIdentity,
         [Parameter(Mandatory = $true)]$BashIdentity,
         [Parameter(Mandatory = $true)]$SupervisorIdentity,
-        [Parameter(Mandatory = $true)][object[]]$BoundInputs
+        [Parameter(Mandatory = $true)][object[]]$BoundInputs,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$AmbientDescendantNames
     )
 
     Write-EvidenceBytes -RepoRoot $WorkingDirectory -EvidenceRoot $EvidenceRoot -Path $StdoutPath `
@@ -1319,6 +1387,7 @@ function Invoke-LinuxOwnedProcess {
     $terminationReason = ""
     $treeCleanup = "complete"
     $exitCode = $null
+    $ambientAccepted = @()
     $supervisorReady = $false
     $ownershipRootPid = $null
     $ownershipRootStartTicks = $null
@@ -1405,6 +1474,18 @@ function Invoke-LinuxOwnedProcess {
             if ($directExited -and $ownedLive -gt 0) {
                 if ($null -eq $directExitObservedMs) { $directExitObservedMs = $timer.ElapsedMilliseconds }
                 elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge $script:DescendantDrainMs) {
+                    # Ordinary teardown did not drain inside the bounded window.
+                    # Accept only manifest-declared ambient toolchain helpers
+                    # (recorded and then terminated); anything else fails closed.
+                    $residuals = @($ownedTree.GetLiveProcessNames())
+                    if ($residuals.Count -eq 0) { continue }
+                    if (Test-AllAmbientDescendants -Residuals $residuals -AmbientNames $AmbientDescendantNames) {
+                        $ambientAccepted = $residuals
+                        $exitCode = [int]$process.ExitCode
+                        $ambientCleanupBudget = [Math]::Max(0, $totalMs - [int]$timer.ElapsedMilliseconds)
+                        if (-not $ownedTree.TerminateAll($ambientCleanupBudget)) { $treeCleanup = "owned-tree-kill-incomplete-at-deadline" }
+                        break
+                    }
                     $exitCode = [int]$process.ExitCode
                     $terminationReason = "descendant-processes-remained-after-direct-exit"
                     break
@@ -1479,6 +1560,7 @@ function Invoke-LinuxOwnedProcess {
         ownership_root_pid = $ownershipRootPid
         ownership_root_start_ticks = $ownershipRootStartTicks
         escaped_descendants_observed = $escapedDescendantsObserved
+        ambient_descendants = @($ambientAccepted)
         total_deadline_ms = $totalMs
     }
 }
@@ -1550,13 +1632,14 @@ function Invoke-GateProcess {
             $execution = Invoke-WindowsOwnedProcess -ProcessShape $processShape -WorkingDirectory $RepoRoot -EvidenceRoot $EvidenceRoot `
                 -Environment $childEnvironment -StdoutPath $stdoutPath -StderrPath $stderrPath `
                 -TimeoutSeconds ([int]$Gate.timeout_seconds) -CleanupReserveMs ([int]$Supervision.cleanup_reserve_ms) `
-                -BoundInputs $boundInputs
+                -BoundInputs $boundInputs -AmbientDescendantNames ([string[]]$Supervision.ambient_descendant_names)
         }
         else {
             $execution = Invoke-LinuxOwnedProcess -ProcessShape $processShape -WorkingDirectory $RepoRoot -EvidenceRoot $EvidenceRoot `
                 -Environment $childEnvironment -StdoutPath $stdoutPath -StderrPath $stderrPath `
                 -TimeoutSeconds ([int]$Gate.timeout_seconds) -CleanupReserveMs ([int]$Supervision.cleanup_reserve_ms) `
-                -SetsidIdentity $setsid -BashIdentity $bash -SupervisorIdentity $supervisorIdentity -BoundInputs $boundInputs
+                -SetsidIdentity $setsid -BashIdentity $bash -SupervisorIdentity $supervisorIdentity -BoundInputs $boundInputs `
+                -AmbientDescendantNames ([string[]]$Supervision.ambient_descendant_names)
         }
         $finish = [DateTimeOffset]::UtcNow
         [byte[]]$stdoutBytes = Read-EvidenceBytes -RepoRoot $RepoRoot -EvidenceRoot $EvidenceRoot -Path $stdoutPath -Owner "gate $($Gate.id) stdout"
@@ -1589,6 +1672,7 @@ function Invoke-GateProcess {
             ownership_root_pid = $execution.ownership_root_pid
             ownership_root_start_ticks = $execution.ownership_root_start_ticks
             escaped_descendants_observed = [bool]$execution.escaped_descendants_observed
+            ambient_descendants = @($execution.ambient_descendants)
             evidence_path = [string]$Gate.evidence_path
             stdout_path = "$($Gate.evidence_path)/stdout.log"
             stderr_path = "$($Gate.evidence_path)/stderr.log"
@@ -1637,6 +1721,7 @@ function New-NonExecutedResult {
         ownership_root_pid = $null
         ownership_root_start_ticks = $null
         escaped_descendants_observed = $false
+        ambient_descendants = @()
         evidence_path = [string]$Gate.evidence_path
         stdout_path = ""
         stderr_path = ""
@@ -1880,6 +1965,7 @@ $probeContext = [pscustomobject]@{
     evidence_root = $evidenceRoot
     probe_root = $probeRoot
     cleanup_reserve_ms = [int]$manifest.supervision.cleanup_reserve_ms
+    ambient_descendant_names = @($manifest.supervision.ambient_descendant_names)
     sequence = 0
     tools = @($toolCandidates)
     native_source = [pscustomobject]@{
@@ -1906,6 +1992,7 @@ $toolEvidence = @($tools | ForEach-Object { [ordered]@{ id = $_.id; path = $_.pa
 $commandEvidence = @($commandIdentities | ForEach-Object { [ordered]@{ path = $_.path; sha256 = $_.sha256 } })
 $supervisionEvidence = [ordered]@{
     cleanup_reserve_ms = [int]$manifest.supervision.cleanup_reserve_ms
+    ambient_descendant_names = @($manifest.supervision.ambient_descendant_names)
     transport = if ($IsWindows) { [string]$manifest.supervision.windows_transport } else { [string]$manifest.supervision.linux_transport }
     native_source_path = [string]$manifest.supervision.native_source_path
     native_source_sha256 = [string]$nativeSource.sha256

@@ -20,6 +20,10 @@
   },
   "supervision": {
     "cleanup_reserve_ms": 500,
+    "ambient_descendant_names": [
+      "vctip.exe",
+      "conhost.exe"
+    ],
     "native_source_path": "scripts/core-gate-process-supervisor.cs",
     "windows_transport": "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr",
     "linux_launcher_path": "/usr/bin/setsid",

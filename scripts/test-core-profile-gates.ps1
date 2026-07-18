@@ -141,7 +141,7 @@ function New-TestGate {
 }
 
 function New-TestManifest {
-    param([Parameter(Mandatory = $true)][object[]]$Gates, [int]$CargoLockSeconds = 10)
+    param([Parameter(Mandatory = $true)][object[]]$Gates, [int]$CargoLockSeconds = 10, [string[]]$AmbientDescendantNames = @())
     return [pscustomobject][ordered]@{
         schema_id = "oxvba-core-profile-gate-plan-v1"; plan_id = "core-profile-portable-gates-v1"
         version = 1; profile = "core"; supported_platforms = @("windows-x64", "linux-x64")
@@ -155,6 +155,7 @@ function New-TestManifest {
         }
         supervision = [pscustomobject][ordered]@{
             cleanup_reserve_ms = 500
+            ambient_descendant_names = @($AmbientDescendantNames)
             native_source_path = "scripts/core-gate-process-supervisor.cs"
             windows_transport = "job-object-v3:identity-bound-input-handles;startupinfoex-handle-list;suspended-assign-resume;kill-on-close;owned-file-stdout-stderr"
             linux_launcher_path = "/usr/bin/setsid"
@@ -645,6 +646,45 @@ Write-Output "direct-parent-exiting child=$($child.Id)"
     Assert-ProcessGone -ProcessId $drainGrandchildPid -Owner "short-lived descendant"
     Write-Host "core-profile-gates bounded descendant drain: ok"
 
+    $ambientRoot = New-FixtureRoot -Name "ambient-descendant"
+    $ambientPidPath = Join-Path $ambientRoot "test-output/ambient.pid"
+    $ambientImageName = "vctip.exe"
+    $ambientSource = Join-Path $tempBase "ambient-sleeper.rs"
+    $ambientBinary = Join-Path $ambientRoot (Join-Path "scripts" $ambientImageName)
+    Write-Utf8Text -Path $ambientSource -Text @'
+fn main() {
+    std::thread::sleep(std::time::Duration::from_secs(30));
+}
+'@
+    $rustc = (Get-Command rustc -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $ambientCompile = @(& $rustc --edition=2021 $ambientSource -o $ambientBinary 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "could not compile ambient-descendant fixture:`n$($ambientCompile -join "`n")" }
+    if ($IsLinux) { & /usr/bin/chmod +x $ambientBinary; if ($LASTEXITCODE -ne 0) { throw "could not make ambient fixture executable" } }
+    Write-Utf8Text -Path (Join-Path $ambientRoot "scripts/spawn-ambient.ps1") -Text @'
+$image = Join-Path $PSScriptRoot "vctip.exe"
+$startInfo = [Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = $image
+$startInfo.UseShellExecute = $false
+$child = [Diagnostics.Process]::Start($startInfo)
+[void](New-Item -ItemType Directory -Path (Split-Path -Parent $env:OXVBA_CORE_GATE_TEST_PID_PATH) -Force)
+[IO.File]::WriteAllText($env:OXVBA_CORE_GATE_TEST_PID_PATH, [string]$child.Id, [Text.UTF8Encoding]::new($false))
+Write-Output "direct-parent-exiting ambient=$($child.Id)"
+'@
+    $ambientEnvironment = @([pscustomobject]@{ name = "OXVBA_CORE_GATE_TEST_PID_PATH"; action = "set"; value = $ambientPidPath })
+    Write-TestManifest -Root $ambientRoot -Manifest (New-TestManifest -Gates @((New-TestGate -Order 1 -Id "ambient-descendant" -Command "scripts/spawn-ambient.ps1" -Environment $ambientEnvironment -TimeoutSeconds 10)) -AmbientDescendantNames @("vctip.exe", "conhost.exe"))
+    Initialize-FixtureGit -Root $ambientRoot
+    $ambient = Invoke-Runner -Root $ambientRoot -Arguments @("-RepositoryRoot", $ambientRoot, "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "ambient-descendant") -TimeoutSeconds 90
+    Assert-Equal $ambient.exit_code 0 "ambient-declared descendant was not accepted: $($ambient.stderr)"
+    $ambientRun = Get-RunManifest -Root $ambientRoot -RunId "ambient-descendant"
+    Assert-Equal $ambientRun.results[0].status "passed" "ambient-declared descendant did not pass"
+    Assert-Equal $ambientRun.results[0].tree_cleanup "complete" "ambient-declared descendant tree did not empty"
+    Assert-Matches ([string]($ambientRun.results[0].ambient_descendants -join " ")) 'vctip\.exe' "ambient residual identity was not recorded"
+    Assert-True ([int64]$ambientRun.results[0].duration_ms -le 12000) "ambient-descendant gate exceeded the bounded drain plus admission/cleanup overhead"
+    Assert-True (Test-Path -LiteralPath $ambientPidPath -PathType Leaf) "ambient descendant pid was not recorded"
+    $ambientPid = [int][IO.File]::ReadAllText($ambientPidPath, $utf8)
+    Assert-ProcessGone -ProcessId $ambientPid -Owner "ambient-declared descendant"
+    Write-Host "core-profile-gates ambient toolchain descendant exemption: ok"
+
     if ($IsLinux) {
         $escapedRoot = New-FixtureRoot -Name "escaped-session"
         $escapedPidPath = Join-Path $escapedRoot "test-output/escaped.pid"
@@ -1119,6 +1159,9 @@ Write-Output "evidence-root-replaced"
     Assert-ManifestFailure -Name "bad-windows-transport" -Pattern 'windows_transport must be' -Mutate { param($m, $r) $m.supervision.windows_transport = "unowned" }
     Assert-ManifestFailure -Name "bad-linux-transport" -Pattern 'linux_transport must be' -Mutate { param($m, $r) $m.supervision.linux_transport = "unowned" }
     Assert-ManifestFailure -Name "bad-linux-bash" -Pattern 'linux_bash_path must be' -Mutate { param($m, $r) $m.supervision.linux_bash_path = "/tmp/bash" }
+    Assert-ManifestFailure -Name "scalar-ambient-descendant-names" -Pattern 'ambient_descendant_names must be a JSON array' -Mutate { param($m, $r) $m.supervision.ambient_descendant_names = "vctip.exe" }
+    Assert-ManifestFailure -Name "bad-ambient-descendant-name" -Pattern 'not a plain executable image' -Mutate { param($m, $r) $m.supervision.ambient_descendant_names = @("vctip") }
+    Assert-ManifestFailure -Name "too-many-ambient-descendant-names" -Pattern 'at most 16' -Mutate { param($m, $r) $m.supervision.ambient_descendant_names = @(1..17 | ForEach-Object { "ambient$_.exe" }) }
     Assert-ManifestFailure -Name "duplicate-json-key" -Pattern "duplicate JSON property 'plan_id'" -Mutate {
         param($m, $r); Write-TestManifest -Root $r -Manifest $m; $path = Join-Path $r "ci/core-profile/gates-v1.json"
         $text = [IO.File]::ReadAllText($path, $utf8).Replace('  "plan_id":', "  `"plan_id`": `"duplicate`",`n  `"plan_id`":", [StringComparison]::Ordinal)
@@ -1241,7 +1284,7 @@ Add-Content -LiteralPath $env:OXVBA_CORE_GATE_TEST_TIMELINE -Value "end|$env:OXV
     if ($Phase -eq "All") {
         $descendantCases = if ($IsLinux) { 3 } else { 2 }
         $sourceToolSealCases = if ($IsLinux) { 6 } else { 5 }
-        Write-Host "test-core-profile-gates: ok (phase=All x64=1 exact-success=1 failures=1 timeouts=1 descendants=$descendantCases evidence-tamper=6 source-tool-seals=$sourceToolSealCases path-confinement=2 manifest-mutations=27 cargo-concurrency=2)"
+        Write-Host "test-core-profile-gates: ok (phase=All x64=1 exact-success=1 failures=1 timeouts=1 descendants=$descendantCases ambient-descendants=1 evidence-tamper=6 source-tool-seals=$sourceToolSealCases path-confinement=2 manifest-mutations=30 cargo-concurrency=2)"
     }
     else { Write-Host "test-core-profile-gates: ok (phase=$Phase)" }
 }
