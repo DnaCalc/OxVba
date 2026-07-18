@@ -161,8 +161,13 @@ mod tests {
         p.entry = Some(FuncId(99));
         let errs = verify_program(&p).expect_err("out-of-range program entry must be rejected");
         assert!(
-            errs.iter()
-                .any(|e| matches!(e, VerifyError::BadProgramEntry { entry: 99, funcs: 1 })),
+            errs.iter().any(|e| matches!(
+                e,
+                VerifyError::BadProgramEntry {
+                    entry: 99,
+                    funcs: 1
+                }
+            )),
             "expected BadProgramEntry, got {errs:?}"
         );
     }

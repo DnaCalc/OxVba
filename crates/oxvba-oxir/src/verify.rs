@@ -345,10 +345,9 @@ impl std::fmt::Display for VerifyError {
                     "func {func}: entry block {entry} out of range ({blocks} blocks)"
                 )
             }
-            VerifyError::BadProgramEntry { entry, funcs } => write!(
-                f,
-                "program entry func {entry} out of range ({funcs} funcs)"
-            ),
+            VerifyError::BadProgramEntry { entry, funcs } => {
+                write!(f, "program entry func {entry} out of range ({funcs} funcs)")
+            }
             VerifyError::BadGlobalInitializer { initializer, funcs } => write!(
                 f,
                 "program global_initializer func {initializer} out of range ({funcs} funcs)"

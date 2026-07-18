@@ -41,7 +41,10 @@ fn ok_slot0(body: &str) -> oxvba_differential::Canon {
 fn redim_bound_beyond_long_range_is_overflow_6() {
     // 2^31 (just past Long max 2147483647): used to truncate to a tiny/negative
     // bound and silently allocate the wrong size.
-    assert_eq!(error_number("    Dim a() As Long\n    ReDim a(2147483648#)\n"), 6);
+    assert_eq!(
+        error_number("    Dim a() As Long\n    ReDim a(2147483648#)\n"),
+        6
+    );
 }
 
 #[test]
@@ -62,7 +65,10 @@ fn array_subscript_beyond_long_range_is_overflow_6() {
 fn in_range_out_of_bounds_subscript_still_raises_9() {
     // A Long-range index outside the declared bounds is still error 9, not 6 —
     // the overflow check must not swallow the ordinary subscript check.
-    assert_eq!(error_number("    Dim a(0 To 10) As Long\n    r = a(20)\n"), 9);
+    assert_eq!(
+        error_number("    Dim a(0 To 10) As Long\n    r = a(20)\n"),
+        9
+    );
 }
 
 #[test]

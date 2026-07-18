@@ -1021,8 +1021,16 @@ mod tests {
     fn small_integers_and_floats_are_unaffected() {
         // Regression: ordinary comparisons still work (exact path is a no-op or
         // agrees).
-        assert!(cmp_bool(&Variant::from_i32(3), &Variant::from_i32(2), CmpOp::Gt));
-        assert!(cmp_bool(&Variant::from_f64(2.5), &Variant::from_f64(2.5), CmpOp::Eq));
+        assert!(cmp_bool(
+            &Variant::from_i32(3),
+            &Variant::from_i32(2),
+            CmpOp::Gt
+        ));
+        assert!(cmp_bool(
+            &Variant::from_f64(2.5),
+            &Variant::from_f64(2.5),
+            CmpOp::Eq
+        ));
         assert!(cmp_bool(
             &Variant::from_i64(5),
             &Variant::from_f64(5.0),

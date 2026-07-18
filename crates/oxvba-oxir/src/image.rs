@@ -31,10 +31,17 @@ pub struct OxImage {
 pub enum OxImageError {
     Serialize(serde_json::Error),
     Deserialize(serde_json::Error),
-    UnknownFormat { format: String },
-    UnsupportedVersion { version: u32 },
+    UnknownFormat {
+        format: String,
+    },
+    UnsupportedVersion {
+        version: u32,
+    },
     Empty,
-    EntryOutOfRange { entry: usize, count: usize },
+    EntryOutOfRange {
+        entry: usize,
+        count: usize,
+    },
     /// A contained program failed structural verification (e.g. an out-of-range
     /// entry/func/block reference in a corrupt or foreign `.oxi`).
     VerificationFailed {

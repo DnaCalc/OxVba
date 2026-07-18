@@ -37,11 +37,15 @@ fn assert_both_overflow(source: &str) {
 }
 
 fn single(body: &str) -> String {
-    format!("Public r As Variant\nSub Main()\n    Dim a As Single\n    Dim b As Single\n{body}    r = b\nEnd Sub\n")
+    format!(
+        "Public r As Variant\nSub Main()\n    Dim a As Single\n    Dim b As Single\n{body}    r = b\nEnd Sub\n"
+    )
 }
 
 fn double(body: &str) -> String {
-    format!("Public r As Variant\nSub Main()\n    Dim a As Double\n    Dim b As Double\n{body}    r = b\nEnd Sub\n")
+    format!(
+        "Public r As Variant\nSub Main()\n    Dim a As Double\n    Dim b As Double\n{body}    r = b\nEnd Sub\n"
+    )
 }
 
 #[test]
@@ -66,7 +70,10 @@ fn jit_double_overflow_matches_vm3() {
     ] {
         assert_jit_matches_vm3(&src);
         let outcome = run(Executor::Vm3, &src);
-        assert!(!outcome.raised, "vm3 unexpectedly raised on Double overflow");
+        assert!(
+            !outcome.raised,
+            "vm3 unexpectedly raised on Double overflow"
+        );
     }
 }
 

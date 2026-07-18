@@ -588,7 +588,10 @@ mod tests {
         assert_eq!(tokenize("#12/31/2020#")[0].0, SyntaxKind::DateLiteral);
         assert_eq!(tokenize("#12:30:00 PM#")[0].0, SyntaxKind::DateLiteral);
         assert_eq!(tokenize("#Jan 1, 2000#")[0].0, SyntaxKind::DateLiteral);
-        assert_eq!(tokenize("#January 1, 2000 3:30:00 PM#")[0].0, SyntaxKind::DateLiteral);
+        assert_eq!(
+            tokenize("#January 1, 2000 3:30:00 PM#")[0].0,
+            SyntaxKind::DateLiteral
+        );
         assert_eq!(tokenize("#2020-05-01#")[0].0, SyntaxKind::DateLiteral);
     }
 
@@ -788,11 +791,11 @@ mod tests {
         // boundary") on ordinary non-ASCII VBA source. Every one of these must
         // tokenize without panicking and reconstruct exactly.
         let sources = [
-            "é",            // bare 2-byte
-            "€",            // 3-byte non-letter symbol
-            "😀",           // 4-byte non-letter (emoji)
-            "+😀",          // operator immediately followed by a 4-byte char
-            "<€",           // 2-char-operator lookahead across a 3-byte lead byte
+            "é",                          // bare 2-byte
+            "€",                          // 3-byte non-letter symbol
+            "😀",                         // 4-byte non-letter (emoji)
+            "+😀",                        // operator immediately followed by a 4-byte char
+            "<€",                         // 2-char-operator lookahead across a 3-byte lead byte
             "x = \"café\" ' αβγ comment", // multibyte in string + comment
             "Sub Naïve()\r\n    Dim π As Double\r\nEnd Sub",
             "变量 = 42 : Debug.Print 变量",

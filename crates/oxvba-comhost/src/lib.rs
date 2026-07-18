@@ -1097,7 +1097,9 @@ unsafe extern "system" fn dispatch_invoke(
     ) {
         Ok(()) => S_OK,
         // Marshalling the result back to a VARIANT is not a guest VBA fault.
-        Err(message) => write_runtime_exception(None, message, excep_info, arg_err, arg_count(params)),
+        Err(message) => {
+            write_runtime_exception(None, message, excep_info, arg_err, arg_count(params))
+        }
     }
 }
 

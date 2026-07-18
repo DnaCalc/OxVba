@@ -769,9 +769,8 @@ impl<'a> Parser<'a> {
         if self.is_expr_stop(self.current()) {
             return;
         }
-        let is_separator = |p: &Self| {
-            p.at(SyntaxKind::Comma) || (allow_semicolon && p.at(SyntaxKind::Semicolon))
-        };
+        let is_separator =
+            |p: &Self| p.at(SyntaxKind::Comma) || (allow_semicolon && p.at(SyntaxKind::Semicolon));
 
         self.start_node(SyntaxKind::ArgList);
 
