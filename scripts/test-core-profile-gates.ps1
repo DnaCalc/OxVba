@@ -593,7 +593,7 @@ Start-Sleep -Milliseconds 1200
 Write-Output "direct-parent-exiting child=$($child.Id)"
 '@
     $pidEnvironment = @([pscustomobject]@{ name = "OXVBA_CORE_GATE_TEST_PID_PATH"; action = "set"; value = $pidPath })
-    Write-TestManifest -Root $descendantRoot -Manifest (New-TestManifest -Gates @((New-TestGate -Order 1 -Id "descendant" -Command "scripts/spawn-grandchild.ps1" -Environment $pidEnvironment -TimeoutSeconds 5)))
+    Write-TestManifest -Root $descendantRoot -Manifest (New-TestManifest -Gates @((New-TestGate -Order 1 -Id "descendant" -Command "scripts/spawn-grandchild.ps1" -Environment $pidEnvironment -TimeoutSeconds 10)))
     Initialize-FixtureGit -Root $descendantRoot
     $descendant = Invoke-Runner -Root $descendantRoot -Arguments @("-RepositoryRoot", $descendantRoot, "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "descendant") -TimeoutSeconds 40
     Assert-NoSuccessOutput -Result $descendant -Owner "direct exit with descendant"
@@ -602,7 +602,7 @@ Write-Output "direct-parent-exiting child=$($child.Id)"
     Assert-Equal $descendantRun.results[0].reason "descendant-processes-remained-after-direct-exit" "descendant failure reason drifted"
     Assert-Equal $descendantRun.results[0].tree_cleanup "complete" "descendant tree did not empty"
     Assert-Equal $descendantRun.results[0].transport $expectedTransport "descendant transport was not recorded"
-    Assert-True ([int64]$descendantRun.results[0].duration_ms -le 5500) "descendant cleanup exceeded its owned-tree deadline"
+    Assert-True ([int64]$descendantRun.results[0].duration_ms -le 9000) "descendant cleanup exceeded its owned-tree deadline (parent sleep plus bounded drain window plus admission/cleanup overhead)"
     Assert-True (Test-Path -LiteralPath $pidPath -PathType Leaf) "grandchild pid was not recorded"
     $grandchildPid = [int][IO.File]::ReadAllText($pidPath, $utf8)
     $grandchildGone = $false
@@ -612,6 +612,38 @@ Write-Output "direct-parent-exiting child=$($child.Id)"
     }
     Assert-True $grandchildGone "owned grandchild process remained after runner completion"
     Write-Host "core-profile-gates complete process-tree ownership: ok"
+
+    $drainRoot = New-FixtureRoot -Name "descendant-drain"
+    $drainPidPath = Join-Path $drainRoot "test-output/drain-grandchild.pid"
+    Write-Utf8Text -Path (Join-Path $drainRoot "scripts/drain-grandchild.ps1") -Text @'
+[void](New-Item -ItemType Directory -Path (Split-Path -Parent $env:OXVBA_CORE_GATE_TEST_PID_PATH) -Force)
+[IO.File]::WriteAllText($env:OXVBA_CORE_GATE_TEST_PID_PATH, [string]$PID, [Text.UTF8Encoding]::new($false))
+Start-Sleep -Milliseconds 500
+'@
+    Write-Utf8Text -Path (Join-Path $drainRoot "scripts/spawn-drain-grandchild.ps1") -Text @'
+$startInfo = [Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = $env:OXVBA_CORE_GATE_PWSH_PATH
+$startInfo.UseShellExecute = $false
+foreach ($argument in @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", (Join-Path $PSScriptRoot "drain-grandchild.ps1"))) { [void]$startInfo.ArgumentList.Add($argument) }
+$child = [Diagnostics.Process]::Start($startInfo)
+$deadline = [DateTime]::UtcNow.AddSeconds(2)
+while (-not (Test-Path -LiteralPath $env:OXVBA_CORE_GATE_TEST_PID_PATH) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 10 }
+if (-not (Test-Path -LiteralPath $env:OXVBA_CORE_GATE_TEST_PID_PATH)) { throw "drain grandchild did not publish its pid" }
+Write-Output "direct-parent-exiting child=$($child.Id)"
+'@
+    $drainPidEnvironment = @([pscustomobject]@{ name = "OXVBA_CORE_GATE_TEST_PID_PATH"; action = "set"; value = $drainPidPath })
+    Write-TestManifest -Root $drainRoot -Manifest (New-TestManifest -Gates @((New-TestGate -Order 1 -Id "descendant-drain" -Command "scripts/spawn-drain-grandchild.ps1" -Environment $drainPidEnvironment -TimeoutSeconds 10)))
+    Initialize-FixtureGit -Root $drainRoot
+    $drain = Invoke-Runner -Root $drainRoot -Arguments @("-RepositoryRoot", $drainRoot, "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "descendant-drain") -TimeoutSeconds 90
+    Assert-Equal $drain.exit_code 0 "short-lived descendant drain was not accepted: $($drain.stderr)"
+    $drainRun = Get-RunManifest -Root $drainRoot -RunId "descendant-drain"
+    Assert-Equal $drainRun.results[0].status "passed" "short-lived descendant did not pass inside the bounded drain window"
+    Assert-Equal $drainRun.results[0].exit_code 0 "short-lived descendant exit code drifted"
+    Assert-Equal $drainRun.results[0].tree_cleanup "complete" "short-lived descendant tree did not empty"
+    Assert-True (Test-Path -LiteralPath $drainPidPath -PathType Leaf) "drain grandchild pid was not recorded"
+    $drainGrandchildPid = [int][IO.File]::ReadAllText($drainPidPath, $utf8)
+    Assert-ProcessGone -ProcessId $drainGrandchildPid -Owner "short-lived descendant"
+    Write-Host "core-profile-gates bounded descendant drain: ok"
 
     if ($IsLinux) {
         $escapedRoot = New-FixtureRoot -Name "escaped-session"
@@ -634,7 +666,7 @@ Write-Output "direct-parent-exiting escaped=$($escaped.Id)"
         $escapedEnvironment = @([pscustomobject]@{ name = "OXVBA_CORE_GATE_TEST_PID_PATH"; action = "set"; value = $escapedPidPath })
         Write-TestManifest -Root $escapedRoot -Manifest (New-TestManifest -Gates @(
                 (New-TestGate -Order 1 -Id "escaped-session" -Command "scripts/spawn-escaped-session.ps1" `
-                    -Environment $escapedEnvironment -TimeoutSeconds 5)))
+                    -Environment $escapedEnvironment -TimeoutSeconds 10)))
         Initialize-FixtureGit -Root $escapedRoot
         $escapedResult = Invoke-Runner -Root $escapedRoot -Arguments @("-RepositoryRoot", $escapedRoot,
             "-ManifestPath", "ci/core-profile/gates-v1.json", "-Mode", "NoArtifacts", "-RunId", "escaped-session")
@@ -1008,7 +1040,7 @@ fn main() {
             } -TimeoutSeconds 30
         Assert-NoSuccessOutput -Result $pipeResult -Owner "tool probe retained output pipe"
         Assert-Matches "$($pipeResult.stdout)`n$($pipeResult.stderr)" 'descendant-processes-remained-after-direct-exit' "retained probe pipe failed for the wrong reason"
-        Assert-True ($pipeResult.duration_ms -le 8000) "retained probe pipe exceeded its bounded containment deadline"
+        Assert-True ($pipeResult.duration_ms -le 12000) "retained probe pipe exceeded its bounded containment deadline (tool probe admission plus bounded drain window plus overhead)"
         Assert-True (Test-Path -LiteralPath $pipePidPath -PathType Leaf) "retained-pipe descendant did not publish its pid"
         $pipePid = [int][IO.File]::ReadAllText($pipePidPath, $utf8)
         Assert-ProcessGone -ProcessId $pipePid -Owner "retained-pipe descendant"
@@ -1207,7 +1239,7 @@ Add-Content -LiteralPath $env:OXVBA_CORE_GATE_TEST_TIMELINE -Value "end|$env:OXV
     }
 
     if ($Phase -eq "All") {
-        $descendantCases = if ($IsLinux) { 2 } else { 1 }
+        $descendantCases = if ($IsLinux) { 3 } else { 2 }
         $sourceToolSealCases = if ($IsLinux) { 6 } else { 5 }
         Write-Host "test-core-profile-gates: ok (phase=All x64=1 exact-success=1 failures=1 timeouts=1 descendants=$descendantCases evidence-tamper=6 source-tool-seals=$sourceToolSealCases path-confinement=2 manifest-mutations=27 cargo-concurrency=2)"
     }

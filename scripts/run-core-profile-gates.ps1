@@ -1173,6 +1173,13 @@ function New-ChildEnvironment {
     return $environment
 }
 
+# Bounded window allowed for ordinary process-tree teardown after the direct
+# child exits (rustup-proxy/toolchain chains exit out of order; job accounting
+# of the final children can lag tens to hundreds of milliseconds on a loaded
+# host). A descendant that survives beyond this window is a genuine leak and
+# still fails closed with descendant-processes-remained-after-direct-exit.
+$script:DescendantDrainMs = 3000
+
 function Invoke-WindowsOwnedProcess {
     param(
         [Parameter(Mandatory = $true)]$ProcessShape,
@@ -1218,7 +1225,7 @@ function Invoke-WindowsOwnedProcess {
             }
             if ($directExited) {
                 if ($null -eq $directExitObservedMs) { $directExitObservedMs = $timer.ElapsedMilliseconds }
-                elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge 100) {
+                elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge $script:DescendantDrainMs) {
                     $exitCode = $job.ExitCode
                     $terminationReason = "descendant-processes-remained-after-direct-exit"
                     break
@@ -1397,7 +1404,7 @@ function Invoke-LinuxOwnedProcess {
             }
             if ($directExited -and $ownedLive -gt 0) {
                 if ($null -eq $directExitObservedMs) { $directExitObservedMs = $timer.ElapsedMilliseconds }
-                elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge 100) {
+                elseif (($timer.ElapsedMilliseconds - [int64]$directExitObservedMs) -ge $script:DescendantDrainMs) {
                     $exitCode = [int]$process.ExitCode
                     $terminationReason = "descendant-processes-remained-after-direct-exit"
                     break
