@@ -32,7 +32,7 @@
     },
     {
       "path": "docs/validation/IDEAL_WINDOWS_X64_FIXTURE_MANIFEST_V1.csv",
-      "sha256": "sha256:a106f46c345603b0b13a5078ccd846ad42d1f99817a6bdb64590b8806454d104"
+      "sha256": "sha256:78c8bee96796391b9a2affc1c7e8ceb2057af3948f3ed21d4a54a279073eaef7"
     },
     {
       "path": "docs/validation/IDEAL_WINDOWS_CURRENT_STACK_RESIDUAL_V1.csv",
