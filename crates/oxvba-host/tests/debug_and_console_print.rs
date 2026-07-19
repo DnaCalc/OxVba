@@ -163,12 +163,15 @@ fn debug_assert_condition_is_evaluated_in_headless_runtime() {
 }
 
 #[test]
-fn jit_request_is_rejected_rather_than_falling_back() {
+fn jit_debug_print_executes_and_fires_host_callback() {
+    // The JIT lowers CallNative DebugPrint through the same library path as
+    // vm3 (bd-ivaha.37); it must not decline or silently fall back.
     let callbacks = Arc::new(ConsoleCallbacks::default());
-    let err = run("Sub Main()\nDebug.Print \"x\"\nEnd Sub", true, callbacks)
-        .expect_err("JIT execution is not implemented; it must not silently fall back");
-    assert!(
-        err.contains("CallNative") || err.contains("JIT"),
-        "unexpected diagnostic: {err}"
-    );
+    run(
+        "Sub Main()\nDebug.Print \"x\"\nEnd Sub",
+        true,
+        callbacks.clone(),
+    )
+    .expect("JIT lowers Debug.Print through the shared library path");
+    assert_eq!(callbacks.debug_output(), vec!["x".to_string()]);
 }

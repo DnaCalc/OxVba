@@ -7339,9 +7339,10 @@ impl<'a> LowerFunc<'a> {
             NativeImplId::Like => "Like(Variant, Variant, compare-const)",
             NativeImplId::MidStmt => "MidStmt(target, start[, count], value)",
             NativeImplId::CreateObject => "CreateObject(\"OxVba.TestDispatch\")",
+            NativeImplId::DebugPrint => "Debug.Print(value)",
             _ => {
                 return Err(JitError::unsupported(format!(
-                    "M4-4 CallNative built-in subset currently lowers only Like, MidStmt, and fixture-backed CreateObject, got {native_impl:?}"
+                    "M4-4 CallNative built-in subset currently lowers only Like, MidStmt, fixture-backed CreateObject, and Debug.Print, got {native_impl:?}"
                 )));
             }
         };
@@ -7415,6 +7416,26 @@ impl<'a> LowerFunc<'a> {
                         "M4-4 CallNative {shape} subset is limited to OxVba.TestDispatch, got {prog_id:?}"
                     )))
                 }
+            }
+            NativeImplId::DebugPrint => {
+                if dst.is_some() {
+                    return Err(JitError::unsupported(format!(
+                        "M4-4 CallNative {shape} subset lowers only statement destinations"
+                    )));
+                }
+                for arg in args {
+                    let OxCallArg::Operand(operand) = arg else {
+                        return Err(JitError::unsupported(format!(
+                            "M4-4 CallNative {shape} subset lowers only ordinary operands"
+                        )));
+                    };
+                    if !self.is_supported_variant_extern_operand(operand)? {
+                        return Err(JitError::unsupported(format!(
+                            "M4-4 CallNative {shape} subset lowers only supported scalar/String/Variant operands, got {operand:?}"
+                        )));
+                    }
+                }
+                Ok(())
             }
             _ => unreachable!("validated CallNative built-in shape above"),
         }
