@@ -7,10 +7,10 @@ Active program manifest: docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json
 Program root: bd-59co
 Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
-Queue certification: certified — user-directed CORE-7 portable VM3/JIT basics tranche reached its pause gate. `bd-59co.2.9.1` through `bd-59co.2.9.8` are closed. Do not start `bd-59co.2.9.9` or Windows COM/Declare/pointer/packaging work until the user discusses those bits.
+Queue certification: certified — user-directed CORE-7 JIT module extract `bd-59co.2.9.10` is closed. Do not start `bd-59co.2.9.9` or Windows COM/Declare/pointer/packaging work until the user discusses those bits.
 Claim queue: br ready -l ideal-2026-07 -t task
-Current tasks: none. Portable JIT/VM3 basics pause is in effect after `bd-59co.2.9.8`. Remaining CORE-7 architecture is `bd-59co.2.9.9` and stays blocked.
-Certified ready queue: portable JIT basics are paused. Do not claim `bd-59co.2.9.9`. Ordinary ready work remains `bd-59co.2.2.11`, `bd-59co.3.1.8`, `bd-59co.3.15.6`, and `bd-59co.3.15.12` but should wait for the user discussion of Windows/COM/packaging bits.
+Current tasks: none. JIT module extract is closed. Remaining CORE-7 architecture stays on `bd-59co.2.9.9` and remains blocked.
+Certified ready queue: do not claim `bd-59co.2.9.9`. Ordinary ready work remains `bd-59co.2.2.11`, `bd-59co.3.1.8`, `bd-59co.3.15.6`, and `bd-59co.3.15.12` pending the Windows/COM discussion.
 Current capacity snapshot: `docs/evidence/programs/ideal-2026-07/capacity/POST_ROLLOUT_CAPACITY_2026-07-11.md` (three agents, source hash `19876d013a3d9d45`).
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
 Latest completed result: `bd-59co.2.2.3` closed after certifying the aggregate Rust baseline without warning suppression or VM fallback. Format, strict all-target Clippy, the full workspace suite, parallel and serial 1,145-test differentials, isolated balance/lifecycle and SQLiteForExcel diagnostic lanes, six-axis evidence and fresh review pass. The integrating controller reran format, Clippy and the full workspace suite serially in 596.1 seconds on byte-identical Rust/Cargo inputs. This is support-only closure: the five CORE-1 rows remain planned under the actual Windows `.10`, pinned Linux `.11`, and terminal `.12` successors.
