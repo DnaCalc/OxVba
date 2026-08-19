@@ -2625,6 +2625,98 @@ pub unsafe extern "C" fn rt_err_string_field_utf8(
 /// # Safety
 /// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
 /// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed; non-null `out` must identify
+/// an initialized, uniquely writable `i32` slot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rt_erl_get(state: *mut RawExecState, out: *mut i32) -> i32 {
+    with_status(|| {
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        // SAFETY: the exported helper contract guarantees live unique state and aligned,
+        // initialized, uniquely writable typed output storage.
+        unsafe { write_out(state, out, exec.err_engine.erl_line) }
+    })
+}
+
+fn apply_err_field_set(exec: &mut ExecState<'_>, field: u32, value: &Variant) -> Result<(), Fault> {
+    match field {
+        RT_ERR_FIELD_NUMBER => {
+            let coerced = arith::coerce_numeric(value, NumericCoerceTarget::Long)
+                .map_err(Fault::from_arith)?;
+            exec.err_engine.err.number = coerced.as_i32().unwrap_or(0);
+            Ok(())
+        }
+        RT_ERR_FIELD_HELP_CONTEXT => {
+            let coerced = arith::coerce_numeric(value, NumericCoerceTarget::Long)
+                .map_err(Fault::from_arith)?;
+            exec.err_engine.err.help_context = coerced.as_i32().unwrap_or(0);
+            exec.err_engine.err.inherit_fields = true;
+            Ok(())
+        }
+        RT_ERR_FIELD_DESCRIPTION => {
+            let coerced = arith::coerce_string(value).map_err(Fault::from_arith)?;
+            exec.err_engine.err.description = arith::as_string(&coerced);
+            exec.err_engine.err.inherit_fields = true;
+            Ok(())
+        }
+        RT_ERR_FIELD_SOURCE => {
+            let coerced = arith::coerce_string(value).map_err(Fault::from_arith)?;
+            exec.err_engine.err.source = arith::as_string(&coerced);
+            exec.err_engine.err.inherit_fields = true;
+            Ok(())
+        }
+        RT_ERR_FIELD_HELP_FILE => {
+            let coerced = arith::coerce_string(value).map_err(Fault::from_arith)?;
+            exec.err_engine.err.help_file = arith::as_string(&coerced);
+            exec.err_engine.err.inherit_fields = true;
+            Ok(())
+        }
+        RT_ERR_FIELD_LAST_DLL_ERROR => Err(Fault::new(5, "Err.LastDllError is read-only")),
+        _ => Err(Fault::new(5, "unknown Err field")),
+    }
+}
+
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
+/// Specifically, non-null `state` must be uniquely borrowed; non-null `value` must identify
+/// a live `Variant` for the complete call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rt_err_set_field(
+    state: *mut RawExecState,
+    field: u32,
+    value: *const Variant,
+) -> i32 {
+    with_status(|| {
+        if value.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: the exported helper contract guarantees that a non-null state came from
+        // `exec_state_as_raw` and remains uniquely borrowed for this synchronous call.
+        let Some(exec) = (unsafe { state_from_raw(state) }) else {
+            return ST_FAULT;
+        };
+        // SAFETY: null was rejected and the caller keeps the Variant live for this call.
+        let value = unsafe { &*value };
+        match apply_err_field_set(exec, field, value) {
+            Ok(()) => ST_OK,
+            // SAFETY: the exported helper contract guarantees that non-null `state` is the
+            // live, uniquely borrowed execution state.
+            Err(fault) => unsafe { seat_fault(state, fault) },
+        }
+    })
+}
+
+/// Runtime-helper raw-pointer entry point.
+///
+/// # Safety
+/// Every raw pointer argument must satisfy the validity, lifetime, alignment, initialization,
+/// aliasing, and pointer/length requirements documented on [RawExecState].
 /// Specifically, a non-null `state` must remain live, same-thread, and uniquely borrowed for the complete call, including any synchronous callback.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rt_set_error_handler(
@@ -3543,6 +3635,44 @@ mod tests {
             assert_eq!(status, ST_OK);
             assert_eq!(len, 0);
             assert!(!ptr.is_null());
+        }
+    }
+
+    #[test]
+    fn err_field_set_and_erl_get_round_trip() {
+        // SAFETY: uniquely borrowed live ExecState and initialized local slots.
+        unsafe {
+            let host = NullHostServices::new(HostPolicy::default());
+            let mut state = ExecState::new(&host);
+            let number = Variant::from_i32(5);
+            let status =
+                rt_err_set_field(exec_state_as_raw(&mut state), RT_ERR_FIELD_NUMBER, &number);
+            assert_eq!(status, ST_OK);
+            assert_eq!(state.err_engine.err.number, 5);
+
+            let description = Variant::from_string("custom".to_string());
+            let status = rt_err_set_field(
+                exec_state_as_raw(&mut state),
+                RT_ERR_FIELD_DESCRIPTION,
+                &description,
+            );
+            assert_eq!(status, ST_OK);
+            assert_eq!(state.err_engine.err.description, "custom");
+            assert!(state.err_engine.err.inherit_fields);
+
+            state.err_engine.erl_line = 10;
+            let mut erl = 0;
+            let status = rt_erl_get(exec_state_as_raw(&mut state), &mut erl);
+            assert_eq!(status, ST_OK);
+            assert_eq!(erl, 10);
+
+            let last_dll = Variant::from_i32(1);
+            let status = rt_err_set_field(
+                exec_state_as_raw(&mut state),
+                RT_ERR_FIELD_LAST_DLL_ERROR,
+                &last_dll,
+            );
+            assert_eq!(status, ST_FAULT);
         }
     }
 

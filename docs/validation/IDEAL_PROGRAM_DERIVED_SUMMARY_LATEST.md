@@ -18,9 +18,9 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 
 | Matrix | Profile | Role | Owner epic | Rows | Verified | Open | Trace relationships |
 |---|---|---|---|---:|---:|---:|---:|
-| CORE-READINESS | core | primary | bd-59co.2.1 | 24 | 1 | 23 | 91 |
+| CORE-READINESS | core | primary | bd-59co.2.1 | 24 | 1 | 23 | 99 |
 | VBA-LIBRARY | core | primary | bd-59co.2.5 | 7 | 0 | 7 | 7 |
-| OXIR-BACKENDS | core | primary | bd-59co.2.6 | 12 | 0 | 12 | 12 |
+| OXIR-BACKENDS | core | primary | bd-59co.2.6 | 12 | 0 | 12 | 20 |
 | OXIMAGE-CONTRACT | core | primary | bd-59co.2.6 | 8 | 0 | 8 | 8 |
 | EXCEL-ORACLE | core | evidence | bd-59co.2.11 | 8 | 0 | 8 | 10 |
 | WIN-COM-CLIENT | windows-x64 | primary | bd-59co.3.4 | 9 | 0 | 9 | 29 |
@@ -52,7 +52,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | CORE-BASELINE-CROSS-PLATFORM-GATES | CORE-READINESS | versioned Windows and Linux ordinary gate baseline | pinned environments canonical runner strict checks parallel and serial differentials | planned | remaining-accepted-scope | bd-59co.2.2.12 |
 | CORE-RUNTIME-HELPER-SESSION | CORE-READINESS | owned runtime helper ABI and project sessions | versioned descriptors typed wrappers lifecycle error and reset | planned | remaining-accepted-scope | bd-59co.2.7.1 |
 | CORE-VM3-REFERENCE | CORE-READINESS | complete VM3 reference interpreter | all admitted verified Core and OxIR vocabulary plus entries links errors recursion and sessions | planned | remaining-accepted-scope | bd-59co.2.8.1 |
-| CORE-JIT-LOWERING | CORE-READINESS | ideal JIT lowering and call architecture | inspectable lowering plan typed entries direct calls universal thunk ByRef errors and recursion | planned | remaining-accepted-scope | bd-59co.2.9.1 |
+| CORE-JIT-LOWERING | CORE-READINESS | ideal JIT lowering and call architecture | inspectable lowering plan typed entries direct calls universal thunk ByRef errors and recursion | planned | remaining-accepted-scope | bd-59co.2.9.9 |
 | CORE-JIT-CACHE-OBJECT | CORE-READINESS | JIT session cache and native continuity | source-free verified image sessions deterministic key bounded cache persistent objects and object blobs | planned | remaining-accepted-scope | bd-59co.2.10.1 |
 | CORE-DIFF-SEMANTICS-FUZZ | CORE-READINESS | structural VM3 JIT differential fuzzing | scalar Variant control-flow call and error hazards | planned | remaining-accepted-scope | bd-59co.2.11.3 |
 | CORE-DIFF-STRUCTURAL | CORE-READINESS | full differential observable | arrays records objects ProcRefs identities errors effects lifecycle and balance | planned | remaining-accepted-scope | bd-59co.2.11.4 |
@@ -78,7 +78,7 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | OXIR-HOST-LIBRARY | OXIR-BACKENDS | host and VBA library descriptors | versioned imports capabilities signatures and backend-neutral invocation | planned | remaining-accepted-scope | bd-59co.2.6.1 |
 | OXIR-RUNTIME-HELPERS | OXIR-BACKENDS | shared runtime semantics helper catalog and session ownership | every admitted operation names versioned helpers ownership effects fault seating and backend-neutral session behavior | planned | remaining-accepted-scope | bd-59co.2.7.1 |
 | OXIR-VM3-DISPOSITION | OXIR-BACKENDS | complete VM3 disposition and execution | every verified portable instruction terminator entry link initializer fault lifecycle and session operation | planned | remaining-accepted-scope | bd-59co.2.8.1 |
-| OXIR-JIT-DISPOSITION | OXIR-BACKENDS | complete ideal JIT disposition and lowering | every verified portable instruction terminator call ABI ByRef fault cleanup recursion and helper route | planned | remaining-accepted-scope | bd-59co.2.9.1 |
+| OXIR-JIT-DISPOSITION | OXIR-BACKENDS | complete ideal JIT disposition and lowering | every verified portable instruction terminator call ABI ByRef fault cleanup recursion and helper route | planned | remaining-accepted-scope | bd-59co.2.9.9 |
 | OXIR-VERIFIER-REJECT | OXIR-BACKENDS | fail-closed verifier rejection | unknown malformed out-of-range type effect descriptor and capability cases | planned | remaining-accepted-scope | bd-59co.2.6.1 |
 | OXI-BOUNDED-DECODE | OXIMAGE-CONTRACT | bounded OxImage decoding | length count nesting allocation and version limits | planned | remaining-accepted-scope | bd-59co.2.6.1 |
 | OXI-SEALED-VERIFY | OXIMAGE-CONTRACT | sealed verified handles | VerifiedOxProgram and VerifiedOxImage are owning unforgeable product inputs | planned | remaining-accepted-scope | bd-59co.2.6.1 |

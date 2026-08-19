@@ -53,16 +53,17 @@ use oxvba_rt_abi::{
     RtSavedErrState, ST_FAULT, ST_HALT, ST_OK, exec_state_as_raw, rt_add_i16, rt_add_i32,
     rt_add_i64, rt_add_u8, rt_arith_v, rt_clear_proc_invoker, rt_coerce_fixed_string_v,
     rt_coerce_numeric_v, rt_coerce_string_v, rt_compare_v, rt_currency_add, rt_currency_mul,
-    rt_currency_sub, rt_div_i32, rt_div_i64, rt_err_clear, rt_err_enter_activation,
-    rt_err_i32_field, rt_err_restore_activation, rt_err_string_field_utf8, rt_install_proc_invoker,
-    rt_lib_invoke_with_policy, rt_logical_v, rt_maybe_drain, rt_mul_i16, rt_mul_i32, rt_mul_i64,
-    rt_mul_u8, rt_neg_v, rt_not_v, rt_project_new_object, rt_project_predeclared_instance,
-    rt_project_set_predeclared_instance, rt_raise_array_has_no_bounds, rt_raise_error_number,
-    rt_raise_expected_array, rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref,
-    rt_raise_out_of_memory, rt_raise_out_of_stack, rt_raise_runtime_error_number,
-    rt_raise_subscript_out_of_range, rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume,
-    rt_route_fault, rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8,
-    rt_truthy_v, runtime_class_descriptors_for_program, variant_changed,
+    rt_currency_sub, rt_div_i32, rt_div_i64, rt_erl_get, rt_err_clear, rt_err_enter_activation,
+    rt_err_i32_field, rt_err_restore_activation, rt_err_set_field, rt_err_string_field_utf8,
+    rt_install_proc_invoker, rt_lib_invoke_with_policy, rt_logical_v, rt_maybe_drain, rt_mul_i16,
+    rt_mul_i32, rt_mul_i64, rt_mul_u8, rt_neg_v, rt_not_v, rt_project_new_object,
+    rt_project_predeclared_instance, rt_project_set_predeclared_instance,
+    rt_raise_array_has_no_bounds, rt_raise_error_number, rt_raise_expected_array,
+    rt_raise_fixed_or_temporarily_locked_array, rt_raise_invalid_proc_ref, rt_raise_out_of_memory,
+    rt_raise_out_of_stack, rt_raise_runtime_error_number, rt_raise_subscript_out_of_range,
+    rt_raise_type_mismatch, rt_rem_i32, rt_rem_i64, rt_resume, rt_route_fault,
+    rt_set_error_handler, rt_sub_i16, rt_sub_i32, rt_sub_i64, rt_sub_u8, rt_truthy_v,
+    runtime_class_descriptors_for_program, variant_changed,
 };
 use oxvba_runtime::{
     Decimal96, RUNTIME_CLASS_LIFECYCLE_NONE, RuntimeByRefSlot, RuntimeClassDescriptor, VarType,
@@ -565,6 +566,7 @@ struct JitFrame {
     aliases: Vec<Option<SlotAlias>>,
     gosub_stack: Vec<u32>,
     saved_err: RtSavedErrState,
+    current_line: i32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -633,6 +635,7 @@ fn new_jit_frame(
         aliases: vec![None; func.locals.len()],
         gosub_stack: Vec::new(),
         saved_err: RtSavedErrState::default(),
+        current_line: 0,
     })
 }
 
@@ -809,6 +812,10 @@ struct Imports {
     err_clear: ClifFuncId,
     err_i32_field: ClifFuncId,
     err_string_field_utf8: ClifFuncId,
+    erl_get: ClifFuncId,
+    err_set_field: ClifFuncId,
+    set_line_number: ClifFuncId,
+    current_line: ClifFuncId,
     set_error_handler: ClifFuncId,
     resume: ClifFuncId,
     route_fault: ClifFuncId,
@@ -1175,7 +1182,7 @@ impl<'a> LowerFunc<'a> {
             OxInst::StmtBoundary {
                 clear_temps_from, ..
             } => self.emit_stmt_boundary(builder, module, *clear_temps_from),
-            OxInst::SetLineNumber { .. } => Ok(()),
+            OxInst::SetLineNumber { line } => self.emit_set_line_number(builder, module, *line),
             OxInst::DrainTerminations => self.emit_drain_terminations(builder, module),
             OxInst::AddRef { object } => self.emit_add_ref(builder, module, object),
             OxInst::Release { object, .. } => self.emit_release(builder, module, object),
@@ -2319,6 +2326,10 @@ impl<'a> LowerFunc<'a> {
             OxInst::ErrFieldGet { dst, field } => {
                 self.emit_err_field_get(builder, module, *dst, *field)
             }
+            OxInst::ErlGet { dst } => self.emit_erl_get(builder, module, *dst),
+            OxInst::ErrFieldSet { field, src } => {
+                self.emit_err_field_set(builder, module, *field, src)
+            }
             other => Err(JitError::unsupported(format!(
                 "instruction not lowered in M4-4: {other:?}"
             ))),
@@ -2418,6 +2429,73 @@ impl<'a> LowerFunc<'a> {
                 }
             }
         }
+    }
+
+    fn emit_set_line_number(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        line: i32,
+    ) -> Result<(), JitError> {
+        let line = builder.ins().iconst(types::I32, i64::from(line));
+        let callee = self.import(builder, module, self.imports.set_line_number);
+        let call = builder.ins().call(callee, &[self.run, line]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn emit_erl_get(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: OxPlace,
+    ) -> Result<(), JitError> {
+        let slot =
+            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 4, 2));
+        let ptr_ty = module.target_config().pointer_type();
+        let out = builder.ins().stack_addr(ptr_ty, slot, 0);
+        let callee = self.import(builder, module, self.imports.erl_get);
+        let call = builder.ins().call(callee, &[self.state, out]);
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        let value = builder.ins().stack_load(types::I32, slot, 0);
+        match place_ty(self.program, self.func, dst)? {
+            OxTy::Long => self.emit_store_i32(builder, module, dst, value),
+            OxTy::Variant => self.emit_store_i32_variant_value(builder, module, dst, value),
+            ty => Err(JitError::unsupported(format!(
+                "JIT Erl read lowers only Long/Variant destinations, got {ty:?}"
+            ))),
+        }
+    }
+
+    fn emit_err_field_set(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        field: ErrField,
+        src: &OxOperand,
+    ) -> Result<(), JitError> {
+        let operand = self.lower_variant_operand(builder, src)?;
+        let callee = self.import(builder, module, self.imports.err_set_field);
+        let field = builder
+            .ins()
+            .iconst(types::I32, i64::from(raw_err_field(field)));
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.run,
+                self.state,
+                field,
+                operand.kind,
+                operand.value,
+                operand.area,
+                operand.index,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
     }
 
     fn emit_store_i32_variant_value(
@@ -8539,7 +8617,9 @@ impl<'a> LowerFunc<'a> {
                 let block_out = builder.ins().stack_addr(ptr_ty, block_slot, 0);
                 let resume = builder.ins().iconst(types::I32, resume.0 as i64);
                 let resume_next_raw = builder.ins().iconst(types::I32, resume_next.0 as i64);
-                let current_line = builder.ins().iconst(types::I32, 0);
+                let current_line_callee = self.import(builder, module, self.imports.current_line);
+                let current_line_call = builder.ins().call(current_line_callee, &[self.run]);
+                let current_line = builder.inst_results(current_line_call)[0];
                 let callee = self.import(builder, module, self.imports.route_fault);
                 let call = builder.ins().call(
                     callee,
@@ -9632,6 +9712,13 @@ fn register_symbols(builder: &mut JITBuilder) {
         "rt_err_string_field_utf8",
         rt_err_string_field_utf8 as *const u8,
     );
+    builder.symbol("rt_erl_get", rt_erl_get as *const u8);
+    builder.symbol("rt_jit_err_field_set", rt_jit_err_field_set as *const u8);
+    builder.symbol(
+        "rt_jit_set_line_number",
+        rt_jit_set_line_number as *const u8,
+    );
+    builder.symbol("rt_jit_current_line", rt_jit_current_line as *const u8);
     builder.symbol("rt_resume", rt_resume as *const u8);
     builder.symbol("rt_set_error_handler", rt_set_error_handler as *const u8);
     builder.symbol("rt_route_fault", rt_route_fault as *const u8);
@@ -9981,6 +10068,42 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
     stmt_boundary_sig.returns.push(AbiParam::new(types::I32));
     let stmt_boundary = module
         .declare_function("rt_jit_stmt_boundary", Linkage::Import, &stmt_boundary_sig)
+        .map_err(module_err)?;
+
+    let mut set_line_sig = module.make_signature();
+    set_line_sig.params.push(AbiParam::new(ptr_ty));
+    set_line_sig.params.push(AbiParam::new(types::I32));
+    set_line_sig.returns.push(AbiParam::new(types::I32));
+    let set_line_number = module
+        .declare_function("rt_jit_set_line_number", Linkage::Import, &set_line_sig)
+        .map_err(module_err)?;
+
+    let mut current_line_sig = module.make_signature();
+    current_line_sig.params.push(AbiParam::new(ptr_ty));
+    current_line_sig.returns.push(AbiParam::new(types::I32));
+    let current_line = module
+        .declare_function("rt_jit_current_line", Linkage::Import, &current_line_sig)
+        .map_err(module_err)?;
+
+    let mut erl_get_sig = module.make_signature();
+    erl_get_sig.params.push(AbiParam::new(ptr_ty));
+    erl_get_sig.params.push(AbiParam::new(ptr_ty));
+    erl_get_sig.returns.push(AbiParam::new(types::I32));
+    let erl_get = module
+        .declare_function("rt_erl_get", Linkage::Import, &erl_get_sig)
+        .map_err(module_err)?;
+
+    let mut err_set_field_sig = module.make_signature();
+    err_set_field_sig.params.push(AbiParam::new(ptr_ty));
+    err_set_field_sig.params.push(AbiParam::new(ptr_ty));
+    err_set_field_sig.params.push(AbiParam::new(types::I32));
+    err_set_field_sig.params.push(AbiParam::new(types::I32));
+    err_set_field_sig.params.push(AbiParam::new(types::I64));
+    err_set_field_sig.params.push(AbiParam::new(types::I32));
+    err_set_field_sig.params.push(AbiParam::new(types::I32));
+    err_set_field_sig.returns.push(AbiParam::new(types::I32));
+    let err_set_field = module
+        .declare_function("rt_jit_err_field_set", Linkage::Import, &err_set_field_sig)
         .map_err(module_err)?;
 
     let mut drain_terminations_sig = module.make_signature();
@@ -11509,6 +11632,10 @@ fn declare_imports(module: &mut JITModule) -> Result<Imports, JitError> {
         err_clear,
         err_i32_field,
         err_string_field_utf8,
+        erl_get,
+        err_set_field,
+        set_line_number,
+        current_line,
         set_error_handler,
         resume,
         route_fault,
@@ -11796,8 +11923,25 @@ fn native_impl_index(id: NativeImplId) -> Result<u32, JitError> {
         })
 }
 
+fn program_lowers_native_or_com(program: &OxProgram) -> bool {
+    program.funcs.iter().any(|func| {
+        func.blocks.iter().any(|block| {
+            block.instrs.iter().any(|inst| {
+                matches!(
+                    inst,
+                    OxInst::ComCallEarly { .. }
+                        | OxInst::CallNative {
+                            callee: OxNativeCallee::Declare { .. },
+                            ..
+                        }
+                )
+            })
+        })
+    })
+}
+
 fn validate_program_shape(program: &OxProgram) -> Result<(), JitError> {
-    if !program.external_calls.is_empty() || !program.com_interfaces.is_empty() {
+    if program_lowers_native_or_com(program) {
         return Err(JitError::unsupported("native/COM calls start in M4-9"));
     }
     for global in &program.globals {
@@ -14064,6 +14208,65 @@ unsafe extern "C" fn rt_jit_store_variant(
     })
 }
 
+unsafe extern "C" fn rt_jit_set_line_number(run: *mut JitRun, line: i32) -> i32 {
+    status_guard(|| {
+        if run.is_null() {
+            return ST_FAULT;
+        }
+        // SAFETY: null was rejected and compiled code gives unique run ownership.
+        let run = unsafe { &mut *run };
+        let Some(frame) = run.frames.last_mut() else {
+            return ST_FAULT;
+        };
+        frame.current_line = line;
+        ST_OK
+    })
+}
+
+unsafe extern "C" fn rt_jit_current_line(run: *mut JitRun) -> i32 {
+    if run.is_null() {
+        return 0;
+    }
+    // SAFETY: null was rejected and compiled code gives unique run ownership.
+    let run = unsafe { &*run };
+    run.frames
+        .last()
+        .map(|frame| frame.current_line)
+        .unwrap_or(0)
+}
+
+unsafe extern "C" fn rt_jit_err_field_set(
+    run: *mut JitRun,
+    state: *mut RawExecState,
+    field: u32,
+    kind: i32,
+    value: i64,
+    area: i32,
+    index: i32,
+) -> i32 {
+    status_guard(|| {
+        if run.is_null() || state.is_null() {
+            return ST_FAULT;
+        }
+        let operand = JitVariantOperandDesc {
+            kind,
+            _pad: 0,
+            value,
+            area,
+            index,
+        };
+        // SAFETY: the compiled entry owns the live run and the operand descriptor
+        // storage for this synchronous call.
+        let value = match unsafe { variant_operand_value_with_as_new(run, state, operand) } {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        // SAFETY: `state` is the live uniquely owned execution state; `value` lives
+        // for the complete helper call.
+        unsafe { rt_err_set_field(state, field, &value) }
+    })
+}
+
 unsafe extern "C" fn rt_jit_stmt_boundary(
     run: *mut JitRun,
     state: *mut RawExecState,
@@ -15225,6 +15428,7 @@ unsafe fn invoke_project_default_member_values(
         aliases: Vec::new(),
         gosub_stack: Vec::new(),
         saved_err: RtSavedErrState::default(),
+        current_line: 0,
     };
     // SAFETY: preparation is complete and this push borrow ends before member entry.
     unsafe { &mut *run }.frames.push(frame);
@@ -21646,6 +21850,99 @@ mod tests {
             unit_name: "VBAProject".to_string(),
             ..OxProgram::empty()
         }
+    }
+
+    #[test]
+    fn jit_erl_seats_numeric_line_and_err_number_write() {
+        let err_number = LocalId(0);
+        let erl = LocalId(1);
+        let entry = OxBlock {
+            id: BlockId(0),
+            instrs: vec![
+                OxInst::SetErrorHandler(ErrorHandler::ResumeNext),
+                OxInst::SetLineNumber { line: 10 },
+                OxInst::Arith {
+                    dst: OxPlace::Local(err_number),
+                    op: ArithOp::IntDiv,
+                    lhs: OxOperand::Const(OxConst::I32(1)),
+                    rhs: OxOperand::Const(OxConst::I32(0)),
+                    mode: NumericMode::Checked(NumericCoerceTarget::Long),
+                },
+            ],
+            fault_target: Some(BlockId(1)),
+            terminator: OxTerminator::Jump(BlockId(2)),
+        };
+        let fault = OxBlock {
+            id: BlockId(1),
+            instrs: Vec::new(),
+            fault_target: None,
+            terminator: OxTerminator::FaultDispatch {
+                resume: BlockId(0),
+                resume_next: BlockId(2),
+            },
+        };
+        let exit = OxBlock {
+            id: BlockId(2),
+            instrs: vec![
+                OxInst::ErrFieldGet {
+                    dst: OxPlace::Local(err_number),
+                    field: ErrField::Number,
+                },
+                OxInst::ErlGet {
+                    dst: OxPlace::Local(erl),
+                },
+            ],
+            fault_target: None,
+            terminator: OxTerminator::Return,
+        };
+        let main = OxFunc {
+            name: "Main".to_string(),
+            kind: ProcedureKind::Sub,
+            locals: vec![
+                OxLocal {
+                    name: "errNumber".to_string(),
+                    ty: OxTy::Long,
+                    array_element: None,
+                    param: None,
+                    escaped: false,
+                },
+                OxLocal {
+                    name: "erl".to_string(),
+                    ty: OxTy::Long,
+                    array_element: None,
+                    param: None,
+                    escaped: false,
+                },
+            ],
+            temps: Vec::new(),
+            param_count: 0,
+            return_local: None,
+            blocks: vec![entry, fault, exit],
+            entry: BlockId(0),
+        };
+        let program = OxProgram {
+            funcs: vec![main],
+            globals: Vec::new(),
+            entry: Some(FuncId(0)),
+            unit_name: "VBAProject".to_string(),
+            ..OxProgram::empty()
+        };
+        assert_eq!(verify_program(&program), Ok(()));
+        let compiled = JitEngine.compile_image(&[&program]).expect("compile");
+        let host = NullHostServices::new(HostPolicy::default());
+        let outcome = compiled.run(&host).expect("run");
+        assert!(!outcome.raised);
+        assert_eq!(outcome.err.number, 11);
+        assert_eq!(
+            outcome.values.first().and_then(Variant::as_i32),
+            Some(11),
+            "division-by-zero Err.Number"
+        );
+        assert_eq!(
+            outcome.values.get(1).and_then(Variant::as_i32),
+            Some(10),
+            "Erl seats the active numeric line"
+        );
     }
 
     #[test]
