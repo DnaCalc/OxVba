@@ -23,12 +23,12 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | OXIR-BACKENDS | core | primary | bd-59co.2.6 | 12 | 0 | 12 | 21 |
 | OXIMAGE-CONTRACT | core | primary | bd-59co.2.6 | 8 | 0 | 8 | 8 |
 | EXCEL-ORACLE | core | evidence | bd-59co.2.11 | 8 | 0 | 8 | 10 |
-| WIN-COM-CLIENT | windows-x64 | primary | bd-59co.3.4 | 9 | 0 | 9 | 29 |
+| WIN-COM-CLIENT | windows-x64 | primary | bd-59co.3.4 | 9 | 0 | 9 | 31 |
 | WIN-COM-EVENTS | windows-x64 | primary | bd-59co.3.6 | 7 | 0 | 7 | 25 |
 | WIN-COM-SERVER | windows-x64 | primary | bd-59co.3.7 | 7 | 0 | 7 | 20 |
-| WIN-NATIVE-IMPORT | windows-x64 | primary | bd-59co.3.10 | 8 | 0 | 8 | 27 |
+| WIN-NATIVE-IMPORT | windows-x64 | primary | bd-59co.3.10 | 8 | 0 | 8 | 29 |
 | WIN-NATIVE-EXPORT | windows-x64 | primary | bd-59co.3.13 | 8 | 0 | 8 | 21 |
-| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 1 | 17 | 75 |
+| WIN-ABI-CARRIER | windows-x64 | quality | bd-59co.3.2 | 18 | 1 | 17 | 80 |
 | LS-BASELINE | ide | primary | bd-59co.4.1 | 29 | 0 | 29 | 31 |
 | LS-REFERENCES | ide | primary | bd-59co.4.7 | 10 | 0 | 10 | 12 |
 | LSP-METHODS | ide | projection | bd-59co.4.11 | 30 | 0 | 30 | 33 |
@@ -145,8 +145,8 @@ This file is generated from the manifest-owned canonical matrices. It is a proje
 | WAC-CARRIER-EXCEL-ROUNDTRIP | WIN-ABI-CARRIER | exact x64 carriers | 64-bit Excel cross-boundary carrier roundtrip and writeback | planned | remaining-accepted-scope | bd-59co.3.2 |
 | WAC-SAFETY-MUTATION | WIN-ABI-CARRIER | native-boundary carrier safety | malformed descriptors fault injection repeated lifecycle and balance | planned | remaining-accepted-scope | bd-59co.3.14.2 |
 | WAC-TYPELIB-METADATA | WIN-ABI-CARRIER | raw typelib resolution and stable metadata identities | registered/file typelib selection; GUID version LCID platform and reference order; stable library type member event inheritance default source coclass and broken-reference facts; resolver digest and compiler package language-service handoff | planned | remaining-accepted-scope | bd-59co.3.2 |
-| WAC-VERIFIED-INTEROP-PLAN | WIN-ABI-CARRIER | shared verified x64 interop plan | one plan identity unchanged VM3/JIT adapters common Core session/cache and no private Windows helper catalog mutable state or cache | planned | remaining-accepted-scope | bd-59co.3.3.1 |
-| WAC-WINDOWS-DESCRIPTORS | WIN-ABI-CARRIER | Windows x64 interop descriptor vocabulary | verified OxImage Windows descriptors only; raw metadata or unverified decoded artifacts cannot elaborate a plan | planned | remaining-accepted-scope | bd-59co.3.3.1 |
+| WAC-VERIFIED-INTEROP-PLAN | WIN-ABI-CARRIER | shared verified x64 interop plan | one plan identity unchanged VM3/JIT adapters common Core session/cache and no private Windows helper catalog mutable state or cache | planned | remaining-accepted-scope | bd-59co.3.3.5 |
+| WAC-WINDOWS-DESCRIPTORS | WIN-ABI-CARRIER | Windows x64 interop descriptor vocabulary | verified OxImage Windows descriptors only; raw metadata or unverified decoded artifacts cannot elaborate a plan | planned | remaining-accepted-scope | bd-59co.3.3.5 |
 | WAC-CLEAN-CERT-ENV | WIN-ABI-CARRIER | clean pinned release certification environment | pinned Windows x64 actual Excel64 clean snapshot locale fixtures and hashes | planned | remaining-accepted-scope | bd-59co.3.15.3 |
 | WAC-RELEASE-CERT | WIN-ABI-CARRIER | Windows native client and Excel certification | all mandatory COM native carrier lifecycle locale deployment and cleanup rows | planned | remaining-accepted-scope | bd-59co.3.15.2 |
 | WAC-EXCEL-COM-CERT | WIN-ABI-CARRIER | Excel64 COM client server and event certification | late dispatch early vtable serving incoming and outgoing events cancellable ByRef reentry apartments and cleanup | planned | remaining-accepted-scope | bd-59co.3.15.32 |

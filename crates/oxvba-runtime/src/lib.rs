@@ -12,6 +12,7 @@ pub mod collection;
 pub mod com_record;
 pub mod date;
 pub mod decimal;
+pub mod interop_plan;
 pub mod live_counters;
 pub mod object_ref;
 pub mod pointer_helpers;
@@ -34,6 +35,12 @@ pub use callback_thunks::{
 pub use coerce::{print_display_text, variant_to_vba_string, write_display_text};
 pub use com_record::{ComRecord, ComRecordCloneFn, ComRecordDestroyFn};
 pub use decimal::Decimal96;
+pub use interop_plan::{
+    InteropApartmentPolicy, InteropCallKind, InteropCallSpec, InteropCleanupPolicy,
+    InteropErrorMapping, InteropInvokeKind, InteropPlanError, InteropPlanIdentity,
+    InteropReentryPolicy, InteropTargetArch, InteropTransport, InteropWritebackOrder,
+    VerifiedInteropPlan, verify_interop_plan,
+};
 #[cfg(any(test, feature = "live-counters"))]
 pub use live_counters::current_thread_live_handle_counts;
 pub use live_counters::{HandleBalance, LiveHandleCounts, live_handle_counts};

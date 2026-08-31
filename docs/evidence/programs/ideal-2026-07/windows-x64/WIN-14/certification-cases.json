@@ -28,15 +28,15 @@
     },
     {
       "path": "docs/validation/WINDOWS_ABI_CARRIER_MATRIX_V1.csv",
-      "sha256": "sha256:9b1817e47607d2d55e5d4f96c65c8388b9282ea0bf07ee50257d8057228e93c4"
+      "sha256": "sha256:23830d8437c16b2f5e64b9ebfd020d0a109dae5ab65830889a37d4df356b4825"
     },
     {
       "path": "docs/validation/IDEAL_WINDOWS_X64_FIXTURE_MANIFEST_V1.csv",
-      "sha256": "sha256:a16f1daec63905aa1b2aa584d3aff27672d5fca271da37c85da50bf87a8be233"
+      "sha256": "sha256:87c973fe472f2dd8af35368a1db9a885c37a1c1f01a49352660bfbfc21fe4423"
     },
     {
       "path": "docs/validation/IDEAL_WINDOWS_CURRENT_STACK_RESIDUAL_V1.csv",
-      "sha256": "sha256:d054f0f83376cd4cfb06d3c130f65902560d925d102bcaa1392d4b5c7bf370a7"
+      "sha256": "sha256:1c9e6a7662b357255a7c8bc9c6a1237ff444601b649b731a17a2e8d5bbcd5816"
     },
     {
       "path": "docs/validation/IDEAL_ENVIRONMENT_MANIFEST_V1.csv",
@@ -103,7 +103,7 @@
       "claim_key": "win.com.client.late.scalar",
       "mapping": "exactly-one-canonical-row",
       "producer_gate": {
-        "owner_bead": "bd-59co.3.4",
+        "owner_bead": "bd-59co.3.4.3",
         "dependency_beads": [
           "bd-59co.3.2",
           "bd-59co.3.3"
@@ -188,7 +188,7 @@
           "kind": "case-evidence",
           "path": "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-14/cases/win14-wcc-plan-late.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.4"
+          "owner_bead": "bd-59co.3.4.3"
         },
         {
           "kind": "controlled-fixture",
@@ -6158,7 +6158,7 @@
       "claim_key": "win.control.verified-interop-plan",
       "mapping": "exactly-one-canonical-row",
       "producer_gate": {
-        "owner_bead": "bd-59co.3.3",
+        "owner_bead": "bd-59co.3.3.5",
         "dependency_beads": [
           "bd-59co.2.6",
           "bd-59co.2.7",
@@ -6181,13 +6181,13 @@
         "source_recipe_paths": [
           "pending"
         ],
-        "source_recipe_owner_bead": "bd-59co.3.3.1",
+        "source_recipe_owner_bead": "bd-59co.3.3.5",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
         "source_environment_state": "current",
         "built_artifact_id": "x64-interop-plan-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
-        "built_artifact_owner_bead": "bd-59co.3.3.1"
+        "built_artifact_owner_bead": "bd-59co.3.3.5"
       },
       "observable_axes": {
         "result": {
@@ -6238,13 +6238,13 @@
           "kind": "case-evidence",
           "path": "docs/evidence/programs/ideal-2026-07/windows-x64/WIN-14/cases/win14-wac-verified-interop-plan.json",
           "state": "pending",
-          "owner_bead": "bd-59co.3.3"
+          "owner_bead": "bd-59co.3.3.5"
         },
         {
           "kind": "controlled-fixture",
           "path": "artifacts/windows-x64/controlled-fixtures/v1/win-abi-carrier/wac-verified-interop-plan/fixture.exe",
           "state": "pending",
-          "owner_bead": "bd-59co.3.3.1"
+          "owner_bead": "bd-59co.3.3.5"
         },
         {
           "kind": "environment-capture",
@@ -6297,13 +6297,13 @@
         "source_recipe_paths": [
           "pending"
         ],
-        "source_recipe_owner_bead": "bd-59co.3.3.1",
+        "source_recipe_owner_bead": "bd-59co.3.3.5",
         "source_environment_id": "win-x64-dev-oracle-2026-07",
         "source_environment_state": "current",
         "built_artifact_id": "x64-windows-descriptor-boundary-v1-artifact-v1",
         "built_artifact_class": "pe-exe-x64",
         "built_artifact_state": "pending",
-        "built_artifact_owner_bead": "bd-59co.3.3.1"
+        "built_artifact_owner_bead": "bd-59co.3.3.5"
       },
       "observable_axes": {
         "result": {
@@ -6360,7 +6360,7 @@
           "kind": "controlled-fixture",
           "path": "artifacts/windows-x64/controlled-fixtures/v1/win-abi-carrier/wac-windows-descriptors/fixture.exe",
           "state": "pending",
-          "owner_bead": "bd-59co.3.3.1"
+          "owner_bead": "bd-59co.3.3.5"
         },
         {
           "kind": "environment-capture",

@@ -1,3 +1,10 @@
+## 2026-08-23 - WIN-2 first-slice shared interop plan and JIT adapter
+
+- Started the user-directed Windows COM/Declare path: one backend-neutral verified interop plan for late IDispatch and x64 `Declare`, shared by VM3 and JIT.
+- Added `oxvba-runtime` plan types and verifier, migrated VM3 foreign COM dispatch and Declare onto that plan, and added a JIT helper adapter with fail-closed VM3/JIT fixtures. No second marshaller and no VM fallback.
+- Rolled out WIN-2/WIN-3/WIN-9 delivery children and moved WIN-1/CORE-8/CORE-3 epic waits onto residual leaves so the first scalar rows can follow the adapter.
+- `WAC-VERIFIED-INTEROP-PLAN` stays planned. Excel certification, early COM, events, serving, and genuine native export remain outside this slice.
+
 ## 2026-03-20 - Extend IP-08B active-project precedence through host-returned COM no-paren named-argument forms
 
 - Continued `IP-08B` by widening the active-project-versus-host-root identity register from the parenthesized named-argument invoke subset into the matching no-paren named-argument invoke subset on host-returned COM-backed objects.

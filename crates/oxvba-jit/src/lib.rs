@@ -30,6 +30,7 @@ use oxvba_eval::{
     collection::{CollectionError, CollectionMethod, dispatch_collection},
 };
 use oxvba_hal::HostServices;
+use oxvba_hal::traits::DynLinkDescriptorView;
 use oxvba_oxir::inst::OxAsNew;
 use oxvba_oxir::ty::ClassId;
 use oxvba_oxir::{
@@ -66,8 +67,8 @@ use oxvba_rt_abi::{
     runtime_class_descriptors_for_program, variant_changed,
 };
 use oxvba_runtime::{
-    Decimal96, RUNTIME_CLASS_LIFECYCLE_NONE, RuntimeByRefSlot, RuntimeClassDescriptor, VarType,
-    Variant, VbaRecord,
+    Decimal96, InteropInvokeKind, RUNTIME_CLASS_LIFECYCLE_NONE, RuntimeByRefSlot,
+    RuntimeClassDescriptor, VarType, Variant, VbaRecord, VerifiedInteropPlan,
     object_ref::{ObjectRef, RUNTIME_IUNKNOWN_INTERFACE_DESCRIPTOR},
     safe_array::{
         SafeArray, SafeArrayBound, VT_BOOL_VALUE, VT_BSTR_VALUE, VT_CY_VALUE, VT_DATE_VALUE,

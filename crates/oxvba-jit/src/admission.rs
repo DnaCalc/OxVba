@@ -5,16 +5,10 @@ use super::*;
 pub(crate) fn program_lowers_native_or_com(program: &OxProgram) -> bool {
     program.funcs.iter().any(|func| {
         func.blocks.iter().any(|block| {
-            block.instrs.iter().any(|inst| {
-                matches!(
-                    inst,
-                    OxInst::ComCallEarly { .. }
-                        | OxInst::CallNative {
-                            callee: OxNativeCallee::Declare { .. },
-                            ..
-                        }
-                )
-            })
+            block
+                .instrs
+                .iter()
+                .any(|inst| matches!(inst, OxInst::ComCallEarly { .. }))
         })
     })
 }

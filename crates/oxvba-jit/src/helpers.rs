@@ -90,6 +90,7 @@ pub(crate) struct Imports {
     pub(crate) call_extern_proc_i32: ClifFuncId,
     pub(crate) call_proc_ref_i32: ClifFuncId,
     pub(crate) lib_invoke_slot: ClifFuncId,
+    pub(crate) declare_call_slot: ClifFuncId,
     pub(crate) arith_v_slot: ClifFuncId,
     pub(crate) concat_v_slot: ClifFuncId,
     pub(crate) neg_v_slot: ClifFuncId,
@@ -392,6 +393,10 @@ pub(crate) fn register_symbols(builder: &mut JITBuilder) {
     builder.symbol(
         "rt_jit_lib_invoke_to_slot",
         rt_jit_lib_invoke_to_slot as *const u8,
+    );
+    builder.symbol(
+        "rt_jit_declare_call_to_slot",
+        rt_jit_declare_call_to_slot as *const u8,
     );
     builder.symbol(
         "rt_jit_arith_v_to_slot",
@@ -1824,6 +1829,24 @@ pub(crate) fn declare_imports(module: &mut JITModule) -> Result<Imports, JitErro
             &lib_invoke_slot_sig,
         )
         .map_err(module_err)?;
+    let mut declare_call_slot_sig = module.make_signature();
+    declare_call_slot_sig.params.push(AbiParam::new(ptr_ty));
+    declare_call_slot_sig.params.push(AbiParam::new(ptr_ty));
+    declare_call_slot_sig.params.push(AbiParam::new(types::I32));
+    declare_call_slot_sig.params.push(AbiParam::new(types::I32));
+    declare_call_slot_sig.params.push(AbiParam::new(ptr_ty));
+    declare_call_slot_sig.params.push(AbiParam::new(types::I32));
+    declare_call_slot_sig.params.push(AbiParam::new(types::I32));
+    declare_call_slot_sig
+        .returns
+        .push(AbiParam::new(types::I32));
+    let declare_call_slot = module
+        .declare_function(
+            "rt_jit_declare_call_to_slot",
+            Linkage::Import,
+            &declare_call_slot_sig,
+        )
+        .map_err(module_err)?;
 
     let mut arith_v_slot_sig = module.make_signature();
     arith_v_slot_sig.params.push(AbiParam::new(ptr_ty));
@@ -2236,6 +2259,7 @@ pub(crate) fn declare_imports(module: &mut JITModule) -> Result<Imports, JitErro
         call_extern_proc_i32,
         call_proc_ref_i32,
         lib_invoke_slot,
+        declare_call_slot,
         arith_v_slot,
         concat_v_slot,
         neg_v_slot,
@@ -4178,6 +4202,88 @@ pub(crate) fn project_member_kind_to_dynamic(kind: ProjectMemberKind) -> Dynamic
     }
 }
 
+fn interop_invoke_kind_from_project(kind: ProjectMemberKind) -> InteropInvokeKind {
+    match kind {
+        ProjectMemberKind::Method => InteropInvokeKind::Method,
+        ProjectMemberKind::PropertyGet => InteropInvokeKind::PropertyGet,
+        ProjectMemberKind::PropertyLet => InteropInvokeKind::PropertyPut,
+        ProjectMemberKind::PropertySet => InteropInvokeKind::PropertyPutRef,
+    }
+}
+
+fn verified_late_dispatch_plan_for_jit(
+    name: &str,
+    kind: ProjectMemberKind,
+    args: &[JitCallArgDesc],
+    names: &[JitCallArgNameDesc],
+) -> Result<VerifiedInteropPlan, String> {
+    let named_arg_count = names
+        .iter()
+        .filter(|name| name.ptr != 0 && name.len > 0)
+        .count();
+    let byref_slots = args
+        .iter()
+        .enumerate()
+        .filter_map(|(index, arg)| (arg.kind == JIT_CALL_ARG_BYREF_ALIAS).then_some(index as u32))
+        .collect();
+    VerifiedInteropPlan::late_dispatch(
+        name,
+        name.is_empty(),
+        interop_invoke_kind_from_project(kind),
+        named_arg_count,
+        byref_slots,
+    )
+    .map_err(|err| err.message)
+}
+
+fn verified_declare_plan_for_jit(
+    descriptor: &oxvba_bundle::ExternalCallDescriptor,
+) -> Result<VerifiedInteropPlan, String> {
+    let entry = if descriptor.alias.is_empty() {
+        descriptor.declared_name.clone()
+    } else {
+        descriptor.alias.clone()
+    };
+    VerifiedInteropPlan::declare_x64(
+        descriptor.descriptor_id,
+        descriptor.library.clone(),
+        entry,
+        descriptor.calling_convention.clone(),
+        descriptor.param_by_ref.clone(),
+        descriptor.return_type.as_ref().map(|ty| format!("{ty:?}")),
+    )
+    .map_err(|err| err.message)
+}
+
+fn current_unit_source(run: *mut JitRun) -> String {
+    if run.is_null() {
+        return "OxVba".to_string();
+    }
+    // SAFETY: caller provides the live compiled run for this helper.
+    let run_ref = unsafe { &*run };
+    current_program_image(run_ref)
+        .and_then(|(_, image)| {
+            if image.program.is_null() {
+                None
+            } else {
+                // SAFETY: installed from the owning CompiledImage for this run.
+                Some(unsafe { &*image.program }.unit_name.clone())
+            }
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "OxVba".to_string())
+}
+
+fn raise_plan_error(state: *mut RawExecState, run: *mut JitRun, message: String) -> i32 {
+    // SAFETY: the compiled caller supplies the live unique ExecState handle.
+    let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+        return ST_FAULT;
+    };
+    exec.err_engine
+        .raise(Fault::new(5, message), current_unit_source(run));
+    ST_FAULT
+}
+
 pub(crate) fn foreign_member_selector_for_jit(name: &str) -> DynamicMemberSelector {
     if name.is_empty() {
         DynamicMemberSelector::DefaultMember
@@ -4232,6 +4338,9 @@ pub(crate) unsafe fn invoke_foreign_member_to_slot_for_jit(
             });
         }
     }
+    if let Err(message) = verified_late_dispatch_plan_for_jit(name, kind, args, names) {
+        return raise_plan_error(state, run, message);
+    }
     let request = DynamicCallRequest {
         object,
         member: foreign_member_selector_for_jit(name),
@@ -4259,7 +4368,8 @@ pub(crate) unsafe fn invoke_foreign_member_to_slot_for_jit(
             let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
                 return ST_FAULT;
             };
-            exec.err_engine.raise(Fault::from_hal(err), "OxVba");
+            exec.err_engine
+                .raise(Fault::from_hal(err), current_unit_source(run));
             return ST_FAULT;
         }
     };
@@ -4287,6 +4397,161 @@ pub(crate) unsafe fn invoke_foreign_member_to_slot_for_jit(
         *slot = value;
     }
     ST_OK
+}
+
+/// Execute a verified x64 Declare plan through the host dynlink HAL.
+///
+/// # Safety
+/// `state` is the live unique ExecState handle; `run` is the matching compiled
+/// run; `args` is `argc` live call descriptors for this call.
+pub(crate) unsafe extern "C" fn rt_jit_declare_call_to_slot(
+    state: *mut RawExecState,
+    run: *mut JitRun,
+    descriptor_id: u32,
+    argc: i32,
+    args: *const JitCallArgDesc,
+    dst_area: i32,
+    dst_index: i32,
+) -> i32 {
+    status_guard(|| {
+        if state.is_null() || run.is_null() || argc < 0 || dst_area < -1 || dst_index < -1 {
+            return ST_FAULT;
+        }
+        let dst = match (dst_area, dst_index) {
+            (-1, -1) => None,
+            (area, index) if area >= 0 && index >= 0 => Some((area as u32, index as u32)),
+            _ => return ST_FAULT,
+        };
+        let argc = argc as usize;
+        let args = if argc == 0 {
+            &[]
+        } else if args.is_null() {
+            return ST_FAULT;
+        } else {
+            // SAFETY: compiled code provides exactly `argc` call descriptors.
+            unsafe { std::slice::from_raw_parts(args, argc) }
+        };
+        let descriptor = {
+            // SAFETY: this metadata borrow ends before the host call.
+            let run_ref = unsafe { &*run };
+            let Some((_, image)) = current_program_image(run_ref) else {
+                return ST_FAULT;
+            };
+            if image.program.is_null() {
+                return ST_FAULT;
+            }
+            // SAFETY: installed from the owning CompiledImage for this run.
+            let program = unsafe { &*image.program };
+            match program
+                .external_calls
+                .iter()
+                .find(|candidate| candidate.descriptor_id == descriptor_id)
+            {
+                Some(descriptor) => descriptor.clone(),
+                None => {
+                    return raise_plan_error(
+                        state,
+                        run,
+                        format!("unknown Declare descriptor {descriptor_id}"),
+                    );
+                }
+            }
+        };
+        if let Err(message) = verified_declare_plan_for_jit(&descriptor) {
+            return raise_plan_error(state, run, message);
+        }
+        let arg_variants = {
+            // SAFETY: this operand-read borrow is bounded before the host call.
+            let run_ref = unsafe { &*run };
+            let mut values = Vec::with_capacity(argc);
+            for arg in args {
+                match call_arg_variant_value(run_ref, *arg) {
+                    Some(value) => values.push(value),
+                    None => return ST_FAULT,
+                }
+            }
+            values
+        };
+        let param_type_strings: Vec<String> = descriptor
+            .param_types
+            .iter()
+            .map(|ty| format!("{ty:?}"))
+            .collect();
+        let return_type = descriptor
+            .return_type
+            .as_ref()
+            .map(|ty| std::borrow::Cow::Owned(format!("{ty:?}")));
+        let view = DynLinkDescriptorView {
+            descriptor_id: descriptor.descriptor_id,
+            declared_name: &descriptor.declared_name,
+            library: &descriptor.library,
+            alias: &descriptor.alias,
+            ordinal_alias: descriptor.ordinal_alias,
+            symbol: descriptor.symbol,
+            marshal_lane: &descriptor.marshal_lane,
+            calling_convention: &descriptor.calling_convention,
+            selection_policy: &descriptor.selection_policy,
+            param_count: descriptor.param_count,
+            param_types: &param_type_strings,
+            param_by_ref: &descriptor.param_by_ref,
+            return_type,
+        };
+        let host = {
+            // SAFETY: copy the host reference so the typed state borrow ends before FFI.
+            let exec = match unsafe { jit_exec_state_mut(state) } {
+                Some(exec) => exec,
+                None => return ST_FAULT,
+            };
+            exec.host
+        };
+        let invoke = host
+            .dynlink()
+            .invoke_descriptor_variants(&view, &arg_variants);
+        let last_dll_error = host.dynlink().last_dll_error();
+        {
+            // SAFETY: the host call returned, so the live execution state may be borrowed again.
+            let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+                return ST_FAULT;
+            };
+            exec.err_engine.last_dll_error = last_dll_error;
+        }
+        let (ret, wb_values) = match invoke {
+            Ok(pair) => pair,
+            Err(err) => {
+                // SAFETY: the host call returned, so the live execution state may be borrowed again.
+                let Some(exec) = (unsafe { jit_exec_state_mut(state) }) else {
+                    return ST_FAULT;
+                };
+                exec.err_engine
+                    .raise(Fault::from_hal(err), current_unit_source(run));
+                return ST_FAULT;
+            }
+        };
+        // SAFETY: the host call returned and no typed run borrow spans it.
+        let run = unsafe { &mut *run };
+        for (index, arg) in args.iter().copied().enumerate() {
+            if arg.kind != JIT_CALL_ARG_BYREF_ALIAS {
+                continue;
+            }
+            let Some(value) = wb_values.get(index) else {
+                continue;
+            };
+            if arg.area < 0 || arg.index < 0 {
+                return ST_FAULT;
+            }
+            let Some(slot) = slot_mut(run, arg.area as u32, arg.index as u32) else {
+                return ST_FAULT;
+            };
+            *slot = value.clone();
+        }
+        if let Some((area, index)) = dst {
+            let Some(slot) = slot_mut(run, area, index) else {
+                return ST_FAULT;
+            };
+            *slot = ret;
+        }
+        ST_OK
+    })
 }
 
 pub(crate) fn call_by_name_member_name(value: &Variant) -> String {

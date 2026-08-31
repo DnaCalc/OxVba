@@ -7,10 +7,10 @@ Active program manifest: docs/validation/IDEAL_PROGRAM_MANIFEST_V1.json
 Program root: bd-59co
 Control epic: bd-59co.1
 AutoRun terminal gate: bd-59co
-Queue certification: certified — user-directed CORE-7 JIT module extract `bd-59co.2.9.10` is closed. Do not start `bd-59co.2.9.9` or Windows COM/Declare/pointer/packaging work until the user discusses those bits.
+Queue certification: certified — user-directed WIN-2 first slice is closed: plan types `bd-59co.3.3.2`, VM3 migrate `bd-59co.3.3.3`, JIT adapter `bd-59co.3.3.4`. Do not start `bd-59co.2.9.9` or genuine WIN-12 native DLL/EXE work.
 Claim queue: br ready -l ideal-2026-07 -t task
-Current tasks: none. JIT module extract is closed. Remaining CORE-7 architecture stays on `bd-59co.2.9.9` and remains blocked.
-Certified ready queue: do not claim `bd-59co.2.9.9`. Ordinary ready work remains `bd-59co.2.2.11`, `bd-59co.3.1.8`, `bd-59co.3.15.6`, and `bd-59co.3.15.12` pending the Windows/COM discussion.
+Current tasks: none on the WIN-2 adapter slice. Next Windows delivery after WIN-3/WIN-9 rollout close is `bd-59co.3.4.2` scalar late COM and `bd-59co.3.10.2` x64 scalar Declare. Remaining WIN-2 session/cache/early/event/serving work stays on `bd-59co.3.3.5`.
+Certified ready queue: do not claim `bd-59co.2.9.9`. Ordinary ready work includes WIN-3/WIN-9 rollouts `bd-59co.3.4.1` and `bd-59co.3.10.1`.
 Current capacity snapshot: `docs/evidence/programs/ideal-2026-07/capacity/POST_ROLLOUT_CAPACITY_2026-07-11.md` (three agents, source hash `19876d013a3d9d45`).
 Terminal condition: all Core, Windows x64 and IDE profile roots close beneath `bd-59co`, or every remaining path is genuinely blocked and recorded through the repository blocker protocol.
 Latest completed result: `bd-59co.2.2.3` closed after certifying the aggregate Rust baseline without warning suppression or VM fallback. Format, strict all-target Clippy, the full workspace suite, parallel and serial 1,145-test differentials, isolated balance/lifecycle and SQLiteForExcel diagnostic lanes, six-axis evidence and fresh review pass. The integrating controller reran format, Clippy and the full workspace suite serially in 596.1 seconds on byte-identical Rust/Cargo inputs. This is support-only closure: the five CORE-1 rows remain planned under the actual Windows `.10`, pinned Linux `.11`, and terminal `.12` successors.
@@ -37,4 +37,4 @@ Historical ladders, IP-08/IP-08B plans, MACH-1000 profiles and earlier JIT/front
 
 ## Resume rule
 
-Read the current truth surfaces. The user-directed CORE-7 portable VM3/JIT basics tranche paused after `bd-59co.2.9.8`. Do not start `bd-59co.2.9.9` or Windows COM/Declare/pointer/packaging work until the user discusses those bits. Ordinary AutoRun ready work may resume only after that discussion, unless the user says otherwise. Respect the two-Rust-writer ceiling and serialize workspace-wide Cargo, Excel/VBE automation, registry mutation, certification-VM provisioning and large JIT/VM3/differential/rt-abi writers. Use `bv` only for topology/capacity, refresh its critical path at each epic boundary, and never use it as a claim source.
+Read the current truth surfaces. The WIN-2 first-slice adapter is closed. Next Windows delivery is WIN-3 scalar late COM (`bd-59co.3.4.2`) and WIN-9 x64 scalar Declare (`bd-59co.3.10.2`) after their rollout beads. Do not start `bd-59co.2.9.9` or genuine WIN-12. Excel certification rows stay planned until their owned WIN-14 supervisor. Respect the two-Rust-writer ceiling and serialize workspace-wide Cargo, Excel/VBE automation, registry mutation, certification-VM provisioning and large JIT/VM3/differential/rt-abi writers. Use `bv` only for topology/capacity, refresh its critical path at each epic boundary, and never use it as a claim source.

@@ -65,7 +65,8 @@ fn bounded_demo_rejects_jit_without_falling_back() {
         "JIT native/COM lowering is not implemented; it must not silently fall back to VM3",
     );
     assert!(
-        err.contains("native/COM calls start in M4-9"),
+        err.contains("Declare pointer-helper writebacks remain with bd-59co.3.3.5")
+            || err.contains("native/COM calls start in M4-9"),
         "unexpected diagnostic: {err}"
     );
 }

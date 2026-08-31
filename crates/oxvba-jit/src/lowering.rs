@@ -6369,19 +6369,40 @@ impl<'a> LowerFunc<'a> {
         callee: &OxNativeCallee,
         args: &[OxCallArg],
     ) -> Result<(), JitError> {
-        let OxNativeCallee::Builtin(native_impl) = callee else {
-            return Err(JitError::unsupported(
-                "M4-4 CallNative lowers only a narrow built-in subset; Declare/native external calls remain unsupported",
-            ));
-        };
-        if *native_impl == NativeImplId::TypeName
+        match callee {
+            OxNativeCallee::Builtin(native_impl) => {
+                self.lower_call_native_builtin(builder, module, dst, *native_impl, args)
+            }
+            OxNativeCallee::Declare {
+                descriptor_id,
+                ptr_writebacks,
+            } => {
+                if !ptr_writebacks.is_empty() {
+                    return Err(JitError::unsupported(
+                        "Declare pointer-helper writebacks remain with bd-59co.3.3.5",
+                    ));
+                }
+                self.lower_call_native_declare(builder, module, dst, *descriptor_id, args)
+            }
+        }
+    }
+
+    fn lower_call_native_builtin(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: Option<OxPlace>,
+        native_impl: NativeImplId,
+        args: &[OxCallArg],
+    ) -> Result<(), JitError> {
+        if native_impl == NativeImplId::TypeName
             && let Some(dst) = dst
             && let [OxCallArg::Operand(object)] = args
             && self.should_route_project_type_name(object)?
         {
             return self.emit_project_type_name_to_slot(builder, module, dst, object);
         }
-        self.validate_call_native_builtin_shape(dst, args, *native_impl)?;
+        self.validate_call_native_builtin_shape(dst, args, native_impl)?;
         if let Some(dst) = dst {
             let dst_ty = place_ty(self.program, self.func, dst)?;
             if !is_m4_4_call_extern_destination_ty(dst_ty) {
@@ -6408,7 +6429,7 @@ impl<'a> LowerFunc<'a> {
         };
         let native_id = builder
             .ins()
-            .iconst(types::I32, i64::from(native_impl_index(*native_impl)?));
+            .iconst(types::I32, i64::from(native_impl_index(native_impl)?));
         let string_typed_alias = builder.ins().iconst(types::I32, 0);
         let argc = builder.ins().iconst(types::I32, i64::from(argc));
         let callee = self.import(builder, module, self.imports.lib_invoke_slot);
@@ -6421,6 +6442,53 @@ impl<'a> LowerFunc<'a> {
                 string_typed_alias,
                 args_ptr,
                 argc,
+                dst_area,
+                dst_index,
+            ],
+        );
+        let status = builder.inst_results(call)[0];
+        self.return_if_not_ok(builder, status);
+        Ok(())
+    }
+
+    fn lower_call_native_declare(
+        &self,
+        builder: &mut FunctionBuilder<'_>,
+        module: &mut JITModule,
+        dst: Option<OxPlace>,
+        descriptor_id: u32,
+        args: &[OxCallArg],
+    ) -> Result<(), JitError> {
+        if let Some(dst) = dst {
+            self.ensure_variant_carrier_place(dst)?;
+        }
+        let (lowered_args, _arg_names) = self.lower_project_call_args(builder, args)?;
+        let args_ptr = self.emit_call_arg_descriptors(builder, module, &lowered_args)?;
+        let argc = i32::try_from(args.len())
+            .map_err(|_| JitError::unsupported("JIT Declare argument count is too large"))?;
+        let argc = builder.ins().iconst(types::I32, i64::from(argc));
+        let descriptor_id = builder.ins().iconst(types::I32, i64::from(descriptor_id));
+        let (dst_area, dst_index) = if let Some(dst) = dst {
+            let (area, index) = place_addr(dst);
+            (
+                builder.ins().iconst(types::I32, i64::from(area)),
+                builder.ins().iconst(types::I32, index as i64),
+            )
+        } else {
+            (
+                builder.ins().iconst(types::I32, -1),
+                builder.ins().iconst(types::I32, -1),
+            )
+        };
+        let callee = self.import(builder, module, self.imports.declare_call_slot);
+        let call = builder.ins().call(
+            callee,
+            &[
+                self.state,
+                self.run,
+                descriptor_id,
+                argc,
+                args_ptr,
                 dst_area,
                 dst_index,
             ],
